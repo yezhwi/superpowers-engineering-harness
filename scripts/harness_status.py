@@ -39,6 +39,12 @@ def _load(harness_dir: Path):
     except yaml.YAMLError as exc:
         print(f"INVALID_HARNESS_STATE: bad YAML: {exc}", file=sys.stderr)
         return None
+    if not isinstance(data, dict):
+        print(
+            f"INVALID_HARNESS_STATE: {path} is not a mapping",
+            file=sys.stderr,
+        )
+        return None
     for key, default in TEMPLATE_DEFAULTS.items():
         data.setdefault(key, {} if isinstance(default, dict) else default)
         if isinstance(default, dict):
