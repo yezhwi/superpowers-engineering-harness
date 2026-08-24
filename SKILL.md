@@ -29,7 +29,10 @@ run gate
 2. **No state in context only.** Task state lives ONLY in
    `.harness/current-task.yaml`. Always read it from disk before deciding.
 3. **No ad-hoc transitions.** Every state change must go through
-   `scripts/state_machine.py` / `scripts/validate_state.py` and be validated.
+   the shared state machine via `harness transition` (or, only when
+   working inside the harness repo itself,
+   `scripts/state_machine.py` / `scripts/validate_state.py`); never edit
+   the state field ad hoc without validating the transition.
 4. **No self-declared done.** Only `quality_gate.py` exit code 0 plus an
    explicit `CONVERGED -> DONE` transition ends a task.
 
@@ -38,7 +41,11 @@ run gate
 ```text
 1. Detect whether .harness/ exists.
 2. Load .harness/current-task.yaml.
-3. Run `harness status` (or `python scripts/harness_status.py`).
+3. Run `harness status`.
+
+> Path rule: `harness ...` CLI works in ANY project (requires once:
+> `pip install -e <harness-repo>`). Raw `python scripts/*.py` paths are
+> ONLY valid with CWD = the harness repo root — never use them elsewhere.
 4. Resume from persisted state via the dispatch table below.
 ```
 
@@ -47,8 +54,10 @@ run gate
 - `.harness/current-task.yaml` — persisted task state (`state:` field).
 - `.harness/requirements.yaml`, `.harness/invariants.yaml`, `.harness/gate.yaml`
 - `findings/*.yaml`, `evidence/*.json`
-- `scripts/`: `state_machine.py`, `validate_state.py`, `collect_evidence.py`,
-  `quality_gate.py`, `harness_status.py`
+- deterministic core lives in `<harness-repo>/scripts/`: `state_machine.py`,
+  `validate_state.py`, `collect_evidence.py`, `quality_gate.py`,
+  `harness_status.py` — always reached through the `harness` CLI from other
+  projects
 
 If `.harness/current-task.yaml` does not exist: create it from
 `templates/current-task.yaml` with `state: CREATED`, then proceed below.
@@ -61,7 +70,7 @@ Read `state` from `.harness/current-task.yaml`, then:
 |---|---|
 | `CREATED` | Invoke **task-contract** skill. It advances CREATED -> SPECIFYING -> PLANNED. |
 | `PLANNED` | Invoke Superpowers execution skills (**brainstorming** if design unclear, else **writing-plans** + **executing-plans**/**subagent-driven-development**, with **test-driven-development**). Advances PLANNED -> IMPLEMENTING. |
-| `IMPLEMENTING` | Continue execution skill. When implementation step complete, transition IMPLEMENTING -> VERIFYING and collect evidence via `scripts/collect_evidence.py`. |
+| `IMPLEMENTING` | Continue execution skill. When implementation step complete, transition IMPLEMENTING -> VERIFYING and collect evidence via `harness evidence --type <t> --command "<cmd>"`. |
 | `VERIFYING` | Run deterministic verification only: the Verification Plan's commands/tests. All green -> REVIEWING. Any red -> back to IMPLEMENTING (fix via TDD), then re-verify. |
 | `REVIEWING` | Invoke Superpowers review (**requesting-code-review** / spec-vs-standards review). If review clean -> GATING. If findings -> invoke **adversarial-review** skill to formalize them as PROPOSED findings, then dispatch **reproduce-finding**. |
 | `REPRODUCING` | Invoke **reproduce-finding** skill. CONFIRMED finding -> FIXING (fix with TDD) -> VERIFYING. REJECTED finding -> close it, return to REVIEWING. |
@@ -75,13 +84,13 @@ There is no shortcut from any state to DONE.
 Never hand-judge what a script can judge:
 
 ```bash
-harness status                              # current state overview
+harness status                              # current state overview (any project)
 harness transition VERIFYING                # validate + persist transition
 harness evidence --type unit_test --command "pytest"   # HEAD-bound evidence
 harness gate                                # gate; exit 0=PASS 1=BLOCKED 2=INVALID
 ```
 
-Script equivalents (same logic):
+Script equivalents — ONLY inside the harness repo root:
 
 ```bash
 python scripts/harness_status.py            # current state overview

@@ -10,8 +10,10 @@ You run the gate. You never evaluate quality yourself.
 ## Invocation
 
 ```bash
-python scripts/quality_gate.py
+harness gate
 ```
+
+(In-harness-repo equivalent: `python scripts/quality_gate.py`.)
 
 ## Exit Code → Action Mapping
 

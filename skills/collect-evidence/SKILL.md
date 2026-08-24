@@ -26,10 +26,12 @@ matching type, that is a spec problem — surface it, do not silently skip.
 For each required type:
 
 ```bash
-python scripts/collect_evidence.py \
-  --type unit_test \
-  --command "pytest"
+harness evidence --type unit_test --command "pytest"
 ```
+
+(Inside the harness repo itself, the equivalent raw call is
+`python scripts/collect_evidence.py --type ... --command ...`; elsewhere
+always use the CLI.)
 
 Generates `.harness/evidence/<type>.json` with command, exit_code, timestamp,
 commit, stdout_tail, stderr_tail. Failing commands still produce evidence —

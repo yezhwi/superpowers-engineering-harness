@@ -59,10 +59,17 @@ Business projects adopt a `.harness/` directory at their root:
 
 ## Usage
 
-New session, always first:
+One-time setup in the business project:
 
 ```bash
-python scripts/harness_status.py
+pip install -e <path-to-this-repo>   # provides the `harness` command
+harness init                         # scaffold .harness/
+```
+
+New session, always first (works in any project):
+
+```bash
+harness status
 ```
 
 Then follow `SKILL.md`'s dispatch table:
@@ -73,7 +80,7 @@ PLANNED -> Superpowers execution (TDD)
 VERIFYING -> deterministic verification + collect_evidence.py
 REVIEWING -> review + adversarial-review
 REPRODUCING -> reproduce-finding
-GATING -> python scripts/quality_gate.py
+GATING -> harness gate
 PASS -> CONVERGED -> DONE
 ```
 

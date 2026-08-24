@@ -127,7 +127,7 @@ After both YAML files exist and validate against their schemas:
    - `invariants.total`
    - `timestamps.updated_at`
 2. Transition state `SPECIFYING -> PLANNED` via the state machine.
-3. Run `python scripts/harness_status.py` to confirm persistence.
+3. Run `harness status` to confirm persistence (raw `python scripts/harness_status.py` only works inside the harness repo root).
 
 ## Outputs (complete list)
 
