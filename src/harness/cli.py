@@ -45,6 +45,12 @@ def main(argv=None) -> int:
     p_ev.add_argument("--command", required=True,
                       dest="evidence_command")
     sub.add_parser("gate", help="run the deterministic quality gate")
+    p_finding = sub.add_parser("finding", help="inspect findings")
+    f_sub = p_finding.add_subparsers(dest="finding_command")
+    f_sub.add_parser("list", help="list all findings")
+    p_show = f_sub.add_parser("show", help="show one finding record")
+    p_show.add_argument("id")
+    sub.add_parser("converge", help="deterministic convergence decision")
 
     args = parser.parse_args(argv)
 
@@ -64,6 +70,15 @@ def main(argv=None) -> int:
         return controlplane.cmd_evidence(args.type, args.evidence_command)
     if args.subcommand == "gate":
         return controlplane.cmd_gate()
+    if args.subcommand == "finding":
+        if args.finding_command == "list":
+            return controlplane.cmd_finding_list()
+        if args.finding_command == "show":
+            return controlplane.cmd_finding_show(args.id)
+        parser.print_usage(sys.stderr)
+        return 2
+    if args.subcommand == "converge":
+        return controlplane.cmd_converge()
 
     parser.print_usage(sys.stderr)
     return 2

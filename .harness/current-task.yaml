@@ -1,8 +1,8 @@
 task:
-  id: TASK-002
-  title: CLI control plane subcommands
-  description: Add harness status/transition/evidence/gate wrapping existing deterministic
-    scripts (guide v0.1 section 34)
+  id: TASK-003
+  title: finding list/show + converge subcommands
+  description: 'Complete guide section 34 CLI: inspect findings lifecycle; deterministic
+    convergence decision (PASS->CONVERGED, max_iterations->ESCALATED, else CONTINUE)'
 state: DONE
 iteration: 0
 max_iterations: 5
@@ -28,7 +28,7 @@ gate:
   status: PASS
   blocked_by: []
 git:
-  head: 67d2fcc4a5ef3e8411c7f41ab9e118958e3ada21
+  head: null
 timestamps:
   created_at: null
   updated_at: null

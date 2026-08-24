@@ -1,13 +1,13 @@
 invariants:
   - id: INV-001
-    statement: subcommands never bypass state machine validation when changing state
+    statement: converge never bypasses state machine validation
     category: safety
     severity: critical
     status: verified
     verification: []
   - id: INV-002
-    statement: gate PASS is the only path that transition may use toward CONVERGED from GATING
-    category: cli_contract
+    statement: converge decisions derive only from gate result and persisted counters, never model judgement
+    category: determinism
     severity: major
     status: verified
     verification: []
