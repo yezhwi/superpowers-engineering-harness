@@ -113,13 +113,52 @@ def run_gate(harness_dir: Path, head: str | None = None) -> tuple[str, list]:
 
     blockers = []
 
-    # 1. Requirements: priority=must must all be verified.
+    # 1. Requirements: priority=must must be verified WITH fresh evidence.
+    # A self-declared status=verified carries no weight on its own: each
+    # verified must-requirement needs >=1 evidence ref resolving to an
+    # evidence file that exists, ran successfully, and matches HEAD.
     req_cfg = gate_cfg.get("requirements", {})
     if req_cfg.get("must_verified", True):
+        must_match_head = bool(
+            gate_cfg.get("evidence", {}).get("must_match_head", True)
+        )
+        evidence_dir = harness_dir / "evidence"
         for req in requirements_doc.get("requirements", []):
-            if (req.get("priority") == "must"
-                    and req.get("status") != "verified"):
+            if req.get("priority") != "must":
+                continue
+            if req.get("status") != "verified":
                 blockers.append(f"{req.get('id')} not verified")
+                continue
+            refs = req.get("evidence") or []
+            if not refs:
+                blockers.append(
+                    f"{req.get('id')} verified without evidence")
+                continue
+            for ref in refs:
+                name = ref if isinstance(ref, str) else                     (ref or {}).get("ref", "")
+                if not name:
+                    blockers.append(
+                        f"{req.get('id')} has an empty evidence ref")
+                    continue
+                fname = name if name.endswith(".json") else f"{name}.json"
+                path = evidence_dir / fname
+                if not path.is_file():
+                    blockers.append(
+                        f"{req.get('id')} evidence missing: {fname}")
+                    continue
+                try:
+                    ev = json.loads(path.read_text())
+                except json.JSONDecodeError as exc:
+                    raise InvalidHarnessState(
+                        f"bad JSON in {path}: {exc}")
+                if ev.get("exit_code") != 0:
+                    blockers.append(
+                        f"{req.get('id')} evidence {fname} failed "
+                        f"(exit_code={ev.get('exit_code')})")
+                elif must_match_head and ev.get("commit") != head:
+                    blockers.append(
+                        f"{req.get('id')} evidence {fname} is stale "
+                        f"(commit {ev.get('commit')} != HEAD)")
 
     # 2. Invariants: no violated ones allowed.
     inv_cfg = gate_cfg.get("invariants", {})

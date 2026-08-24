@@ -48,7 +48,7 @@ def make_harness(tmp_path: Path) -> Path:
 
     requirements = {"requirements": [
         {"id": "REQ-001", "statement": "works", "priority": "must",
-         "status": "verified", "evidence": []},
+         "status": "verified", "evidence": ["build.json"]},
     ]}
     (h / "requirements.yaml").write_text(yaml.safe_dump(requirements))
 
@@ -288,3 +288,58 @@ def test_multiple_blockers_listed(tmp_path):
     assert "REQ-001 not verified" in stdout
     assert "missing build evidence" in stdout
     assert "Major finding F-0009" in stdout
+
+
+# Requirement evidence validation (review fix #5) -----------------------------
+
+def test_verified_requirement_without_evidence_blocked(tmp_path):
+    h = make_harness(tmp_path)
+    reqs = {"requirements": [
+        {"id": "REQ-001", "statement": "works", "priority": "must",
+         "status": "verified", "evidence": []}]}
+    (h / "requirements.yaml").write_text(yaml.safe_dump(reqs))
+    result = _gate(h)
+    assert result.returncode == 1
+    assert "verified without evidence" in result.stdout
+
+
+def test_verified_requirement_missing_evidence_file_blocked(tmp_path):
+    h = make_harness(tmp_path)
+    reqs = {"requirements": [
+        {"id": "REQ-001", "statement": "works", "priority": "must",
+         "status": "verified", "evidence": ["nope.json"]}]}
+    (h / "requirements.yaml").write_text(yaml.safe_dump(reqs))
+    assert "evidence missing" in _gate(h).stdout
+
+
+def test_verified_requirement_stale_evidence_blocked(tmp_path):
+    h = make_harness(tmp_path)
+    reqs = {"requirements": [
+        {"id": "REQ-001", "statement": "works", "priority": "must",
+         "status": "verified", "evidence": ["build.json"]}]}
+    (h / "requirements.yaml").write_text(yaml.safe_dump(reqs))
+    ev = json.loads((h / "evidence" / "build.json").read_text())
+    ev["commit"] = "0" * 40
+    (h / "evidence" / "build.json").write_text(json.dumps(ev))
+    assert "is stale" in _gate(h).stdout
+
+
+def test_verified_requirement_failed_evidence_blocked(tmp_path):
+    h = make_harness(tmp_path)
+    reqs = {"requirements": [
+        {"id": "REQ-001", "statement": "works", "priority": "must",
+         "status": "verified", "evidence": ["build.json"]}]}
+    (h / "requirements.yaml").write_text(yaml.safe_dump(reqs))
+    ev = json.loads((h / "evidence" / "build.json").read_text())
+    ev["exit_code"] = 3
+    (h / "evidence" / "build.json").write_text(json.dumps(ev))
+    assert "failed" in _gate(h).stdout
+
+
+def test_should_requirement_without_evidence_not_blocked(tmp_path):
+    h = make_harness(tmp_path)
+    reqs = {"requirements": [
+        {"id": "REQ-001", "statement": "works", "priority": "should",
+         "status": "verified", "evidence": []}]}
+    (h / "requirements.yaml").write_text(yaml.safe_dump(reqs))
+    assert _gate(h).returncode == 0

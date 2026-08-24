@@ -41,7 +41,7 @@ def make_harness(tmp_path: Path) -> Path:
         (REPO / "templates" / "gate.yaml").read_text())
     requirements = {"requirements": [
         {"id": "REQ-001", "statement": "works", "priority": "must",
-         "status": "verified", "evidence": []},
+         "status": "verified", "evidence": ["build.json"]},
     ]}
     (h / "requirements.yaml").write_text(yaml.safe_dump(requirements))
     invariants = {"invariants": [

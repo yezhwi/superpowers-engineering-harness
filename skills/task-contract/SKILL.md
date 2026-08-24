@@ -62,8 +62,8 @@ requirements:
     statement: interrupted execution can resume
     source: user
     priority: must
-    status: pending
-    evidence: []
+    status: pending          # only the gate path may set verified
+    evidence: []             # filenames under .harness/evidence/, filled at VERIFYING
 
   - id: REQ-002
     statement: duplicated recovery must not duplicate side effects
@@ -72,6 +72,11 @@ requirements:
     status: pending
     evidence: []
 ```
+
+LAW: a must-requirement may only be `verified` when its `evidence` lists
+files that exist under `.harness/evidence/`, ran with exit_code=0, and match
+current git HEAD. The quality gate enforces this - an empty-evidence
+`status: verified` is a blocker, not a pass.
 
 Rules:
 - `priority=must` items are gate-blocking; assign sparingly but honestly.

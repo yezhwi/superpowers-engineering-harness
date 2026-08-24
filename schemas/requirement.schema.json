@@ -3,22 +3,58 @@
   "$id": "requirement.schema.json",
   "title": "Engineering Harness Requirements",
   "type": "object",
-  "required": ["requirements"],
+  "required": [
+    "requirements"
+  ],
   "properties": {
     "requirements": {
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["id", "statement", "priority", "status"],
+        "required": [
+          "id",
+          "statement",
+          "priority",
+          "status"
+        ],
         "properties": {
-          "id": {"type": "string", "pattern": "^REQ-[0-9]+$"},
-          "statement": {"type": "string", "minLength": 1},
-          "source": {"enum": ["user", "spec"]},
-          "priority": {"enum": ["must", "should", "could"]},
-          "status": {"enum": ["pending", "implemented", "verified", "blocked"]},
+          "id": {
+            "type": "string",
+            "pattern": "^REQ-[0-9]+$"
+          },
+          "statement": {
+            "type": "string",
+            "minLength": 1
+          },
+          "source": {
+            "enum": [
+              "user",
+              "spec"
+            ]
+          },
+          "priority": {
+            "enum": [
+              "must",
+              "should",
+              "could"
+            ]
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "implemented",
+              "verified",
+              "blocked"
+            ]
+          },
           "evidence": {
             "type": "array",
-            "items": {"type": ["string", "object"]}
+            "items": {
+              "type": [
+                "string",
+                "object"
+              ]
+            }
           }
         },
         "additionalProperties": false
