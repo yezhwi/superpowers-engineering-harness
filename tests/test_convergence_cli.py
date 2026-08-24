@@ -37,7 +37,7 @@ def make_repo(tmp_path: Path, state="GATING", iteration=0,
          "status": "verified", "evidence": ["build.json"]}]}
     (h / "requirements.yaml").write_text(yaml.safe_dump(reqs))
     invs = {"invariants": [
-        {"id": "INV-001", "statement": "safe", "category": "x",
+        {"id": "INV-001", "statement": "safe", "category": "correctness",
          "severity": "critical", "status": "verified",
          "verification": []}]}
     (h / "invariants.yaml").write_text(yaml.safe_dump(invs))

@@ -1,13 +1,14 @@
 invariants:
-  - id: INV-001
-    statement: converge never bypasses state machine validation
-    category: safety
-    severity: critical
-    status: verified
-    verification: []
-  - id: INV-002
-    statement: converge decisions derive only from gate result and persisted counters, never model judgement
-    category: determinism
-    severity: major
-    status: verified
-    verification: []
+- id: INV-001
+  statement: converge never bypasses state machine validation
+  category: state_machine
+  severity: critical
+  status: verified
+  verification: []
+- id: INV-002
+  statement: converge decisions derive only from gate result and persisted counters,
+    never model judgement
+  category: state_machine
+  severity: major
+  status: verified
+  verification: []

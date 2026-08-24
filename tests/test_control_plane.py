@@ -126,7 +126,7 @@ def _passing_harness(tmp_path):
          "status": "verified", "evidence": ["unit-test.json"]}]}
     (h / "requirements.yaml").write_text(yaml.safe_dump(reqs))
     invs = {"invariants": [
-        {"id": "INV-001", "statement": "safe", "category": "x",
+        {"id": "INV-001", "statement": "safe", "category": "correctness",
          "severity": "critical", "status": "verified",
          "verification": []}]}
     (h / "invariants.yaml").write_text(yaml.safe_dump(invs))

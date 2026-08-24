@@ -146,39 +146,48 @@ def test_stale_evidence_via_real_collection(tmp_path):
 
 # 3. major finding ----------------------------------------------------------
 
+def finding_doc(fid, severity, status, **extra):
+    finding = {
+        "id": fid,
+        "kind": "failure_scenario",
+        "target": "REQ-001",
+        "scenario": "concrete attack scenario",
+        "severity": severity,
+        "status": status,
+    }
+    finding.update(extra)
+    return finding
+
+
 def test_major_finding_blocked(tmp_path):
     h = make_harness(tmp_path)
-    finding = {
-        "id": "F-0001", "type": "suspected_defect",
-        "severity": "major", "category": "concurrency",
-        "status": "PROPOSED", "title": "race",
-    }
-    (h / "findings" / "F-0001.yaml").write_text(yaml.safe_dump(finding))
+    finding = finding_doc("FND-0001", "major", "PROPOSED")
+    (h / "findings" / "FND-0001.yaml").write_text(yaml.safe_dump(finding))
     result = _gate(h)
     assert result.returncode == 1
-    assert "Major finding F-0001" in result.stdout
+    assert "Major finding FND-0001" in result.stdout
 
 
 def test_critical_finding_blocked(tmp_path):
     h = make_harness(tmp_path)
-    finding = {"id": "F-0002", "severity": "critical", "status": "CONFIRMED"}
-    (h / "findings" / "F-0002.yaml").write_text(yaml.safe_dump(finding))
+    finding = finding_doc("FND-0002", "critical", "CONFIRMED")
+    (h / "findings" / "FND-0002.yaml").write_text(yaml.safe_dump(finding))
     result = _gate(h)
     assert result.returncode == 1
-    assert "Critical finding F-0002" in result.stdout
+    assert "Critical finding FND-0002" in result.stdout
 
 
 def test_closed_findings_do_not_block(tmp_path):
     h = make_harness(tmp_path)
-    finding = {"id": "F-0003", "severity": "major", "status": "CLOSED"}
-    (h / "findings" / "F-0003.yaml").write_text(yaml.safe_dump(finding))
+    finding = finding_doc("FND-0003", "major", "CLOSED")
+    (h / "findings" / "FND-0003.yaml").write_text(yaml.safe_dump(finding))
     assert _gate(h).returncode == 0
 
 
 def test_confirmed_finding_without_regression_test_blocked(tmp_path):
     h = make_harness(tmp_path)
-    finding = {"id": "F-0004", "severity": "minor", "status": "CONFIRMED"}
-    (h / "findings" / "F-0004.yaml").write_text(yaml.safe_dump(finding))
+    finding = finding_doc("FND-0004", "minor", "CONFIRMED")
+    (h / "findings" / "FND-0004.yaml").write_text(yaml.safe_dump(finding))
     result = _gate(h)
     assert result.returncode == 1
     assert "no regression test" in result.stdout
@@ -186,11 +195,11 @@ def test_confirmed_finding_without_regression_test_blocked(tmp_path):
 
 def test_confirmed_finding_with_regression_test_ok(tmp_path):
     h = make_harness(tmp_path)
-    finding = {
-        "id": "F-0005", "severity": "minor", "status": "CONFIRMED",
-        "regression_test": {"path": "tests/test_fix.py"},
-    }
-    (h / "findings" / "F-0005.yaml").write_text(yaml.safe_dump(finding))
+    finding = finding_doc(
+        "FND-0005", "minor", "CONFIRMED",
+        regression_test={"path": "tests/test_fix.py"},
+    )
+    (h / "findings" / "FND-0005.yaml").write_text(yaml.safe_dump(finding))
     assert _gate(h).returncode == 0
 
 
@@ -312,15 +321,15 @@ def test_multiple_blockers_listed(tmp_path):
     reqs["requirements"][0]["status"] = "pending"
     (h / "requirements.yaml").write_text(yaml.safe_dump(reqs))
     (h / "evidence" / "build.json").unlink()
-    finding = {"id": "F-0009", "severity": "major", "status": "PROPOSED"}
-    (h / "findings" / "F-0009.yaml").write_text(yaml.safe_dump(finding))
+    finding = finding_doc("FND-0009", "major", "PROPOSED")
+    (h / "findings" / "FND-0009.yaml").write_text(yaml.safe_dump(finding))
 
     out = _gate(h)
     assert out.returncode == 1
     stdout = out.stdout
     assert "REQ-001 not verified" in stdout
     assert "missing build evidence" in stdout
-    assert "Major finding F-0009" in stdout
+    assert "Major finding FND-0009" in stdout
 
 
 # Requirement evidence validation (review fix #5) -----------------------------
@@ -391,3 +400,50 @@ def test_violated_invariant_blocks_even_if_allowance_configured(tmp_path):
     result = _gate(h)
     assert result.returncode == 1
     assert "violated" in result.stdout
+
+
+# Schema validation: fail closed (CR-001 P0) ---------------------------------
+
+def test_requirement_missing_priority_is_invalid_harness_state(tmp_path):
+    h = make_harness(tmp_path)
+    reqs = {"requirements": [
+        {"id": "REQ-001", "statement": "must not duplicate side effects",
+         "status": "pending", "evidence": []}]}
+    (h / "requirements.yaml").write_text(yaml.safe_dump(reqs))
+    result = _gate(h)
+    assert result.returncode == 2
+    assert "fails requirement.schema.json" in result.stderr
+    assert "priority" in result.stderr
+
+
+def test_invariant_missing_severity_is_invalid_harness_state(tmp_path):
+    h = make_harness(tmp_path)
+    invs = {"invariants": [
+        {"id": "INV-001", "statement": "at most one side effect",
+         "category": "idempotency", "status": "pending",
+         "verification": []}]}
+    (h / "invariants.yaml").write_text(yaml.safe_dump(invs))
+    result = _gate(h)
+    assert result.returncode == 2
+    assert "fails invariant.schema.json" in result.stderr
+    assert "severity" in result.stderr
+
+
+def test_finding_missing_lifecycle_fields_is_invalid_harness_state(tmp_path):
+    h = make_harness(tmp_path)
+    # Gate must reject this malformed record before deciding its severity.
+    (h / "findings" / "fnd-001.yaml").write_text(yaml.safe_dump({
+        "id": "FND-001", "severity": "major", "status": "PROPOSED"}))
+    result = _gate(h)
+    assert result.returncode == 2
+    assert "fails finding.schema.json" in result.stderr
+
+
+def test_evidence_missing_commit_is_invalid_harness_state(tmp_path):
+    h = make_harness(tmp_path)
+    evidence = json.loads((h / "evidence" / "build.json").read_text())
+    del evidence["commit"]
+    (h / "evidence" / "build.json").write_text(json.dumps(evidence))
+    result = _gate(h)
+    assert result.returncode == 2
+    assert "fails evidence.schema.json" in result.stderr

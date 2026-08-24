@@ -18,6 +18,7 @@ import sys
 from pathlib import Path
 
 import yaml
+from jsonschema import ValidationError, validate
 
 from state_machine import STATES
 
@@ -31,6 +32,25 @@ OPEN_FINDING_STATUSES = {
 
 class InvalidHarnessState(Exception):
     pass
+
+
+SCHEMAS_DIR = Path(__file__).resolve().parent.parent / "schemas"
+
+
+def validate_schema(document: object, schema_name: str, source: Path) -> None:
+    """Fail closed when any persisted harness document violates its schema."""
+    schema_path = SCHEMAS_DIR / schema_name
+    try:
+        schema = json.loads(schema_path.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        raise InvalidHarnessState(f"cannot load {schema_path}: {exc}") from exc
+    try:
+        validate(document, schema)
+    except ValidationError as exc:
+        location = ".".join(str(part) for part in exc.absolute_path) or "$"
+        raise InvalidHarnessState(
+            f"{source} fails {schema_name} at {location}: {exc.message}"
+        ) from exc
 
 
 def _load_yaml(path: Path):
@@ -66,9 +86,8 @@ def load_evidence(evidence_dir: Path) -> dict:
             data = json.loads(path.read_text())
         except json.JSONDecodeError as exc:
             raise InvalidHarnessState(f"bad JSON in {path}: {exc}")
-        etype = data.get("type")
-        if not etype:
-            raise InvalidHarnessState(f"{path} missing 'type'")
+        validate_schema(data, "evidence.schema.json", path)
+        etype = data["type"]
         evidence[etype] = data
     return evidence
 
@@ -79,11 +98,7 @@ def load_findings(findings_dir: Path) -> list:
         return findings
     for path in sorted(findings_dir.glob("*.yaml")):
         data = yaml.safe_load(path.read_text())
-        if not isinstance(data, dict) or "id" not in data or \
-                "severity" not in data or "status" not in data:
-            raise InvalidHarnessState(
-                f"{path} must define id, severity, status"
-            )
+        validate_schema(data, "finding.schema.json", path)
         findings.append(data)
     return findings
 
@@ -94,7 +109,18 @@ def run_gate(harness_dir: Path, head: str | None = None) -> tuple[str, list]:
     task = _load_yaml(harness_dir / "current-task.yaml")
     requirements_doc = _load_yaml(harness_dir / "requirements.yaml")
     invariants_doc = _load_yaml(harness_dir / "invariants.yaml")
-    gate_cfg = _load_yaml(harness_dir / "gate.yaml").get("gate", {})
+    gate_doc = _load_yaml(harness_dir / "gate.yaml")
+
+    validate_schema(task, "task.schema.json", harness_dir / "current-task.yaml")
+    validate_schema(
+        requirements_doc, "requirement.schema.json",
+        harness_dir / "requirements.yaml",
+    )
+    validate_schema(
+        invariants_doc, "invariant.schema.json",
+        harness_dir / "invariants.yaml",
+    )
+    gate_cfg = gate_doc.get("gate", {})
 
     state = task.get("state")
     if state not in STATES:

@@ -70,9 +70,11 @@ def make_harness(tmp_path: Path) -> Path:
 def write_finding(h: Path, **overrides):
     finding = {
         "id": "FND-001",
+        "kind": "failure_scenario",
+        "target": "REQ-001",
+        "scenario": "concrete lifecycle test attack",
         "severity": "major",
         "status": "PROPOSED",
-        "regression_test": {},
     }
     finding.update(overrides)
     (h / "findings" / f"{finding['id'].lower()}.yaml").write_text(
@@ -113,7 +115,7 @@ def test_proposed_major_finding_blocks(tmp_path):
 def test_confirmed_without_regression_test_blocks(tmp_path):
     # Reproducer failed -> CONFIRMED. LAW 4: must carry regression test.
     h = make_harness(tmp_path)
-    write_finding(h, status="CONFIRMED", regression_test={})
+    write_finding(h, status="CONFIRMED")
     status, blockers = run_gate(h)
     assert status == "BLOCKED"
     assert any(
