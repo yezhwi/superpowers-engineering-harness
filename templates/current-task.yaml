@@ -1,5 +1,5 @@
 task:
-  id: TASK-001
+  id: null
   title: ""
   description: ""
 
@@ -7,10 +7,6 @@ state: CREATED
 
 iteration: 0
 max_iterations: 5
-
-spec:
-  design: null
-  plan: null
 
 requirements:
   total: 0
