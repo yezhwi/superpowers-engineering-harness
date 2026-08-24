@@ -52,7 +52,7 @@ INVARIANTS_EXAMPLE = {
             "category": "idempotency",
             "severity": "critical",
             "status": "pending",
-            "verification": [],
+            "verification": ["build.json"],
         },
     ]
 }

@@ -41,7 +41,7 @@ def make_repo(tmp_path: Path, state="GATING", iteration=0,
     invs = {"invariants": [
         {"id": "INV-001", "statement": "safe", "category": "correctness",
          "severity": "critical", "status": "verified",
-         "verification": []}]}
+         "verification": ["build.json"]}]}
     (h / "invariants.yaml").write_text(yaml.safe_dump(invs))
     head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=tmp_path,
                           capture_output=True, text=True).stdout.strip()

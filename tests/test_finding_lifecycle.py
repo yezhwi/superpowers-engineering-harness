@@ -50,7 +50,7 @@ def make_harness(tmp_path: Path) -> Path:
     invariants = {"invariants": [
         {"id": "INV-001", "statement": "safe", "category": "correctness",
          "severity": "critical", "status": "verified",
-         "verification": []},
+         "verification": ["build.json"]},
     ]}
     (h / "invariants.yaml").write_text(yaml.safe_dump(invariants))
 

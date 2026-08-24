@@ -57,7 +57,7 @@ def make_harness(tmp_path: Path) -> Path:
     invariants = {"invariants": [
         {"id": "INV-001", "statement": "safe", "category": "correctness",
          "severity": "critical", "status": "verified",
-         "verification": []},
+         "verification": ["build.json"]},
     ]}
     (h / "invariants.yaml").write_text(yaml.safe_dump(invariants))
 
@@ -417,7 +417,7 @@ def test_invariant_missing_severity_is_invalid_harness_state(tmp_path):
     invs = {"invariants": [
         {"id": "INV-001", "statement": "at most one side effect",
          "category": "idempotency", "status": "pending",
-         "verification": []}]}
+         "verification": ["build.json"]}]}
     (h / "invariants.yaml").write_text(yaml.safe_dump(invs))
     result = _gate(h)
     assert result.returncode == 2
@@ -453,3 +453,12 @@ def test_direct_verified_status_edit_without_proof_is_invalid(tmp_path):
     result = _gate(h)
     assert result.returncode == 2
     assert "finding.schema.json" in result.stderr
+
+def test_verified_critical_invariant_without_evidence_blocked(tmp_path):
+    h = make_harness(tmp_path)
+    inv = yaml.safe_load((h / "invariants.yaml").read_text())
+    inv["invariants"][0]["verification"] = []
+    (h / "invariants.yaml").write_text(yaml.safe_dump(inv))
+    result = _gate(h)
+    assert result.returncode == 1
+    assert "verified without verification evidence" in result.stdout

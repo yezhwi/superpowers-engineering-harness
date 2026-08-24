@@ -211,6 +211,9 @@ def run_gate(harness_dir: Path, head: str | None = None) -> tuple[str, list]:
                     blockers.append(
                         f"{req.get('id')} evidence {fname} is stale "
                         f"(commit {ev.get('commit')} != HEAD)")
+                elif (ev.get("workspace_fingerprint") != current_workspace
+                      or ev.get("workspace_fingerprint_after") != current_workspace):
+                    blockers.append(f"{req.get('id')} evidence {fname} workspace is stale")
 
     # 2. Invariants: violated blocks; unproven blocks for critical/major.
     # pending == not proven == BLOCKED. Only proven-safe (verified)
@@ -226,11 +229,23 @@ def run_gate(harness_dir: Path, head: str | None = None) -> tuple[str, list]:
             blockers.append(f"{iid} violated")
         elif status != "verified":
             if severity in ("critical", "major"):
-                blockers.append(
-                    f"{iid} not verified "
-                    f"(pending {severity} invariant is not proven)")
+                blockers.append(f"{iid} not verified (pending {severity} invariant is not proven)")
             elif severity == "minor" and minor_verified:
                 blockers.append(f"{iid} not verified")
+        elif severity in ("critical", "major") or minor_verified:
+            refs = inv.get("verification") or []
+            if not refs:
+                blockers.append(f"{iid} verified without verification evidence")
+            for ref in refs:
+                name = ref if isinstance(ref, str) else (ref or {}).get("ref", "")
+                path = evidence_dir / (name if name.endswith(".json") else f"{name}.json")
+                try:
+                    ev = json.loads(path.read_text())
+                except (OSError, json.JSONDecodeError):
+                    blockers.append(f"{iid} verification evidence missing: {name}")
+                    continue
+                if ev.get("exit_code") != 0 or ev.get("commit") != head or ev.get("workspace_fingerprint") != current_workspace or ev.get("workspace_fingerprint_after") != current_workspace:
+                    blockers.append(f"{iid} verification evidence {name} is invalid or stale")
 
     # 3. Required verification evidence exists, exit_code==0, fresh HEAD.
     ver_cfg = gate_cfg.get("verification", {})

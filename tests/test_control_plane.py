@@ -130,7 +130,7 @@ def _passing_harness(tmp_path):
     invs = {"invariants": [
         {"id": "INV-001", "statement": "safe", "category": "correctness",
          "severity": "critical", "status": "verified",
-         "verification": []}]}
+         "verification": ["build.json"]}]}
     (h / "invariants.yaml").write_text(yaml.safe_dump(invs))
     edir = h / "evidence"
     for etype in ("build", "unit_test"):
