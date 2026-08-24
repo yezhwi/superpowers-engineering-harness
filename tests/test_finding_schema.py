@@ -40,14 +40,14 @@ def test_reproducing_with_attempts():
 def test_confirmed_with_red_test():
     validate({**BASE, "status": "CONFIRMED",
               "test": "tests/test_x.py::test_dup",
-              "regression_test": {"path": "tests/test_x.py::test_dup"},
+              "regression_test": {"path": "tests/test_x.py::test_dup", "red_evidence": "red.json"},
               "confirmed_at": "2026-01-01T00:00:00+00:00"})
 
 
 def test_fixing_and_fixed():
     validate({**BASE, "status": "FIXING",
               "test": "tests/test_x.py::test_dup",
-              "regression_test": {"path": "tests/test_x.py::test_dup"}})
+              "regression_test": {"path": "tests/test_x.py::test_dup", "red_evidence": "red.json"}})
     validate({**BASE, "status": "FIXED",
               "fix": "per-id lock",
               "regression_test": {
@@ -58,12 +58,12 @@ def test_fixing_and_fixed():
 
 def test_verified_and_closed():
     common = {"test": "t", "fix": "f",
-              "regression_test": {"path": "t"}}
+              "regression_test": {"path": "t", "red_evidence": "red.json", "green_evidence": "green.json"}}
     validate({**BASE, "status": "VERIFIED", **common,
               "evidence": ".harness/evidence/unit-test.json",
               "verified_at": "2026-01-02T00:00:00+00:00"})
     validate({**BASE, "status": "CLOSED", **common,
-              "evidence": ".harness/evidence/unit-test.json"})
+              "evidence": ".harness/evidence/unit-test.json", "verified_at": "2026-01-02T00:00:00+00:00"})
 
 
 def test_rejected_requires_attempts_and_reason():

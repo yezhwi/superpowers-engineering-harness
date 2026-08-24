@@ -107,5 +107,146 @@
       "description": "ISO timestamp, set at VERIFIED"
     }
   },
-  "additionalProperties": true
+  "additionalProperties": true,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "CONFIRMED"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "test",
+          "regression_test",
+          "confirmed_at"
+        ],
+        "properties": {
+          "regression_test": {
+            "required": [
+              "path",
+              "red_evidence"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "FIXING"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "regression_test"
+        ],
+        "properties": {
+          "regression_test": {
+            "required": [
+              "path",
+              "red_evidence"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "FIXED"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "regression_test"
+        ],
+        "properties": {
+          "regression_test": {
+            "required": [
+              "path",
+              "red_evidence",
+              "green_evidence"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "VERIFIED"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "regression_test",
+          "evidence",
+          "verified_at"
+        ],
+        "properties": {
+          "regression_test": {
+            "required": [
+              "path",
+              "red_evidence",
+              "green_evidence"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "CLOSED"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "regression_test",
+          "evidence",
+          "verified_at"
+        ],
+        "properties": {
+          "regression_test": {
+            "required": [
+              "path",
+              "red_evidence",
+              "green_evidence"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "REJECTED"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "attempts",
+          "rejection_reason"
+        ],
+        "properties": {
+          "attempts": {
+            "minItems": 1
+          }
+        }
+      }
+    }
+  ]
 }

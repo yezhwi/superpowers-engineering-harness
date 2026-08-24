@@ -6,6 +6,7 @@ CLI and the scripts can never diverge.
 """
 
 import importlib.util
+import json
 import sys
 from pathlib import Path
 
@@ -230,3 +231,33 @@ def gate_pass(harness_dir: Path) -> bool:
     except quality_gate.InvalidHarnessState:
         return False
     return status == "PASS"
+
+_FINDING_TRANSITIONS={"PROPOSED":{"REPRODUCING"},"REPRODUCING":{"CONFIRMED","REJECTED"},"CONFIRMED":{"FIXING"},"FIXING":{"FIXED"},"FIXED":{"VERIFIED"},"VERIFIED":{"CLOSED"}}
+def cmd_finding_transition(fid,target,evidence=None,test=None,attempt=None,reason=None):
+ import yaml,datetime,json
+ path=None; finding=None
+ for p in Path('.harness/findings').glob('*.yaml'):
+  x=yaml.safe_load(p.read_text())
+  if isinstance(x,dict) and x.get('id')==fid: path,finding=p,x; break
+ if not path: print(f'finding not found: {fid}',file=sys.stderr); return 1
+ current=finding.get('status')
+ if target not in _FINDING_TRANSITIONS.get(current,set()): print(f'INVALID FINDING TRANSITION: {current} -> {target}',file=sys.stderr); return 1
+ def proof(ref,ok):
+  if not ref: raise ValueError('missing --evidence')
+  p=Path('.harness/evidence')/(ref if ref.endswith('.json') else ref+'.json')
+  d=json.loads(p.read_text()); head=_load('quality_gate').git_head()
+  if d.get('commit')!=head or (d.get('exit_code')==0)!=ok: raise ValueError('evidence is not fresh expected proof')
+ try:
+  if target=='REPRODUCING':
+   if not attempt: raise ValueError('REPRODUCING requires --attempt')
+   finding.setdefault('attempts',[]).append(attempt)
+  elif target=='CONFIRMED':
+   if not test: raise ValueError('CONFIRMED requires --test')
+   proof(evidence,False); finding['test']=test; finding['regression_test']={'path':test,'red_evidence':evidence}; finding['confirmed_at']=datetime.datetime.now(datetime.timezone.utc).isoformat()
+  elif target=='FIXED': proof(evidence,True); finding['regression_test']['green_evidence']=evidence
+  elif target=='VERIFIED': proof(evidence,True); finding['evidence']=evidence; finding['verified_at']=datetime.datetime.now(datetime.timezone.utc).isoformat()
+  elif target=='REJECTED':
+   if not reason or not finding.get('attempts'): raise ValueError('REJECTED requires attempts and --reason')
+   finding['rejection_reason']=reason
+ except (ValueError,OSError,json.JSONDecodeError) as e: print(f'INVALID FINDING PROOF: {e}',file=sys.stderr); return 2
+ finding['status']=target; tmp=path.with_suffix('.tmp'); tmp.write_text(yaml.safe_dump(finding,sort_keys=False)); tmp.replace(path); print(f'OK: {fid} {current} -> {target}'); return 0

@@ -154,14 +154,15 @@ def test_converge_reopened_verified_finding_escalates(tmp_path):
     assert task["state"] == "ESCALATED"
 
 
-def test_converge_closed_verified_finding_does_not_escalate(tmp_path):
+def test_converge_rejected_finding_does_not_escalate(tmp_path):
     h = make_repo(tmp_path, state="GATING", iteration=1, max_iterations=5)
     add_finding(h, "FND-0010")
     import yaml as _y
     p = h / "findings" / "fnd-0010.yaml"
     rec = _y.safe_load(p.read_text())
-    rec["status"] = "CLOSED"
-    rec["verified_at"] = "2026-01-01T00:00:00+00:00"
+    rec["status"] = "REJECTED"
+    rec["attempts"] = ["reproduction attempt"]
+    rec["rejection_reason"] = "scenario proven impossible"
     p.write_text(_y.safe_dump(rec))
     result = run_cli(tmp_path, "converge")
     assert "CONVERGED" in result.stdout

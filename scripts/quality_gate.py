@@ -137,6 +137,25 @@ def run_gate(harness_dir: Path, head: str | None = None) -> tuple[str, list]:
     evidence = load_evidence(harness_dir / "evidence")
     findings = load_findings(harness_dir / "findings")
 
+    # Terminal/near-terminal findings require real proof records, not only
+    # schema-shaped strings. Fail closed before open-finding policy runs.
+    def finding_proof(finding, ref, expected_success, label):
+        path = harness_dir / "evidence" / (ref if ref.endswith(".json") else f"{ref}.json")
+        try:
+            record = json.loads(path.read_text())
+        except (OSError, json.JSONDecodeError) as exc:
+            raise InvalidHarnessState(f"{finding['id']} {label} evidence {ref} unavailable: {exc}")
+        if record.get("commit") != head or (record.get("exit_code") == 0) != expected_success:
+            raise InvalidHarnessState(f"{finding['id']} {label} evidence {ref} is not fresh expected proof")
+    for finding in findings:
+        state = finding["status"]
+        if state in {"CONFIRMED", "FIXING", "FIXED", "VERIFIED", "CLOSED"}:
+            finding_proof(finding, finding["regression_test"]["red_evidence"], False, "red")
+        if state in {"FIXED", "VERIFIED", "CLOSED"}:
+            finding_proof(finding, finding["regression_test"]["green_evidence"], True, "green")
+        if state in {"VERIFIED", "CLOSED"}:
+            finding_proof(finding, finding["evidence"], True, "full regression")
+
     blockers = []
 
     # 1. Requirements: priority=must must be verified WITH fresh evidence.

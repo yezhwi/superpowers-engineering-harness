@@ -10,6 +10,7 @@ Deterministic core of the finding lifecycle:
 4. Cannot reproduce -> REJECTED; REJECTED/CLOSED findings never block.
 """
 
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -77,8 +78,23 @@ def write_finding(h: Path, **overrides):
         "status": "PROPOSED",
     }
     finding.update(overrides)
-    (h / "findings" / f"{finding['id'].lower()}.yaml").write_text(
-        yaml.safe_dump(finding))
+    status = finding["status"]
+    if status == "REJECTED":
+        finding.setdefault("attempts", ["reproduction attempt"])
+        finding.setdefault("rejection_reason", "scenario proven impossible")
+    if status in {"CONFIRMED", "FIXING", "FIXED", "VERIFIED", "CLOSED"}:
+        finding.setdefault("test", "tests/test_regress.py::test_bug")
+        finding.setdefault("confirmed_at", "2026-01-01T00:00:00+00:00")
+        rt = finding.setdefault("regression_test", {})
+        rt.setdefault("path", finding["test"]); rt.setdefault("red_evidence", "red.json")
+        (h / "evidence" / "red.json").write_text(json.dumps({"type":"custom","timestamp":"t","command":"false","exit_code":1,"commit":HEAD}))
+    if status in {"FIXED", "VERIFIED", "CLOSED"}:
+        finding["regression_test"].setdefault("green_evidence", "green.json")
+        (h / "evidence" / "green.json").write_text(json.dumps({"type":"custom","timestamp":"t","command":"true","exit_code":0,"commit":HEAD}))
+    if status in {"VERIFIED", "CLOSED"}:
+        finding.setdefault("evidence", "full.json"); finding.setdefault("verified_at", "2026-01-02T00:00:00+00:00")
+        (h / "evidence" / "full.json").write_text(json.dumps({"type":"custom","timestamp":"t","command":"true","exit_code":0,"commit":HEAD}))
+    (h / "findings" / f"{finding['id'].lower()}.yaml").write_text(yaml.safe_dump(finding))
 
 
 # 1. Lifecycle transitions ---------------------------------------------------
@@ -112,15 +128,12 @@ def test_proposed_major_finding_blocks(tmp_path):
     assert any("Major finding FND-001 is open" in b for b in blockers)
 
 
-def test_confirmed_without_regression_test_blocks(tmp_path):
-    # Reproducer failed -> CONFIRMED. LAW 4: must carry regression test.
+def test_confirmed_finding_blocks_until_fixed(tmp_path):
     h = make_harness(tmp_path)
     write_finding(h, status="CONFIRMED")
     status, blockers = run_gate(h)
     assert status == "BLOCKED"
-    assert any(
-        "Confirmed finding FND-001 has no regression test" in b
-        for b in blockers)
+    assert any("Major finding FND-001 is open" in b for b in blockers)
 
 
 def test_confirmed_with_regression_test_still_open_until_fixed(tmp_path):

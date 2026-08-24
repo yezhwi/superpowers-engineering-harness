@@ -170,7 +170,7 @@ def test_major_finding_blocked(tmp_path):
 
 def test_critical_finding_blocked(tmp_path):
     h = make_harness(tmp_path)
-    finding = finding_doc("FND-0002", "critical", "CONFIRMED")
+    finding = finding_doc("FND-0002", "critical", "PROPOSED")
     (h / "findings" / "FND-0002.yaml").write_text(yaml.safe_dump(finding))
     result = _gate(h)
     assert result.returncode == 1
@@ -179,7 +179,7 @@ def test_critical_finding_blocked(tmp_path):
 
 def test_closed_findings_do_not_block(tmp_path):
     h = make_harness(tmp_path)
-    finding = finding_doc("FND-0003", "major", "CLOSED")
+    finding = finding_doc("FND-0003", "major", "REJECTED", attempts=["x"], rejection_reason="impossible")
     (h / "findings" / "FND-0003.yaml").write_text(yaml.safe_dump(finding))
     assert _gate(h).returncode == 0
 
@@ -189,8 +189,8 @@ def test_confirmed_finding_without_regression_test_blocked(tmp_path):
     finding = finding_doc("FND-0004", "minor", "CONFIRMED")
     (h / "findings" / "FND-0004.yaml").write_text(yaml.safe_dump(finding))
     result = _gate(h)
-    assert result.returncode == 1
-    assert "no regression test" in result.stdout
+    assert result.returncode == 2
+    assert "finding.schema.json" in result.stderr
 
 
 def test_confirmed_finding_with_regression_test_ok(tmp_path):
@@ -200,7 +200,8 @@ def test_confirmed_finding_with_regression_test_ok(tmp_path):
         regression_test={"path": "tests/test_fix.py"},
     )
     (h / "findings" / "FND-0005.yaml").write_text(yaml.safe_dump(finding))
-    assert _gate(h).returncode == 0
+    # CONFIRMED without red_evidence is schema-invalid, never merely open.
+    assert _gate(h).returncode == 2
 
 
 # 4. unverified requirement -------------------------------------------------
@@ -447,3 +448,13 @@ def test_evidence_missing_commit_is_invalid_harness_state(tmp_path):
     result = _gate(h)
     assert result.returncode == 2
     assert "fails evidence.schema.json" in result.stderr
+
+
+def test_direct_verified_status_edit_without_proof_is_invalid(tmp_path):
+    """P0: status-only YAML edit cannot turn a critical finding healthy."""
+    h = make_harness(tmp_path)
+    finding = finding_doc("FND-0999", "critical", "VERIFIED")
+    (h / "findings" / "fnd-0999.yaml").write_text(yaml.safe_dump(finding))
+    result = _gate(h)
+    assert result.returncode == 2
+    assert "finding.schema.json" in result.stderr

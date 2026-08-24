@@ -50,6 +50,7 @@ def main(argv=None) -> int:
     f_sub.add_parser("list", help="list all findings")
     p_show = f_sub.add_parser("show", help="show one finding record")
     p_show.add_argument("id")
+    p_ft=f_sub.add_parser("transition"); p_ft.add_argument("id"); p_ft.add_argument("target"); p_ft.add_argument("--evidence"); p_ft.add_argument("--test"); p_ft.add_argument("--attempt"); p_ft.add_argument("--reason")
     sub.add_parser("converge", help="deterministic convergence decision")
 
     args = parser.parse_args(argv)
@@ -75,6 +76,8 @@ def main(argv=None) -> int:
             return controlplane.cmd_finding_list()
         if args.finding_command == "show":
             return controlplane.cmd_finding_show(args.id)
+        if args.finding_command == "transition":
+            return controlplane.cmd_finding_transition(args.id,args.target,args.evidence,args.test,args.attempt,args.reason)
         parser.print_usage(sys.stderr)
         return 2
     if args.subcommand == "converge":
