@@ -376,3 +376,18 @@ def test_should_requirement_without_evidence_not_blocked(tmp_path):
          "status": "verified", "evidence": []}]}
     (h / "requirements.yaml").write_text(yaml.safe_dump(reqs))
     assert _gate(h).returncode == 0
+
+
+def test_violated_invariant_blocks_even_if_allowance_configured(tmp_path):
+    # No tolerance knob exists: violated_allowed was removed as a fake
+    # config. Any violated invariant blocks, whatever the yaml says.
+    h = make_harness(tmp_path)
+    gate_cfg = yaml.safe_load((h / "gate.yaml").read_text())
+    gate_cfg["gate"]["invariants"]["violated_allowed"] = 5
+    (h / "gate.yaml").write_text(yaml.safe_dump(gate_cfg))
+    inv = yaml.safe_load((h / "invariants.yaml").read_text())
+    inv["invariants"][0]["status"] = "violated"
+    (h / "invariants.yaml").write_text(yaml.safe_dump(inv))
+    result = _gate(h)
+    assert result.returncode == 1
+    assert "violated" in result.stdout

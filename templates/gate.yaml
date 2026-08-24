@@ -5,7 +5,7 @@ gate:
     uncovered_allowed: 0
 
   invariants:
-    violated_allowed: 0
+    # NOTE: no violated_allowed knob - ANY violated invariant blocks, by law.
     minor_verified: false   # true => even minor invariants must be verified
 
   verification:
