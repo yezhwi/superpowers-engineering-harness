@@ -54,12 +54,25 @@
     },
     "regression_test": {
       "type": "object",
-      "description": "Required once CONFIRMED: {path: <test file>, ...}",
+      "description": "Required once CONFIRMED (the reproduction test becomes the regression test).",
+      "required": [
+        "path"
+      ],
       "properties": {
         "path": {
-          "type": "string"
+          "type": "string",
+          "description": "test node id, e.g. tests/test_x.py::test_y"
+        },
+        "red_evidence": {
+          "type": "string",
+          "description": "reference proving the test ran RED at CONFIRMED"
+        },
+        "green_evidence": {
+          "type": "string",
+          "description": "reference proving the same test ran GREEN at FIXED"
         }
-      }
+      },
+      "additionalProperties": true
     }
   },
   "additionalProperties": true
