@@ -38,7 +38,7 @@ run gate
 ```text
 1. Detect whether .harness/ exists.
 2. Load .harness/current-task.yaml.
-3. Run python scripts/harness_status.py.
+3. Run `harness status` (or `python scripts/harness_status.py`).
 4. Resume from persisted state via the dispatch table below.
 ```
 
@@ -65,7 +65,7 @@ Read `state` from `.harness/current-task.yaml`, then:
 | `VERIFYING` | Run deterministic verification only: the Verification Plan's commands/tests. All green -> REVIEWING. Any red -> back to IMPLEMENTING (fix via TDD), then re-verify. |
 | `REVIEWING` | Invoke Superpowers review (**requesting-code-review** / spec-vs-standards review). If review clean -> GATING. If findings -> invoke **adversarial-review** skill to formalize them as PROPOSED findings, then dispatch **reproduce-finding**. |
 | `REPRODUCING` | Invoke **reproduce-finding** skill. CONFIRMED finding -> FIXING (fix with TDD) -> VERIFYING. REJECTED finding -> close it, return to REVIEWING. |
-| `GATING` | Run `python scripts/quality_gate.py`. Exit 0 -> CONVERGED -> DONE (transition, then report). Exit 1 -> BLOCKED; address blockers listed on stdout, then resume per blocker type. Exit 2 -> fix invalid harness state first (missing files/bad YAML). |
+| `GATING` | Run `harness gate`. Exit 0 -> CONVERGED -> DONE (transition, then report). Exit 1 -> BLOCKED; address blockers listed on stdout, then resume per blocker type. Exit 2 -> fix invalid harness state first (missing files/bad YAML). |
 
 Loop REPRODUCING/FIXING/VERIFYING until REVIEWING is clean and gate passes.
 There is no shortcut from any state to DONE.
@@ -75,9 +75,18 @@ There is no shortcut from any state to DONE.
 Never hand-judge what a script can judge:
 
 ```bash
+harness status                              # current state overview
+harness transition VERIFYING                # validate + persist transition
+harness evidence --type unit_test --command "pytest"   # HEAD-bound evidence
+harness gate                                # gate; exit 0=PASS 1=BLOCKED 2=INVALID
+```
+
+Script equivalents (same logic):
+
+```bash
 python scripts/harness_status.py            # current state overview
-python scripts/validate_state.py            # state file + transition legality
-python scripts/quality_gate.py              # gate; exit 0=PASS 1=BLOCKED 2=INVALID
+python scripts/validate_state.py CUR TGT    # transition legality only
+python scripts/quality_gate.py              # deterministic gate
 ```
 
 Transition example:

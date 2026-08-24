@@ -1,42 +1,35 @@
 requirements:
 - id: REQ-001
-  statement: harness init discovers git repo root from any subdirectory
+  statement: harness status renders unified persisted-state view
   source: spec
   priority: must
   status: verified
   evidence:
   - unit-test.json
 - id: REQ-002
-  statement: init creates .harness with current-task/requirements/invariants/gate.yaml
-    plus findings/ and evidence/
+  statement: harness transition validates legality then persists new state atomically
   source: spec
   priority: must
   status: verified
   evidence:
   - unit-test.json
 - id: REQ-003
-  statement: init is idempotent and never overwrites existing files
+  statement: harness evidence runs a command, binds HEAD, saves evidence json
   source: spec
   priority: must
   status: verified
   evidence:
   - unit-test.json
 - id: REQ-004
-  statement: outside a git repo init fails exit 1 without running git init
+  statement: harness gate runs quality gate and maps exit codes 0/1/2 identically
+    to scripts/quality_gate.py
   source: spec
   priority: must
   status: verified
   evidence:
   - unit-test.json
 - id: REQ-005
-  statement: missing template causes explicit failure, no empty files
-  source: spec
-  priority: must
-  status: verified
-  evidence:
-  - unit-test.json
-- id: REQ-006
-  statement: pip install -e . provides working harness command
+  statement: invalid usage of any subcommand exits 2
   source: spec
   priority: must
   status: verified

@@ -1,18 +1,12 @@
 invariants:
   - id: INV-001
-    statement: init never deletes or overwrites any existing file under .harness
+    statement: subcommands never bypass state machine validation when changing state
     category: safety
     severity: critical
     status: verified
     verification: []
   - id: INV-002
-    statement: init performs no network calls, no LLM calls, no git state changes
-    category: determinism
-    severity: major
-    status: verified
-    verification: []
-  - id: INV-003
-    statement: exit codes are exactly 0 success / 1 operation failed / 2 invalid usage
+    statement: gate PASS is the only path that transition may use toward CONVERGED from GATING
     category: cli_contract
     severity: major
     status: verified

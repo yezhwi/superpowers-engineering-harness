@@ -1,14 +1,11 @@
 task:
-  id: TASK-001
-  title: harness init CLI
-  description: Implement idempotent `harness init` per docs/HARNESS_INIT_IMPLEMENTATION_GUIDE.md
-    M1-M4
+  id: TASK-002
+  title: CLI control plane subcommands
+  description: Add harness status/transition/evidence/gate wrapping existing deterministic
+    scripts (guide v0.1 section 34)
 state: DONE
-iteration: 1
+iteration: 0
 max_iterations: 5
-spec:
-  design: null
-  plan: null
 requirements:
   total: 0
   verified: 0
@@ -31,7 +28,7 @@ gate:
   status: PASS
   blocked_by: []
 git:
-  head: da3ef1d8f35858a8ee6fac75e58ff3874ba4ad48
+  head: 67d2fcc4a5ef3e8411c7f41ab9e118958e3ada21
 timestamps:
   created_at: null
   updated_at: null
