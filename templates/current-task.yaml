@@ -1,0 +1,46 @@
+task:
+  id: TASK-001
+  title: ""
+  description: ""
+
+state: CREATED
+
+iteration: 0
+max_iterations: 5
+
+spec:
+  design: null
+  plan: null
+
+requirements:
+  total: 0
+  verified: 0
+  uncovered: []
+
+invariants:
+  total: 0
+  verified: 0
+  violated: []
+
+verification:
+  build: unknown
+  unit_test: unknown
+  integration_test: unknown
+
+findings:
+  critical: 0
+  major: 0
+  minor: 0
+  confirmed: 0
+  proposed: 0
+
+gate:
+  status: unknown
+  blocked_by: []
+
+git:
+  head: null
+
+timestamps:
+  created_at: null
+  updated_at: null

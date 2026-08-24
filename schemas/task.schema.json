@@ -1,0 +1,118 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "task.schema.json",
+  "title": "Engineering Harness Task State",
+  "type": "object",
+  "required": ["task", "state"],
+  "properties": {
+    "task": {
+      "type": "object",
+      "required": ["id", "title"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^TASK-[0-9]+$"},
+        "title": {"type": "string"},
+        "description": {"type": ["string", "null"]}
+      }
+    },
+    "state": {
+      "description": "Fixed enum; only CONVERGED -> DONE is legal",
+      "enum": [
+        "CREATED",
+        "SPECIFYING",
+        "PLANNED",
+        "IMPLEMENTING",
+        "VERIFYING",
+        "REVIEWING",
+        "REPRODUCING",
+        "FIXING",
+        "GATING",
+        "BLOCKED",
+        "CONVERGED",
+        "DONE",
+        "ESCALATED"
+      ]
+    },
+    "previous_state": {
+      "description": "Optional: last persisted state, used to re-check legality of the recorded transition",
+      "enum": [
+        "CREATED",
+        "SPECIFYING",
+        "PLANNED",
+        "IMPLEMENTING",
+        "VERIFYING",
+        "REVIEWING",
+        "REPRODUCING",
+        "FIXING",
+        "GATING",
+        "BLOCKED",
+        "CONVERGED",
+        "DONE",
+        "ESCALATED",
+        null
+      ]
+    },
+    "iteration": {"type": "integer", "minimum": 0},
+    "max_iterations": {"type": "integer", "minimum": 1},
+    "spec": {
+      "type": "object",
+      "properties": {
+        "design": {"type": ["string", "null"]},
+        "plan": {"type": ["string", "null"]}
+      }
+    },
+    "requirements": {
+      "type": "object",
+      "properties": {
+        "total": {"type": "integer", "minimum": 0},
+        "verified": {"type": "integer", "minimum": 0},
+        "uncovered": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "invariants": {
+      "type": "object",
+      "properties": {
+        "total": {"type": "integer", "minimum": 0},
+        "verified": {"type": "integer", "minimum": 0},
+        "violated": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "verification": {
+      "type": "object",
+      "properties": {
+        "build": {"type": "string"},
+        "unit_test": {"type": "string"},
+        "integration_test": {"type": "string"}
+      }
+    },
+    "findings": {
+      "type": "object",
+      "properties": {
+        "critical": {"type": "integer", "minimum": 0},
+        "major": {"type": "integer", "minimum": 0},
+        "minor": {"type": "integer", "minimum": 0},
+        "confirmed": {"type": "integer", "minimum": 0},
+        "proposed": {"type": "integer", "minimum": 0}
+      }
+    },
+    "gate": {
+      "type": "object",
+      "properties": {
+        "status": {"type": "string"},
+        "blocked_by": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "git": {
+      "type": "object",
+      "properties": {
+        "head": {"type": ["string", "null"]}
+      }
+    },
+    "timestamps": {
+      "type": "object",
+      "properties": {
+        "created_at": {"type": ["string", "null"]},
+        "updated_at": {"type": ["string", "null"]}
+      }
+    }
+  }
+}
