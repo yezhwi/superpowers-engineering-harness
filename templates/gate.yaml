@@ -6,6 +6,7 @@ gate:
 
   invariants:
     violated_allowed: 0
+    minor_verified: false   # true => even minor invariants must be verified
 
   verification:
     build: required

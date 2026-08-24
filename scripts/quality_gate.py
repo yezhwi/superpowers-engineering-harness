@@ -160,16 +160,25 @@ def run_gate(harness_dir: Path, head: str | None = None) -> tuple[str, list]:
                         f"{req.get('id')} evidence {fname} is stale "
                         f"(commit {ev.get('commit')} != HEAD)")
 
-    # 2. Invariants: no violated ones allowed.
+    # 2. Invariants: violated blocks; unproven blocks for critical/major.
+    # pending == not proven == BLOCKED. Only proven-safe (verified)
+    # invariants may pass the gate. Minor invariants are configurable via
+    # gate.invariants.minor_verified (default false).
     inv_cfg = gate_cfg.get("invariants", {})
-    violated_allowed = int(inv_cfg.get("violated_allowed", 0))
-    violated = [inv for inv in invariants_doc.get("invariants", [])
-                if inv.get("status") == "violated"]
-    for inv in violated:
-        blockers.append(f"{inv.get('id')} violated")
-    # violated beyond allowed is inherently blocked since allowed=0 by
-    # default; individual entries already recorded above.
-    _ = violated_allowed
+    minor_verified = bool(inv_cfg.get("minor_verified", False))
+    for inv in invariants_doc.get("invariants", []):
+        status = inv.get("status")
+        severity = inv.get("severity")
+        iid = inv.get("id")
+        if status == "violated":
+            blockers.append(f"{iid} violated")
+        elif status != "verified":
+            if severity in ("critical", "major"):
+                blockers.append(
+                    f"{iid} not verified "
+                    f"(pending {severity} invariant is not proven)")
+            elif severity == "minor" and minor_verified:
+                blockers.append(f"{iid} not verified")
 
     # 3. Required verification evidence exists, exit_code==0, fresh HEAD.
     ver_cfg = gate_cfg.get("verification", {})

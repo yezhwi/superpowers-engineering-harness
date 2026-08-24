@@ -228,12 +228,45 @@ def test_violated_invariant_blocked(tmp_path):
     assert "INV-001 violated" in result.stdout
 
 
-def test_pending_invariant_does_not_block(tmp_path):
+def test_pending_critical_invariant_blocks(tmp_path):
+    # pending = not proven = BLOCKED for critical/major (review fix #6)
     h = make_harness(tmp_path)
     inv = yaml.safe_load((h / "invariants.yaml").read_text())
     inv["invariants"][0]["status"] = "pending"
     (h / "invariants.yaml").write_text(yaml.safe_dump(inv))
+    result = _gate(h)
+    assert result.returncode == 1
+    assert "not verified" in result.stdout
+
+
+def test_pending_major_invariant_blocks(tmp_path):
+    h = make_harness(tmp_path)
+    inv = yaml.safe_load((h / "invariants.yaml").read_text())
+    inv["invariants"][0]["severity"] = "major"
+    inv["invariants"][0]["status"] = "pending"
+    (h / "invariants.yaml").write_text(yaml.safe_dump(inv))
+    assert _gate(h).returncode == 1
+
+
+def test_pending_minor_invariant_passes_by_default(tmp_path):
+    h = make_harness(tmp_path)
+    inv = yaml.safe_load((h / "invariants.yaml").read_text())
+    inv["invariants"][0]["severity"] = "minor"
+    inv["invariants"][0]["status"] = "pending"
+    (h / "invariants.yaml").write_text(yaml.safe_dump(inv))
     assert _gate(h).returncode == 0
+
+
+def test_pending_minor_invariant_blocks_when_policy_requires(tmp_path):
+    h = make_harness(tmp_path)
+    gate_cfg = yaml.safe_load((h / "gate.yaml").read_text())
+    gate_cfg["gate"]["invariants"]["minor_verified"] = True
+    (h / "gate.yaml").write_text(yaml.safe_dump(gate_cfg))
+    inv = yaml.safe_load((h / "invariants.yaml").read_text())
+    inv["invariants"][0]["severity"] = "minor"
+    inv["invariants"][0]["status"] = "pending"
+    (h / "invariants.yaml").write_text(yaml.safe_dump(inv))
+    assert _gate(h).returncode == 1
 
 
 # INVALID_HARNESS_STATE (exit 2) ---------------------------------------------

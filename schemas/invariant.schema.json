@@ -3,16 +3,30 @@
   "$id": "invariant.schema.json",
   "title": "Engineering Harness Invariants",
   "type": "object",
-  "required": ["invariants"],
+  "required": [
+    "invariants"
+  ],
   "properties": {
     "invariants": {
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["id", "statement", "category", "severity", "status"],
+        "required": [
+          "id",
+          "statement",
+          "category",
+          "severity",
+          "status"
+        ],
         "properties": {
-          "id": {"type": "string", "pattern": "^INV-[0-9]+$"},
-          "statement": {"type": "string", "minLength": 1},
+          "id": {
+            "type": "string",
+            "pattern": "^INV-[0-9]+$"
+          },
+          "statement": {
+            "type": "string",
+            "minLength": 1
+          },
           "category": {
             "enum": [
               "correctness",
@@ -27,11 +41,26 @@
               "architecture"
             ]
           },
-          "severity": {"enum": ["critical", "major", "minor"]},
-          "status": {"enum": ["pending", "verified", "violated"]},
+          "severity": {
+            "enum": [
+              "critical",
+              "major",
+              "minor"
+            ]
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "verified",
+              "violated"
+            ],
+            "description": "pending = not proven (blocks for critical/major); verified = proven safe; violated = broken (always blocks)."
+          },
           "verification": {
             "type": "array",
-            "items": {"type": "string"}
+            "items": {
+              "type": "string"
+            }
           }
         },
         "additionalProperties": false

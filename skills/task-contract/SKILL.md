@@ -107,8 +107,11 @@ invariants:
 Recommended categories: correctness, transaction, concurrency, idempotency,
 security, authorization, state_machine, recovery, data_consistency, architecture.
 
-Severity guide: `critical` = gate-blocking defect if violated; `major` = also
-gate-blocking; `minor` = tracked but non-blocking.
+Severity guide: `critical`/`major` = must reach `status: verified` (with
+verification evidence) before the gate can PASS — pending means not proven
+and BLOCKS. `minor` = non-blocking by default; set
+`gate.invariants.minor_verified: true` to require proof for minors too.
+`violated` always blocks.
 
 ### 5. Record Risks
 
