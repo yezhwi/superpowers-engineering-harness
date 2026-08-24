@@ -1,0 +1,218 @@
+#!/usr/bin/env python3
+"""quality_gate.py -- deterministic quality gate (Milestone 2 core).
+
+Reads .harness/{current-task.yaml, requirements.yaml, invariants.yaml,
+gate.yaml}, findings/*.yaml, evidence/*.json and git HEAD.
+All checks are deterministic Python logic -- no LLM judgement.
+
+Exit codes:
+  0 = PASS
+  1 = BLOCKED (blockers listed on stdout)
+  2 = INVALID_HARNESS_STATE
+"""
+
+import argparse
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+import yaml
+
+from state_machine import STATES
+
+OPEN_FINDING_STATUSES = {"PROPOSED", "REPRODUCING", "CONFIRMED", "FIXING"}
+
+
+class InvalidHarnessState(Exception):
+    pass
+
+
+def _load_yaml(path: Path):
+    if not path.exists():
+        raise InvalidHarnessState(f"missing {path}")
+    try:
+        data = yaml.safe_load(path.read_text())
+    except yaml.YAMLError as exc:
+        raise InvalidHarnessState(f"bad YAML in {path}: {exc}")
+    if not isinstance(data, dict):
+        raise InvalidHarnessState(f"{path} is not a mapping")
+    return data
+
+
+def git_head() -> str:
+    result = subprocess.run(
+        ["git", "rev-parse", "HEAD"], capture_output=True, text=True
+    )
+    if result.returncode != 0:
+        raise InvalidHarnessState(
+            f"cannot resolve git HEAD: {result.stderr.strip()}"
+        )
+    return result.stdout.strip()
+
+
+def load_evidence(evidence_dir: Path) -> dict:
+    """Return {type: evidence_dict}; invalid files raise INVALID."""
+    evidence = {}
+    if not evidence_dir.is_dir():
+        return evidence
+    for path in sorted(evidence_dir.glob("*.json")):
+        try:
+            data = json.loads(path.read_text())
+        except json.JSONDecodeError as exc:
+            raise InvalidHarnessState(f"bad JSON in {path}: {exc}")
+        etype = data.get("type")
+        if not etype:
+            raise InvalidHarnessState(f"{path} missing 'type'")
+        evidence[etype] = data
+    return evidence
+
+
+def load_findings(findings_dir: Path) -> list:
+    findings = []
+    if not findings_dir.is_dir():
+        return findings
+    for path in sorted(findings_dir.glob("*.yaml")):
+        data = yaml.safe_load(path.read_text())
+        if not isinstance(data, dict) or "id" not in data or \
+                "severity" not in data or "status" not in data:
+            raise InvalidHarnessState(
+                f"{path} must define id, severity, status"
+            )
+        findings.append(data)
+    return findings
+
+
+def run_gate(harness_dir: Path, head: str | None = None) -> tuple[str, list]:
+    """Returns (status, blockers). status in {'PASS','BLOCKED'}.
+    Raises InvalidHarnessState."""
+    task = _load_yaml(harness_dir / "current-task.yaml")
+    requirements_doc = _load_yaml(harness_dir / "requirements.yaml")
+    invariants_doc = _load_yaml(harness_dir / "invariants.yaml")
+    gate_cfg = _load_yaml(harness_dir / "gate.yaml").get("gate", {})
+
+    state = task.get("state")
+    if state not in STATES:
+        raise InvalidHarnessState(f"unknown task state {state!r}")
+
+    # Gate may only be executed from GATING (or REVIEWING pre-transition).
+    if state not in ("GATING", "REVIEWING"):
+        raise InvalidHarnessState(
+            f"state {state} does not allow gate execution "
+            "(must be REVIEWING/GATING)"
+        )
+
+    head = head if head is not None else git_head()
+    evidence = load_evidence(harness_dir / "evidence")
+    findings = load_findings(harness_dir / "findings")
+
+    blockers = []
+
+    # 1. Requirements: priority=must must all be verified.
+    req_cfg = gate_cfg.get("requirements", {})
+    if req_cfg.get("must_verified", True):
+        for req in requirements_doc.get("requirements", []):
+            if (req.get("priority") == "must"
+                    and req.get("status") != "verified"):
+                blockers.append(f"{req.get('id')} not verified")
+
+    # 2. Invariants: no violated ones allowed.
+    inv_cfg = gate_cfg.get("invariants", {})
+    violated_allowed = int(inv_cfg.get("violated_allowed", 0))
+    violated = [inv for inv in invariants_doc.get("invariants", [])
+                if inv.get("status") == "violated"]
+    for inv in violated:
+        blockers.append(f"{inv.get('id')} violated")
+    # violated beyond allowed is inherently blocked since allowed=0 by
+    # default; individual entries already recorded above.
+    _ = violated_allowed
+
+    # 3. Required verification evidence exists, exit_code==0, fresh HEAD.
+    ver_cfg = gate_cfg.get("verification", {})
+    must_match_head = bool(
+        gate_cfg.get("evidence", {}).get("must_match_head", True)
+    )
+    for vtype, policy in ver_cfg.items():
+        if policy != "required":
+            continue
+        ev = evidence.get(vtype)
+        label = vtype.replace("_", "-")
+        if ev is None:
+            blockers.append(f"missing {label} evidence")
+            continue
+        if ev.get("exit_code") != 0:
+            blockers.append(f"{label} evidence command failed "
+                            f"(exit_code={ev.get('exit_code')})")
+        if must_match_head and ev.get("commit") != head:
+            blockers.append(f"{label} evidence is stale "
+                            f"(commit {ev.get('commit')} != HEAD)")
+
+    # 4. Findings: open critical/major counts, regression debt.
+    find_cfg = gate_cfg.get("findings", {})
+    critical_allowed = int(find_cfg.get("critical_allowed", 0))
+    major_allowed = int(find_cfg.get("major_allowed", 0))
+
+    def is_open(f):
+        return f.get("status") in OPEN_FINDING_STATUSES
+
+    open_critical = [f for f in findings
+                     if is_open(f) and f.get("severity") == "critical"]
+    open_major = [f for f in findings
+                  if is_open(f) and f.get("severity") == "major"]
+    for f in open_critical[critical_allowed:]:
+        blockers.append(f"Critical finding {f['id']} is open")
+    for f in open_major[major_allowed:]:
+        blockers.append(f"Major finding {f['id']} is open")
+
+    # Confirmed findings must carry a regression test (LAW 4).
+    confirmed = [f for f in findings if f.get("status") == "CONFIRMED"]
+    regression_cfg = gate_cfg.get("regression", {})
+    without_test_allowed = int(
+        regression_cfg.get("confirmed_finding_without_test", 0))
+    no_test = [f for f in confirmed
+               if not (f.get("regression_test") or {}).get("path")]
+    for f in no_test[without_test_allowed:]:
+        blockers.append(
+            f"Confirmed finding {f['id']} has no regression test")
+
+    status = "PASS" if not blockers else "BLOCKED"
+    return status, blockers
+
+
+def write_back(harness_dir: Path, status: str, blockers: list):
+    path = harness_dir / "current-task.yaml"
+    task = yaml.safe_load(path.read_text())
+    task.setdefault("gate", {})
+    task["gate"]["status"] = status
+    task["gate"]["blocked_by"] = blockers
+    task["git"] = {"head": git_head()}
+    path.write_text(yaml.safe_dump(task, sort_keys=False))
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description="Deterministic quality gate")
+    parser.add_argument("--harness-dir", default=".harness")
+    args = parser.parse_args(argv)
+
+    harness_dir = Path(args.harness_dir)
+    try:
+        status, blockers = run_gate(harness_dir)
+        write_back(harness_dir, status, blockers)
+    except InvalidHarnessState as exc:
+        print(f"INVALID_HARNESS_STATE: {exc}", file=sys.stderr)
+        return 2
+
+    if status == "PASS":
+        print("QUALITY GATE: PASS")
+        return 0
+
+    print("QUALITY GATE: BLOCKED")
+    print()
+    print("Blocking:")
+    for b in blockers:
+        print(f"- {b}")
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

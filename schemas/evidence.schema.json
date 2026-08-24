@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Harness Evidence",
+  "description": "Deterministic evidence bound to a Git commit. LAW 2: no quality gate pass without fresh evidence.",
+  "type": "object",
+  "properties": {
+    "type": {
+      "enum": [
+        "build",
+        "lint",
+        "typecheck",
+        "unit_test",
+        "integration_test",
+        "contract_test",
+        "security",
+        "review",
+        "custom"
+      ]
+    },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "command": { "type": "string" },
+    "exit_code": { "type": "integer" },
+    "commit": {
+      "type": "string",
+      "description": "Git HEAD (full sha) the command ran against"
+    },
+    "stdout_tail": { "type": ["string", "null"] },
+    "stderr_tail": { "type": ["string", "null"] }
+  },
+  "required": [
+    "type",
+    "timestamp",
+    "command",
+    "exit_code",
+    "commit"
+  ]
+}
