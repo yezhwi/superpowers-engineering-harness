@@ -462,3 +462,13 @@ def test_verified_critical_invariant_without_evidence_blocked(tmp_path):
     result = _gate(h)
     assert result.returncode == 1
     assert "verified without verification evidence" in result.stdout
+
+
+def test_gate_from_reviewing_is_invalid_harness_state(tmp_path):
+    h = make_harness(tmp_path)
+    task = yaml.safe_load((h / "current-task.yaml").read_text())
+    task["state"] = "REVIEWING"
+    (h / "current-task.yaml").write_text(yaml.safe_dump(task))
+    result = _gate(h)
+    assert result.returncode == 2
+    assert "must be GATING" in result.stderr

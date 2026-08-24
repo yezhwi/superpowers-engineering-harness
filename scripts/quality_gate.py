@@ -126,11 +126,10 @@ def run_gate(harness_dir: Path, head: str | None = None) -> tuple[str, list]:
     if state not in STATES:
         raise InvalidHarnessState(f"unknown task state {state!r}")
 
-    # Gate may only be executed from GATING (or REVIEWING pre-transition).
-    if state not in ("GATING", "REVIEWING"):
+    # Single legal path: REVIEWING -> GATING -> quality gate.
+    if state != "GATING":
         raise InvalidHarnessState(
-            f"state {state} does not allow gate execution "
-            "(must be REVIEWING/GATING)"
+            f"state {state} does not allow gate execution (must be GATING)"
         )
 
     head = head if head is not None else git_head()
