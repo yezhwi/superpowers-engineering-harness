@@ -169,8 +169,32 @@ def cmd_converge() -> int:
         print("DECISION: CONVERGED (gate PASS)")
         return 0
 
+    # Deterministic escalation beyond max_iterations: a finding that was
+    # already VERIFIED (has verified_at) but is open again means the bug
+    # regressed - fixing it again is unlikely to converge.
+    def _reopened_regression() -> str | None:
+        for f in _findings(harness_dir):
+            if f.get("verified_at") and f.get("status") in (
+                    "PROPOSED", "REPRODUCING", "CONFIRMED", "FIXING",
+                    "FIXED"):
+                return f.get("id")
+        return None
+
     iteration = int(task.get("iteration", 0))
     max_iterations = int(task.get("max_iterations", 5))
+    reopened = _reopened_regression()
+
+    if reopened:
+        state_machine.require_legal("GATING", "BLOCKED")
+        state_machine.require_legal("BLOCKED", "ESCALATED")
+        task["state"] = "ESCALATED"
+        task["iteration"] = iteration + 1
+        task["gate"] = {"status": "BLOCKED", "blocked_by": blockers}
+        save_task(harness_dir, task)
+        print("DECISION: ESCALATED")
+        print(f"REASON: REPEATED_REGRESSION ({reopened} was VERIFIED, "
+              "now open again)")
+        return 0
 
     if iteration >= max_iterations:
         state_machine.require_legal("GATING", "BLOCKED")

@@ -39,12 +39,12 @@ Blocker dispatch:
 Any one holds → transition to ESCALATED:
 
 ```text
-iteration >= max_iterations
-same confirmed finding repeatedly reappears
-same invariant repeatedly violated
-test suite unstable
-architecture defect suspected
-spec ambiguity blocks verification
+iteration >= max_iterations                          -> detected by harness converge
+same finding VERIFIED then open again (regression)   -> detected by harness converge
+same invariant repeatedly violated                   -> human/skill declares
+test suite unstable                                  -> human/skill declares
+architecture defect suspected                        -> human/skill declares
+spec ambiguity blocks verification                   -> human/skill declares
 ```
 
 Output exactly one reason code:
@@ -53,6 +53,10 @@ Output exactly one reason code:
 SPEC_AMBIGUITY | ARCHITECTURE_DEFECT | REPEATED_REGRESSION |
 UNSTABLE_TEST  | REVIEW_DISAGREEMENT  | MAX_ITERATIONS
 ```
+
+Code-detected codes (MAX_ITERATIONS, REPEATED_REGRESSION) are emitted by
+`harness converge`. For the others YOU must declare them explicitly to the
+user with evidence - never silently retry past a judgment-call blocker.
 
 ## Hard Boundaries
 

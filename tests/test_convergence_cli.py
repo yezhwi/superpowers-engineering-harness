@@ -134,3 +134,34 @@ def test_converge_blocked_under_budget_continues(tmp_path):
 def test_converge_from_wrong_state_exit_1(tmp_path):
     make_repo(tmp_path, state="IMPLEMENTING")
     assert run_cli(tmp_path, "converge").returncode == 1
+
+
+# -- deterministic REPEATED_REGRESSION ----------------------------------------
+
+def test_converge_reopened_verified_finding_escalates(tmp_path):
+    h = make_repo(tmp_path, state="GATING", iteration=1, max_iterations=5)
+    add_finding(h, "FND-0009")
+    import yaml as _y
+    p = h / "findings" / "fnd-0009.yaml"
+    rec = _y.safe_load(p.read_text())
+    rec["status"] = "REPRODUCING"      # open again...
+    rec["verified_at"] = "2026-01-01T00:00:00+00:00"   # ...after being VERIFIED
+    p.write_text(_y.safe_dump(rec))
+    result = run_cli(tmp_path, "converge")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "REPEATED_REGRESSION" in result.stdout
+    task = _y.safe_load((h / "current-task.yaml").read_text())
+    assert task["state"] == "ESCALATED"
+
+
+def test_converge_closed_verified_finding_does_not_escalate(tmp_path):
+    h = make_repo(tmp_path, state="GATING", iteration=1, max_iterations=5)
+    add_finding(h, "FND-0010")
+    import yaml as _y
+    p = h / "findings" / "fnd-0010.yaml"
+    rec = _y.safe_load(p.read_text())
+    rec["status"] = "CLOSED"
+    rec["verified_at"] = "2026-01-01T00:00:00+00:00"
+    p.write_text(_y.safe_dump(rec))
+    result = run_cli(tmp_path, "converge")
+    assert "CONVERGED" in result.stdout
