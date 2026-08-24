@@ -151,6 +151,91 @@ harness transition VERIFYING        # push phase manually
 harness gate                        # run the gate yourself
 ```
 
+### 4. Trigger phrases（说什么会触发什么）
+
+Skills match by description — phrase your request around the intent, not
+the tool:
+
+| 你说 | Agent 做什么 |
+|---|---|
+| "用 Engineering Harness 实现这个需求：…" | 完整循环：合同 → TDD → gate → DONE |
+| "修一下这个 bug：…" / "复现这个问题" | finding → 复现 → 修复 → 回归 |
+| "这个任务现在到哪一步了？继续推进" | 读 `.harness/` 状态，从断点续跑 |
+| "审查这次改动有没有漏洞" | adversarial-review，产出 PROPOSED findings |
+| "这个 finding 是真的吗？先别修" | 只做 reproduce，CONFIRMED 或 REJECTED |
+| "跑一下门禁" / "能收工了吗？" | `harness gate` + converge 决策 |
+
+### 5. Worked example: fixing a real bug end-to-end
+
+Setup (shell):
+
+```bash
+cd ~/code/orders-service          # any git repo
+pip install -e ~/code/superpowers-engineering-harness   # if not installed yet
+harness init
+```
+
+Then in a pi session, you type:
+
+> 用 Engineering Harness 修复这个 bug：订单取消后重试取消请求，退款被执行两次。
+
+What the agent does (you watch; no need to drive each step):
+
+```text
+[harness] .harness/current-task.yaml 不存在 -> 从 CREATED 开始
+[harness] state: CREATED -> SPECIFYING (task-contract)
+          REQ-001: 重复取消请求只执行一次退款 (must)
+          INV-001: refund 对同一 order_id 幂等 (critical)
+[harness] state: PLANNED -> IMPLEMENTING (TDD)
+          先写失败测试 test_duplicate_cancel_single_refund ... RED
+          实现 per-order_id 退款锁 ... GREEN
+[harness] state: VERIFYING
+          harness evidence --type unit_test --command pytest   # 绑定 HEAD
+[harness] state: REVIEWING (adversarial-review)
+          FND-001 PROPOSED: 并发取消仍可能双花 (target INV-001)
+[harness] state: REPRODUCING (reproduce-finding)
+          并发测试写好并运行 RED -> FND-001 CONFIRMED
+          FIXING: 加互斥 -> FIXED (GREEN) -> VERIFIED (全量回归) -> CLOSED
+[harness] state: GATING
+$ harness gate
+QUALITY GATE: PASS
+[harness] CONVERGED -> DONE
+```
+
+You verify from another terminal whenever you like:
+
+```bash
+harness status                    # State DONE, Gate PASS
+harness finding list              # FND-001 CLOSED
+ls .harness/evidence/             # HEAD-bound evidence json files
+```
+
+### 6. What you should (and should not) do as the human
+
+DO:
+- Interrupt and ask questions anytime — state is on disk, nothing is lost
+- Treat `ESCALATED` as your queue: reason codes
+  (`SPEC_AMBIGUITY`, `ARCHITECTURE_DEFECT`, …) mean human decision required
+- Re-run a rejected plan by editing requirements and starting a new iteration
+
+DON'T:
+- Hand-edit `status:` fields in `.harness/current-task.yaml` to skip phases —
+  transitions must go through `harness transition` (validated) or the agent
+- Mark requirements/invariants `verified` yourself — the gate now demands
+  evidence files bound to git HEAD; empty-evidence claims are blockers
+- Argue with exit code 1. Fix what stdout says is blocking.
+
+### 7. Session recovery（中断恢复）
+
+All state lives in `.harness/`. If the pi session dies mid-task:
+
+```text
+新会话第一句: "继续上一个 harness 任务"
+# or explicitly:
+harness status     # e.g. State REVIEWING, Iteration 2/5
+> 继续             # agent reads status and resumes from REVIEWING
+```
+
 ## License
 
 Apache-2.0 © 2026 Yezhiwei — see [LICENSE](LICENSE).
