@@ -1,37 +1,66 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "finding.schema.json",
-  "title": "Engineering Harness Adversarial Findings",
-  "description": "Findings produced by adversarial-review. LAW: every finding is an attack attempt (status=PROPOSED); confirmation authority belongs to the quality gate / human, never the reviewer.",
+  "title": "Engineering Harness Adversarial Finding",
+  "description": "One PROPOSED finding per file at .harness/findings/FND-nnn.yaml. LAW: every finding is an attack attempt; confirmation authority belongs to reproduction / quality gate / human, never the reviewer.",
   "type": "object",
-  "required": ["findings"],
+  "required": [
+    "id",
+    "kind",
+    "target",
+    "scenario",
+    "severity",
+    "status"
+  ],
   "properties": {
-    "findings": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "required": ["id", "kind", "target", "scenario", "severity", "status"],
-        "properties": {
-          "id": {"type": "string", "pattern": "^FND-[0-9]+$"},
-          "kind": {
-            "enum": [
-              "failure_scenario",
-              "requirement_violation",
-              "invariant_violation"
-            ]
-          },
-          "target": {
-            "type": "string",
-            "pattern": "^(REQ|INV)-[0-9]+$",
-            "description": "The requirement or invariant this attack attempts to violate"
-          },
-          "scenario": {"type": "string", "minLength": 1},
-          "severity": {"enum": ["critical", "major", "minor"]},
-          "status": {"enum": ["PROPOSED"]}
-        },
-        "additionalProperties": false
+    "id": {
+      "type": "string",
+      "pattern": "^FND-[0-9]+$"
+    },
+    "kind": {
+      "enum": [
+        "failure_scenario",
+        "requirement_violation",
+        "invariant_violation"
+      ]
+    },
+    "target": {
+      "type": "string",
+      "pattern": "^(REQ|INV)-[0-9]+$",
+      "description": "The requirement or invariant this attack attempts to violate"
+    },
+    "scenario": {
+      "type": "string",
+      "minLength": 1
+    },
+    "severity": {
+      "enum": [
+        "critical",
+        "major",
+        "minor"
+      ]
+    },
+    "status": {
+      "enum": [
+        "PROPOSED",
+        "REPRODUCING",
+        "CONFIRMED",
+        "FIXING",
+        "VERIFIED",
+        "REJECTED",
+        "CLOSED"
+      ],
+      "description": "Lifecycle status; only adversarial-review may set PROPOSED"
+    },
+    "regression_test": {
+      "type": "object",
+      "description": "Required once CONFIRMED: {path: <test file>, ...}",
+      "properties": {
+        "path": {
+          "type": "string"
+        }
       }
     }
   },
-  "additionalProperties": false
+  "additionalProperties": true
 }

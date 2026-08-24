@@ -1,6 +1,6 @@
 ---
 name: adversarial-review
-description: "Adversarial review of a Task Contract: construct failure scenarios, attempt to violate Requirements and Invariants. Produces .harness/findings.yaml with status=PROPOSED only. This skill MUST NOT confirm bugs, review code style, or suggest refactors."
+description: "Adversarial review of a Task Contract: construct failure scenarios, attempt to violate Requirements and Invariants. Produces .harness/findings/FND-nnn.yaml files with status=PROPOSED only. This skill MUST NOT confirm bugs, review code style, or suggest refactors."
 ---
 
 # Adversarial Review Skill
@@ -14,7 +14,7 @@ Task Contract (Requirements + Invariants)
     -> failure scenarios
     -> requirement violation attempts
     -> invariant violation attempts
-    -> .harness/findings.yaml (all status=PROPOSED)
+    -> .harness/findings/FND-nnn.yaml (one file per finding, all status=PROPOSED)
 ```
 
 You attack the contract. You do NOT judge the attack. Confirmation belongs to
@@ -40,7 +40,8 @@ the quality gate / human, downstream.
    not in your final report. You propose attacks; the gate decides.
 
 4. **No implementation.** Never edit application source, tests, or configs.
-   The only file you may create/update is `.harness/findings.yaml`.
+   The only files you may create/update are `.harness/findings/FND-nnn.yaml`
+   (one file per finding).
 
 ## Inputs
 
@@ -73,21 +74,24 @@ A finding is only written if you can state a CONCRETE scenario: who does what,
 in which order, with which inputs, and what observable contract violation
 results. "Might fail under load" is not a scenario. Discard it.
 
-### 3. Write Findings -> `.harness/findings.yaml`
+### 3. Write Findings -> `.harness/findings/FND-nnn.yaml`
 
-Use schema `schemas/finding.schema.json`:
+One file per finding, e.g. `.harness/findings/fnd-001.yaml`.
+Use schema `schemas/finding.schema.json` (top level IS the finding object):
 
 ```yaml
-findings:
-  - id: FND-001
-    kind: invariant_violation
-    target: INV-001
-    scenario: >
-      Two workers pick up the same action_id concurrently; both pass the
-      existence check before either writes; side effect executes twice.
-    severity: critical
-    status: PROPOSED
+id: FND-001
+kind: invariant_violation
+target: INV-001
+scenario: >
+  Two workers pick up the same action_id concurrently; both pass the
+  existence check before either writes; side effect executes twice.
+severity: critical
+status: PROPOSED
 ```
+
+This is the SINGLE source of truth for the finding. Later phases
+(reproduce/fix/verify) update this same file — never a second index file.
 
 Rules:
 - IDs sequential `FND-nnn`.
@@ -109,7 +113,7 @@ Final report format:
 
 | File | Action |
 |------|--------|
-| `.harness/findings.yaml` | created/updated |
+| `.harness/findings/FND-nnn.yaml` | created (one per finding) |
 | business code | **NEVER touched** |
 
 ## Self-check before finishing

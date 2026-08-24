@@ -58,11 +58,10 @@ PROPOSED finding
 
 ## Inputs
 
-- `.harness/findings.yaml` (from `adversarial-review`, all `status: PROPOSED`)
-- `.harness/findings/<FND-nnn>.yaml` (per-finding detail, created by this skill)
+- `.harness/findings/<FND-nnn>.yaml` (per-finding records from `adversarial-review`, all `status: PROPOSED`)
 - The target codebase and its test suite
 
-If `.harness/findings.yaml` does not exist, STOP — run `adversarial-review`
+If no `.harness/findings/*.yaml` exists, STOP — run `adversarial-review`
 first.
 
 ## Process
@@ -145,7 +144,6 @@ Cannot rule it out → keep `REPRODUCING`, report to user.
 | File | Action |
 |------|--------|
 | `.harness/findings/FND-nnn.yaml` | created/updated per finding |
-| `.harness/findings.yaml` | statuses synced |
 | failing test + fix | only for CONFIRMED findings |
 | business code | only within confirmed-finding scope |
 
