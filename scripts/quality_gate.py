@@ -21,7 +21,12 @@ import yaml
 
 from state_machine import STATES
 
-OPEN_FINDING_STATUSES = {"PROPOSED", "REPRODUCING", "CONFIRMED", "FIXING"}
+# Finding statuses that must block the gate. Terminal/healthy:
+# VERIFIED, CLOSED, REJECTED. FIXED (test green, regression pending)
+# still blocks - full regression evidence does not exist yet.
+OPEN_FINDING_STATUSES = {
+    "PROPOSED", "REPRODUCING", "CONFIRMED", "FIXING", "FIXED",
+}
 
 
 class InvalidHarnessState(Exception):

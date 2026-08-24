@@ -157,6 +157,16 @@ def test_open_severity_blocks(tmp_path, severity, label):
 
 # 3. Rejected / closed findings never block -----------------------------------
 
+def test_fixed_still_blocks_until_verified(tmp_path):
+    # FIXED = reproduction test green but full regression not yet run.
+    h = make_harness(tmp_path)
+    write_finding(h, status="FIXED",
+                  regression_test={"path": "tests/test_regress.py"})
+    status, blockers = run_gate(h)
+    assert status == "BLOCKED"
+    assert any("FND-001 is open" in b for b in blockers)
+
+
 @pytest.mark.parametrize("status", ["REJECTED", "CLOSED"])
 def test_terminal_finding_does_not_block(tmp_path, status):
     h = make_harness(tmp_path)

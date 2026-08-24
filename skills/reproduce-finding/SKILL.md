@@ -1,6 +1,6 @@
 ---
 name: reproduce-finding
-description: "Reproduce an adversarial finding through the mandatory state machine PROPOSED -> REPRODUCING -> CONFIRMED/REJECTED. CONFIRMED requires: failing test -> fix -> green -> full regression. No status may skip or shortcut this path."
+description: "Reproduce an adversarial finding through the mandatory lifecycle PROPOSED -> REPRODUCING -> CONFIRMED (bug reproduced, test RED) -> FIXING -> FIXED (test GREEN) -> VERIFIED (full regression) -> CLOSED, or REJECTED. Each status has one meaning and its own evidence requirement. No status may skip or shortcut this path."
 ---
 
 # Reproduce Finding Skill
@@ -11,37 +11,57 @@ Your only job:
 
 ```text
 PROPOSED finding
-    -> REPRODUCING (write failing test)
-    -> red?  -> fix -> green -> full regression -> CONFIRMED
+    -> REPRODUCING   (write failing test)
+    -> test RED      -> CONFIRMED            # bug reproduced, nothing fixed yet
+    -> FIXING        (implement minimal fix)
+    -> test GREEN    -> FIXED
+    -> full regression green -> VERIFIED -> CLOSED
     -> cannot trigger, with recorded attempts -> REJECTED
 ```
 
+One status = one meaning:
+
+| Status | Means | Evidence |
+|---|---|---|
+| REPRODUCING | attempting reproduction | attempts log |
+| CONFIRMED | bug IS real: failing test runs RED | `test:` path |
+| FIXING | fix in progress | work-in-progress |
+| FIXED | the failing test now passes GREEN | same test path |
+| VERIFIED | FULL regression suite green | evidence reference |
+| CLOSED | verified finding archived | terminal |
+| REJECTED | scenario proven impossible | attempts + reasoning |
+
 ## Hard Boundaries (不得违反)
 
-1. **Mandatory state machine.** Every finding's `status` moves only along:
+1. **Mandatory lifecycle.** Every finding's `status` moves only along:
 
    ```text
-   PROPOSED -> REPRODUCING -> CONFIRMED
+   PROPOSED -> REPRODUCING -> CONFIRMED -> FIXING -> FIXED -> VERIFIED -> CLOSED
                            -> REJECTED
    ```
 
    Forbidden jumps include but are not limited to:
    - `PROPOSED -> CONFIRMED` (skipping reproduction)
-   - `REPRODUCING -> CONFIRMED` without a red-to-green test cycle
+   - `REPRODUCING -> CONFIRMED` without a RED failing test
+   - `FIXING -> FIXED` while the reproduction test is still red
+   - `FIXED -> VERIFIED` without a full regression run
    - any transition not listed above
 
 2. **Persisted state only.** Status lives in the finding's yaml under
    `.harness/findings/`. Never change status in conversation/context alone.
    Each transition must be written to disk.
 
-3. **CONFIRMED requires the full four-step chain — no exceptions:**
-   1. a **failing test** that reproduces the scenario (run it; it MUST be red)
-   2. the **fix**
-   3. the test run again — **green**
-   4. **full regression** suite passes
+3. **Each status transition carries exactly its own evidence — no exceptions:**
+   - `REPRODUCING -> CONFIRMED`: a **failing test** that reproduces the
+     scenario ran RED. Nothing more. Do NOT fix anything before CONFIRMED.
+   - `CONFIRMED -> FIXING`: record the regression test path
+     (`regression_test.path`) — the red test will become the regression test.
+   - `FIXING -> FIXED`: that exact test now runs GREEN.
+   - `FIXED -> VERIFIED`: FULL regression suite (unit + integration as
+     configured) passes; store evidence reference.
+   - `VERIFIED -> CLOSED`: archive; terminal.
 
-   If any step is missing or fails, status stays `REPRODUCING`. Writing
-   `CONFIRMED` without all four steps evidenced is a violation of this skill.
+   Writing any status without its evidence is a violation of this skill.
 
 4. **REJECTED requires justification.** A rejection must record:
    - concrete reproduction attempts (what you tried, exact inputs/steps)
@@ -52,9 +72,9 @@ PROPOSED finding
    `REPRODUCING` and surface it to the user. Only reject when you can state
    WHY the violation is impossible.
 
-6. **Code changes scoped to confirmed findings only.** You may write tests and
-   fixes solely for findings being reproduced. No drive-by edits, no
-   refactoring, no style changes.
+6. **Code changes scoped to findings at FIXING or later only.** You may write
+   the reproduction test during REPRODUCING, but implementation fixes ONLY
+   after CONFIRMED. No drive-by edits, no refactoring, no style changes.
 
 ## Inputs
 
@@ -83,9 +103,10 @@ scenario: >
 status: REPRODUCING
 attempts:
   - described attempt, command/test name, result
-test: null        # path to failing test once written
-fix: null         # commit/files changed once fixed
-regression: null  # regression evidence reference
+test: null              # path to failing test once written
+regression_test: {}     # {path: ...} filled at CONFIRMED -> FIXING
+fix: null               # commit/files changed once fixed
+evidence: null          # regression evidence reference at VERIFIED
 ```
 
 ### 3. Write the Failing Test FIRST
@@ -102,27 +123,41 @@ Run it. It MUST fail (red). If it passes on first run:
 - refine up to 3 times; record each attempt in `attempts`
 - still green after refinement → go to step 6 (reject with reasoning) or stay
 
-Record the test path in `test:`.
+Run it RED? Write `status: CONFIRMED` NOW, with the test path:
 
-### 4. Fix
+```yaml
+status: CONFIRMED
+test: tests/test_recovery.py::test_duplicate_action_single_side_effect
+regression_test:
+  path: tests/test_recovery.py::test_duplicate_action_single_side_effect
+confirmed_at: <ISO timestamp>
+```
 
-Implement the minimal fix that makes the failing test pass. No unrelated
-changes. Run the test — must be green. Record fix in `fix:`.
+The bug is now confirmed-real and NOT yet fixed. If refinement stays green,
+go to step 6 (reject) or stay REPRODUCING and surface to the user.
 
-### 5. Full Regression + CONFIRMED
+### 4. Fix (only after CONFIRMED)
+
+Write `status: FIXING`, implement the minimal fix that makes the failing test
+pass. No unrelated changes. Run the test — green → `status: FIXED`.
+
+Any regression failure later → back to `FIXING`; iterate.
+
+### 5. Full Regression + VERIFIED
 
 Run the project's full regression suite (unit + integration as configured).
 All green → write to the finding file:
 
 ```yaml
-status: CONFIRMED
-test: tests/test_recovery.py::test_duplicate_action_single_side_effect
+status: VERIFIED
 fix: "guard action_id with per-id lock"
-regression: .harness/evidence/<evidence-file>
-confirmed_at: <ISO timestamp>
+evidence: .harness/evidence/<evidence-file>
+verified_at: <ISO timestamp>
 ```
 
-Any regression failure → status stays `REPRODUCING`; iterate on the fix.
+Then archive: `status: CLOSED`.
+
+Any regression failure → `status: FIXING`, iterate on the fix.
 
 ### 6. Reject (only with proof of impossibility)
 
@@ -144,14 +179,17 @@ Cannot rule it out → keep `REPRODUCING`, report to user.
 | File | Action |
 |------|--------|
 | `.harness/findings/FND-nnn.yaml` | created/updated per finding |
-| failing test + fix | only for CONFIRMED findings |
+| failing test | written during REPRODUCING |
+| fix | only at FIXING (post-CONFIRMED) |
 | business code | only within confirmed-finding scope |
 
 ## Self-check before finishing
 
 - [ ] Every status change persisted to disk?
 - [ ] No forbidden jumps (PROPOSED→CONFIRMED, REPRODUCING→CONFIRMED without chain)?
-- [ ] Every CONFIRMED has: red failing test → fix → green → full regression?
+- [ ] CONFIRMED means test RED only (nothing fixed yet)?
+- [ ] FIXED means that exact test GREEN?
+- [ ] VERIFIED backed by full regression evidence?
 - [ ] Every REJECTED has attempts + impossibility reasoning?
 - [ ] Unresolved findings left in REPRODUCING and surfaced?
 - [ ] Code changes limited to confirmed findings' scope?
