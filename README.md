@@ -1,5 +1,8 @@
 # Superpowers Engineering Harness v0.1
 
+> Turn agent development into deterministic state, evidence, and
+> gate-controlled delivery for humans and AI.
+
 Deterministic controller that wraps Superpowers development workflows.
 Correctness judgment migrates from the model to:
 
@@ -92,3 +95,7 @@ python -m pytest tests/ -q
 
 Spec: `docs/engineering-harness-v0.1.md`. Definition of Done for v0.1 is in
 section 34 — including one real dogfooded project.
+
+## License
+
+Apache-2.0 © 2026 Yezhiwei — see [LICENSE](LICENSE).

@@ -5,8 +5,17 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "superpowers-engineering-harness"
 version = "0.1.0"
-description = "Deterministic controller wrapping Superpowers development workflows"
+description = "Turn agent development into deterministic state, evidence, and gate-controlled delivery for humans and AI."
 requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Yezhiwei" }]
+keywords = [
+  "ai-agents", "agent-skill", "quality-gate", "state-machine",
+  "evidence", "tdd", "workflow-engine", "llm",
+]
+
+[project.urls]
+Homepage = "https://github.com/yezhwi/superpowers-engineering-harness"
 
 [project.scripts]
 harness = "harness.cli:main"
