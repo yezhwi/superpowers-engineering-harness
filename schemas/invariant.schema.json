@@ -1,0 +1,42 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "invariant.schema.json",
+  "title": "Engineering Harness Invariants",
+  "type": "object",
+  "required": ["invariants"],
+  "properties": {
+    "invariants": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "statement", "category", "severity", "status"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^INV-[0-9]+$"},
+          "statement": {"type": "string", "minLength": 1},
+          "category": {
+            "enum": [
+              "correctness",
+              "transaction",
+              "concurrency",
+              "idempotency",
+              "security",
+              "authorization",
+              "state_machine",
+              "recovery",
+              "data_consistency",
+              "architecture"
+            ]
+          },
+          "severity": {"enum": ["critical", "major", "minor"]},
+          "status": {"enum": ["pending", "verified", "violated"]},
+          "verification": {
+            "type": "array",
+            "items": {"type": "string"}
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}
