@@ -1,0 +1,37 @@
+task:
+  id: TASK-001
+  title: harness init CLI
+  description: Implement idempotent `harness init` per docs/HARNESS_INIT_IMPLEMENTATION_GUIDE.md
+    M1-M4
+state: DONE
+iteration: 1
+max_iterations: 5
+spec:
+  design: null
+  plan: null
+requirements:
+  total: 0
+  verified: 0
+  uncovered: []
+invariants:
+  total: 0
+  verified: 0
+  violated: []
+verification:
+  build: unknown
+  unit_test: unknown
+  integration_test: unknown
+findings:
+  critical: 0
+  major: 0
+  minor: 0
+  confirmed: 0
+  proposed: 0
+gate:
+  status: PASS
+  blocked_by: []
+git:
+  head: da3ef1d8f35858a8ee6fac75e58ff3874ba4ad48
+timestamps:
+  created_at: null
+  updated_at: null

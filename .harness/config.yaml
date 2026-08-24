@@ -1,0 +1,10 @@
+# .harness/config.yaml -- project-level harness configuration (v0.1)
+# Referenced by doc section 5; currently minimal -- gate policy lives in
+# gate.yaml, task state in current-task.yaml.
+---
+max_iterations: 5
+
+# Escalation reason codes accepted by the convergence skill:
+# SPEC_AMBIGUITY, ARCHITECTURE_DEFECT, REPEATED_REGRESSION,
+# UNSTABLE_TEST, REVIEW_DISAGREEMENT, MAX_ITERATIONS
+escalate_on_repeated_findings: true

@@ -1,0 +1,26 @@
+gate:
+
+  requirements:
+    must_verified: true
+    uncovered_allowed: 0
+
+  invariants:
+    violated_allowed: 0
+
+  verification:
+    build: required
+    unit_test: required
+    integration_test: optional
+
+  findings:
+    critical_allowed: 0
+    major_allowed: 0
+
+  regression:
+    confirmed_finding_without_test: 0
+
+  evidence:
+    must_match_head: true
+
+  convergence:
+    max_iterations: 5

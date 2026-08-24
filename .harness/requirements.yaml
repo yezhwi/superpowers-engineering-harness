@@ -1,0 +1,44 @@
+requirements:
+- id: REQ-001
+  statement: harness init discovers git repo root from any subdirectory
+  source: spec
+  priority: must
+  status: verified
+  evidence:
+  - unit-test.json
+- id: REQ-002
+  statement: init creates .harness with current-task/requirements/invariants/gate.yaml
+    plus findings/ and evidence/
+  source: spec
+  priority: must
+  status: verified
+  evidence:
+  - unit-test.json
+- id: REQ-003
+  statement: init is idempotent and never overwrites existing files
+  source: spec
+  priority: must
+  status: verified
+  evidence:
+  - unit-test.json
+- id: REQ-004
+  statement: outside a git repo init fails exit 1 without running git init
+  source: spec
+  priority: must
+  status: verified
+  evidence:
+  - unit-test.json
+- id: REQ-005
+  statement: missing template causes explicit failure, no empty files
+  source: spec
+  priority: must
+  status: verified
+  evidence:
+  - unit-test.json
+- id: REQ-006
+  statement: pip install -e . provides working harness command
+  source: spec
+  priority: must
+  status: verified
+  evidence:
+  - unit-test.json

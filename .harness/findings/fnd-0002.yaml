@@ -1,0 +1,6 @@
+id: FND-0002
+kind: failure_scenario
+target: REQ-003
+scenario: Two concurrent `harness init` processes racing on a fresh repo may both see missing files and write simultaneously; last writer wins per file, content identical either way (both copy the same template), so observable state converges. Not blocking for v0.1 single-user CLI; revisit if init grows side effects.
+severity: minor
+status: PROPOSED
