@@ -169,7 +169,8 @@ def test_template_state_in_enum():
     import yaml
 
     tpl = yaml.safe_load((REPO / "templates" / "current-task.yaml").read_text())
-    assert tpl["task"]["id"] == "TASK-001"
+    # guide HARNESS_INIT section 10: init must not pre-create a concrete task
+    assert tpl["task"]["id"] is None
     assert tpl["state"] in EXPECTED_STATES
 
 
