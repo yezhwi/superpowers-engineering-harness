@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "finding.schema.json",
   "title": "Engineering Harness Adversarial Finding",
-  "description": "One PROPOSED finding per file at .harness/findings/FND-nnn.yaml. LAW: every finding is an attack attempt; confirmation authority belongs to reproduction / quality gate / human, never the reviewer.",
+  "description": "One finding per file at .harness/findings/FND-nnn.yaml - the single source of truth across the whole lifecycle. LAW: every finding enters as an attack attempt (PROPOSED); confirmation authority belongs to reproduction / quality gate / human, never the reviewer.",
   "type": "object",
   "required": [
     "id",
@@ -46,11 +46,12 @@
         "REPRODUCING",
         "CONFIRMED",
         "FIXING",
+        "FIXED",
         "VERIFIED",
-        "REJECTED",
-        "CLOSED"
+        "CLOSED",
+        "REJECTED"
       ],
-      "description": "Lifecycle status; only adversarial-review may set PROPOSED"
+      "description": "Lifecycle status; only adversarial-review may set PROPOSED. Transitions: PROPOSED->REPRODUCING->{CONFIRMED|REJECTED}; CONFIRMED(RED test)->FIXING->FIXED(GREEN)->VERIFIED(full regression)->CLOSED."
     },
     "regression_test": {
       "type": "object",
@@ -73,6 +74,37 @@
         }
       },
       "additionalProperties": true
+    },
+    "test": {
+      "type": "string",
+      "description": "reproduction/regression test node id; set at CONFIRMED"
+    },
+    "fix": {
+      "type": "string",
+      "description": "commit or summary of the minimal fix; set at FIXING/FIXED"
+    },
+    "evidence": {
+      "type": "string",
+      "description": "full-regression evidence reference; set at VERIFIED"
+    },
+    "attempts": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "log of reproduction attempts (command/test name + result)"
+    },
+    "rejection_reason": {
+      "type": "string",
+      "description": "required when status=REJECTED: why the scenario cannot occur"
+    },
+    "confirmed_at": {
+      "type": "string",
+      "description": "ISO timestamp, set at CONFIRMED"
+    },
+    "verified_at": {
+      "type": "string",
+      "description": "ISO timestamp, set at VERIFIED"
     }
   },
   "additionalProperties": true
