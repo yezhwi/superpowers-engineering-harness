@@ -15,6 +15,7 @@ Exit codes: 0 = evidence written; 2 = invalid harness state / usage.
 import argparse
 import datetime
 import json
+import hashlib
 import subprocess
 import sys
 from pathlib import Path
@@ -38,6 +39,29 @@ def git_head() -> str:
     return result.stdout.strip()
 
 
+def workspace_fingerprint(repo_root: Path | None = None) -> str:
+    """Stable snapshot of tracked changes and untracked business files.
+
+    `.harness/` is runtime state and excluded so evidence writing does not
+    invalidate its own snapshot.
+    """
+    cwd = repo_root or Path.cwd()
+    def run(*args):
+        result = subprocess.run(["git", *args], cwd=cwd, capture_output=True)
+        if result.returncode:
+            raise RuntimeError(result.stderr.decode().strip())
+        return result.stdout
+    parts = [run("rev-parse", "HEAD"), run("diff", "--binary", "HEAD"),
+             run("diff", "--cached", "--binary", "HEAD")]
+    for name in sorted(run("ls-files", "--others", "--exclude-standard").decode().splitlines()):
+        if name.startswith(".harness/"):
+            continue
+        path = cwd / name
+        if path.is_file():
+            parts.extend([name.encode(), hashlib.sha256(path.read_bytes()).digest()])
+    return "sha256:" + hashlib.sha256(b"\0".join(parts)).hexdigest()
+
+
 def _tail(text: str) -> str:
     if not text:
         return ""
@@ -45,9 +69,11 @@ def _tail(text: str) -> str:
 
 
 def collect(evidence_type: str, command: str) -> dict:
+    before = workspace_fingerprint()
     run = subprocess.run(
         command, shell=True, capture_output=True, text=True
     )
+    after = workspace_fingerprint()
     return {
         "type": evidence_type,
         "timestamp": datetime.datetime.now(
@@ -56,6 +82,8 @@ def collect(evidence_type: str, command: str) -> dict:
         "command": command,
         "exit_code": run.returncode,
         "commit": git_head(),
+        "workspace_fingerprint": before,
+        "workspace_fingerprint_after": after,
         "stdout_tail": _tail(run.stdout),
         "stderr_tail": _tail(run.stderr),
     }

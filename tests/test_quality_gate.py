@@ -18,6 +18,8 @@ from pathlib import Path
 import pytest
 import yaml
 
+from evidence_factory import write_evidence
+
 REPO = Path(__file__).resolve().parent.parent
 
 HEAD = subprocess.run(
@@ -62,14 +64,7 @@ def make_harness(tmp_path: Path) -> Path:
     evidence_dir = h / "evidence"
     evidence_dir.mkdir()
     for etype in ("build", "unit_test"):
-        (evidence_dir / f"{etype.replace('_', '-')}.json").write_text(
-            json.dumps({
-                "type": etype,
-                "timestamp": "2026-01-01T00:00:00+00:00",
-                "command": "true",
-                "exit_code": 0,
-                "commit": HEAD,
-            }))
+        write_evidence(REPO, h, etype)
 
     findings_dir = h / "findings"
     findings_dir.mkdir()

@@ -17,15 +17,42 @@
         "custom"
       ]
     },
-    "timestamp": { "type": "string", "format": "date-time" },
-    "command": { "type": "string" },
-    "exit_code": { "type": "integer" },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "command": {
+      "type": "string"
+    },
+    "exit_code": {
+      "type": "integer"
+    },
     "commit": {
       "type": "string",
       "description": "Git HEAD (full sha) the command ran against"
     },
-    "stdout_tail": { "type": ["string", "null"] },
-    "stderr_tail": { "type": ["string", "null"] }
+    "stdout_tail": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "stderr_tail": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "workspace_fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "Business workspace snapshot before command; excludes .harness runtime state."
+    },
+    "workspace_fingerprint_after": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "Business workspace snapshot after command; must equal workspace_fingerprint."
+    }
   },
   "required": [
     "type",

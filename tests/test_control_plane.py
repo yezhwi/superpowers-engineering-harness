@@ -12,6 +12,8 @@ from pathlib import Path
 import pytest
 import yaml
 
+from evidence_factory import write_evidence
+
 REPO = Path(__file__).resolve().parent.parent
 
 
@@ -132,12 +134,7 @@ def _passing_harness(tmp_path):
     (h / "invariants.yaml").write_text(yaml.safe_dump(invs))
     edir = h / "evidence"
     for etype in ("build", "unit_test"):
-        (edir / f"{etype.replace('_', '-')}.json").write_text(json.dumps({
-            "type": etype, "timestamp": "t", "command": "true",
-            "exit_code": 0,
-            "commit": subprocess.run(
-                ["git", "rev-parse", "HEAD"], cwd=tmp_path,
-                capture_output=True, text=True).stdout.strip()}))
+        write_evidence(tmp_path, h, etype)
     return h
 
 

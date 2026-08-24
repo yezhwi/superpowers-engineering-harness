@@ -136,6 +136,13 @@ def run_gate(harness_dir: Path, head: str | None = None) -> tuple[str, list]:
     head = head if head is not None else git_head()
     evidence = load_evidence(harness_dir / "evidence")
     findings = load_findings(harness_dir / "findings")
+    # HEAD alone misses uncommitted edits. Recompute the business-workspace
+    # snapshot; collect_evidence excludes .harness runtime files.
+    try:
+        from collect_evidence import workspace_fingerprint
+        current_workspace = workspace_fingerprint()
+    except RuntimeError as exc:
+        raise InvalidHarnessState(f"cannot fingerprint workspace: {exc}") from exc
 
     # Terminal/near-terminal findings require real proof records, not only
     # schema-shaped strings. Fail closed before open-finding policy runs.
@@ -244,6 +251,14 @@ def run_gate(harness_dir: Path, head: str | None = None) -> tuple[str, list]:
         if must_match_head and ev.get("commit") != head:
             blockers.append(f"{label} evidence is stale "
                             f"(commit {ev.get('commit')} != HEAD)")
+        before = ev.get("workspace_fingerprint")
+        after = ev.get("workspace_fingerprint_after")
+        if not before or not after:
+            blockers.append(f"{label} evidence lacks workspace fingerprint")
+        elif before != after:
+            blockers.append(f"{label} workspace changed during command")
+        elif before != current_workspace:
+            blockers.append(f"{label} evidence workspace is stale")
 
     # 4. Findings: open critical/major counts, regression debt.
     find_cfg = gate_cfg.get("findings", {})

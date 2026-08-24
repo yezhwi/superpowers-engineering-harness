@@ -7,6 +7,8 @@ from pathlib import Path
 
 import yaml
 
+from evidence_factory import write_evidence
+
 REPO = Path(__file__).resolve().parent.parent
 
 
@@ -45,9 +47,7 @@ def make_repo(tmp_path: Path, state="GATING", iteration=0,
                           capture_output=True, text=True).stdout.strip()
     edir = h / "evidence"
     for etype in ("build", "unit_test"):
-        (edir / f"{etype.replace('_', '-')}.json").write_text(json.dumps({
-            "type": etype, "timestamp": "t", "command": "true",
-            "exit_code": 0, "commit": head}))
+        write_evidence(tmp_path, h, etype)
     return h
 
 

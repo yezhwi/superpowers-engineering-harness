@@ -18,6 +18,8 @@ from pathlib import Path
 import pytest
 import yaml
 
+from evidence_factory import write_evidence
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
 from quality_gate import run_gate  # noqa: E402
@@ -55,14 +57,7 @@ def make_harness(tmp_path: Path) -> Path:
     evidence_dir = h / "evidence"
     evidence_dir.mkdir()
     for etype in ("build", "unit_test"):
-        (evidence_dir / f"{etype.replace('_', '-')}.json").write_text(
-            __import__("json").dumps({
-                "type": etype,
-                "timestamp": "2026-01-01T00:00:00+00:00",
-                "command": "true",
-                "exit_code": 0,
-                "commit": HEAD,
-            }))
+        write_evidence(REPO, h, etype)
 
     (h / "findings").mkdir()
     return h
