@@ -96,6 +96,61 @@ python -m pytest tests/ -q
 Spec: `docs/engineering-harness-v0.1.md`. Definition of Done for v0.1 is in
 section 34 — including one real dogfooded project.
 
+## Using with Pi
+
+This repo is a [pi package](https://pi.dev/packages) (`package.json`
+declares `pi.skills`). Skills are auto-discovered by description matching —
+no slash-commands to memorize.
+
+### 1. Install (once)
+
+```bash
+# skills for the agent
+pi install git:github.com/yezhwi/superpowers-engineering-harness
+
+# deterministic CLI for the shell (editable, so scripts/ stays resolvable)
+pip install -e /path/to/superpowers-engineering-harness
+```
+
+Installed skills:
+
+| Skill | Trigger example |
+|---|---|
+| engineering-harness (orchestrator) | "用 Engineering Harness 修这个 bug：…" |
+| task-contract | "把这个需求变成合同" |
+| adversarial-review | "审查这次改动能不能被打破" |
+| reproduce-finding | "先复现这个 bug 再修" |
+| collect-evidence / quality-gate / convergence | 进入对应阶段自动触发 |
+
+### 2. Prepare a target project (once per project)
+
+```bash
+cd your-project
+harness init          # scaffolds .harness/, idempotent
+```
+
+### 3. Run a task in a pi session
+
+Just talk to the agent:
+
+```text
+在当前项目里，用 Engineering Harness 修复这个 bug：<描述>
+```
+
+The orchestrator skill takes over: reads `.harness/current-task.yaml`,
+dispatches the right sub-skill per state, runs deterministic commands,
+and only declares DONE after `harness gate` exits 0 followed by
+`CONVERGED -> DONE`. Session interrupted? Next session starts with
+`harness status` and resumes from disk.
+
+Manual control at any time:
+
+```bash
+harness status                      # where am I?
+harness transition VERIFYING        # push phase manually
+harness gate                        # run the gate yourself
+```
+
 ## License
 
 Apache-2.0 © 2026 Yezhiwei — see [LICENSE](LICENSE).
