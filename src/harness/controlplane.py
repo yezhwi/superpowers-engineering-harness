@@ -416,6 +416,20 @@ def cmd_task_recover(task_id: str, title: str, reason: str) -> int:
         "replacement_task_id": task_id,
     }
     (archive / "recovery.yaml").write_text(yaml.safe_dump(audit, sort_keys=False))
+
+    for name in ("findings", "evidence"):
+        source = harness_dir / name
+        if source.exists():
+            shutil.move(str(source), str(archive / name))
+        (harness_dir / name).mkdir()
+
+    for name in ("current-task.yaml", "requirements.yaml", "invariants.yaml", "gate.yaml"):
+        shutil.copy2(templates_dir() / name, harness_dir / name)
+    task = load_task(harness_dir)
+    task["task"]["id"] = task_id
+    task["task"]["title"] = title
+    save_task(harness_dir, task)
+    print(f"OK: recovered {old_id}, created {task_id}")
     return 0
 
 

@@ -63,3 +63,41 @@ def test_task_recover_rejects_terminal_task_without_mutation(tmp_path):
     assert "requires active task" in result.stderr
     assert (repo / ".harness/current-task.yaml").read_text() == before
     assert not list((repo / ".harness/history").glob("TASK-004-*"))
+
+
+def test_task_recover_archives_artifacts_and_creates_fresh_task(tmp_path):
+    repo = make_repo(tmp_path)
+    set_task_state(repo, "IMPLEMENTING")
+    findings = repo / ".harness/findings"
+    evidence = repo / ".harness/evidence"
+    (findings / "FND-001.yaml").write_text("id: FND-001\n")
+    (evidence / "unit.json").write_text("{}")
+
+    result = run_cli(
+        repo, "task", "recover", "TASK-005", "--title", "Wheel isolation",
+        "--reason", "stale task",
+    )
+
+    assert result.returncode == 0, result.stderr
+    archive = next((repo / ".harness/history").glob("TASK-004-*"))
+    audit = yaml.safe_load((archive / "recovery.yaml").read_text())
+    assert audit["previous_state"] == "IMPLEMENTING"
+    assert audit["reason"] == "stale task"
+    assert audit["replacement_task_id"] == "TASK-005"
+    assert (archive / "findings/FND-001.yaml").is_file()
+    assert (archive / "evidence/unit.json").is_file()
+    task = yaml.safe_load((repo / ".harness/current-task.yaml").read_text())
+    assert task["task"]["id"] == "TASK-005"
+    assert task["task"]["title"] == "Wheel isolation"
+    assert task["state"] == "CREATED"
+    assert list(findings.iterdir()) == []
+    assert list(evidence.iterdir()) == []
+
+
+def test_task_new_still_rejects_active_task(tmp_path):
+    repo = make_repo(tmp_path)
+
+    result = run_cli(repo, "task", "new", "TASK-005")
+
+    assert result.returncode == 1
+    assert "DONE or ESCALATED" in result.stderr
