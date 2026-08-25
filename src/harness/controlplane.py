@@ -81,8 +81,13 @@ def cmd_transition(target: str) -> int:
         return 2
     if target == "VERIFYING":
         _, impact = _impact()
-        if not impact["impact"].get("required_tests"):
+        plan = impact["impact"]
+        if not plan.get("required_tests"):
             print("IMPACT_ANALYSIS_REQUIRED: impact.required_tests is empty", file=sys.stderr)
+            return 1
+        if plan.get("full_suite", {}).get("recommended") and not task.get(
+                "authorization", {}).get("full_suite", {}).get("granted"):
+            print("FULL_SUITE_AUTHORIZATION_REQUIRED", file=sys.stderr)
             return 1
     if target not in state_machine.STATES or current not in \
             state_machine.STATES:
@@ -331,7 +336,7 @@ def cmd_impact(action,value=None,reason=None):
  import yaml
  p,d=_impact(); i=d['impact']
  if action=='show': print(yaml.safe_dump(d,sort_keys=False));return 0
- key={'add-change':'changed','add-test':'required_tests'}.get(action)
+ key={'add-change':'changed','add-test':'required_tests','add-dependent':'direct_dependents','add-contract':'contracts','add-risk':'risks'}.get(action)
  if key:
   if value not in i[key]: i[key].append(value)
  elif action=='require-full-suite': i['full_suite']={'recommended':True,'reason':reason}
