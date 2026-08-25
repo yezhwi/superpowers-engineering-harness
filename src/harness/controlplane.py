@@ -296,3 +296,19 @@ def _verify_record(kind: str, rid: str, ref: str) -> int:
 
 def cmd_requirement_verify(rid,ref): return _verify_record('requirement',rid,ref)
 def cmd_invariant_verify(rid,ref): return _verify_record('invariant',rid,ref)
+
+def cmd_task_new(task_id: str, title: str = "") -> int:
+ import shutil, datetime, re
+ if not re.fullmatch(r"TASK-[0-9]+",task_id): print("INVALID TASK ID",file=sys.stderr);return 2
+ h=Path('.harness'); old=load_task(h)
+ if old.get('state') not in {'DONE','ESCALATED'}: print('task new requires DONE or ESCALATED task',file=sys.stderr);return 1
+ archive=h/'history'/f"{old['task']['id']}-{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}";archive.mkdir(parents=True)
+ for name in ('current-task.yaml','requirements.yaml','invariants.yaml','gate.yaml','findings','evidence'):
+  src=h/name
+  if src.exists(): shutil.copytree(src,archive/name) if src.is_dir() else shutil.copy2(src,archive/name)
+ from harness.templates import templates_dir
+ for name in ('current-task.yaml','requirements.yaml','invariants.yaml','gate.yaml'):
+  shutil.copy2(templates_dir()/name,h/name)
+ for name in ('findings','evidence'):
+  shutil.rmtree(h/name,ignore_errors=True);(h/name).mkdir()
+ task=load_task(h);task['task']['id']=task_id;task['task']['title']=title;save_task(h,task);print(f'OK: archived task, created {task_id}');return 0

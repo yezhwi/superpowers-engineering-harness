@@ -1,0 +1,16 @@
+"""TASK-008: archive completed task and create a new one."""
+import subprocess,sys
+from pathlib import Path
+import yaml
+REPO=Path(__file__).resolve().parent.parent
+def cli(cwd,*a): return subprocess.run([sys.executable,'-m','harness.cli',*a],cwd=cwd,capture_output=True,text=True,env={'PYTHONPATH':str(REPO/'src'),'PATH':'/usr/bin:/bin'})
+def setup(p,state='DONE'):
+ subprocess.run(['git','init','-q'],cwd=p,check=True);cli(p,'init');h=p/'.harness';t=yaml.safe_load((h/'current-task.yaml').read_text());t['task']['id']='TASK-001';t['task']['title']='old';t['state']=state;(h/'current-task.yaml').write_text(yaml.safe_dump(t));return h
+def test_task_new_archives_done_task(tmp_path):
+ h=setup(tmp_path);r=cli(tmp_path,'task','new','TASK-002','--title','next');assert r.returncode==0
+ t=yaml.safe_load((h/'current-task.yaml').read_text());assert t['task']['id']=='TASK-002' and t['state']=='CREATED'
+ assert any((h/'history').iterdir())
+def test_task_new_refuses_active_task(tmp_path):
+ setup(tmp_path,'IMPLEMENTING');assert cli(tmp_path,'task','new','TASK-002').returncode==1
+def test_task_new_rejects_invalid_id(tmp_path):
+ setup(tmp_path);assert cli(tmp_path,'task','new','next-task').returncode==2

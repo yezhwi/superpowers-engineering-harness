@@ -54,6 +54,7 @@ def main(argv=None) -> int:
     p_req=sub.add_parser("requirement"); rs=p_req.add_subparsers(dest="requirement_command"); rv=rs.add_parser("verify"); rv.add_argument("id"); rv.add_argument("--evidence",required=True)
     p_inv=sub.add_parser("invariant"); ivs=p_inv.add_subparsers(dest="invariant_command"); iv=ivs.add_parser("verify"); iv.add_argument("id"); iv.add_argument("--evidence",required=True)
     p_task=sub.add_parser("task"); ts=p_task.add_subparsers(dest="task_command"); p_mid=ts.add_parser("migrate-id"); p_mid.add_argument("id")
+    p_new=ts.add_parser("new"); p_new.add_argument("id"); p_new.add_argument("--title",default="")
     sub.add_parser("converge", help="deterministic convergence decision")
 
     args = parser.parse_args(argv)
@@ -87,6 +88,7 @@ def main(argv=None) -> int:
     if args.subcommand == "invariant" and args.invariant_command == "verify": return controlplane.cmd_invariant_verify(args.id,args.evidence)
     if args.subcommand == "task":
         if args.task_command == "migrate-id": return controlplane.cmd_task_migrate_id(args.id)
+        if args.task_command == "new": return controlplane.cmd_task_new(args.id,args.title)
         return 2
     if args.subcommand == "converge":
         return controlplane.cmd_converge()
