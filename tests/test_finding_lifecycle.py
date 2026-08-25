@@ -22,6 +22,7 @@ from evidence_factory import write_complexity_review, write_evidence
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
+from collect_evidence import workspace_fingerprint  # noqa: E402
 from quality_gate import run_gate  # noqa: E402
 from state_machine import is_legal  # noqa: E402
 
@@ -82,14 +83,18 @@ def write_finding(h: Path, **overrides):
         finding.setdefault("test", "tests/test_regress.py::test_bug")
         finding.setdefault("confirmed_at", "2026-01-01T00:00:00+00:00")
         rt = finding.setdefault("regression_test", {})
-        rt.setdefault("path", finding["test"]); rt.setdefault("red_evidence", "red.json")
-        (h / "evidence" / "red.json").write_text(json.dumps({"type":"custom","timestamp":"t","command":"false","exit_code":1,"commit":HEAD}))
+        rt.setdefault("path", finding["test"]); rt.setdefault("red_evidence", f"{finding['id']}-red.json")
+        finding["test"] = rt["path"]
+        fingerprint = workspace_fingerprint()
+        (h / "evidence" / rt["red_evidence"]).write_text(json.dumps({"type":"custom","timestamp":"t","command":"false","exit_code":1,"commit":HEAD,"workspace_fingerprint":fingerprint,"workspace_fingerprint_after":fingerprint,"subject":{"kind":"finding","id":finding["id"]},"test":{"node_id":finding["test"]}}))
     if status in {"FIXED", "VERIFIED", "CLOSED"}:
-        finding["regression_test"].setdefault("green_evidence", "green.json")
-        (h / "evidence" / "green.json").write_text(json.dumps({"type":"custom","timestamp":"t","command":"true","exit_code":0,"commit":HEAD}))
+        finding["regression_test"].setdefault("green_evidence", f"{finding['id']}-green.json")
+        fingerprint = workspace_fingerprint()
+        (h / "evidence" / finding["regression_test"]["green_evidence"]).write_text(json.dumps({"type":"custom","timestamp":"t","command":"true","exit_code":0,"commit":HEAD,"workspace_fingerprint":fingerprint,"workspace_fingerprint_after":fingerprint,"subject":{"kind":"finding","id":finding["id"]},"test":{"node_id":finding["test"]}}))
     if status in {"VERIFIED", "CLOSED"}:
-        finding.setdefault("evidence", "full.json"); finding.setdefault("verified_at", "2026-01-02T00:00:00+00:00")
-        (h / "evidence" / "full.json").write_text(json.dumps({"type":"custom","timestamp":"t","command":"true","exit_code":0,"commit":HEAD}))
+        finding.setdefault("evidence", f"{finding['id']}-full.json"); finding.setdefault("verified_at", "2026-01-02T00:00:00+00:00")
+        fingerprint = workspace_fingerprint()
+        (h / "evidence" / finding["evidence"]).write_text(json.dumps({"type":"custom","timestamp":"t","command":"true","exit_code":0,"commit":HEAD,"workspace_fingerprint":fingerprint,"workspace_fingerprint_after":fingerprint}))
     (h / "findings" / f"{finding['id'].lower()}.yaml").write_text(yaml.safe_dump(finding))
 
 
@@ -142,6 +147,18 @@ def test_confirmed_with_regression_test_still_open_until_fixed(tmp_path):
     status, blockers = run_gate(h)
     assert status == "BLOCKED"
     assert any("Major finding FND-001 is open" in b for b in blockers)
+
+
+def test_verified_finding_with_stale_red_evidence_is_invalid(tmp_path):
+    h = make_harness(tmp_path)
+    write_finding(h, status="VERIFIED")
+    red = json.loads((h / "evidence" / "FND-001-red.json").read_text())
+    red["workspace_fingerprint"] = "sha256:" + "0" * 64
+    red["workspace_fingerprint_after"] = "sha256:" + "0" * 64
+    (h / "evidence" / "FND-001-red.json").write_text(json.dumps(red))
+
+    with pytest.raises(Exception, match="EVIDENCE_WORKSPACE_STALE"):
+        run_gate(h)
 
 
 def test_verified_after_fix_passes(tmp_path):

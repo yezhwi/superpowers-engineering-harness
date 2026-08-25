@@ -20,6 +20,7 @@ from pathlib import Path
 import yaml
 from jsonschema import ValidationError, validate
 
+from evidence_validator import EvidenceValidationError, validate_evidence
 from state_machine import STATES
 
 # Finding statuses that must block the gate. Terminal/healthy:
@@ -146,20 +147,22 @@ def run_gate(harness_dir: Path, head: str | None = None,
 
     # Terminal/near-terminal findings require real proof records, not only
     # schema-shaped strings. Fail closed before open-finding policy runs.
-    def finding_proof(finding, ref, expected_success, label):
+    def finding_proof(finding, ref, expected_success, label, test_id=None):
         path = harness_dir / "evidence" / (ref if ref.endswith(".json") else f"{ref}.json")
         try:
             record = json.loads(path.read_text())
-        except (OSError, json.JSONDecodeError) as exc:
-            raise InvalidHarnessState(f"{finding['id']} {label} evidence {ref} unavailable: {exc}")
-        if record.get("commit") != head or (record.get("exit_code") == 0) != expected_success:
-            raise InvalidHarnessState(f"{finding['id']} {label} evidence {ref} is not fresh expected proof")
+            validate_evidence(record, current_head=head, current_workspace=current_workspace,
+                              expected_success=expected_success,
+                              finding_id=finding["id"] if test_id else None,
+                              test_id=test_id)
+        except (OSError, json.JSONDecodeError, EvidenceValidationError) as exc:
+            raise InvalidHarnessState(f"{finding['id']} {label} evidence invalid: {exc}") from exc
     for finding in findings:
         state = finding["status"]
         if state in {"CONFIRMED", "FIXING", "FIXED", "VERIFIED", "CLOSED"}:
-            finding_proof(finding, finding["regression_test"]["red_evidence"], False, "red")
+            finding_proof(finding, finding["regression_test"]["red_evidence"], False, "red", finding["regression_test"]["path"])
         if state in {"FIXED", "VERIFIED", "CLOSED"}:
-            finding_proof(finding, finding["regression_test"]["green_evidence"], True, "green")
+            finding_proof(finding, finding["regression_test"]["green_evidence"], True, "green", finding["regression_test"]["path"])
         if state in {"VERIFIED", "CLOSED"}:
             finding_proof(finding, finding["evidence"], True, "full regression")
 
