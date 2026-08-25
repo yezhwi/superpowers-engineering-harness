@@ -1,4 +1,4 @@
-# Superpowers Engineering Harness v0.2
+# Superpowers Engineering Harness v0.2.1
 
 [English](README.md)
 
