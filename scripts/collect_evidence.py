@@ -51,8 +51,12 @@ def workspace_fingerprint(repo_root: Path | None = None) -> str:
         if result.returncode:
             raise RuntimeError(result.stderr.decode().strip())
         return result.stdout
-    parts = [run("rev-parse", "HEAD"), run("diff", "--binary", "HEAD"),
-             run("diff", "--cached", "--binary", "HEAD")]
+    # Exclude harness runtime state from BOTH tracked diffs and untracked scan.
+    # Attach/collect commands modify .harness by design; those writes must not
+    # invalidate business-code evidence.
+    exclude = ":(exclude).harness/**"
+    parts = [run("rev-parse", "HEAD"), run("diff", "--binary", "HEAD", "--", ".", exclude),
+             run("diff", "--cached", "--binary", "HEAD", "--", ".", exclude)]
     for name in sorted(run("ls-files", "--others", "--exclude-standard").decode().splitlines()):
         if name.startswith(".harness/"):
             continue
