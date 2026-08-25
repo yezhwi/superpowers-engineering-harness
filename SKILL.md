@@ -69,9 +69,9 @@ Read `state` from `.harness/current-task.yaml`, then:
 | State | Action |
 |---|---|
 | `CREATED` | Invoke **task-contract** skill. It advances CREATED -> SPECIFYING -> PLANNED. |
-| `PLANNED` | Invoke Superpowers execution skills (**brainstorming** if design unclear, else **writing-plans** + **executing-plans**/**subagent-driven-development**, with **test-driven-development**). Advances PLANNED -> IMPLEMENTING. |
-| `IMPLEMENTING` | Continue execution skill. When implementation step complete, transition IMPLEMENTING -> VERIFYING and collect evidence via `harness evidence --type <t> --command "<cmd>"`. |
-| `VERIFYING` | Run deterministic verification only: the Verification Plan's commands/tests. All green -> REVIEWING. Any red -> back to IMPLEMENTING (fix via TDD), then re-verify. |
+| `PLANNED` | Invoke **minimal-implementation** before any implementation. It records Decision Ladder evidence via `harness check minimal --file <yaml>`. Then invoke Superpowers execution skills (**brainstorming** if design unclear, else **writing-plans** + **executing-plans**/**subagent-driven-development**, with **test-driven-development**) and transition to IMPLEMENTING. |
+| `IMPLEMENTING` | Continue execution skill. Before requesting VERIFYING, automatically record impacted files, dependents, contracts, risks, and related tests with `harness impact add-*`; use related tests by default. If impact recommends full suite, request explicit human authorization; never authorize it autonomously. Then transition to VERIFYING and collect evidence via `harness evidence --type <t> --command "<cmd>"`. |
+| `VERIFYING` | Run deterministic Verification Plan commands/tests. Any red -> IMPLEMENTING (TDD), then re-verify. All green -> invoke **complexity-reviewer** before REVIEWING; it records fresh diff-scoped evidence via `harness review complexity --file <yaml>`. Only then transition to REVIEWING. |
 | `REVIEWING` | Invoke Superpowers review (**requesting-code-review** / spec-vs-standards review). If review clean -> GATING. If findings -> invoke **adversarial-review** skill to formalize them as PROPOSED findings, then dispatch **reproduce-finding**. |
 | `REPRODUCING` | Invoke **reproduce-finding** skill. CONFIRMED finding -> FIXING (fix with TDD) -> VERIFYING. REJECTED finding -> close it, return to REVIEWING. |
 | `GATING` | Run `harness gate`. Exit 0 -> CONVERGED -> DONE (transition, then report). Exit 1 -> BLOCKED; address blockers listed on stdout, then resume per blocker type. Exit 2 -> fix invalid harness state first (missing files/bad YAML). |
