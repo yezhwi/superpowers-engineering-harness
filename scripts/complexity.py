@@ -1,7 +1,10 @@
 """Validation and persistence for Engineering Harness v0.2 complexity records."""
 
+import datetime
 import json
 from pathlib import Path
+
+from collect_evidence import git_head, workspace_fingerprint
 
 import yaml
 from jsonschema import ValidationError, validate
@@ -65,6 +68,40 @@ def validate_minimal_decision(document: dict) -> None:
 def validate_complexity_finding(document: dict) -> None:
     """Validate one evidence-backed complexity finding."""
     validate(document, _schema("finding.schema.json"))
+
+
+def write_complexity_review(harness_dir: Path, review: dict) -> list[Path]:
+    """Persist validated CPLX records plus fresh review metadata."""
+    required = {"task", "base", "head", "findings"}
+    if not isinstance(review, dict) or required - review.keys() or not isinstance(review["findings"], list):
+        _invalid("complexity review requires task, base, head, and findings")
+    findings_dir = harness_dir / "findings"
+    findings_dir.mkdir(parents=True, exist_ok=True)
+    paths = []
+    for finding in review["findings"]:
+        validate_complexity_finding(finding)
+        path = findings_dir / f"{finding['id']}.yaml"
+        if path.exists():
+            _invalid(f"complexity finding already exists: {finding['id']}")
+        temporary = path.with_suffix(".yaml.tmp")
+        temporary.write_text(yaml.safe_dump(finding, sort_keys=False, allow_unicode=True))
+        temporary.replace(path)
+        paths.append(path)
+    evidence_dir = harness_dir / "evidence"
+    evidence_dir.mkdir(parents=True, exist_ok=True)
+    fingerprint = workspace_fingerprint()
+    metadata = {
+        "type": "review", "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "command": "harness review complexity", "exit_code": 0, "commit": git_head(),
+        "workspace_fingerprint": fingerprint, "workspace_fingerprint_after": fingerprint,
+        "base": review["base"], "head": review["head"],
+        "finding_ids": [finding["id"] for finding in review["findings"]],
+    }
+    path = evidence_dir / "complexity-review.json"
+    temporary = path.with_suffix(".json.tmp")
+    temporary.write_text(json.dumps(metadata, indent=2))
+    temporary.replace(path)
+    return paths
 
 
 def write_minimal_decision(harness_dir: Path, document: dict) -> Path:
