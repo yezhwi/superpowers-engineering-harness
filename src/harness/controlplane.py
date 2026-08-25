@@ -316,3 +316,18 @@ def cmd_task_new(task_id: str, title: str = "") -> int:
 def cmd_authorize_full_suite(granted: bool) -> int:
  import yaml,datetime
  h=Path('.harness');t=load_task(h);t.setdefault('authorization',{})['full_suite']={'granted':granted,'granted_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'source':'user'};save_task(h,t);return 0
+
+def _impact():
+ import yaml
+ p=Path('.harness/impact.yaml')
+ d=yaml.safe_load(p.read_text()) if p.exists() else {'impact':{'changed':[],'direct_dependents':[],'contracts':[],'risks':[],'required_tests':[],'full_suite':{'recommended':False,'reason':None}}}
+ return p,d
+def cmd_impact(action,value=None,reason=None):
+ import yaml
+ p,d=_impact(); i=d['impact']
+ if action=='show': print(yaml.safe_dump(d,sort_keys=False));return 0
+ key={'add-change':'changed','add-test':'required_tests'}.get(action)
+ if key:
+  if value not in i[key]: i[key].append(value)
+ elif action=='require-full-suite': i['full_suite']={'recommended':True,'reason':reason}
+ p.write_text(yaml.safe_dump(d,sort_keys=False));return 0

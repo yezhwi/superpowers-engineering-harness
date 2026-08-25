@@ -1,0 +1,9 @@
+impact:
+  changed: []
+  direct_dependents: []
+  contracts: []
+  risks: []
+  required_tests: []
+  full_suite:
+    recommended: false
+    reason: null
