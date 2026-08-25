@@ -56,6 +56,23 @@ def test_confirmed_rejects_unstructured_failed_evidence(tmp_path):
     assert status(h) == "REPRODUCING"
 
 
+def test_fixed_rejects_green_evidence_for_different_test(tmp_path):
+    h = setup(tmp_path)
+    assert cli(tmp_path, "finding", "transition", "FND-001", "REPRODUCING", "--attempt", "red test created").returncode == 0
+    assert cli(tmp_path, "finding", "transition", "FND-001", "CONFIRMED", "--test", "tests/test_x.py::test_x", "--evidence", "red.json").returncode == 0
+    assert cli(tmp_path, "finding", "transition", "FND-001", "FIXING").returncode == 0
+    green_path = h / "evidence" / "green.json"
+    green = json.loads(green_path.read_text())
+    green["test"] = {"node_id": "tests/test_other.py::test_other"}
+    green_path.write_text(json.dumps(green))
+
+    result = cli(tmp_path, "finding", "transition", "FND-001", "FIXED", "--evidence", "green.json")
+
+    assert result.returncode == 2
+    assert "REGRESSION_TEST_MISMATCH" in result.stderr
+    assert status(h) == "FIXING"
+
+
 def test_cli_rejects_skip(tmp_path):
     h=setup(tmp_path)
     assert cli(tmp_path,"finding","transition","FND-001","VERIFIED","--evidence","full.json").returncode==1
