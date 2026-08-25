@@ -79,6 +79,21 @@ Read `state` from `.harness/current-task.yaml`, then:
 Loop REPRODUCING/FIXING/VERIFYING until REVIEWING is clean and gate passes.
 There is no shortcut from any state to DONE.
 
+## Test Execution Authorization
+
+Default: run only tests relevant to changed files, current finding regression
+test, or user-specified scope. Do NOT run a full suite "just in case".
+
+Full-suite execution requires explicit user authorization persisted by:
+
+```bash
+harness authorize full-suite
+harness evidence --type unit_test --scope full_suite --command "pytest"
+```
+
+Without authorization, `--scope full_suite` exits 2 before executing the
+command. Revoke with `harness authorize revoke-full-suite`.
+
 ## Deterministic Commands
 
 Never hand-judge what a script can judge:

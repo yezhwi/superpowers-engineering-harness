@@ -10,6 +10,7 @@ Exit codes:
 import argparse
 import sys
 
+from pathlib import Path
 from harness import controlplane
 from harness.init import InitResult, init_current_repository
 from harness.repository import RepositoryNotFoundError
@@ -42,8 +43,10 @@ def main(argv=None) -> int:
     p_ev = sub.add_parser(
         "evidence", help="run a command and save HEAD-bound evidence")
     p_ev.add_argument("--type", required=True)
+    p_ev.add_argument("--scope", choices=["related","full_suite"], default="related")
     p_ev.add_argument("--command", required=True,
                       dest="evidence_command")
+    p_auth=sub.add_parser("authorize"); p_auth.add_argument("action",choices=["full-suite","revoke-full-suite"])
     sub.add_parser("gate", help="run the deterministic quality gate")
     p_finding = sub.add_parser("finding", help="inspect findings")
     f_sub = p_finding.add_subparsers(dest="finding_command")
@@ -72,7 +75,11 @@ def main(argv=None) -> int:
     if args.subcommand == "transition":
         return controlplane.cmd_transition(args.target)
     if args.subcommand == "evidence":
+        
+        if args.scope == "full_suite" and not controlplane.load_task(Path(".harness")).get("authorization",{}).get("full_suite",{}).get("granted"):
+            print("FULL_SUITE_AUTHORIZATION_REQUIRED", file=sys.stderr); return 2
         return controlplane.cmd_evidence(args.type, args.evidence_command)
+    if args.subcommand == "authorize": return controlplane.cmd_authorize_full_suite(args.action == "full-suite")
     if args.subcommand == "gate":
         return controlplane.cmd_gate()
     if args.subcommand == "finding":

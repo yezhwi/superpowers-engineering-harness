@@ -312,3 +312,7 @@ def cmd_task_new(task_id: str, title: str = "") -> int:
  for name in ('findings','evidence'):
   shutil.rmtree(h/name,ignore_errors=True);(h/name).mkdir()
  task=load_task(h);task['task']['id']=task_id;task['task']['title']=title;save_task(h,task);print(f'OK: archived task, created {task_id}');return 0
+
+def cmd_authorize_full_suite(granted: bool) -> int:
+ import yaml,datetime
+ h=Path('.harness');t=load_task(h);t.setdefault('authorization',{})['full_suite']={'granted':granted,'granted_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'source':'user'};save_task(h,t);return 0
