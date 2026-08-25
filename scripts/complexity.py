@@ -62,6 +62,11 @@ def validate_minimal_decision(document: dict) -> None:
         _invalid("decision approach must be local implementation or new abstraction")
 
 
+def validate_complexity_finding(document: dict) -> None:
+    """Validate one evidence-backed complexity finding."""
+    validate(document, _schema("finding.schema.json"))
+
+
 def write_minimal_decision(harness_dir: Path, document: dict) -> Path:
     """Validate and atomically write canonical Minimal Decision evidence."""
     validate_minimal_decision(document)

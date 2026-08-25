@@ -1,252 +1,361 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "finding.schema.json",
-  "title": "Engineering Harness Adversarial Finding",
-  "description": "One finding per file at .harness/findings/FND-nnn.yaml - the single source of truth across the whole lifecycle. LAW: every finding enters as an attack attempt (PROPOSED); confirmation authority belongs to reproduction / quality gate / human, never the reviewer.",
-  "type": "object",
-  "required": [
-    "id",
-    "kind",
-    "target",
-    "scenario",
-    "severity",
-    "status"
-  ],
-  "properties": {
-    "id": {
-      "type": "string",
-      "pattern": "^FND-[0-9]+$"
-    },
-    "kind": {
-      "enum": [
-        "failure_scenario",
-        "requirement_violation",
-        "invariant_violation"
-      ]
-    },
-    "target": {
-      "type": "string",
-      "pattern": "^(REQ|INV)-[0-9]+$",
-      "description": "The requirement or invariant this attack attempts to violate"
-    },
-    "scenario": {
-      "type": "string",
-      "minLength": 1
-    },
-    "severity": {
-      "enum": [
-        "critical",
-        "major",
-        "minor"
-      ]
-    },
-    "status": {
-      "enum": [
-        "PROPOSED",
-        "REPRODUCING",
-        "CONFIRMED",
-        "FIXING",
-        "FIXED",
-        "VERIFIED",
-        "CLOSED",
-        "REJECTED"
-      ],
-      "description": "Lifecycle status; only adversarial-review may set PROPOSED. Transitions: PROPOSED->REPRODUCING->{CONFIRMED|REJECTED}; CONFIRMED(RED test)->FIXING->FIXED(GREEN)->VERIFIED(full regression)->CLOSED."
-    },
-    "regression_test": {
+  "title": "Engineering Harness Finding",
+  "oneOf": [
+    {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "$id": "finding.schema.json",
+      "title": "Engineering Harness Adversarial Finding",
+      "description": "One finding per file at .harness/findings/FND-nnn.yaml - the single source of truth across the whole lifecycle. LAW: every finding enters as an attack attempt (PROPOSED); confirmation authority belongs to reproduction / quality gate / human, never the reviewer.",
       "type": "object",
-      "description": "Required once CONFIRMED (the reproduction test becomes the regression test).",
       "required": [
-        "path"
+        "id",
+        "kind",
+        "target",
+        "scenario",
+        "severity",
+        "status"
       ],
       "properties": {
-        "path": {
+        "id": {
           "type": "string",
-          "description": "test node id, e.g. tests/test_x.py::test_y"
+          "pattern": "^FND-[0-9]+$"
         },
-        "red_evidence": {
-          "type": "string",
-          "description": "reference proving the test ran RED at CONFIRMED"
+        "kind": {
+          "enum": [
+            "failure_scenario",
+            "requirement_violation",
+            "invariant_violation"
+          ]
         },
-        "green_evidence": {
+        "target": {
           "type": "string",
-          "description": "reference proving the same test ran GREEN at FIXED"
+          "pattern": "^(REQ|INV)-[0-9]+$",
+          "description": "The requirement or invariant this attack attempts to violate"
+        },
+        "scenario": {
+          "type": "string",
+          "minLength": 1
+        },
+        "severity": {
+          "enum": [
+            "critical",
+            "major",
+            "minor"
+          ]
+        },
+        "status": {
+          "enum": [
+            "PROPOSED",
+            "REPRODUCING",
+            "CONFIRMED",
+            "FIXING",
+            "FIXED",
+            "VERIFIED",
+            "CLOSED",
+            "REJECTED"
+          ],
+          "description": "Lifecycle status; only adversarial-review may set PROPOSED. Transitions: PROPOSED->REPRODUCING->{CONFIRMED|REJECTED}; CONFIRMED(RED test)->FIXING->FIXED(GREEN)->VERIFIED(full regression)->CLOSED."
+        },
+        "regression_test": {
+          "type": "object",
+          "description": "Required once CONFIRMED (the reproduction test becomes the regression test).",
+          "required": [
+            "path"
+          ],
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "test node id, e.g. tests/test_x.py::test_y"
+            },
+            "red_evidence": {
+              "type": "string",
+              "description": "reference proving the test ran RED at CONFIRMED"
+            },
+            "green_evidence": {
+              "type": "string",
+              "description": "reference proving the same test ran GREEN at FIXED"
+            }
+          },
+          "additionalProperties": true
+        },
+        "test": {
+          "type": "string",
+          "description": "reproduction/regression test node id; set at CONFIRMED"
+        },
+        "fix": {
+          "type": "string",
+          "description": "commit or summary of the minimal fix; set at FIXING/FIXED"
+        },
+        "evidence": {
+          "type": "string",
+          "description": "full-regression evidence reference; set at VERIFIED"
+        },
+        "attempts": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "log of reproduction attempts (command/test name + result)"
+        },
+        "rejection_reason": {
+          "type": "string",
+          "description": "required when status=REJECTED: why the scenario cannot occur"
+        },
+        "confirmed_at": {
+          "type": "string",
+          "description": "ISO timestamp, set at CONFIRMED"
+        },
+        "verified_at": {
+          "type": "string",
+          "description": "ISO timestamp, set at VERIFIED"
         }
       },
-      "additionalProperties": true
-    },
-    "test": {
-      "type": "string",
-      "description": "reproduction/regression test node id; set at CONFIRMED"
-    },
-    "fix": {
-      "type": "string",
-      "description": "commit or summary of the minimal fix; set at FIXING/FIXED"
-    },
-    "evidence": {
-      "type": "string",
-      "description": "full-regression evidence reference; set at VERIFIED"
-    },
-    "attempts": {
-      "type": "array",
-      "items": {
-        "type": "string"
-      },
-      "description": "log of reproduction attempts (command/test name + result)"
-    },
-    "rejection_reason": {
-      "type": "string",
-      "description": "required when status=REJECTED: why the scenario cannot occur"
-    },
-    "confirmed_at": {
-      "type": "string",
-      "description": "ISO timestamp, set at CONFIRMED"
-    },
-    "verified_at": {
-      "type": "string",
-      "description": "ISO timestamp, set at VERIFIED"
-    }
-  },
-  "additionalProperties": true,
-  "allOf": [
-    {
-      "if": {
-        "properties": {
-          "status": {
-            "const": "CONFIRMED"
+      "additionalProperties": true,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "CONFIRMED"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "test",
+              "regression_test",
+              "confirmed_at"
+            ],
+            "properties": {
+              "regression_test": {
+                "required": [
+                  "path",
+                  "red_evidence"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "FIXING"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "regression_test"
+            ],
+            "properties": {
+              "regression_test": {
+                "required": [
+                  "path",
+                  "red_evidence"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "FIXED"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "regression_test"
+            ],
+            "properties": {
+              "regression_test": {
+                "required": [
+                  "path",
+                  "red_evidence",
+                  "green_evidence"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "VERIFIED"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "regression_test",
+              "evidence",
+              "verified_at"
+            ],
+            "properties": {
+              "regression_test": {
+                "required": [
+                  "path",
+                  "red_evidence",
+                  "green_evidence"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "CLOSED"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "regression_test",
+              "evidence",
+              "verified_at"
+            ],
+            "properties": {
+              "regression_test": {
+                "required": [
+                  "path",
+                  "red_evidence",
+                  "green_evidence"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "REJECTED"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "attempts",
+              "rejection_reason"
+            ],
+            "properties": {
+              "attempts": {
+                "minItems": 1
+              }
+            }
           }
         }
+      ]
+    },
+    {
+      "type": "object",
+      "required": [
+        "id",
+        "category",
+        "type",
+        "severity",
+        "status",
+        "location",
+        "summary",
+        "reason",
+        "evidence",
+        "recommendation"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^CPLX-[0-9]+$"
+        },
+        "category": {
+          "const": "complexity"
+        },
+        "type": {
+          "enum": [
+            "delete",
+            "reuse",
+            "stdlib",
+            "native",
+            "yagni",
+            "shrink"
+          ]
+        },
+        "severity": {
+          "enum": [
+            "high",
+            "medium",
+            "low"
+          ]
+        },
+        "status": {
+          "enum": [
+            "open",
+            "resolved",
+            "accepted"
+          ]
+        },
+        "location": {
+          "type": "object",
+          "required": [
+            "file"
+          ],
+          "properties": {
+            "file": {
+              "type": "string",
+              "minLength": 1
+            },
+            "line": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "evidence": {
+          "type": "object",
+          "minProperties": 1
+        },
+        "recommendation": {
+          "type": "string",
+          "minLength": 1
+        },
+        "acceptance_reason": {
+          "type": "string",
+          "minLength": 1
+        }
       },
-      "then": {
-        "required": [
-          "test",
-          "regression_test",
-          "confirmed_at"
-        ],
-        "properties": {
-          "regression_test": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "accepted"
+              }
+            }
+          },
+          "then": {
             "required": [
-              "path",
-              "red_evidence"
+              "acceptance_reason"
             ]
           }
         }
-      }
-    },
-    {
-      "if": {
-        "properties": {
-          "status": {
-            "const": "FIXING"
-          }
-        }
-      },
-      "then": {
-        "required": [
-          "regression_test"
-        ],
-        "properties": {
-          "regression_test": {
-            "required": [
-              "path",
-              "red_evidence"
-            ]
-          }
-        }
-      }
-    },
-    {
-      "if": {
-        "properties": {
-          "status": {
-            "const": "FIXED"
-          }
-        }
-      },
-      "then": {
-        "required": [
-          "regression_test"
-        ],
-        "properties": {
-          "regression_test": {
-            "required": [
-              "path",
-              "red_evidence",
-              "green_evidence"
-            ]
-          }
-        }
-      }
-    },
-    {
-      "if": {
-        "properties": {
-          "status": {
-            "const": "VERIFIED"
-          }
-        }
-      },
-      "then": {
-        "required": [
-          "regression_test",
-          "evidence",
-          "verified_at"
-        ],
-        "properties": {
-          "regression_test": {
-            "required": [
-              "path",
-              "red_evidence",
-              "green_evidence"
-            ]
-          }
-        }
-      }
-    },
-    {
-      "if": {
-        "properties": {
-          "status": {
-            "const": "CLOSED"
-          }
-        }
-      },
-      "then": {
-        "required": [
-          "regression_test",
-          "evidence",
-          "verified_at"
-        ],
-        "properties": {
-          "regression_test": {
-            "required": [
-              "path",
-              "red_evidence",
-              "green_evidence"
-            ]
-          }
-        }
-      }
-    },
-    {
-      "if": {
-        "properties": {
-          "status": {
-            "const": "REJECTED"
-          }
-        }
-      },
-      "then": {
-        "required": [
-          "attempts",
-          "rejection_reason"
-        ],
-        "properties": {
-          "attempts": {
-            "minItems": 1
-          }
-        }
-      }
+      ]
     }
   ]
 }

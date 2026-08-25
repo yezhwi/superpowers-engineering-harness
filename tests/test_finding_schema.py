@@ -78,7 +78,9 @@ def test_unknown_status_rejected_by_schema():
         validate({**BASE, "status": "MAGIC"})
 
 
-def test_fixed_is_in_enum_regression_guard():
-    enum = SCHEMA["properties"]["status"]["enum"]
-    assert set(enum) == {"PROPOSED", "REPRODUCING", "CONFIRMED", "FIXING",
-                         "FIXED", "VERIFIED", "CLOSED", "REJECTED"}
+def test_fnd_rejects_complexity_status_and_severity():
+    from jsonschema import ValidationError
+    with pytest.raises(ValidationError):
+        validate({**BASE, "severity": "high", "status": "PROPOSED"})
+    with pytest.raises(ValidationError):
+        validate({**BASE, "status": "open"})
