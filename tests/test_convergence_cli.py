@@ -7,7 +7,7 @@ from pathlib import Path
 
 import yaml
 
-from evidence_factory import write_evidence
+from evidence_factory import write_complexity_review, write_evidence
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -48,6 +48,7 @@ def make_repo(tmp_path: Path, state="GATING", iteration=0,
     edir = h / "evidence"
     for etype in ("build", "unit_test"):
         write_evidence(tmp_path, h, etype)
+    write_complexity_review(tmp_path, h)
     return h
 
 

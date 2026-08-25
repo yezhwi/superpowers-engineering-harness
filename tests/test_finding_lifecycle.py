@@ -18,7 +18,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from evidence_factory import write_evidence
+from evidence_factory import write_complexity_review, write_evidence
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
@@ -58,6 +58,7 @@ def make_harness(tmp_path: Path) -> Path:
     evidence_dir.mkdir()
     for etype in ("build", "unit_test"):
         write_evidence(REPO, h, etype)
+    write_complexity_review(REPO, h)
 
     (h / "findings").mkdir()
     return h

@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from evidence_factory import write_evidence
+from evidence_factory import write_complexity_review, write_evidence
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -58,7 +58,19 @@ def test_status_invalid_state_exit_2(tmp_path):
 # -- transition ------------------------------------------------------------
 
 def test_transition_legal_persists_new_state(tmp_path):
-    make_repo(tmp_path, state="PLANNED")
+    h = make_repo(tmp_path, state="PLANNED")
+    task = yaml.safe_load((h / "current-task.yaml").read_text())
+    task["task"]["id"] = "TASK-001"
+    (h / "current-task.yaml").write_text(yaml.safe_dump(task))
+    decision = {"version": 1, "task": "TASK-001", "checks": {
+        "existence": {"checked": True, "result": "required"},
+        "reuse": {"checked": True, "result": "none"},
+        "stdlib": {"checked": True, "result": "none"},
+        "native": {"checked": True, "result": "none"},
+        "existing_dependency": {"checked": True, "result": "none"},
+        "minimum_local_implementation": {"checked": True, "result": "required"},
+    }, "decision": {"approach": "local_implementation", "rationale": "test fixture"}}
+    (h / "evidence" / "minimal-implementation.yaml").write_text(yaml.safe_dump(decision))
     result = run_cli(tmp_path, "transition", "IMPLEMENTING")
     assert result.returncode == 0, result.stdout + result.stderr
     task = yaml.safe_load((tmp_path / ".harness" /
@@ -135,6 +147,7 @@ def _passing_harness(tmp_path):
     edir = h / "evidence"
     for etype in ("build", "unit_test"):
         write_evidence(tmp_path, h, etype)
+    write_complexity_review(tmp_path, h)
     return h
 
 

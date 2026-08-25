@@ -87,6 +87,22 @@ GATING -> harness gate
 PASS -> CONVERGED -> DONE
 ```
 
+## v0.2 minimal complexity controls
+
+Before implementation, persist Decision Ladder evidence:
+
+```bash
+harness check minimal --file minimal-implementation.yaml
+```
+
+After verification, persist diff-scoped complexity review:
+
+```bash
+harness review complexity --file complexity-review.yaml
+```
+
+`Minimal Implementation Check` and `Complexity Reviewer` Skills perform contextual judgment. CLI validates/persists records. Gate requires fresh complexity review and blocks open HIGH `CPLX-*` findings; MEDIUM and LOW remain advisory.
+
 ## Development
 
 ```bash
