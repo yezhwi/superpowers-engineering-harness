@@ -95,6 +95,48 @@ def test_required_complexity_review_missing_blocks(tmp_path):
     assert "missing complexity-review evidence" in result.stdout
 
 
+@pytest.mark.parametrize("severity", ["medium", "low"])
+def test_open_nonblocking_complexity_finding_does_not_block(tmp_path, severity):
+    h = make_harness(tmp_path)
+    finding = {
+        "id": "CPLX-001", "category": "complexity", "type": "shrink",
+        "severity": severity, "status": "open", "location": {"file": "x.py"},
+        "summary": "simplify", "reason": "primitive exists", "evidence": {"primitive": "x"},
+        "recommendation": "use primitive",
+    }
+    (h / "findings" / "CPLX-001.yaml").write_text(yaml.safe_dump(finding))
+
+    assert _gate(h).returncode == 0
+
+
+def test_accepted_high_complexity_finding_does_not_block(tmp_path):
+    h = make_harness(tmp_path)
+    finding = {
+        "id": "CPLX-001", "category": "complexity", "type": "yagni",
+        "severity": "high", "status": "accepted", "location": {"file": "x.py"},
+        "summary": "compatibility layer", "reason": "v1 API", "evidence": {"requirement": "REQ-017"},
+        "recommendation": "keep layer", "acceptance_reason": "REQ-017 compatibility",
+    }
+    (h / "findings" / "CPLX-001.yaml").write_text(yaml.safe_dump(finding))
+
+    assert _gate(h).returncode == 0
+
+
+def test_open_high_complexity_finding_blocks(tmp_path):
+    h = make_harness(tmp_path)
+    finding = {
+        "id": "CPLX-001", "category": "complexity", "type": "reuse",
+        "severity": "high", "status": "open", "location": {"file": "x.py"},
+        "summary": "duplicate", "reason": "x exists", "evidence": {"candidate": "x"},
+        "recommendation": "reuse x",
+    }
+    (h / "findings" / "CPLX-001.yaml").write_text(yaml.safe_dump(finding))
+
+    result = _gate(h)
+    assert result.returncode == 1
+    assert "High complexity finding CPLX-001 is open" in result.stdout
+
+
 def test_gate_writes_back_status(tmp_path):
     h = make_harness(tmp_path)
     assert _gate(h).returncode == 0
