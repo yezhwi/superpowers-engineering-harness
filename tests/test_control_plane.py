@@ -160,6 +160,28 @@ def test_gate_pass_maps_to_zero_and_writes_back(tmp_path):
     assert task["gate"]["status"] == "PASS"
 
 
+def test_done_rejected_when_workspace_changes_after_convergence(tmp_path):
+    _passing_harness(tmp_path)
+    assert run_cli(tmp_path, "converge").returncode == 0
+    (tmp_path / "business.py").write_text("changed")
+
+    result = run_cli(tmp_path, "transition", "DONE")
+
+    assert result.returncode == 1
+    assert "CURRENT_GATE_PASS_REQUIRED" in result.stderr
+    task = yaml.safe_load((tmp_path / ".harness" / "current-task.yaml").read_text())
+    assert task["state"] == "CONVERGED"
+
+
+def test_done_allowed_when_current_gate_passes(tmp_path):
+    _passing_harness(tmp_path)
+    assert run_cli(tmp_path, "converge").returncode == 0
+
+    result = run_cli(tmp_path, "transition", "DONE")
+
+    assert result.returncode == 0
+
+
 def test_gate_blocked_maps_to_one(tmp_path):
     h = _passing_harness(tmp_path)
     reqs = {"requirements": [

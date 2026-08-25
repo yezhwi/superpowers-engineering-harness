@@ -103,7 +103,8 @@ def load_findings(findings_dir: Path) -> list:
     return findings
 
 
-def run_gate(harness_dir: Path, head: str | None = None) -> tuple[str, list]:
+def run_gate(harness_dir: Path, head: str | None = None,
+             allow_converged: bool = False) -> tuple[str, list]:
     """Returns (status, blockers). status in {'PASS','BLOCKED'}.
     Raises InvalidHarnessState."""
     task = _load_yaml(harness_dir / "current-task.yaml")
@@ -127,7 +128,7 @@ def run_gate(harness_dir: Path, head: str | None = None) -> tuple[str, list]:
         raise InvalidHarnessState(f"unknown task state {state!r}")
 
     # Single legal path: REVIEWING -> GATING -> quality gate.
-    if state != "GATING":
+    if state != "GATING" and not (allow_converged and state == "CONVERGED"):
         raise InvalidHarnessState(
             f"state {state} does not allow gate execution (must be GATING)"
         )

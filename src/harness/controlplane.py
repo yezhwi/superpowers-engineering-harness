@@ -79,6 +79,16 @@ def cmd_transition(target: str) -> int:
     except Exception as exc:
         print(f"INVALID_HARNESS_STATE: {exc}", file=sys.stderr)
         return 2
+    if current == "CONVERGED" and target == "DONE":
+        quality_gate = _load("quality_gate")
+        try:
+            status, _ = quality_gate.run_gate(harness_dir, allow_converged=True)
+        except quality_gate.InvalidHarnessState as exc:
+            print(f"INVALID_HARNESS_STATE: {exc}", file=sys.stderr)
+            return 2
+        if status != "PASS":
+            print("CURRENT_GATE_PASS_REQUIRED", file=sys.stderr)
+            return 1
     if current == "PLANNED" and target == "IMPLEMENTING":
         decision_path = harness_dir / "evidence" / "minimal-implementation.yaml"
         try:
