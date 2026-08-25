@@ -95,7 +95,7 @@ def write_finding(h: Path, **overrides):
     if status in {"VERIFIED", "CLOSED"}:
         finding.setdefault("evidence", f"{finding['id']}-full.json"); finding.setdefault("verified_at", "2026-01-02T00:00:00+00:00")
         fingerprint = workspace_fingerprint()
-        (h / "evidence" / finding["evidence"]).write_text(json.dumps({"type":"custom","timestamp":"t","command":"true","exit_code":0,"commit":HEAD,"workspace_fingerprint":fingerprint,"workspace_fingerprint_after":fingerprint}))
+        (h / "evidence" / finding["evidence"]).write_text(json.dumps({"type":"custom","timestamp":"t","command":"true","exit_code":0,"commit":HEAD,"workspace_fingerprint":fingerprint,"workspace_fingerprint_after":fingerprint,"scope":"full_suite","covered_tests":[]}))
     (h / "findings" / f"{finding['id'].lower()}.yaml").write_text(yaml.safe_dump(finding))
 
 

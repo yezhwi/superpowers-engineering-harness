@@ -41,3 +41,26 @@ def validate_evidence(record, *, current_head, current_workspace,
     if test_id is not None:
         if not isinstance(test, dict) or test.get("node_id") != test_id:
             _fail("REGRESSION_TEST_MISMATCH")
+
+
+def validate_finding_closure_evidence(finding, record, impact, *, current_head,
+                                      current_workspace):
+    """Validate policy proof for VERIFIED/CLOSED finding evidence."""
+    validate_evidence(record, current_head=current_head,
+                      current_workspace=current_workspace, expected_success=True)
+    scope = record.get("scope")
+    if scope is None:
+        _fail("FINDING_SCOPE_MISSING")
+    severity = finding.get("severity")
+    if severity == "critical" and scope != "full_suite":
+        _fail("FULL_SUITE_REQUIRED_FOR_CRITICAL")
+    if severity != "major":
+        return
+    policy = (impact or {}).get("impact", {})
+    if policy.get("full_suite", {}).get("recommended") and scope != "full_suite":
+        _fail("FULL_SUITE_REQUIRED_BY_IMPACT")
+    if scope == "related":
+        required = set(policy.get("required_tests", []))
+        covered = set(record.get("covered_tests", []))
+        if not required <= covered:
+            _fail("RELATED_TEST_COVERAGE_MISSING")

@@ -139,6 +139,8 @@ def run_gate(harness_dir: Path, head: str | None = None,
     head = head if head is not None else git_head()
     evidence = load_evidence(harness_dir / "evidence")
     findings = load_findings(harness_dir / "findings")
+    impact_path = harness_dir / "impact.yaml"
+    impact = _load_yaml(impact_path) if impact_path.exists() else {}
     # HEAD alone misses uncommitted edits. Recompute the business-workspace
     # snapshot; collect_evidence excludes .harness runtime files.
     try:
@@ -166,7 +168,19 @@ def run_gate(harness_dir: Path, head: str | None = None,
         if state in {"FIXED", "VERIFIED", "CLOSED"}:
             finding_proof(finding, finding["regression_test"]["green_evidence"], True, "green", finding["regression_test"]["path"])
         if state in {"VERIFIED", "CLOSED"}:
-            finding_proof(finding, finding["evidence"], True, "full regression")
+            ref = finding["evidence"]
+            path = harness_dir / "evidence" / (ref if ref.endswith(".json") else f"{ref}.json")
+            try:
+                record = json.loads(path.read_text())
+                from .evidence_validator import validate_finding_closure_evidence
+                validate_finding_closure_evidence(
+                    finding, record, impact, current_head=head,
+                    current_workspace=current_workspace,
+                )
+            except (OSError, json.JSONDecodeError, EvidenceValidationError) as exc:
+                raise InvalidHarnessState(
+                    f"{finding['id']} full regression evidence invalid: {exc}"
+                ) from exc
 
     blockers = []
 

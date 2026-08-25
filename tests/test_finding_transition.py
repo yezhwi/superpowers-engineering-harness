@@ -26,6 +26,8 @@ def setup(tmp_path):
       evidence = {"type":"custom","timestamp":"2026-01-01T00:00:00+00:00","command":"test","exit_code":code,"commit":head,"workspace_fingerprint":fingerprint,"workspace_fingerprint_after":fingerprint}
       if name != "full.json":
         evidence.update({"subject":{"kind":"finding","id":"FND-001"},"test":{"node_id":"tests/test_x.py::test_x"}})
+      else:
+        evidence.update({"scope":"full_suite","covered_tests":[]})
       (h/"evidence"/name).write_text(json.dumps(evidence))
     return h
 
@@ -71,6 +73,21 @@ def test_fixed_rejects_green_evidence_for_different_test(tmp_path):
     assert result.returncode == 2
     assert "REGRESSION_TEST_MISMATCH" in result.stderr
     assert status(h) == "FIXING"
+
+
+def test_critical_finding_rejects_related_closure_evidence(tmp_path):
+    h = setup(tmp_path)
+    full = json.loads((h / "evidence" / "full.json").read_text())
+    full["scope"] = "related"
+    full["covered_tests"] = ["tests/test_x.py::test_x"]
+    (h / "evidence" / "full.json").write_text(json.dumps(full))
+    assert cli(tmp_path, "finding", "transition", "FND-001", "REPRODUCING", "--attempt", "red test created").returncode == 0
+    assert cli(tmp_path, "finding", "transition", "FND-001", "CONFIRMED", "--test", "tests/test_x.py::test_x", "--evidence", "red.json").returncode == 0
+    assert cli(tmp_path, "finding", "transition", "FND-001", "FIXING").returncode == 0
+    assert cli(tmp_path, "finding", "transition", "FND-001", "FIXED", "--evidence", "green.json").returncode == 0
+    result = cli(tmp_path, "finding", "transition", "FND-001", "VERIFIED", "--evidence", "full.json")
+    assert result.returncode == 2
+    assert "FULL_SUITE_REQUIRED_FOR_CRITICAL" in result.stderr
 
 
 def test_cli_rejects_skip(tmp_path):

@@ -328,11 +328,17 @@ def cmd_finding_transition(fid,target,evidence=None,test=None,attempt=None,reaso
    if not test: raise ValueError('CONFIRMED requires --test')
    proof(evidence,False,test); finding['test']=test; finding['regression_test']={'path':test,'red_evidence':evidence}; finding['confirmed_at']=datetime.datetime.now(datetime.timezone.utc).isoformat()
   elif target=='FIXED': proof(evidence,True,finding['regression_test']['path']); finding['regression_test']['green_evidence']=evidence
-  elif target=='VERIFIED': proof(evidence,True); finding['evidence']=evidence; finding['verified_at']=datetime.datetime.now(datetime.timezone.utc).isoformat()
+  elif target=='VERIFIED':
+   if not evidence: raise ValueError('missing --evidence')
+   p=Path('.harness/evidence')/(evidence if evidence.endswith('.json') else evidence+'.json')
+   d=json.loads(p.read_text()); head=_load('quality_gate').git_head(); workspace=_load('collect_evidence').workspace_fingerprint()
+   impact_path=Path('.harness/impact.yaml'); impact=yaml.safe_load(impact_path.read_text()) if impact_path.exists() else {}
+   _load('evidence_validator').validate_finding_closure_evidence(finding,d,impact,current_head=head,current_workspace=workspace)
+   finding['evidence']=evidence; finding['verified_at']=datetime.datetime.now(datetime.timezone.utc).isoformat()
   elif target=='REJECTED':
    if not reason or not finding.get('attempts'): raise ValueError('REJECTED requires attempts and --reason')
    finding['rejection_reason']=reason
- except (ValueError,OSError,json.JSONDecodeError) as e: print(f'INVALID FINDING PROOF: {e}',file=sys.stderr); return 2
+ except (ValueError,OSError,json.JSONDecodeError,_load('evidence_validator').EvidenceValidationError) as e: print(f'INVALID FINDING PROOF: {e}',file=sys.stderr); return 2
  finding['status']=target; tmp=path.with_suffix('.tmp'); tmp.write_text(yaml.safe_dump(finding,sort_keys=False)); tmp.replace(path); print(f'OK: {fid} {current} -> {target}'); return 0
 
 def cmd_task_migrate_id(task_id: str) -> int:
