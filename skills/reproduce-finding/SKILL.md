@@ -27,7 +27,7 @@ One status = one meaning:
 | CONFIRMED | bug IS real: failing test runs RED | `test:` path |
 | FIXING | fix in progress | work-in-progress |
 | FIXED | the failing test now passes GREEN | same test path |
-| VERIFIED | FULL regression suite green | evidence reference |
+| VERIFIED | Closure policy proof green | evidence reference |
 | CLOSED | verified finding archived | terminal |
 | REJECTED | scenario proven impossible | attempts + reasoning |
 
@@ -57,8 +57,7 @@ One status = one meaning:
    - `CONFIRMED -> FIXING`: record the regression test path
      (`regression_test.path`) — the red test will become the regression test.
    - `FIXING -> FIXED`: that exact test now runs GREEN.
-   - `FIXED -> VERIFIED`: FULL regression suite (unit + integration as
-     configured) passes; store evidence reference.
+   - `FIXED -> VERIFIED`: critical findings, or major findings whose impact requires it, need authorized FULL regression. Other major findings may use fresh related evidence covering every impact `required_tests` entry; store evidence reference.
    - `VERIFIED -> CLOSED`: archive; terminal.
 
    Writing any status without its evidence is a violation of this skill.
@@ -143,10 +142,9 @@ pass. No unrelated changes. Run the test — green → `status: FIXED`.
 
 Any regression failure later → back to `FIXING`; iterate.
 
-### 5. Full Regression + VERIFIED
+### 5. Closure Proof + VERIFIED
 
-Run the project's full regression suite (unit + integration as configured).
-All green → write to the finding file:
+Choose proof from persisted policy: critical findings require authorized full-suite evidence. Major findings may use related evidence only when its structured `covered_tests` contains every impact `required_tests` entry and impact does not require full suite. All required proof green → write to the finding file:
 
 ```yaml
 status: VERIFIED
@@ -189,7 +187,7 @@ Cannot rule it out → keep `REPRODUCING`, report to user.
 - [ ] No forbidden jumps (PROPOSED→CONFIRMED, REPRODUCING→CONFIRMED without chain)?
 - [ ] CONFIRMED means test RED only (nothing fixed yet)?
 - [ ] FIXED means that exact test GREEN?
-- [ ] VERIFIED backed by full regression evidence?
+- [ ] VERIFIED backed by policy-required fresh closure evidence?
 - [ ] Every REJECTED has attempts + impossibility reasoning?
 - [ ] Unresolved findings left in REPRODUCING and surfaced?
 - [ ] Code changes limited to confirmed findings' scope?

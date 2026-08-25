@@ -36,12 +36,14 @@ def test_wheel_runs_outside_checkout(tmp_path):
     outside = tmp_path / "outside"
     outside.mkdir()
     subprocess.run(["git", "init", "-q"], cwd=outside, check=True)
-    for args in (["--help"], ["init"], ["status"]):
+    for args in (["--help"], ["evidence", "--help"], ["init"], ["status"]):
         result = subprocess.run(
             [harness, *args], cwd=outside,
             capture_output=True, text=True,
         )
         assert result.returncode == 0, result.stderr
+        if args == ["evidence", "--help"]:
+            assert "--covered-test" in result.stdout
 
     result = subprocess.run(
         [harness, "task", "recover", "TASK-005", "--reason", "stale"],

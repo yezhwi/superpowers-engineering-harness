@@ -117,6 +117,8 @@ def test_evidence_writes_head_bound_json(tmp_path):
 def test_evidence_failing_command_still_saved(tmp_path):
     make_repo(tmp_path)
     result = run_cli(tmp_path, "evidence", "--type", "unit_test",
+                     "--scope", "related", "--covered-test",
+                     "tests/test_control_plane.py::test_evidence_failing_command_still_saved",
                      "--command", "false")
     # evidence is recorded; the wrapper reports the underlying failure
     ev = json.loads((tmp_path / ".harness" / "evidence" /
