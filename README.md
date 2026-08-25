@@ -104,19 +104,32 @@ no slash-commands to memorize.
 
 ### 1. Install (once)
 
-Two SEPARATE installs with different jobs — you need BOTH:
+Engineering Harness is a controller, not a replacement for
+[Superpowers](https://github.com/obra/superpowers). Install all THREE:
 
 ```bash
-# 1a) skills for the agent (this is what makes the trigger phrases work)
+# 1a) worker workflow skills: brainstorming, TDD, planning, review, verification
+pi install git:github.com/obra/superpowers
+
+# 1b) controller skills: task state, evidence, findings, gate, convergence
 pi install git:github.com/yezhwi/superpowers-engineering-harness
 
-# 1b) deterministic CLI for the shell (editable, so scripts/ stays resolvable)
+# 1c) deterministic CLI for the shell (editable, so scripts/ stays resolvable)
 pip install -e /path/to/superpowers-engineering-harness
+```
+
+Architecture:
+
+```text
+Superpowers          = Worker workflow (brainstorming / TDD / review)
+Engineering Harness  = Controller (state / evidence / gate / convergence)
+Tests + Gate         = Truth
 ```
 
 | 安装 | 提供什么 | 没装的后果 |
 |---|---|---|
-| `pi install` | SKILL.md 技能包 → Agent 会话内自动触发 | 说触发语无反应，Agent 不知道 harness 存在 |
+| `pi install obra/superpowers` | Worker workflow skills | Harness 到 PLANNED/IMPLEMENTING 后没有 TDD、review、planning worker |
+| `pi install engineering-harness` | Controller skills | 说触发语无反应，Agent 不知道 Harness 状态机 |
 | `pip install -e .` | 终端里的 `harness` 命令 | Agent 会话内技能能触发，但确定性命令全部失败 |
 
 Verify:
