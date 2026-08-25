@@ -65,6 +65,9 @@ def make_harness(tmp_path: Path) -> Path:
     evidence_dir.mkdir()
     for etype in ("build", "unit_test"):
         write_evidence(REPO, h, etype)
+    review = json.loads((evidence_dir / "build.json").read_text())
+    review["type"] = "review"
+    (evidence_dir / "complexity-review.json").write_text(json.dumps(review))
 
     findings_dir = h / "findings"
     findings_dir.mkdir()
@@ -77,6 +80,19 @@ def test_all_conditions_pass(tmp_path):
     result = _gate(h)
     assert result.returncode == 0, result.stdout + result.stderr
     assert "QUALITY GATE: PASS" in result.stdout
+
+
+def test_required_complexity_review_missing_blocks(tmp_path):
+    h = make_harness(tmp_path)
+    gate_cfg = yaml.safe_load((h / "gate.yaml").read_text())
+    gate_cfg["gate"]["complexity"] = {"required": True, "blocking": ["high"]}
+    (h / "gate.yaml").write_text(yaml.safe_dump(gate_cfg))
+    (h / "evidence" / "complexity-review.json").unlink()
+
+    result = _gate(h)
+
+    assert result.returncode == 1
+    assert "missing complexity-review evidence" in result.stdout
 
 
 def test_gate_writes_back_status(tmp_path):

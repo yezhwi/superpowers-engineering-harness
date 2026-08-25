@@ -274,7 +274,29 @@ def run_gate(harness_dir: Path, head: str | None = None) -> tuple[str, list]:
         elif before != current_workspace:
             blockers.append(f"{label} evidence workspace is stale")
 
-    # 4. Findings: open critical/major counts, regression debt.
+    # 4. Complexity: required review evidence and configured open severities.
+    complexity_cfg = gate_cfg.get("complexity", {})
+    if complexity_cfg.get("required", False):
+        review_path = harness_dir / "evidence" / "complexity-review.json"
+        try:
+            review = json.loads(review_path.read_text())
+            validate_schema(review, "evidence.schema.json", review_path)
+        except (OSError, json.JSONDecodeError, InvalidHarnessState):
+            blockers.append("missing complexity-review evidence")
+        else:
+            if (review.get("commit") != head
+                    or review.get("workspace_fingerprint") != current_workspace
+                    or review.get("workspace_fingerprint_after") != current_workspace):
+                blockers.append("complexity-review evidence is stale")
+        blocking = set(complexity_cfg.get("blocking", ["high"]))
+        for finding in findings:
+            if (finding.get("id", "").startswith("CPLX-")
+                    and finding.get("status") == "open"
+                    and finding.get("severity") in blocking):
+                blockers.append(
+                    f"{finding['severity'].title()} complexity finding {finding['id']} is open")
+
+    # 5. Findings: open critical/major counts, regression debt.
     find_cfg = gate_cfg.get("findings", {})
     critical_allowed = int(find_cfg.get("critical_allowed", 0))
     major_allowed = int(find_cfg.get("major_allowed", 0))

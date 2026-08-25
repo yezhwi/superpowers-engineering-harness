@@ -13,6 +13,11 @@ gate:
     unit_test: required
     integration_test: optional
 
+  complexity:
+    required: true
+    blocking:
+      - high
+
   findings:
     critical_allowed: 0
     major_allowed: 0
