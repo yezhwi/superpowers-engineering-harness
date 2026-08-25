@@ -1,7 +1,7 @@
 {
 	"name": "superpowers-engineering-harness",
-	"version": "0.2.0",
-	"private": true,
+	"version": "0.2.1",
+	"files": ["README.md", "LICENSE", "SKILL.md", "skills"],
 	"keywords": ["pi-package"],
 	"pi": {
 		"skills": ["./skills"]
