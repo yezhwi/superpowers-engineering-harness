@@ -227,7 +227,42 @@ harness finding list              # FND-001 CLOSED
 ls .harness/evidence/             # HEAD-bound evidence json files
 ```
 
-### 6. What you should (and should not) do as the human
+### 6. Impact analysis before verification
+
+Before asking the agent to enter `VERIFYING`, record affected surface and
+related tests. This prevents a local change from silently breaking callers,
+contracts, retries, or historical regressions:
+
+```bash
+harness impact add-change src/orders/cancel.py
+harness impact add-dependent src/refunds/service.py
+harness impact add-contract REQ-001
+harness impact add-contract INV-001
+harness impact add-risk "duplicate refund during retry"
+harness impact add-test tests/test_cancel.py::test_duplicate_cancel_single_refund
+harness impact show
+```
+
+`IMPLEMENTING -> VERIFYING` is refused until `required_tests` is non-empty.
+Run only those related tests by default:
+
+```bash
+harness evidence --type unit_test --scope related \
+  --command "pytest tests/test_cancel.py::test_duplicate_cancel_single_refund"
+```
+
+If impact analysis recommends a full suite, Harness never runs it silently:
+
+```bash
+harness impact require-full-suite --reason "state-machine boundary changed"
+harness transition VERIFYING
+# FULL_SUITE_AUTHORIZATION_REQUIRED
+
+harness authorize full-suite       # explicit human approval
+harness transition VERIFYING
+```
+
+### 7. What you should (and should not) do as the human
 
 DO:
 - Interrupt and ask questions anytime — state is on disk, nothing is lost
@@ -242,7 +277,7 @@ DON'T:
   evidence files bound to git HEAD; empty-evidence claims are blockers
 - Argue with exit code 1. Fix what stdout says is blocking.
 
-### 7. Session recovery（中断恢复）
+### 8. Session recovery（中断恢复）
 
 All state lives in `.harness/`. If the pi session dies mid-task:
 
