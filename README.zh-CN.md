@@ -104,6 +104,10 @@ harness evidence --type unit_test --scope full_suite --command "pytest"
 
 会话中断后运行 `harness status`；Harness 从 `.harness/current-task.yaml` 恢复。
 
+### 自动编排
+
+当 Engineering Harness Skill 控制任务时，它会在 `PLANNED` 自动调用 Minimal Implementation Check、在 `VERIFYING` 前记录 impact analysis、在验证全绿后且 `REVIEWING` 前调用 Complexity Reviewer。状态 guard 拒绝跳过记录。全量测试授权仍必须由人类显式决定。
+
 ## v0.2：必要复杂度
 
 实现前，Minimal Implementation Check 记录 Decision Ladder。按顺序搜索：是否必要、仓库复用、stdlib、平台原生能力、已安装依赖、本地实现，最后才增加最小新 abstraction。

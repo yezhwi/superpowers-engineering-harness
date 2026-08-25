@@ -104,6 +104,10 @@ harness evidence --type unit_test --scope full_suite --command "pytest"
 
 Recover interrupted work with `harness status`; Harness resumes from `.harness/current-task.yaml`.
 
+### Automatic orchestration
+
+When Engineering Harness Skill controls a task, it automatically invokes Minimal Implementation Check in `PLANNED`, records impact analysis before `VERIFYING`, and invokes Complexity Reviewer after green verification but before `REVIEWING`. State guards reject skipped records. Full-suite authorization remains an explicit human decision.
+
 ## v0.2: necessary complexity
 
 Before implementation, Minimal Implementation Check records Decision Ladder result. Search in order: existence, repository reuse, stdlib, platform-native capability, installed dependency, local implementation, then minimum new abstraction.
