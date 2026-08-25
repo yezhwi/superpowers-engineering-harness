@@ -5,7 +5,7 @@ imported from the scripts directory -- never re-implemented here, so the
 CLI and the scripts can never diverge.
 """
 
-import importlib.util
+import importlib
 import json
 import sys
 from pathlib import Path
@@ -17,27 +17,9 @@ class HarnessStateError(Exception):
     """Invalid harness state (maps to exit code 2)."""
 
 
-def _scripts_dir() -> Path:
-    here = Path(__file__).resolve()
-    for parent in here.parents:
-        candidate = parent / "scripts"
-        if (candidate / "state_machine.py").is_file():
-            return candidate
-    raise HarnessStateError("could not locate scripts/ directory")
-
-
 def _load(name: str):
-    scripts = _scripts_dir()
-    if str(scripts) not in sys.path:
-        # script modules import each other by top-level name
-        sys.path.insert(0, str(scripts))
-    path = scripts / f"{name}.py"
-    spec = importlib.util.spec_from_file_location(f"harness_scripts_{name}",
-                                                  path)
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
+    """Load bundled runtime module without repository-layout discovery."""
+    return importlib.import_module(f"harness.{name}")
 
 
 def load_task(harness_dir: Path) -> dict:

@@ -5,14 +5,13 @@ validate against schemas/finding.schema.json.
 """
 
 import json
-from pathlib import Path
+from importlib import resources
 
 import pytest
 
-REPO = Path(__file__).resolve().parent.parent
 jsonschema = pytest.importorskip("jsonschema")
 
-SCHEMA = json.loads((REPO / "schemas" / "finding.schema.json").read_text())
+SCHEMA = json.loads(resources.files("harness").joinpath("schemas", "finding.schema.json").read_text())
 
 
 def validate(finding: dict) -> None:

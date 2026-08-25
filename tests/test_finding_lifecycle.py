@@ -11,6 +11,7 @@ Deterministic core of the finding lifecycle:
 """
 
 import json
+from importlib import resources
 import subprocess
 import sys
 from pathlib import Path
@@ -37,12 +38,12 @@ def make_harness(tmp_path: Path) -> Path:
     """Fully passing harness dir at GATING with empty findings."""
     h = tmp_path / ".harness"
     task = yaml.safe_load(
-        (REPO / "templates" / "current-task.yaml").read_text())
+        resources.files("harness").joinpath("templates", "current-task.yaml").read_text())
     task["state"] = "GATING"
     h.mkdir(parents=True)
     (h / "current-task.yaml").write_text(yaml.safe_dump(task))
     (h / "gate.yaml").write_text(
-        (REPO / "templates" / "gate.yaml").read_text())
+        resources.files("harness").joinpath("templates", "gate.yaml").read_text())
     requirements = {"requirements": [
         {"id": "REQ-001", "statement": "works", "priority": "must",
          "status": "verified", "evidence": ["build.json"]},

@@ -8,6 +8,7 @@ Deterministic core of the convergence skill (doc section 24):
 - Gate bypass: no state except CONVERGED reaches DONE.
 """
 
+from importlib import resources
 import subprocess
 import sys
 from pathlib import Path
@@ -118,7 +119,7 @@ def _status(harness_dir: Path):
 
 def make_task(tmp_path: Path, **overrides) -> Path:
     task = yaml.safe_load(
-        (REPO / "templates" / "current-task.yaml").read_text())
+        resources.files("harness").joinpath("templates", "current-task.yaml").read_text())
     task.update(overrides)
     h = tmp_path / ".harness"
     h.mkdir(parents=True)

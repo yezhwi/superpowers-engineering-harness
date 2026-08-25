@@ -11,6 +11,7 @@ plus INVALID_HARNESS_STATE (exit 2) cases.
 """
 
 import json
+from importlib import resources
 import subprocess
 import sys
 from pathlib import Path
@@ -39,13 +40,12 @@ def make_harness(tmp_path: Path) -> Path:
     """Build a fully passing harness dir; individual tests break one thing."""
     h = tmp_path / ".harness"
 
-    task = yaml.safe_load(
-        (REPO / "templates" / "current-task.yaml").read_text())
+    task = yaml.safe_load(resources.files("harness").joinpath("templates", "current-task.yaml").read_text())
     task["state"] = "GATING"
     h.mkdir(parents=True)
     (h / "current-task.yaml").write_text(yaml.safe_dump(task))
 
-    gate_cfg = yaml.safe_load((REPO / "templates" / "gate.yaml").read_text())
+    gate_cfg = yaml.safe_load(resources.files("harness").joinpath("templates", "gate.yaml").read_text())
     (h / "gate.yaml").write_text(yaml.safe_dump(gate_cfg))
 
     requirements = {"requirements": [
