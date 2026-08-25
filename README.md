@@ -1,4 +1,4 @@
-# Superpowers Engineering Harness v0.1
+# Superpowers Engineering Harness v0.2
 
 > Turn agent development into deterministic state, evidence, and
 > gate-controlled delivery for humans and AI.
@@ -13,7 +13,7 @@ State + Contract + Invariant + Executable Test + Evidence + Deterministic Gate
 Model = Worker · Superpowers = Development Workflow · Harness = Controller ·
 Tests / Compiler / Gate = Truth.
 
-## Iron Laws (v0.1)
+## Iron Laws (v0.2)
 
 1. State persisted outside LLM context (`​.harness/current-task.yaml`).
 2. Transitions only via the fixed state machine.
@@ -128,6 +128,12 @@ harness converge
 ```
 
 `harness transition` 仅接受合法状态转换。Gate 要求 fresh evidence；v0.2 还要求 Minimal Decision、fresh complexity review，并阻塞开放 HIGH `CPLX-*` finding。
+
+### 依赖与 token 建议
+
+Engineering Harness 是 Superpowers 工作流控制层，不替代 Superpowers。安装并启用 Superpowers Skills，尤其是 brainstorming、writing-plans、TDD、review、verification；Harness 使用这些 Skills 执行开发，再用状态、evidence、gate 收敛。
+
+推荐结合 Caveman Mode：压缩 agent 输出，减少 token 消耗；代码、命令、错误信息和 Harness 状态保持完整，不压缩技术事实。
 
 ## v0.2 minimal complexity controls
 
