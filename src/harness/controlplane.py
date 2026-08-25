@@ -79,6 +79,15 @@ def cmd_transition(target: str) -> int:
     except Exception as exc:
         print(f"INVALID_HARNESS_STATE: {exc}", file=sys.stderr)
         return 2
+    if current == "PLANNED" and target == "IMPLEMENTING":
+        decision_path = harness_dir / "evidence" / "minimal-implementation.yaml"
+        try:
+            import yaml
+            decision = yaml.safe_load(decision_path.read_text(encoding="utf-8"))
+            _load("complexity").validate_minimal_decision(decision)
+        except Exception as exc:
+            print(f"MINIMAL_IMPLEMENTATION_REQUIRED: {exc}", file=sys.stderr)
+            return 1
     if target == "VERIFYING":
         _, impact = _impact()
         plan = impact["impact"]
@@ -102,6 +111,24 @@ def cmd_transition(target: str) -> int:
     task["state"] = target
     save_task(harness_dir, task)
     print(f"OK: {current} -> {target}")
+    return 0
+
+
+def cmd_check_minimal(source: Path) -> int:
+    import yaml
+
+    try:
+        document = yaml.safe_load(source.read_text(encoding="utf-8"))
+        task = load_task(Path(".harness"))
+        if not isinstance(document, dict):
+            raise ValueError("decision file is not a mapping")
+        if document.get("task") != task.get("task", {}).get("id"):
+            raise ValueError("task mismatch")
+        path = _load("complexity").write_minimal_decision(Path(".harness"), document)
+    except Exception as exc:
+        print(f"INVALID MINIMAL IMPLEMENTATION: {exc}", file=sys.stderr)
+        return 2
+    print(f"minimal implementation evidence written: {path}")
     return 0
 
 

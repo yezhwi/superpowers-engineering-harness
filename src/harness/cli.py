@@ -40,6 +40,10 @@ def main(argv=None) -> int:
     p_trans = sub.add_parser(
         "transition", help="validate and persist a state transition")
     p_trans.add_argument("target")
+    p_check = sub.add_parser("check", help="run Harness checks")
+    check_sub = p_check.add_subparsers(dest="check_command")
+    p_minimal = check_sub.add_parser("minimal", help="persist Minimal Implementation Decision")
+    p_minimal.add_argument("--file", required=True, dest="source_file")
     p_ev = sub.add_parser(
         "evidence", help="run a command and save HEAD-bound evidence")
     p_ev.add_argument("--type", required=True)
@@ -75,6 +79,8 @@ def main(argv=None) -> int:
         return controlplane.cmd_status()
     if args.subcommand == "transition":
         return controlplane.cmd_transition(args.target)
+    if args.subcommand == "check" and args.check_command == "minimal":
+        return controlplane.cmd_check_minimal(Path(args.source_file))
     if args.subcommand == "evidence":
         
         if args.scope == "full_suite" and not controlplane.load_task(Path(".harness")).get("authorization",{}).get("full_suite",{}).get("granted"):
