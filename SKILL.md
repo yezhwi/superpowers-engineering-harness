@@ -84,6 +84,8 @@ There is no shortcut from any state to DONE.
 Default: run only tests relevant to changed files, current finding regression
 test, or user-specified scope. Do NOT run a full suite "just in case".
 
+When an authorized full suite fails, return to IMPLEMENTING. Run exact regression + impact-related tests after each repair. Once focused tests pass, only then rerun the authorized full suite before REVIEWING/GATING. Authorization persists for current task; do not request it again unless revoked.
+
 Finding closure policy: critical findings require full-suite evidence. Major findings may close from fresh `related` evidence only when structured `covered_tests` covers every `impact.required_tests` entry and impact does not recommend full suite.
 
 Full-suite execution requires explicit user authorization persisted by:

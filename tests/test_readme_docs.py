@@ -20,3 +20,9 @@ def test_bilingual_readmes_link_and_document_core_commands():
         assert command in chinese
     assert "README.zh-CN.md" in english
     assert "README.md" in chinese
+
+
+def test_workflow_defers_full_suite_rerun_until_focused_tests_pass():
+    workflow = (REPO / "SKILL.md").read_text()
+    assert "exact regression + impact-related tests" in workflow
+    assert "only then rerun the authorized full suite" in workflow
