@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Minimal Implementation Decision",
+  "type": "object",
+  "required": ["version", "task", "checks", "decision"],
+  "properties": {
+    "version": {"const": 1},
+    "task": {"type": "string", "pattern": "^TASK-[0-9]+$"},
+    "checks": {
+      "type": "object",
+      "required": ["existence", "reuse", "stdlib", "native", "existing_dependency", "minimum_local_implementation"],
+      "properties": {
+        "existence": {"$ref": "#/$defs/existenceCheck"},
+        "reuse": {"$ref": "#/$defs/candidateCheck"},
+        "stdlib": {"$ref": "#/$defs/candidateCheck"},
+        "native": {"$ref": "#/$defs/candidateCheck"},
+        "existing_dependency": {"$ref": "#/$defs/candidateCheck"},
+        "minimum_local_implementation": {"$ref": "#/$defs/localCheck"}
+      },
+      "additionalProperties": false
+    },
+    "decision": {
+      "type": "object",
+      "required": ["approach", "rationale"],
+      "properties": {
+        "approach": {"enum": ["reuse", "stdlib", "native", "existing_dependency", "local_implementation", "new_abstraction", "unnecessary"]},
+        "rationale": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    }
+  },
+  "$defs": {
+    "existenceCheck": {
+      "type": "object",
+      "required": ["checked", "result"],
+      "properties": {
+        "checked": {"type": "boolean"},
+        "result": {"enum": ["required", "unnecessary"]}
+      },
+      "additionalProperties": false
+    },
+    "candidateCheck": {
+      "type": "object",
+      "required": ["checked", "result"],
+      "properties": {
+        "checked": {"type": "boolean"},
+        "result": {"enum": ["found", "none", "skipped"]},
+        "candidate": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
+    "localCheck": {
+      "type": "object",
+      "required": ["checked", "result"],
+      "properties": {
+        "checked": {"type": "boolean"},
+        "result": {"enum": ["required", "skipped"]}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
