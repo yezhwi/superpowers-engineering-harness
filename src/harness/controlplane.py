@@ -79,6 +79,11 @@ def cmd_transition(target: str) -> int:
     except Exception as exc:
         print(f"INVALID_HARNESS_STATE: {exc}", file=sys.stderr)
         return 2
+    if target == "VERIFYING":
+        _, impact = _impact()
+        if not impact["impact"].get("required_tests"):
+            print("IMPACT_ANALYSIS_REQUIRED: impact.required_tests is empty", file=sys.stderr)
+            return 1
     if target not in state_machine.STATES or current not in \
             state_machine.STATES:
         print(f"unknown state (current={current!r}, target={target!r})",
