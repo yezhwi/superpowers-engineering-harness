@@ -163,10 +163,12 @@ def cmd_review_complexity(source: Path) -> int:
     return 0
 
 
-def cmd_evidence(evidence_type: str, command: str) -> int:
+def cmd_evidence(evidence_type: str, command: str, finding_id=None, test_id=None) -> int:
     collect_evidence = _load("collect_evidence")
-    return collect_evidence.main(
-        ["--type", evidence_type, "--command", command])
+    args = ["--type", evidence_type, "--command", command]
+    if finding_id is not None:
+        args.extend(["--finding", finding_id, "--test", test_id])
+    return collect_evidence.main(args)
 
 
 def cmd_gate() -> int:
@@ -317,19 +319,21 @@ def cmd_finding_transition(fid,target,evidence=None,test=None,attempt=None,reaso
  if not path: print(f'finding not found: {fid}',file=sys.stderr); return 1
  current=finding.get('status')
  if target not in _FINDING_TRANSITIONS.get(current,set()): print(f'INVALID FINDING TRANSITION: {current} -> {target}',file=sys.stderr); return 1
- def proof(ref,ok):
+ def proof(ref,ok,test_id=None):
   if not ref: raise ValueError('missing --evidence')
   p=Path('.harness/evidence')/(ref if ref.endswith('.json') else ref+'.json')
   d=json.loads(p.read_text()); head=_load('quality_gate').git_head()
-  if d.get('commit')!=head or (d.get('exit_code')==0)!=ok: raise ValueError('evidence is not fresh expected proof')
+  workspace=_load('collect_evidence').workspace_fingerprint()
+  try: _load('evidence_validator').validate_evidence(d,current_head=head,current_workspace=workspace,expected_success=ok,finding_id=fid if test_id else None,test_id=test_id)
+  except Exception as exc: raise ValueError(str(exc)) from exc
  try:
   if target=='REPRODUCING':
    if not attempt: raise ValueError('REPRODUCING requires --attempt')
    finding.setdefault('attempts',[]).append(attempt)
   elif target=='CONFIRMED':
    if not test: raise ValueError('CONFIRMED requires --test')
-   proof(evidence,False); finding['test']=test; finding['regression_test']={'path':test,'red_evidence':evidence}; finding['confirmed_at']=datetime.datetime.now(datetime.timezone.utc).isoformat()
-  elif target=='FIXED': proof(evidence,True); finding['regression_test']['green_evidence']=evidence
+   proof(evidence,False,test); finding['test']=test; finding['regression_test']={'path':test,'red_evidence':evidence}; finding['confirmed_at']=datetime.datetime.now(datetime.timezone.utc).isoformat()
+  elif target=='FIXED': proof(evidence,True,finding['regression_test']['path']); finding['regression_test']['green_evidence']=evidence
   elif target=='VERIFIED': proof(evidence,True); finding['evidence']=evidence; finding['verified_at']=datetime.datetime.now(datetime.timezone.utc).isoformat()
   elif target=='REJECTED':
    if not reason or not finding.get('attempts'): raise ValueError('REJECTED requires attempts and --reason')

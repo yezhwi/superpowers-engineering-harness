@@ -72,13 +72,14 @@ def _tail(text: str) -> str:
     return text[-TAIL_CHARS:]
 
 
-def collect(evidence_type: str, command: str) -> dict:
+def collect(evidence_type: str, command: str, finding_id: str | None = None,
+            test_id: str | None = None) -> dict:
     before = workspace_fingerprint()
     run = subprocess.run(
         command, shell=True, capture_output=True, text=True
     )
     after = workspace_fingerprint()
-    return {
+    evidence = {
         "type": evidence_type,
         "timestamp": datetime.datetime.now(
             datetime.timezone.utc
@@ -91,6 +92,10 @@ def collect(evidence_type: str, command: str) -> dict:
         "stdout_tail": _tail(run.stdout),
         "stderr_tail": _tail(run.stderr),
     }
+    if finding_id is not None:
+        evidence["subject"] = {"kind": "finding", "id": finding_id}
+        evidence["test"] = {"node_id": test_id}
+    return evidence
 
 
 def main(argv=None):
@@ -99,6 +104,8 @@ def main(argv=None):
                         choices=sorted(VALID_TYPES))
     parser.add_argument("--command", required=True)
     parser.add_argument("--harness-dir", default=".harness")
+    parser.add_argument("--finding")
+    parser.add_argument("--test")
     args = parser.parse_args(argv)
 
     try:
@@ -107,7 +114,10 @@ def main(argv=None):
         print(f"INVALID_HARNESS_STATE: {exc}", file=sys.stderr)
         return 2
 
-    evidence = collect(args.type, args.command)
+    if bool(args.finding) != bool(args.test):
+        print("INVALID_USAGE: --finding and --test must be paired", file=sys.stderr)
+        return 2
+    evidence = collect(args.type, args.command, args.finding, args.test)
     evidence["commit"] = head
 
     out_dir = Path(args.harness_dir) / "evidence"

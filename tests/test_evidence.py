@@ -50,6 +50,19 @@ def test_collect_success_evidence(tmp_path):
     assert ev["timestamp"]  # iso timestamp present
 
 
+def test_collect_structured_finding_test_evidence(tmp_path):
+    result = subprocess.run(
+        [sys.executable, str(REPO / "scripts" / "collect_evidence.py"),
+         "--type", "custom", "--command", "false", "--finding", "FND-001",
+         "--test", "tests/test_x.py::test_x", "--harness-dir", str(tmp_path)],
+        capture_output=True, text=True, cwd=REPO,
+    )
+    assert result.returncode == 0, result.stderr
+    evidence = json.loads((tmp_path / "evidence" / "custom.json").read_text())
+    assert evidence["subject"] == {"kind": "finding", "id": "FND-001"}
+    assert evidence["test"] == {"node_id": "tests/test_x.py::test_x"}
+
+
 def test_collect_failure_still_writes_evidence(tmp_path):
     result = _collect(tmp_path, "build", "false")
     assert result.returncode == 0, result.stderr
