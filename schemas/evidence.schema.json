@@ -52,6 +52,21 @@
       "type": "string",
       "pattern": "^sha256:[0-9a-f]{64}$",
       "description": "Business workspace snapshot after command; must equal workspace_fingerprint."
+    },
+    "subject": {
+      "type": "object",
+      "required": ["kind", "id"],
+      "properties": {
+        "kind": {"const": "finding"},
+        "id": {"type": "string", "pattern": "^FND-[0-9]+$"}
+      },
+      "additionalProperties": false
+    },
+    "test": {
+      "type": "object",
+      "required": ["node_id"],
+      "properties": {"node_id": {"type": "string", "minLength": 1}},
+      "additionalProperties": false
     }
   },
   "required": [
@@ -60,5 +75,9 @@
     "command",
     "exit_code",
     "commit"
+  ],
+  "allOf": [
+    {"if": {"required": ["subject"]}, "then": {"required": ["test"]}},
+    {"if": {"required": ["test"]}, "then": {"required": ["subject"]}}
   ]
 }
