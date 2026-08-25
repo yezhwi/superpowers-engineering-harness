@@ -206,17 +206,11 @@ def run_gate(harness_dir: Path, head: str | None = None,
                 except json.JSONDecodeError as exc:
                     raise InvalidHarnessState(
                         f"bad JSON in {path}: {exc}")
-                if ev.get("exit_code") != 0:
-                    blockers.append(
-                        f"{req.get('id')} evidence {fname} failed "
-                        f"(exit_code={ev.get('exit_code')})")
-                elif must_match_head and ev.get("commit") != head:
-                    blockers.append(
-                        f"{req.get('id')} evidence {fname} is stale "
-                        f"(commit {ev.get('commit')} != HEAD)")
-                elif (ev.get("workspace_fingerprint") != current_workspace
-                      or ev.get("workspace_fingerprint_after") != current_workspace):
-                    blockers.append(f"{req.get('id')} evidence {fname} workspace is stale")
+                try:
+                    validate_evidence(ev, current_head=head, current_workspace=current_workspace,
+                                      expected_success=True)
+                except EvidenceValidationError as exc:
+                    blockers.append(f"{req.get('id')} evidence {fname} invalid: {exc}")
 
     # 2. Invariants: violated blocks; unproven blocks for critical/major.
     # pending == not proven == BLOCKED. Only proven-safe (verified)
@@ -247,8 +241,11 @@ def run_gate(harness_dir: Path, head: str | None = None,
                 except (OSError, json.JSONDecodeError):
                     blockers.append(f"{iid} verification evidence missing: {name}")
                     continue
-                if ev.get("exit_code") != 0 or ev.get("commit") != head or ev.get("workspace_fingerprint") != current_workspace or ev.get("workspace_fingerprint_after") != current_workspace:
-                    blockers.append(f"{iid} verification evidence {name} is invalid or stale")
+                try:
+                    validate_evidence(ev, current_head=head, current_workspace=current_workspace,
+                                      expected_success=True)
+                except EvidenceValidationError as exc:
+                    blockers.append(f"{iid} verification evidence {name} invalid: {exc}")
 
     # 3. Required verification evidence exists, exit_code==0, fresh HEAD.
     ver_cfg = gate_cfg.get("verification", {})
@@ -263,20 +260,11 @@ def run_gate(harness_dir: Path, head: str | None = None,
         if ev is None:
             blockers.append(f"missing {label} evidence")
             continue
-        if ev.get("exit_code") != 0:
-            blockers.append(f"{label} evidence command failed "
-                            f"(exit_code={ev.get('exit_code')})")
-        if must_match_head and ev.get("commit") != head:
-            blockers.append(f"{label} evidence is stale "
-                            f"(commit {ev.get('commit')} != HEAD)")
-        before = ev.get("workspace_fingerprint")
-        after = ev.get("workspace_fingerprint_after")
-        if not before or not after:
-            blockers.append(f"{label} evidence lacks workspace fingerprint")
-        elif before != after:
-            blockers.append(f"{label} workspace changed during command")
-        elif before != current_workspace:
-            blockers.append(f"{label} evidence workspace is stale")
+        try:
+            validate_evidence(ev, current_head=head, current_workspace=current_workspace,
+                              expected_success=True)
+        except EvidenceValidationError as exc:
+            blockers.append(f"{label} evidence invalid: {exc}")
 
     # 4. Complexity: required review evidence and configured open severities.
     complexity_cfg = gate_cfg.get("complexity", {})
@@ -288,10 +276,11 @@ def run_gate(harness_dir: Path, head: str | None = None,
         except (OSError, json.JSONDecodeError, InvalidHarnessState):
             blockers.append("missing complexity-review evidence")
         else:
-            if (review.get("commit") != head
-                    or review.get("workspace_fingerprint") != current_workspace
-                    or review.get("workspace_fingerprint_after") != current_workspace):
-                blockers.append("complexity-review evidence is stale")
+            try:
+                validate_evidence(review, current_head=head, current_workspace=current_workspace,
+                                  expected_success=True)
+            except EvidenceValidationError as exc:
+                blockers.append(f"complexity-review evidence invalid: {exc}")
         blocking = set(complexity_cfg.get("blocking", ["high"]))
         for finding in findings:
             if (finding.get("id", "").startswith("CPLX-")

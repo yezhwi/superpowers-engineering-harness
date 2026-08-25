@@ -366,11 +366,9 @@ def _verify_record(kind: str, rid: str, ref: str) -> int:
  ep=hp/'evidence'/(ref if ref.endswith('.json') else ref+'.json')
  try: ev=json.loads(ep.read_text())
  except Exception: print(f"INVALID EVIDENCE: {ref}",file=sys.stderr); return 2
- if ev.get('exit_code')!=0: print("INVALID EVIDENCE: command failed",file=sys.stderr); return 2
  try:
   gate=_load('quality_gate'); current=_load('collect_evidence').workspace_fingerprint()
-  if ev.get('commit')!=gate.git_head() or ev.get('workspace_fingerprint')!=current or ev.get('workspace_fingerprint_after')!=current:
-   print("INVALID EVIDENCE: stale workspace snapshot",file=sys.stderr); return 2
+  _load('evidence_validator').validate_evidence(ev,current_head=gate.git_head(),current_workspace=current,expected_success=True)
  except Exception as exc: print(f"INVALID EVIDENCE: {exc}",file=sys.stderr); return 2
  field='evidence' if kind=='requirement' else 'verification'; rec.setdefault(field,[])
  if ref not in rec[field]: rec[field].append(ref)

@@ -161,6 +161,19 @@ def test_verified_finding_with_stale_red_evidence_is_invalid(tmp_path):
         run_gate(h)
 
 
+def test_verified_finding_with_stale_full_evidence_is_invalid(tmp_path):
+    h = make_harness(tmp_path)
+    write_finding(h, status="VERIFIED")
+    full_path = h / "evidence" / "FND-001-full.json"
+    full = json.loads(full_path.read_text())
+    full["workspace_fingerprint"] = "sha256:" + "0" * 64
+    full["workspace_fingerprint_after"] = "sha256:" + "0" * 64
+    full_path.write_text(json.dumps(full))
+
+    with pytest.raises(Exception, match="EVIDENCE_WORKSPACE_STALE"):
+        run_gate(h)
+
+
 def test_verified_after_fix_passes(tmp_path):
     # Fix landed, full suite green, finding closed as VERIFIED.
     h = make_harness(tmp_path)

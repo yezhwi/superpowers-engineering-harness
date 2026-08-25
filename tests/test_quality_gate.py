@@ -164,7 +164,7 @@ def test_failed_evidence_blocked(tmp_path):
     (h / "evidence" / "build.json").write_text(json.dumps(ev))
     result = _gate(h)
     assert result.returncode == 1
-    assert "failed" in result.stdout
+    assert "EVIDENCE_RESULT_MISMATCH" in result.stdout
 
 
 def test_optional_verification_not_required(tmp_path):
@@ -182,7 +182,7 @@ def test_stale_evidence_blocked(tmp_path):
     (h / "evidence" / "unit-test.json").write_text(json.dumps(ev))
     result = _gate(h)
     assert result.returncode == 1
-    assert "stale" in result.stdout
+    assert "EVIDENCE_HEAD_MISMATCH" in result.stdout
 
 
 def test_stale_evidence_via_real_collection(tmp_path):
@@ -194,7 +194,7 @@ def test_stale_evidence_via_real_collection(tmp_path):
         "command": "true", "exit_code": 0, "commit": "deadbeef"}))
     result = _gate(h)
     assert result.returncode == 1
-    assert "build evidence is stale" in result.stdout
+    assert "EVIDENCE_HEAD_MISMATCH" in result.stdout
 
 
 # 3. major finding ----------------------------------------------------------
@@ -417,7 +417,7 @@ def test_verified_requirement_stale_evidence_blocked(tmp_path):
     ev = json.loads((h / "evidence" / "build.json").read_text())
     ev["commit"] = "0" * 40
     (h / "evidence" / "build.json").write_text(json.dumps(ev))
-    assert "is stale" in _gate(h).stdout
+    assert "EVIDENCE_HEAD_MISMATCH" in _gate(h).stdout
 
 
 def test_verified_requirement_failed_evidence_blocked(tmp_path):
@@ -429,7 +429,7 @@ def test_verified_requirement_failed_evidence_blocked(tmp_path):
     ev = json.loads((h / "evidence" / "build.json").read_text())
     ev["exit_code"] = 3
     (h / "evidence" / "build.json").write_text(json.dumps(ev))
-    assert "failed" in _gate(h).stdout
+    assert "EVIDENCE_RESULT_MISMATCH" in _gate(h).stdout
 
 
 def test_should_requirement_without_evidence_not_blocked(tmp_path):
