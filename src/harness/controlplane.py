@@ -104,10 +104,9 @@ def cmd_transition(target: str) -> int:
             review = json.loads(review_path.read_text(encoding="utf-8"))
             quality_gate = _load("quality_gate")
             fingerprint = _load("collect_evidence").workspace_fingerprint()
-            if (review.get("commit") != quality_gate.git_head()
-                    or review.get("workspace_fingerprint") != fingerprint
-                    or review.get("workspace_fingerprint_after") != fingerprint):
-                raise ValueError("review evidence is stale")
+            _load("evidence_validator").validate_evidence(
+                review, current_head=quality_gate.git_head(), current_workspace=fingerprint,
+                expected_success=True)
         except Exception as exc:
             print(f"COMPLEXITY_REVIEW_REQUIRED: {exc}", file=sys.stderr)
             return 1
