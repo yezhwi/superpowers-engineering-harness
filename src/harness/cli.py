@@ -51,6 +51,9 @@ def main(argv=None) -> int:
     p_show = f_sub.add_parser("show", help="show one finding record")
     p_show.add_argument("id")
     p_ft=f_sub.add_parser("transition"); p_ft.add_argument("id"); p_ft.add_argument("target"); p_ft.add_argument("--evidence"); p_ft.add_argument("--test"); p_ft.add_argument("--attempt"); p_ft.add_argument("--reason")
+    p_req=sub.add_parser("requirement"); rs=p_req.add_subparsers(dest="requirement_command"); rv=rs.add_parser("verify"); rv.add_argument("id"); rv.add_argument("--evidence",required=True)
+    p_inv=sub.add_parser("invariant"); ivs=p_inv.add_subparsers(dest="invariant_command"); iv=ivs.add_parser("verify"); iv.add_argument("id"); iv.add_argument("--evidence",required=True)
+    p_task=sub.add_parser("task"); ts=p_task.add_subparsers(dest="task_command"); p_mid=ts.add_parser("migrate-id"); p_mid.add_argument("id")
     sub.add_parser("converge", help="deterministic convergence decision")
 
     args = parser.parse_args(argv)
@@ -79,6 +82,11 @@ def main(argv=None) -> int:
         if args.finding_command == "transition":
             return controlplane.cmd_finding_transition(args.id,args.target,args.evidence,args.test,args.attempt,args.reason)
         parser.print_usage(sys.stderr)
+        return 2
+    if args.subcommand == "requirement" and args.requirement_command == "verify": return controlplane.cmd_requirement_verify(args.id,args.evidence)
+    if args.subcommand == "invariant" and args.invariant_command == "verify": return controlplane.cmd_invariant_verify(args.id,args.evidence)
+    if args.subcommand == "task":
+        if args.task_command == "migrate-id": return controlplane.cmd_task_migrate_id(args.id)
         return 2
     if args.subcommand == "converge":
         return controlplane.cmd_converge()

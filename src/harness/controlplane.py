@@ -72,6 +72,13 @@ def cmd_transition(target: str) -> int:
     harness_dir = Path(".harness")
     task = load_task(harness_dir)
     current = task.get("state")
+    # Reject malformed task identity/state before it can advance toward Gate.
+    try:
+        _load("quality_gate").validate_schema(
+            task, "task.schema.json", harness_dir / "current-task.yaml")
+    except Exception as exc:
+        print(f"INVALID_HARNESS_STATE: {exc}", file=sys.stderr)
+        return 2
     if target not in state_machine.STATES or current not in \
             state_machine.STATES:
         print(f"unknown state (current={current!r}, target={target!r})",
@@ -261,3 +268,31 @@ def cmd_finding_transition(fid,target,evidence=None,test=None,attempt=None,reaso
    finding['rejection_reason']=reason
  except (ValueError,OSError,json.JSONDecodeError) as e: print(f'INVALID FINDING PROOF: {e}',file=sys.stderr); return 2
  finding['status']=target; tmp=path.with_suffix('.tmp'); tmp.write_text(yaml.safe_dump(finding,sort_keys=False)); tmp.replace(path); print(f'OK: {fid} {current} -> {target}'); return 0
+
+def cmd_task_migrate_id(task_id: str) -> int:
+    import re
+    if not re.fullmatch(r"TASK-[0-9]+", task_id):
+        print("INVALID TASK ID: must match TASK-[0-9]+", file=sys.stderr); return 2
+    task=load_task(Path('.harness')); task.setdefault('task',{})['id']=task_id
+    save_task(Path('.harness'),task); print(f"OK: task id -> {task_id}"); return 0
+
+def _verify_record(kind: str, rid: str, ref: str) -> int:
+ import yaml,json
+ hp=Path('.harness'); path=hp/("requirements.yaml" if kind=="requirement" else "invariants.yaml"); doc=yaml.safe_load(path.read_text()); key="requirements" if kind=="requirement" else "invariants"
+ rec=next((x for x in doc.get(key,[]) if x.get('id')==rid),None)
+ if not rec: print(f"{kind} not found: {rid}",file=sys.stderr); return 1
+ ep=hp/'evidence'/(ref if ref.endswith('.json') else ref+'.json')
+ try: ev=json.loads(ep.read_text())
+ except Exception: print(f"INVALID EVIDENCE: {ref}",file=sys.stderr); return 2
+ if ev.get('exit_code')!=0: print("INVALID EVIDENCE: command failed",file=sys.stderr); return 2
+ try:
+  gate=_load('quality_gate'); current=_load('collect_evidence').workspace_fingerprint()
+  if ev.get('commit')!=gate.git_head() or ev.get('workspace_fingerprint')!=current or ev.get('workspace_fingerprint_after')!=current:
+   print("INVALID EVIDENCE: stale workspace snapshot",file=sys.stderr); return 2
+ except Exception as exc: print(f"INVALID EVIDENCE: {exc}",file=sys.stderr); return 2
+ field='evidence' if kind=='requirement' else 'verification'; rec.setdefault(field,[])
+ if ref not in rec[field]: rec[field].append(ref)
+ rec['status']='verified'; tmp=path.with_suffix('.tmp');tmp.write_text(yaml.safe_dump(doc,sort_keys=False));tmp.replace(path);print(f"OK: {rid} verified");return 0
+
+def cmd_requirement_verify(rid,ref): return _verify_record('requirement',rid,ref)
+def cmd_invariant_verify(rid,ref): return _verify_record('invariant',rid,ref)
