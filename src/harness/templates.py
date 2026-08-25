@@ -1,25 +1,15 @@
 """Template locator (guide section 22): locate templates relative to this
 repository, never a hard-coded absolute path."""
 
-from pathlib import Path
-
-TEMPLATES_DIRNAME = "templates"
+from importlib import resources
 
 
-def templates_dir() -> Path:
-    """Return the repository's templates directory.
-
-    Resolved from this file's location: src/harness/templates.py ->
-    <repo>/templates. Raises TemplateNotFoundError when missing.
-    """
-    here = Path(__file__).resolve()
-    for parent in here.parents:
-        candidate = parent / TEMPLATES_DIRNAME
-        if candidate.is_dir():
-            return candidate
-    raise TemplateNotFoundError(
-        f"could not locate '{TEMPLATES_DIRNAME}/' above {here}"
-    )
+def templates_dir():
+    """Return templates bundled with installed ``harness`` package."""
+    directory = resources.files("harness").joinpath("templates")
+    if directory.is_dir():
+        return directory
+    raise TemplateNotFoundError("package templates/ directory is unavailable")
 
 
 class TemplateNotFoundError(Exception):
