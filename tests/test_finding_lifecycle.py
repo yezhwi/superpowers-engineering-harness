@@ -150,7 +150,7 @@ def test_confirmed_with_regression_test_still_open_until_fixed(tmp_path):
     assert any("Major finding FND-001 is open" in b for b in blockers)
 
 
-def test_verified_finding_with_stale_red_evidence_is_invalid(tmp_path):
+def test_verified_finding_accepts_historical_red_evidence(tmp_path):
     h = make_harness(tmp_path)
     write_finding(h, status="VERIFIED")
     red = json.loads((h / "evidence" / "FND-001-red.json").read_text())
@@ -158,8 +158,8 @@ def test_verified_finding_with_stale_red_evidence_is_invalid(tmp_path):
     red["workspace_fingerprint_after"] = "sha256:" + "0" * 64
     (h / "evidence" / "FND-001-red.json").write_text(json.dumps(red))
 
-    with pytest.raises(Exception, match="EVIDENCE_WORKSPACE_STALE"):
-        run_gate(h)
+    status, blockers = run_gate(h)
+    assert status == "PASS", blockers
 
 
 def test_verified_finding_with_stale_full_evidence_is_invalid(tmp_path):

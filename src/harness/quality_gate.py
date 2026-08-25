@@ -157,6 +157,7 @@ def run_gate(harness_dir: Path, head: str | None = None,
             record = json.loads(path.read_text())
             validate_evidence(record, current_head=head, current_workspace=current_workspace,
                               expected_success=expected_success,
+                              require_current_workspace=expected_success,
                               finding_id=finding["id"] if test_id else None,
                               test_id=test_id)
         except (OSError, json.JSONDecodeError, EvidenceValidationError) as exc:

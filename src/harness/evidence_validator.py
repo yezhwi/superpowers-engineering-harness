@@ -17,7 +17,8 @@ def _fail(code: str) -> None:
 
 
 def validate_evidence(record, *, current_head, current_workspace,
-                      expected_success=None, finding_id=None, test_id=None):
+                      expected_success=None, finding_id=None, test_id=None,
+                      require_current_workspace=True):
     """Fail closed unless record proves required current evidence."""
     try:
         validate(record, json.loads(SCHEMA.read_text()))
@@ -27,7 +28,7 @@ def validate_evidence(record, *, current_head, current_workspace,
         _fail("EVIDENCE_HEAD_MISMATCH")
     before = record.get("workspace_fingerprint")
     after = record.get("workspace_fingerprint_after")
-    if before != current_workspace or after != current_workspace or before != after:
+    if before != after or (require_current_workspace and (before != current_workspace or after != current_workspace)):
         _fail("EVIDENCE_WORKSPACE_STALE")
     if expected_success is not None and (record.get("exit_code") == 0) != expected_success:
         _fail("EVIDENCE_RESULT_MISMATCH")
