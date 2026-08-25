@@ -132,6 +132,24 @@ def cmd_check_minimal(source: Path) -> int:
     return 0
 
 
+def cmd_review_complexity(source: Path) -> int:
+    import yaml
+
+    try:
+        review = yaml.safe_load(source.read_text(encoding="utf-8"))
+        task = load_task(Path(".harness"))
+        if not isinstance(review, dict) or review.get("task") != task.get("task", {}).get("id"):
+            raise ValueError("task mismatch")
+        if review.get("head") != _load("quality_gate").git_head():
+            raise ValueError("review head is not current HEAD")
+        paths = _load("complexity").write_complexity_review(Path(".harness"), review)
+    except Exception as exc:
+        print(f"INVALID COMPLEXITY REVIEW: {exc}", file=sys.stderr)
+        return 2
+    print(f"complexity review written: {len(paths)} findings")
+    return 0
+
+
 def cmd_evidence(evidence_type: str, command: str) -> int:
     collect_evidence = _load("collect_evidence")
     return collect_evidence.main(

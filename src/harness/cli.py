@@ -44,6 +44,10 @@ def main(argv=None) -> int:
     check_sub = p_check.add_subparsers(dest="check_command")
     p_minimal = check_sub.add_parser("minimal", help="persist Minimal Implementation Decision")
     p_minimal.add_argument("--file", required=True, dest="source_file")
+    p_review = sub.add_parser("review", help="run Harness reviews")
+    review_sub = p_review.add_subparsers(dest="review_command")
+    p_complexity = review_sub.add_parser("complexity", help="persist complexity review")
+    p_complexity.add_argument("--file", required=True, dest="source_file")
     p_ev = sub.add_parser(
         "evidence", help="run a command and save HEAD-bound evidence")
     p_ev.add_argument("--type", required=True)
@@ -81,6 +85,8 @@ def main(argv=None) -> int:
         return controlplane.cmd_transition(args.target)
     if args.subcommand == "check" and args.check_command == "minimal":
         return controlplane.cmd_check_minimal(Path(args.source_file))
+    if args.subcommand == "review" and args.review_command == "complexity":
+        return controlplane.cmd_review_complexity(Path(args.source_file))
     if args.subcommand == "evidence":
         
         if args.scope == "full_suite" and not controlplane.load_task(Path(".harness")).get("authorization",{}).get("full_suite",{}).get("granted"):

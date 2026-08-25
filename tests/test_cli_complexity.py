@@ -75,6 +75,35 @@ def test_planned_to_implementing_requires_minimal_evidence(tmp_path):
     assert "MINIMAL_IMPLEMENTATION_REQUIRED" in result.stderr
 
 
+def test_review_complexity_writes_findings_and_metadata(tmp_path):
+    repo = make_repo(tmp_path)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, check=True)
+    (repo / "tracked.txt").write_text("base")
+    subprocess.run(["git", "add", "tracked.txt"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-m", "base", "-q"], cwd=repo, check=True)
+    set_task_state(repo, "VERIFYING")
+    review = {
+        "task": "TASK-004", "base": "HEAD~1", "head": subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True, text=True
+        ).stdout.strip(),
+        "findings": [{
+            "id": "CPLX-001", "category": "complexity", "type": "reuse",
+            "severity": "high", "status": "open", "location": {"file": "x.py"},
+            "summary": "duplicate", "reason": "existing x", "evidence": {"candidate": "x"},
+            "recommendation": "reuse x",
+        }],
+    }
+    source = tmp_path / "review.yaml"
+    source.write_text(yaml.safe_dump(review, sort_keys=False))
+
+    result = run_cli(repo, "review", "complexity", "--file", str(source))
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (repo / ".harness/findings/CPLX-001.yaml").is_file()
+    assert (repo / ".harness/evidence/complexity-review.json").is_file()
+
+
 def test_check_minimal_rejects_task_mismatch(tmp_path):
     repo = make_repo(tmp_path)
     set_task_state(repo, "PLANNED")
