@@ -87,6 +87,48 @@ GATING -> harness gate
 PASS -> CONVERGED -> DONE
 ```
 
+## Engineering Harness 流程
+
+```text
+Requirement
+  ↓
+Task Contract (CREATED → PLANNED)
+  ↓
+Minimal Implementation Check (v0.2 PREVENT)
+  ↓
+Implementation / TDD (IMPLEMENTING)
+  ↓
+Verification + fresh evidence (VERIFYING)
+  ↓
+Complexity Reviewer (v0.2 DETECT)
+  ↓
+Adversarial Review / finding reproduction (REVIEWING)
+  ↓
+Quality Gate (GATING)
+  ↓
+CONVERGED → DONE
+```
+
+每次会话从 persisted state 恢复：
+
+```bash
+harness status
+```
+
+核心阶段命令：
+
+```bash
+harness check minimal --file minimal-implementation.yaml
+harness transition IMPLEMENTING
+harness evidence --type unit_test --command "pytest tests/..."
+harness review complexity --file complexity-review.yaml
+harness transition REVIEWING
+harness gate
+harness converge
+```
+
+`harness transition` 仅接受合法状态转换。Gate 要求 fresh evidence；v0.2 还要求 Minimal Decision、fresh complexity review，并阻塞开放 HIGH `CPLX-*` finding。
+
 ## v0.2 minimal complexity controls
 
 Before implementation, persist Decision Ladder evidence:
