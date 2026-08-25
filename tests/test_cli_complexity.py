@@ -75,6 +75,16 @@ def test_planned_to_implementing_requires_minimal_evidence(tmp_path):
     assert "MINIMAL_IMPLEMENTATION_REQUIRED" in result.stderr
 
 
+def test_verifying_to_reviewing_requires_complexity_review(tmp_path):
+    repo = make_repo(tmp_path)
+    set_task_state(repo, "VERIFYING")
+
+    result = run_cli(repo, "transition", "REVIEWING")
+
+    assert result.returncode == 1
+    assert "COMPLEXITY_REVIEW_REQUIRED" in result.stderr
+
+
 def test_review_complexity_writes_findings_and_metadata(tmp_path):
     repo = make_repo(tmp_path)
     subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo, check=True)

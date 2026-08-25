@@ -88,6 +88,19 @@ def cmd_transition(target: str) -> int:
         except Exception as exc:
             print(f"MINIMAL_IMPLEMENTATION_REQUIRED: {exc}", file=sys.stderr)
             return 1
+    if current == "VERIFYING" and target == "REVIEWING":
+        review_path = harness_dir / "evidence" / "complexity-review.json"
+        try:
+            review = json.loads(review_path.read_text(encoding="utf-8"))
+            quality_gate = _load("quality_gate")
+            fingerprint = _load("collect_evidence").workspace_fingerprint()
+            if (review.get("commit") != quality_gate.git_head()
+                    or review.get("workspace_fingerprint") != fingerprint
+                    or review.get("workspace_fingerprint_after") != fingerprint):
+                raise ValueError("review evidence is stale")
+        except Exception as exc:
+            print(f"COMPLEXITY_REVIEW_REQUIRED: {exc}", file=sys.stderr)
+            return 1
     if target == "VERIFYING":
         _, impact = _impact()
         plan = impact["impact"]
