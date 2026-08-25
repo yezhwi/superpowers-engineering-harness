@@ -154,9 +154,12 @@ def cmd_review_complexity(source: Path) -> int:
     return 0
 
 
-def cmd_evidence(evidence_type: str, command: str, finding_id=None, test_id=None) -> int:
+def cmd_evidence(evidence_type: str, command: str, finding_id=None, test_id=None,
+                 scope="related", covered_tests=()) -> int:
     collect_evidence = _load("collect_evidence")
-    args = ["--type", evidence_type, "--command", command]
+    args = ["--type", evidence_type, "--command", command, "--scope", scope]
+    for covered_test in covered_tests:
+        args.extend(["--covered-test", covered_test])
     if finding_id is not None:
         args.extend(["--finding", finding_id, "--test", test_id])
     return collect_evidence.main(args)

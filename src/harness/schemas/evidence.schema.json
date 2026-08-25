@@ -53,6 +53,13 @@
       "pattern": "^sha256:[0-9a-f]{64}$",
       "description": "Business workspace snapshot after command; must equal workspace_fingerprint."
     },
+    "scope": {
+      "enum": ["related", "full_suite"]
+    },
+    "covered_tests": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1}
+    },
     "subject": {
       "type": "object",
       "required": ["kind", "id"],

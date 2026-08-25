@@ -73,7 +73,8 @@ def _tail(text: str) -> str:
 
 
 def collect(evidence_type: str, command: str, finding_id: str | None = None,
-            test_id: str | None = None) -> dict:
+            test_id: str | None = None, scope: str = "related",
+            covered_tests: tuple[str, ...] = ()) -> dict:
     before = workspace_fingerprint()
     run = subprocess.run(
         command, shell=True, capture_output=True, text=True
@@ -92,6 +93,9 @@ def collect(evidence_type: str, command: str, finding_id: str | None = None,
         "stdout_tail": _tail(run.stdout),
         "stderr_tail": _tail(run.stderr),
     }
+    if evidence_type == "unit_test":
+        evidence["scope"] = scope
+        evidence["covered_tests"] = list(covered_tests)
     if finding_id is not None:
         evidence["subject"] = {"kind": "finding", "id": finding_id}
         evidence["test"] = {"node_id": test_id}
@@ -106,6 +110,8 @@ def main(argv=None):
     parser.add_argument("--harness-dir", default=".harness")
     parser.add_argument("--finding")
     parser.add_argument("--test")
+    parser.add_argument("--scope", choices=["related", "full_suite"], default="related")
+    parser.add_argument("--covered-test", action="append", default=[])
     args = parser.parse_args(argv)
 
     try:
@@ -117,7 +123,11 @@ def main(argv=None):
     if bool(args.finding) != bool(args.test):
         print("INVALID_USAGE: --finding and --test must be paired", file=sys.stderr)
         return 2
-    evidence = collect(args.type, args.command, args.finding, args.test)
+    if args.type == "unit_test" and args.scope == "related" and not args.covered_test:
+        print("RELATED_COVERED_TEST_REQUIRED", file=sys.stderr)
+        return 2
+    evidence = collect(args.type, args.command, args.finding, args.test,
+                       args.scope, tuple(args.covered_test))
     evidence["commit"] = head
 
     out_dir = Path(args.harness_dir) / "evidence"

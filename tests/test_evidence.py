@@ -25,10 +25,12 @@ def _head() -> str:
 
 
 def _collect(harness_dir: Path, etype="unit_test", cmd="true"):
+    args = [sys.executable, str(REPO / "scripts" / "collect_evidence.py"),
+            "--type", etype, "--command", cmd, "--harness-dir", str(harness_dir)]
+    if etype == "unit_test":
+        args.extend(["--scope", "full_suite"])
     return subprocess.run(
-        [sys.executable, str(REPO / "scripts" / "collect_evidence.py"),
-         "--type", etype, "--command", cmd,
-         "--harness-dir", str(harness_dir)],
+        args,
         capture_output=True, text=True, cwd=REPO,
     )
 
@@ -61,6 +63,29 @@ def test_collect_structured_finding_test_evidence(tmp_path):
     evidence = json.loads((tmp_path / "evidence" / "custom.json").read_text())
     assert evidence["subject"] == {"kind": "finding", "id": "FND-001"}
     assert evidence["test"] == {"node_id": "tests/test_x.py::test_x"}
+
+
+def test_collect_related_scope_records_covered_tests(tmp_path):
+    result = subprocess.run(
+        [sys.executable, str(REPO / "scripts" / "collect_evidence.py"),
+         "--type", "unit_test", "--scope", "related", "--covered-test",
+         "tests/test_x.py::test_x", "--command", "true", "--harness-dir", str(tmp_path)],
+        capture_output=True, text=True, cwd=REPO,
+    )
+    assert result.returncode == 0, result.stderr
+    evidence = json.loads((tmp_path / "evidence" / "unit-test.json").read_text())
+    assert evidence["scope"] == "related"
+    assert evidence["covered_tests"] == ["tests/test_x.py::test_x"]
+
+
+def test_collect_related_scope_requires_covered_test(tmp_path):
+    result = subprocess.run(
+        [sys.executable, str(REPO / "scripts" / "collect_evidence.py"),
+         "--type", "unit_test", "--scope", "related", "--command", "true",
+         "--harness-dir", str(tmp_path)], capture_output=True, text=True, cwd=REPO,
+    )
+    assert result.returncode == 2
+    assert "RELATED_COVERED_TEST_REQUIRED" in result.stderr
 
 
 def test_collect_failure_still_writes_evidence(tmp_path):
