@@ -374,6 +374,51 @@ def cmd_task_new(task_id: str, title: str = "") -> int:
   shutil.rmtree(h/name,ignore_errors=True);(h/name).mkdir()
  task=load_task(h);task['task']['id']=task_id;task['task']['title']=title;save_task(h,task);print(f'OK: archived task, created {task_id}');return 0
 
+def cmd_task_recover(task_id: str, title: str, reason: str) -> int:
+    """Archive an active task with an explicit recovery audit."""
+    import datetime
+    import re
+    import shutil
+    import yaml
+
+    if not re.fullmatch(r"TASK-[0-9]+", task_id):
+        print("INVALID TASK ID", file=sys.stderr)
+        return 2
+    if not reason.strip():
+        print("RECOVERY_REASON_REQUIRED", file=sys.stderr)
+        return 2
+
+    harness_dir = Path(".harness")
+    old = load_task(harness_dir)
+    if old.get("state") in {"DONE", "ESCALATED"}:
+        print("task recover requires active task", file=sys.stderr)
+        return 1
+
+    old_id = old.get("task", {}).get("id") or "UNKNOWN"
+    timestamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    archive = harness_dir / "history" / f"{old_id}-{timestamp}"
+    try:
+        archive.mkdir(parents=True, exist_ok=False)
+    except FileExistsError:
+        print(f"RECOVERY_ARCHIVE_EXISTS: {archive}", file=sys.stderr)
+        return 1
+
+    for name in ("current-task.yaml", "requirements.yaml", "invariants.yaml", "gate.yaml"):
+        source = harness_dir / name
+        if source.exists():
+            shutil.copy2(source, archive / name)
+
+    audit = {
+        "recovered_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "reason": reason,
+        "previous_task_id": old_id,
+        "previous_state": old.get("state"),
+        "replacement_task_id": task_id,
+    }
+    (archive / "recovery.yaml").write_text(yaml.safe_dump(audit, sort_keys=False))
+    return 0
+
+
 def cmd_authorize_full_suite(granted: bool) -> int:
  import yaml,datetime
  h=Path('.harness');t=load_task(h);t.setdefault('authorization',{})['full_suite']={'granted':granted,'granted_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'source':'user'};save_task(h,t);return 0
