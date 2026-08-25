@@ -65,7 +65,7 @@ def main(argv=None) -> int:
     f_sub.add_parser("list", help="list all findings")
     p_show = f_sub.add_parser("show", help="show one finding record")
     p_show.add_argument("id")
-    p_ft=f_sub.add_parser("transition"); p_ft.add_argument("id"); p_ft.add_argument("target"); p_ft.add_argument("--evidence"); p_ft.add_argument("--test"); p_ft.add_argument("--attempt"); p_ft.add_argument("--reason")
+    p_ft=f_sub.add_parser("transition"); p_ft.add_argument("id"); p_ft.add_argument("target"); p_ft.add_argument("--evidence"); p_ft.add_argument("--test"); p_ft.add_argument("--attempt"); p_ft.add_argument("--reason"); p_ft.add_argument("--critical-related-approved", action="store_true")
     p_req=sub.add_parser("requirement"); rs=p_req.add_subparsers(dest="requirement_command"); rv=rs.add_parser("verify"); rv.add_argument("id"); rv.add_argument("--evidence",required=True)
     p_inv=sub.add_parser("invariant"); ivs=p_inv.add_subparsers(dest="invariant_command"); iv=ivs.add_parser("verify"); iv.add_argument("id"); iv.add_argument("--evidence",required=True)
     p_task=sub.add_parser("task"); ts=p_task.add_subparsers(dest="task_command"); p_mid=ts.add_parser("migrate-id"); p_mid.add_argument("id")
@@ -108,7 +108,7 @@ def main(argv=None) -> int:
         if args.finding_command == "show":
             return controlplane.cmd_finding_show(args.id)
         if args.finding_command == "transition":
-            return controlplane.cmd_finding_transition(args.id,args.target,args.evidence,args.test,args.attempt,args.reason)
+            return controlplane.cmd_finding_transition(args.id,args.target,args.evidence,args.test,args.attempt,args.reason,args.critical_related_approved)
         parser.print_usage(sys.stderr)
         return 2
     if args.subcommand == "requirement" and args.requirement_command == "verify": return controlplane.cmd_requirement_verify(args.id,args.evidence)

@@ -80,6 +80,7 @@ def test_critical_finding_rejects_related_closure_evidence(tmp_path):
     full = json.loads((h / "evidence" / "full.json").read_text())
     full["scope"] = "related"
     full["covered_tests"] = ["tests/test_x.py::test_x"]
+    (h / "impact.yaml").write_text(yaml.safe_dump({"impact": {"required_tests": ["tests/test_x.py::test_x"], "full_suite": {"recommended": False}}}))
     (h / "evidence" / "full.json").write_text(json.dumps(full))
     assert cli(tmp_path, "finding", "transition", "FND-001", "REPRODUCING", "--attempt", "red test created").returncode == 0
     assert cli(tmp_path, "finding", "transition", "FND-001", "CONFIRMED", "--test", "tests/test_x.py::test_x", "--evidence", "red.json").returncode == 0
@@ -87,7 +88,22 @@ def test_critical_finding_rejects_related_closure_evidence(tmp_path):
     assert cli(tmp_path, "finding", "transition", "FND-001", "FIXED", "--evidence", "green.json").returncode == 0
     result = cli(tmp_path, "finding", "transition", "FND-001", "VERIFIED", "--evidence", "full.json")
     assert result.returncode == 2
-    assert "FULL_SUITE_REQUIRED_FOR_CRITICAL" in result.stderr
+    assert "CRITICAL_RELATED_APPROVAL_REQUIRED" in result.stderr
+
+
+def test_critical_finding_accepts_approved_related_closure(tmp_path):
+    h = setup(tmp_path)
+    full = json.loads((h / "evidence" / "full.json").read_text())
+    full["scope"] = "related"
+    full["covered_tests"] = ["tests/test_x.py::test_x"]
+    (h / "impact.yaml").write_text(yaml.safe_dump({"impact": {"required_tests": ["tests/test_x.py::test_x"], "full_suite": {"recommended": True}}}))
+    (h / "evidence" / "full.json").write_text(json.dumps(full))
+    for args in (("REPRODUCING", "--attempt", "red"), ("CONFIRMED", "--test", "tests/test_x.py::test_x", "--evidence", "red.json"), ("FIXING",), ("FIXED", "--evidence", "green.json")):
+        assert cli(tmp_path, "finding", "transition", "FND-001", *args).returncode == 0
+    result = cli(tmp_path, "finding", "transition", "FND-001", "VERIFIED", "--evidence", "full.json", "--critical-related-approved")
+    assert result.returncode == 0, result.stderr
+    finding = yaml.safe_load((h / "findings" / "fnd-001.yaml").read_text())
+    assert finding["closure"]["critical_related_approved"] is True
 
 
 def test_cli_rejects_skip(tmp_path):

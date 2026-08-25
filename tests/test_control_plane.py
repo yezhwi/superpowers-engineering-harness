@@ -88,6 +88,18 @@ def test_transition_illegal_rejected_and_unchanged(tmp_path):
     assert task["state"] == "IMPLEMENTING"
 
 
+def test_full_suite_recommendation_does_not_block_verifying(tmp_path):
+    h = make_repo(tmp_path, state="IMPLEMENTING")
+    impact = yaml.safe_load((h / "impact.yaml").read_text())
+    impact["impact"]["required_tests"] = ["tests/test_control_plane.py"]
+    impact["impact"]["full_suite"] = {"recommended": True, "reason": "wide change"}
+    (h / "impact.yaml").write_text(yaml.safe_dump(impact))
+
+    result = run_cli(tmp_path, "transition", "VERIFYING")
+
+    assert result.returncode == 0, result.stderr
+
+
 def test_transition_missing_target_exit_2(tmp_path):
     make_repo(tmp_path)
     assert run_cli(tmp_path, "transition").returncode == 2

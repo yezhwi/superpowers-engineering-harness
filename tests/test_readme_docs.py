@@ -22,7 +22,8 @@ def test_bilingual_readmes_link_and_document_core_commands():
     assert "README.md" in chinese
 
 
-def test_workflow_defers_full_suite_rerun_until_focused_tests_pass():
+def test_workflow_makes_full_suite_advisory_after_focused_tests():
     workflow = (REPO / "SKILL.md").read_text()
     assert "exact regression + impact-related tests" in workflow
-    assert "only then rerun the authorized full suite" in workflow
+    assert "only when user wants final broad regression confidence" in workflow
+    assert "Critical findings may use the same related proof only with explicit per-finding user approval" in workflow

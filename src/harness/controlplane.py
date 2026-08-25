@@ -98,10 +98,6 @@ def cmd_transition(target: str) -> int:
         if not plan.get("required_tests"):
             print("IMPACT_ANALYSIS_REQUIRED: impact.required_tests is empty", file=sys.stderr)
             return 1
-        if plan.get("full_suite", {}).get("recommended") and not task.get(
-                "authorization", {}).get("full_suite", {}).get("granted"):
-            print("FULL_SUITE_AUTHORIZATION_REQUIRED", file=sys.stderr)
-            return 1
     if target not in state_machine.STATES or current not in \
             state_machine.STATES:
         print(f"unknown state (current={current!r}, target={target!r})",
@@ -304,7 +300,7 @@ def gate_pass(harness_dir: Path) -> bool:
     return status == "PASS"
 
 _FINDING_TRANSITIONS={"PROPOSED":{"REPRODUCING"},"REPRODUCING":{"CONFIRMED","REJECTED"},"CONFIRMED":{"FIXING"},"FIXING":{"FIXED"},"FIXED":{"VERIFIED"},"VERIFIED":{"CLOSED"}}
-def cmd_finding_transition(fid,target,evidence=None,test=None,attempt=None,reason=None):
+def cmd_finding_transition(fid,target,evidence=None,test=None,attempt=None,reason=None,critical_related_approved=False):
  import yaml,datetime,json
  path=None; finding=None
  for p in Path('.harness/findings').glob('*.yaml'):
@@ -333,6 +329,9 @@ def cmd_finding_transition(fid,target,evidence=None,test=None,attempt=None,reaso
    p=Path('.harness/evidence')/(evidence if evidence.endswith('.json') else evidence+'.json')
    d=json.loads(p.read_text()); head=_load('quality_gate').git_head(); workspace=_load('collect_evidence').workspace_fingerprint()
    impact_path=Path('.harness/impact.yaml'); impact=yaml.safe_load(impact_path.read_text()) if impact_path.exists() else {}
+   if critical_related_approved:
+    if finding.get('severity') != 'critical' or d.get('scope') != 'related': raise ValueError('--critical-related-approved requires critical related evidence')
+    finding['closure']={'mode':'related','critical_related_approved':True,'approved_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'source':'user'}
    _load('evidence_validator').validate_finding_closure_evidence(finding,d,impact,current_head=head,current_workspace=workspace)
    finding['evidence']=evidence; finding['verified_at']=datetime.datetime.now(datetime.timezone.utc).isoformat()
   elif target=='REJECTED':
