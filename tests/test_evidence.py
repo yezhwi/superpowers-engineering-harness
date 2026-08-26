@@ -35,6 +35,14 @@ def _collect(harness_dir: Path, etype="unit_test", cmd="true"):
     )
 
 
+def test_evidence_filename_separates_finding_phases():
+    from harness.collect_evidence import evidence_filename
+
+    assert evidence_filename("unit_test") == "unit-test.json"
+    assert evidence_filename("unit_test", finding_id="FND-001", phase="red") == "FND-001-red-unit-test.json"
+    assert evidence_filename("unit_test", finding_id="FND-001", phase="green") == "FND-001-green-unit-test.json"
+
+
 def test_collect_success_evidence(tmp_path):
     result = _collect(tmp_path, "unit_test", "echo hello")
     assert result.returncode == 0, result.stderr
@@ -56,13 +64,25 @@ def test_collect_structured_finding_test_evidence(tmp_path):
     result = subprocess.run(
         [sys.executable, str(REPO / "scripts" / "collect_evidence.py"),
          "--type", "custom", "--command", "false", "--finding", "FND-001",
-         "--test", "tests/test_x.py::test_x", "--harness-dir", str(tmp_path)],
+         "--phase", "red", "--test", "tests/test_x.py::test_x", "--harness-dir", str(tmp_path)],
         capture_output=True, text=True, cwd=REPO,
     )
     assert result.returncode == 0, result.stderr
-    evidence = json.loads((tmp_path / "evidence" / "custom.json").read_text())
+    evidence = json.loads((tmp_path / "evidence" / "FND-001-red-custom.json").read_text())
     assert evidence["subject"] == {"kind": "finding", "id": "FND-001"}
     assert evidence["test"] == {"node_id": "tests/test_x.py::test_x"}
+
+
+def test_collect_finding_phase_writes_separate_file(tmp_path):
+    result = subprocess.run(
+        [sys.executable, str(REPO / "scripts" / "collect_evidence.py"),
+         "--type", "unit_test", "--finding", "FND-001", "--phase", "red",
+         "--test", "tests/test_x.py::test_x", "--scope", "related", "--covered-test",
+         "tests/test_x.py::test_x", "--command", "false", "--harness-dir", str(tmp_path)],
+        capture_output=True, text=True, cwd=REPO,
+    )
+    assert result.returncode == 0, result.stderr
+    assert (tmp_path / "evidence" / "FND-001-red-unit-test.json").is_file()
 
 
 def test_collect_related_scope_records_covered_tests(tmp_path):

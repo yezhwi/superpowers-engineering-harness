@@ -106,6 +106,24 @@ def test_critical_finding_accepts_approved_related_closure(tmp_path):
     assert finding["closure"]["critical_related_approved"] is True
 
 
+def test_cli_preserves_finding_red_and_green_evidence_separately(tmp_path):
+    h = setup(tmp_path)
+    assert cli(tmp_path, "finding", "transition", "FND-001", "REPRODUCING", "--attempt", "red").returncode == 0
+    red = cli(tmp_path, "evidence", "--type", "custom", "--finding", "FND-001", "--phase", "red", "--test", "tests/test_x.py::test_x", "--command", "false")
+    assert red.returncode == 0, red.stderr
+    red_ref = "FND-001-red-custom.json"
+    assert cli(tmp_path, "finding", "transition", "FND-001", "CONFIRMED", "--test", "tests/test_x.py::test_x", "--evidence", red_ref).returncode == 0
+    assert cli(tmp_path, "finding", "transition", "FND-001", "FIXING").returncode == 0
+    green = cli(tmp_path, "evidence", "--type", "custom", "--finding", "FND-001", "--phase", "green", "--test", "tests/test_x.py::test_x", "--command", "true")
+    assert green.returncode == 0, green.stderr
+    green_ref = "FND-001-green-custom.json"
+    assert cli(tmp_path, "finding", "transition", "FND-001", "FIXED", "--evidence", green_ref).returncode == 0
+    assert (h / "evidence" / red_ref).is_file()
+    assert (h / "evidence" / green_ref).is_file()
+    assert json.loads((h / "evidence" / red_ref).read_text())["exit_code"] != 0
+    assert json.loads((h / "evidence" / green_ref).read_text())["exit_code"] == 0
+
+
 def test_cli_rejects_skip(tmp_path):
     h=setup(tmp_path)
     assert cli(tmp_path,"finding","transition","FND-001","VERIFIED","--evidence","full.json").returncode==1

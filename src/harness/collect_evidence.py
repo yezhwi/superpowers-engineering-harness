@@ -66,6 +66,19 @@ def workspace_fingerprint(repo_root: Path | None = None) -> str:
     return "sha256:" + hashlib.sha256(b"\0".join(parts)).hexdigest()
 
 
+def evidence_filename(evidence_type: str, *, finding_id: str | None = None,
+                      phase: str | None = None) -> str:
+    """Return deterministic generic or finding evidence filename."""
+    stem = evidence_type.replace("_", "-")
+    if finding_id is None:
+        if phase is not None:
+            raise ValueError("phase requires finding")
+        return f"{stem}.json"
+    if phase not in {"red", "green", "full"}:
+        raise ValueError("finding evidence requires phase red, green, or full")
+    return f"{finding_id}-{phase}-{stem}.json"
+
+
 def _tail(text: str) -> str:
     if not text:
         return ""
@@ -74,7 +87,7 @@ def _tail(text: str) -> str:
 
 def collect(evidence_type: str, command: str, finding_id: str | None = None,
             test_id: str | None = None, scope: str = "related",
-            covered_tests: tuple[str, ...] = ()) -> dict:
+            covered_tests: tuple[str, ...] = (), phase: str | None = None) -> dict:
     before = workspace_fingerprint()
     run = subprocess.run(
         command, shell=True, capture_output=True, text=True
@@ -112,6 +125,7 @@ def main(argv=None):
     parser.add_argument("--test")
     parser.add_argument("--scope", choices=["related", "full_suite"], default="related")
     parser.add_argument("--covered-test", action="append", default=[])
+    parser.add_argument("--phase", choices=["red", "green", "full"])
     args = parser.parse_args(argv)
 
     try:
@@ -123,16 +137,20 @@ def main(argv=None):
     if bool(args.finding) != bool(args.test):
         print("INVALID_USAGE: --finding and --test must be paired", file=sys.stderr)
         return 2
+    if bool(args.finding) != bool(args.phase):
+        print("INVALID_USAGE: --finding and --phase must be paired", file=sys.stderr)
+        return 2
     if args.type == "unit_test" and args.scope == "related" and not args.covered_test:
         print("RELATED_COVERED_TEST_REQUIRED", file=sys.stderr)
         return 2
     evidence = collect(args.type, args.command, args.finding, args.test,
-                       args.scope, tuple(args.covered_test))
+                       args.scope, tuple(args.covered_test), args.phase)
     evidence["commit"] = head
 
     out_dir = Path(args.harness_dir) / "evidence"
     out_dir.mkdir(parents=True, exist_ok=True)
-    out_file = out_dir / f"{args.type.replace('_', '-')}.json"
+    out_file = out_dir / evidence_filename(args.type, finding_id=args.finding,
+                                            phase=args.phase)
     out_file.write_text(json.dumps(evidence, indent=2))
 
     print(f"evidence written: {out_file} "
