@@ -44,6 +44,7 @@ def test_wheel_runs_outside_checkout(tmp_path):
         assert result.returncode == 0, result.stderr
         if args == ["evidence", "--help"]:
             assert "--covered-test" in result.stdout
+            assert "--phase" in result.stdout
 
     result = subprocess.run(
         [harness, "task", "recover", "TASK-005", "--reason", "stale"],
