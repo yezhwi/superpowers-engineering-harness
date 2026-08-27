@@ -66,6 +66,17 @@
       },
       "additionalProperties": false
     },
+    "budget": {
+      "type": "object",
+      "required": ["test_runs", "build_runs", "retry_runs", "overrides"],
+      "properties": {
+        "test_runs": {"type": "integer", "minimum": 0},
+        "build_runs": {"type": "integer", "minimum": 0},
+        "retry_runs": {"type": "integer", "minimum": 0},
+        "overrides": {"type": "array", "items": {"type": "object", "required": ["action", "reason", "evidence", "hypothesis"], "additionalProperties": false, "properties": {"action": {"enum": ["test", "build", "retry"]}, "reason": {"type": "string"}, "evidence": {"type": "string"}, "hypothesis": {"type": "string"}}}}
+      },
+      "additionalProperties": false
+    },
     "authorizations": {
       "type": "object",
       "propertyNames": {"enum": ["commit", "full_suite", "push", "create_mr", "ready_mr", "merge", "deploy"]},

@@ -7,6 +7,12 @@ state: CREATED
 
 risk: null
 
+budget:
+  test_runs: 0
+  build_runs: 0
+  retry_runs: 0
+  overrides: []
+
 authorizations:
   commit: {granted: false, granted_at: null, source: null}
   full_suite: {granted: false, granted_at: null, source: null}
