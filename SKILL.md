@@ -36,6 +36,18 @@ run gate
 4. **No self-declared done.** Only `quality_gate.py` exit code 0 plus an
    explicit `CONVERGED -> DONE` transition ends a task.
 
+## Q0 Decision Table
+
+Apply this table **before** Session Startup:
+
+| Request intent | Classification | Harness action |
+|---|---|---|
+| Question, explanation, impact assessment, design discussion, or advice; example: `这个修改会影响 API 吗？` | Q0 | Answer only. do not read `.harness`, do not run `harness status`, do not create or advance task. |
+| Explicit request to modify repository state: implement, fix, edit, refactor, run a requested change, or create files | mutating | Continue to Session Startup, then persist risk classification before dispatch. |
+| Intent unclear | default Q0 | Ask one clarification question. Do not read `.harness` or create/advance task until user confirms mutating work. |
+
+Repository presence, `.harness` presence, and a prior task state never change a Q0 request into mutating work.
+
 ## Session Startup (每次 session 必须先做)
 
 ```text

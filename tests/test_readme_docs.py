@@ -21,6 +21,15 @@ def test_readmes_document_risk_profiles_and_independent_authorization():
         assert "harness authorize push" in text
 
 
+def test_skill_q0_bypasses_harness_before_session_startup():
+    skill = (REPO / "SKILL.md").read_text()
+    assert "Q0 Decision Table" in skill
+    assert "这个修改会影响 API 吗？" in skill
+    assert "do not read `.harness`" in skill
+    assert "default Q0" in skill
+    assert skill.index("Q0 Decision Table") < skill.index("## Session Startup")
+
+
 def test_skill_routes_risk_adaptive_workflow_before_task_contract():
     skill = (REPO / "SKILL.md").read_text()
     for term in ("Q0", "Q1", "Q2", "Q3", "FAST", "STANDARD", "STRICT", "CLASSIFIED", "harness task classify", "harness task escalate"):
