@@ -21,6 +21,14 @@ def test_readmes_document_risk_profiles_and_independent_authorization():
         assert "harness authorize push" in text
 
 
+def test_docs_explain_fast_risk_boundary_escalation():
+    for path in (REPO / "README.md", REPO / "README.zh-CN.md", REPO / "SKILL.md"):
+        text = path.read_text()
+        assert "risk-boundaries.yaml" in text
+        assert "RISK_ESCALATION_REQUIRED" in text
+        assert "harness task escalate" in text
+
+
 def test_skill_q0_bypasses_harness_before_session_startup():
     skill = (REPO / "SKILL.md").read_text()
     assert "Q0 Decision Table" in skill

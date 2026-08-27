@@ -88,7 +88,7 @@ harness task classify --level Q1 --scope low --contract none --data none \
 ```
 
 4. **Q1 / FAST:** `CREATED → CLASSIFIED → IMPLEMENTING`; collect task RED proof before fix and GREEN proof after fix, then `VERIFYING → GATING → Gate`. Do not invoke task contract, minimal implementation, impact, or complexity ceremony.
-5. **Q2 / STANDARD** and **Q3 / STRICT:** use task contract, minimal implementation, verification, review, and Gate workflow below. Never downgrade risk. Escalate only with:
+5. **Q2 / STANDARD** and **Q3 / STRICT:** use task contract, minimal implementation, verification, review, and Gate workflow below. FAST revalidates changed business paths against `.harness/risk-boundaries.yaml`; `RISK_ESCALATION_REQUIRED` requires persisted escalation. Never downgrade risk. Escalate only with:
 
 ```bash
 harness task escalate --level Q2 --reason "contract risk discovered"

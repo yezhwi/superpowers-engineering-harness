@@ -145,6 +145,24 @@ harness authorize push
 
 Evidence reuse、执行预算、telemetry、benchmark automation 均已延期，v0.2.3 不提供。
 
+### FAST 风险边界
+
+FAST 不通过关键词猜测 API/安全风险。在 `.harness/risk-boundaries.yaml` 声明变更风险路径：
+
+```yaml
+boundaries:
+  q2: [src/**/api/**, schemas/**]
+  q3: [auth/**, permissions/**, migrations/**]
+```
+
+无 policy 的业务变更以 `RISK_REVALIDATION_POLICY_MISSING` 阻塞；超过 Q1 的边界变更以 `RISK_ESCALATION_REQUIRED` 阻塞。显式升级：
+
+```bash
+harness task escalate --level Q2 --reason "public contract changed"
+```
+
+仅 `docs/`、`tests/`、`test/`、根目录 Markdown 变更无需 policy。
+
 ### 证据复用
 
 复用必须显式请求，且只限当前 task：

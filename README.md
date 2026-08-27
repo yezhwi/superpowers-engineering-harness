@@ -145,6 +145,24 @@ harness authorize push
 
 Evidence reuse, execution budgets, telemetry, and benchmark automation are deferred; unavailable in v0.2.3.
 
+### FAST risk boundaries
+
+FAST never infers API/security risk from keywords. Declare changed-risk paths in `.harness/risk-boundaries.yaml`:
+
+```yaml
+boundaries:
+  q2: [src/**/api/**, schemas/**]
+  q3: [auth/**, permissions/**, migrations/**]
+```
+
+Business changes without policy block with `RISK_REVALIDATION_POLICY_MISSING`; boundary changes above Q1 block with `RISK_ESCALATION_REQUIRED`. Escalate explicitly:
+
+```bash
+harness task escalate --level Q2 --reason "public contract changed"
+```
+
+`docs/`, `tests/`, `test/`, and root Markdown-only changes do not require policy.
+
 ### Evidence reuse
 
 Reuse is explicit and same-task only:
