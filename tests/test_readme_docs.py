@@ -21,6 +21,16 @@ def test_readmes_document_risk_profiles_and_independent_authorization():
         assert "harness authorize push" in text
 
 
+def test_skill_defines_fast_investigation_round_policy():
+    skill = (REPO / "SKILL.md").read_text()
+    assert "search/read rounds" in skill
+    assert "3" in skill
+    assert "new evidence" in skill
+    assert "new hypothesis" in skill
+    for path in (REPO / "README.md", REPO / "README.zh-CN.md"):
+        assert "execution budgets" not in path.read_text().lower()
+
+
 def test_docs_define_fast_verification_and_authorization_boundary():
     for path in (REPO / "SKILL.md", REPO / "README.md", REPO / "README.zh-CN.md"):
         text = path.read_text()

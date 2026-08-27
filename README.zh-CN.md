@@ -143,7 +143,7 @@ harness authorize push
 # 另有 create-mr、ready-mr、merge、deploy；用 revoke-<action> 撤销
 ```
 
-Evidence reuse、执行预算、telemetry、benchmark automation 均已延期，v0.2.3 不提供。
+Evidence reuse、soft budget、local telemetry、fixture benchmark 已提供；remote telemetry 和外部 agent benchmark 声明不提供。
 
 ### FAST 仓库验证
 

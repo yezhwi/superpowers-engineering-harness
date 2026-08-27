@@ -94,6 +94,16 @@ harness task classify --level Q1 --scope low --contract none --data none \
 harness task escalate --level Q2 --reason "contract risk discovered"
 ```
 
+## FAST Investigation Policy
+
+FAST Core budgets enforce test/build/retry only. For agent search/read rounds, follow Skill policy:
+
+1. Recommend at most **3** search/read rounds per FAST task.
+2. Before a fourth round, record new evidence, new hypothesis, and reason in task notes/impact risk.
+3. Without new evidence or new hypothesis, do not repeat investigation; escalate risk, request clarification, or move to STANDARD workflow.
+
+This policy does not fabricate Core telemetry or infer unseen tool calls.
+
 ## Phase Dispatch Table
 
 Read persisted `state` and `risk.profile` from `.harness/current-task.yaml`, then:

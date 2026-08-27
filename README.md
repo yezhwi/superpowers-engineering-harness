@@ -143,7 +143,7 @@ harness authorize push
 # also: create-mr, ready-mr, merge, deploy; revoke with revoke-<action>
 ```
 
-Evidence reuse, execution budgets, telemetry, and benchmark automation are deferred; unavailable in v0.2.3.
+Evidence reuse, soft budgets, local telemetry, and fixture benchmarks are available. Remote telemetry and external-agent benchmark claims are unavailable.
 
 ### FAST repository verification
 
