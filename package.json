@@ -1,8 +1,16 @@
 {
 	"name": "superpowers-engineering-harness",
-	"version": "0.2.1",
+	"version": "0.2.2",
+	"description": "Deterministic engineering harness for AI coding workflows with persistent state, evidence, adversarial review, and quality gates.",
 	"files": ["README.md", "LICENSE", "SKILL.md", "skills"],
-	"keywords": ["pi-package"],
+	"keywords": [
+		"pi-package",
+		"engineering-harness",
+		"superpowers",
+		"ai-coding",
+		"coding-agent",
+		"quality-gate"
+	],
 	"pi": {
 		"skills": ["./skills"]
 	}
