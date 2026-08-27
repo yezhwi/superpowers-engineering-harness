@@ -1,10 +1,16 @@
 import pytest
 
-from harness.budget import BudgetOverrideRequired, check_budget, record_budget
+from harness.budget import BudgetOverrideRequired, budget_action, check_budget, record_budget
 
 
 def fast_task(test_runs=0):
     return {"risk": {"profile": "FAST"}, "budget": {"test_runs": test_runs, "build_runs": 0, "retry_runs": 0, "overrides": []}}
+
+
+def test_budget_action_classifies_observable_evidence():
+    assert budget_action("unit_test", 0, "pytest") == "test"
+    assert budget_action("build", 0, "python -m pip wheel .") == "build"
+    assert budget_action("lint", 0, "ruff") is None
 
 
 def test_fast_test_limit_requires_complete_override():

@@ -7,6 +7,14 @@ class BudgetOverrideRequired(ValueError):
     pass
 
 
+def budget_action(evidence_type: str, exit_code: int, command: str) -> str | None:
+    if evidence_type == "unit_test":
+        return "test"
+    if evidence_type == "build":
+        return "build"
+    return None
+
+
 def check_budget(task: dict, action: str, override: dict | None) -> None:
     if (task.get("risk") or {}).get("profile") != "FAST":
         return
