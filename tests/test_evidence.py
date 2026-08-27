@@ -61,6 +61,14 @@ def test_collect_success_evidence(tmp_path):
     assert ev["timestamp"]  # iso timestamp present
 
 
+def test_collect_success_evidence_records_exact_runtime(tmp_path):
+    result = _collect(tmp_path, "build", "true")
+    assert result.returncode == 0
+    runtime = json.loads((tmp_path / "evidence/build.json").read_text())["runtime"]
+    assert set(runtime) == {"implementation", "version", "executable", "platform"}
+    assert all(isinstance(value, str) and value for value in runtime.values())
+
+
 def test_collect_structured_finding_test_evidence(tmp_path):
     result = subprocess.run(
         [sys.executable, str(REPO / "scripts" / "collect_evidence.py"),

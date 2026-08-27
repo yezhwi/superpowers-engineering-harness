@@ -15,6 +15,47 @@ class EvidenceValidationError(Exception):
     pass
 
 
+@dataclass(frozen=True)
+class ReuseRequest:
+    evidence_type: str
+    command: str
+    scope: str
+    covered_tests: tuple[str, ...]
+    phase: str | None
+    finding_id: str | None
+    test_id: str | None
+
+
+def _schema_valid(record: object) -> bool:
+    try:
+        validate(record, json.loads(SCHEMA.read_text()))
+    except (OSError, json.JSONDecodeError, ValidationError):
+        return False
+    return True
+
+
+def can_reuse_evidence(record: object, request: ReuseRequest, *,
+                       current_head: str, current_workspace: str,
+                       current_runtime: dict[str, str]) -> bool:
+    """Return true only for exact successful generic proof reuse."""
+    if not isinstance(record, dict) or request.phase or request.finding_id or request.test_id:
+        return False
+    if record.get("exit_code") != 0 or record.get("subject") is not None or record.get("test") is not None:
+        return False
+    if record.get("type") != request.evidence_type or record.get("command") != request.command:
+        return False
+    if request.evidence_type == "unit_test" and (
+        record.get("scope") != request.scope
+        or set(record.get("covered_tests", [])) != set(request.covered_tests)
+    ):
+        return False
+    if record.get("commit") != current_head or record.get("workspace_fingerprint") != current_workspace:
+        return False
+    if record.get("workspace_fingerprint_after") != current_workspace:
+        return False
+    return record.get("runtime") == current_runtime and _schema_valid(record)
+
+
 class EvidenceStatus(str, Enum):
     FRESH = "FRESH"
     STALE = "STALE"

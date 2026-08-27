@@ -69,6 +69,17 @@
       },
       "additionalProperties": false
     },
+    "runtime": {
+      "type": "object",
+      "required": ["implementation", "version", "executable", "platform"],
+      "properties": {
+        "implementation": {"type": "string", "minLength": 1},
+        "version": {"type": "string", "minLength": 1},
+        "executable": {"type": "string", "minLength": 1},
+        "platform": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
     "test": {
       "type": "object",
       "required": ["node_id"],

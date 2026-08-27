@@ -12,6 +12,8 @@ from evidence_validator import (
     EvidenceValidationError,
     validate_evidence,
     validate_finding_closure_evidence,
+    ReuseRequest,
+    can_reuse_evidence,
 )
 
 HEAD = "a" * 40
@@ -28,6 +30,40 @@ def record(**changes):
         "test": {"node_id": TEST},
     }
     return {**base, **changes}
+
+
+RUNTIME = {"implementation": "CPython", "version": "3.11.10", "executable": "/python", "platform": "Linux-x86_64"}
+
+
+def generic_record(**changes):
+    evidence = record(
+        type="unit_test", command=f"pytest {TEST}", exit_code=0,
+        scope="related", covered_tests=[TEST], runtime=RUNTIME,
+    )
+    evidence.pop("subject")
+    evidence.pop("test")
+    return {**evidence, **changes}
+
+
+def reuse_request():
+    return ReuseRequest("unit_test", f"pytest {TEST}", "related", (TEST,), None, None, None)
+
+
+def test_reuse_requires_exact_generic_successful_evidence():
+    evidence = generic_record()
+    assert can_reuse_evidence(evidence, reuse_request(), current_head=HEAD,
+                              current_workspace=FP, current_runtime=RUNTIME)
+
+
+@pytest.mark.parametrize("changes", [
+    {"command": "pytest other"}, {"exit_code": 1},
+    {"workspace_fingerprint_after": "sha256:" + "0" * 64},
+    {"runtime": {}}, {"subject": {"kind": "finding", "id": "FND-001"}},
+])
+def test_reuse_rejects_nonidentical_or_non_generic_proof(changes):
+    evidence = generic_record(**changes)
+    assert not can_reuse_evidence(evidence, reuse_request(), current_head=HEAD,
+                                  current_workspace=FP, current_runtime=RUNTIME)
 
 
 def test_rejects_workspace_stale_evidence():

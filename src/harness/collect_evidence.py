@@ -15,6 +15,7 @@ Exit codes: 0 = evidence written; 2 = invalid harness state / usage.
 import argparse
 import datetime
 import json
+import platform
 import subprocess
 import sys
 from pathlib import Path
@@ -35,6 +36,15 @@ def git_head() -> str:
         return workspace_head()
     except RuntimeError as exc:
         raise RuntimeError(f"not a git repository or git failed: {exc}") from exc
+
+
+def runtime_metadata() -> dict[str, str]:
+    return {
+        "implementation": platform.python_implementation(),
+        "version": platform.python_version(),
+        "executable": sys.executable,
+        "platform": f"{platform.system()}-{platform.machine()}",
+    }
 
 
 def workspace_fingerprint(repo_root: Path | None = None) -> str:
@@ -81,6 +91,7 @@ def collect(evidence_type: str, command: str, finding_id: str | None = None,
         "commit": git_head(),
         "workspace_fingerprint": before,
         "workspace_fingerprint_after": after,
+        "runtime": runtime_metadata(),
         "stdout_tail": _tail(run.stdout),
         "stderr_tail": _tail(run.stderr),
     }
