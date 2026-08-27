@@ -11,12 +11,15 @@ Exit codes:
 """
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
 import yaml
 
+from .evidence_validator import project_evidence
 from .state_machine import STATES, is_legal
+from .workspace import WorkspaceError, snapshot
 
 TEMPLATE_DEFAULTS = {
     "task": {"id": "UNKNOWN", "title": ""},
@@ -81,7 +84,27 @@ def _validate(data) -> bool:
     return True
 
 
-def _render(data) -> str:
+def _evidence_rows(harness_dir: Path):
+    """Read-only current Evidence projection; never write task or gate state."""
+    evidence_dir = harness_dir / "evidence"
+    if not evidence_dir.is_dir():
+        return []
+    try:
+        workspace = snapshot()
+    except WorkspaceError:
+        return []
+    rows = []
+    for path in sorted(evidence_dir.glob("*.json")):
+        projection = project_evidence(
+            path, current_head=workspace.head,
+            current_workspace=workspace.fingerprint, expected_success=True,
+        )
+        record = projection.record or {}
+        rows.append((record.get("type", path.stem), projection, record))
+    return rows
+
+
+def _render(data, harness_dir: Path) -> str:
     ver = data["verification"]
     find = data["findings"]
     gate = data["gate"]
@@ -94,6 +117,18 @@ def _render(data) -> str:
         f"Build        {ver.get('build', 'unknown')}",
         f"Unit Tests   {ver.get('unit_test', 'unknown')}",
         f"Integration  {ver.get('integration_test', 'unknown')}",
+    ]
+    rows = _evidence_rows(harness_dir)
+    if rows:
+        lines.extend(["", "Evidence"])
+        for evidence_type, projection, record in rows:
+            lines.append(
+                f"  {evidence_type:<16} {projection.status.value:<7} "
+                f"exit={record.get('exit_code', '?')}  {record.get('command', '')}"
+            )
+            if projection.code:
+                lines.append(f"    {projection.code}")
+    lines.extend([
         "",
         "Findings",
         f"  Critical   {find.get('critical', 0)}",
@@ -101,7 +136,7 @@ def _render(data) -> str:
         f"  Minor      {find.get('minor', 0)}",
         "",
         f"Gate         {gate.get('status', 'unknown')}",
-    ]
+    ])
     blocked_by = gate.get("blocked_by") or []
     if blocked_by:
         lines.append("")
@@ -121,7 +156,7 @@ def main(argv=None):
         return 2
     if not _validate(data):
         return 2
-    print(_render(data))
+    print(_render(data, Path(args.harness_dir)))
     return 0
 
 

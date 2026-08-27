@@ -72,11 +72,11 @@ def validate_complexity_finding(document: dict) -> None:
     validate(document, _schema("finding.schema.json"))
 
 
-def write_complexity_review(harness_dir: Path, review: dict) -> list[Path]:
-    """Persist validated CPLX records plus fresh review metadata."""
-    required = {"task", "base", "head", "findings"}
+def write_complexity_review(harness_dir: Path, review: dict, scope=None) -> list[Path]:
+    """Persist validated CPLX records plus Harness-calculated scope metadata."""
+    required = {"task", "findings"}
     if not isinstance(review, dict) or required - review.keys() or not isinstance(review["findings"], list):
-        _invalid("complexity review requires task, base, head, and findings")
+        _invalid("complexity review requires task and findings")
     findings_dir = harness_dir / "findings"
     findings_dir.mkdir(parents=True, exist_ok=True)
     paths = []
@@ -96,8 +96,16 @@ def write_complexity_review(harness_dir: Path, review: dict) -> list[Path]:
         "type": "review", "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "command": "harness review complexity", "exit_code": 0, "commit": git_head(),
         "workspace_fingerprint": fingerprint, "workspace_fingerprint_after": fingerprint,
-        "base": review["base"], "head": review["head"],
+        "base": scope.base_commit if scope else review.get("base", "HEAD"),
+        "head": scope.head_commit if scope else git_head(),
         "finding_ids": [finding["id"] for finding in review["findings"]],
+        "review_scope": {
+            "base_ref": scope.base_ref,
+            "base_commit": scope.base_commit,
+            "head_commit": scope.head_commit,
+            "workspace_fingerprint": scope.workspace.fingerprint,
+            "files": list(scope.files),
+        } if scope else None,
     }
     path = evidence_dir / "complexity-review.json"
     temporary = path.with_suffix(".json.tmp")

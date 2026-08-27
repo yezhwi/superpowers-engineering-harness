@@ -1,7 +1,10 @@
 """Evidence classifications shared by status and quality gate."""
 
 import json
+import subprocess
 from pathlib import Path
+
+from test_cli_task_recovery import make_repo, run_cli
 
 
 def fresh_record() -> dict:
@@ -65,6 +68,30 @@ def test_projection_marks_head_mismatch_stale(tmp_path: Path):
 
     assert projection.status is EvidenceStatus.STALE
     assert projection.code == "EVIDENCE_HEAD_MISMATCH"
+
+
+def test_status_projects_stale_evidence_without_mutating_task(tmp_path: Path):
+    """Break caught: status trusts persisted verification flags or writes a new truth."""
+    repo = make_repo(tmp_path)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, check=True)
+    (repo / "app.py").write_text("base\n")
+    subprocess.run(["git", "add", "app.py"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-qm", "base"], cwd=repo, check=True)
+    head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True).stdout.strip()
+    record = fresh_record()
+    record["commit"] = head
+    (repo / ".harness/evidence/build.json").write_text(json.dumps(record))
+    task_path = repo / ".harness/current-task.yaml"
+    before = task_path.read_bytes()
+    (repo / "app.py").write_text("changed\n")
+
+    result = run_cli(repo, "status")
+
+    assert result.returncode == 0, result.stderr
+    assert "build" in result.stdout.lower()
+    assert "STALE" in result.stdout
+    assert task_path.read_bytes() == before
 
 
 def test_projection_marks_missing_evidence_missing(tmp_path: Path):

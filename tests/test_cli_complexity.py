@@ -114,6 +114,27 @@ def test_review_complexity_writes_findings_and_metadata(tmp_path):
     assert (repo / ".harness/evidence/complexity-review.json").is_file()
 
 
+def test_complexity_scope_rejects_artifact_omitting_dirty_file(tmp_path):
+    repo = make_repo(tmp_path)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, check=True)
+    (repo / "tracked.py").write_text("base\n")
+    subprocess.run(["git", "add", "tracked.py"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-qm", "base"], cwd=repo, check=True)
+    set_task_state(repo, "VERIFYING")
+    (repo / "dirty.py").write_text("changed\n")
+    source = tmp_path / "review.yaml"
+    source.write_text(yaml.safe_dump({
+        "task": "TASK-004", "findings": [],
+        "review_scope": {"files": []},
+    }))
+
+    result = run_cli(repo, "review", "complexity", "--base", "HEAD", "--file", str(source))
+
+    assert result.returncode == 2
+    assert "COMPLEXITY_REVIEW_SCOPE_MISMATCH" in result.stderr
+
+
 def test_check_minimal_rejects_task_mismatch(tmp_path):
     repo = make_repo(tmp_path)
     set_task_state(repo, "PLANNED")

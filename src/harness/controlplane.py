@@ -193,7 +193,7 @@ def cmd_review_outcome(outcome: str, reason_code: str, finding_ids: list[str]) -
     return 0
 
 
-def cmd_review_complexity(source: Path) -> int:
+def cmd_review_complexity(source: Path, base_ref: str = "HEAD") -> int:
     import yaml
 
     try:
@@ -201,9 +201,11 @@ def cmd_review_complexity(source: Path) -> int:
         task = load_task(Path(".harness"))
         if not isinstance(review, dict) or review.get("task") != task.get("task", {}).get("id"):
             raise ValueError("task mismatch")
-        if review.get("head") != _load("quality_gate").git_head():
-            raise ValueError("review head is not current HEAD")
-        paths = _load("complexity").write_complexity_review(Path(".harness"), review)
+        scope = _load("workspace").review_scope(base_ref)
+        claimed_scope = review.get("review_scope")
+        if claimed_scope is not None and claimed_scope.get("files") != list(scope.files):
+            raise ValueError("COMPLEXITY_REVIEW_SCOPE_MISMATCH")
+        paths = _load("complexity").write_complexity_review(Path(".harness"), review, scope)
     except Exception as exc:
         print(f"INVALID COMPLEXITY REVIEW: {exc}", file=sys.stderr)
         return 2
