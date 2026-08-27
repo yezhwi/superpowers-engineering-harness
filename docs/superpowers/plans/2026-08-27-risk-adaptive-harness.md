@@ -189,7 +189,7 @@ def test_fast_gate_passes_with_current_red_and_green_evidence(tmp_path):
     assert run_gate(h)[0] == "PASS"
 ```
 
-Use real `collect_evidence`-shaped JSON with current commit and workspace fingerprint. RED must have nonzero exit code; GREEN must have zero.
+Use real `collect_evidence`-shaped JSON with current commit and workspace fingerprint. RED must have nonzero exit code and matching before/after fingerprint, but validation must use `require_current_workspace=False` so a later fix may change workspace. GREEN must have zero and validate against current workspace.
 
 - [ ] **Step 2: Run FAST tests RED**
 
@@ -239,7 +239,7 @@ Add legal transitions `IMPLEMENTING → VERIFYING`, `VERIFYING → GATING` while
 
 - [ ] **Step 8: Implement `run_fast_gate` and dispatch**
 
-At start of `run_gate`, after schema/load/head/workspace setup, dispatch when profile is FAST. Validate classification fingerprint equals current workspace fingerprint. Read exactly two evidence records named `fast-red-unit-test.json` and `fast-green-unit-test.json`; validate commit/fingerprint via existing `validate_evidence`, expecting false then true. Return typed verification blockers for absent, stale, or wrong-result evidence. Do not load or require requirements, invariants, impact, findings, or complexity evidence in this branch.
+At start of `run_gate`, after schema/load/head/workspace setup, dispatch when profile is FAST. Validate classification fingerprint equals current workspace fingerprint. Read exactly two evidence records named `fast-red-unit-test.json` and `fast-green-unit-test.json`; validate RED with existing `validate_evidence(expected_success=False, require_current_workspace=False)` and GREEN with `validate_evidence(expected_success=True, require_current_workspace=True)`. Return typed verification blockers for absent, stale, or wrong-result evidence. Do not load or require requirements, invariants, impact, findings, or complexity evidence in this branch.
 
 Add FAST code(s) to `RECOVERY_POLICY` with target VERIFYING. Preserve existing normal `run_gate` logic untouched for non-FAST profiles.
 

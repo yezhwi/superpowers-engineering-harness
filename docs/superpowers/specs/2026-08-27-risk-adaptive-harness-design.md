@@ -68,7 +68,7 @@ harness evidence --type unit_test --phase green --covered-test tests/x.py::test_
 This writes `fast-red-unit-test.json` and `fast-green-unit-test.json`. Existing Finding evidence still requires paired `--finding`, `--test`, and phase, retaining its current filename and lifecycle semantics. Light Gate runs only from GATING for profile FAST and requires:
 
 - no post-classification workspace change;
-- current fresh RED evidence with nonzero exit;
+- HEAD-compatible RED evidence with nonzero exit and internally stable workspace fingerprint; later fix changes may make it historical;
 - current fresh GREEN evidence with zero exit;
 - no risk dimension requiring Q2/Q3;
 - required verification evidence configured by repository policy;
