@@ -107,7 +107,10 @@ def can_reuse_evidence(record, request, *, current_head, current_workspace, curr
         return False
     if record.get("type") != request.evidence_type or record.get("command") != request.command:
         return False
-    if record.get("scope") != request.scope or set(record.get("covered_tests", [])) != set(request.covered_tests):
+    if request.evidence_type == "unit_test" and (
+        record.get("scope") != request.scope
+        or set(record.get("covered_tests", [])) != set(request.covered_tests)
+    ):
         return False
     if record.get("commit") != current_head or record.get("workspace_fingerprint") != current_workspace:
         return False
