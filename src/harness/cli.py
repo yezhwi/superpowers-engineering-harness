@@ -70,6 +70,7 @@ def main(argv=None) -> int:
     p_imp=sub.add_parser("impact"); ims=p_imp.add_subparsers(dest="impact_action"); ims.add_parser("show"); ic=ims.add_parser("add-change"); ic.add_argument("value"); it=ims.add_parser("add-test"); it.add_argument("value"); idp=ims.add_parser("add-dependent"); idp.add_argument("value"); ict=ims.add_parser("add-contract"); ict.add_argument("value"); irk=ims.add_parser("add-risk"); irk.add_argument("value"); ir=ims.add_parser("require-full-suite"); ir.add_argument("--reason",required=True)
     p_auth=sub.add_parser("authorize"); p_auth.add_argument("action", choices=["commit", "full-suite", "push", "create-mr", "ready-mr", "merge", "deploy", "revoke-commit", "revoke-full-suite", "revoke-push", "revoke-create-mr", "revoke-ready-mr", "revoke-merge", "revoke-deploy"])
     sub.add_parser("gate", help="run the deterministic quality gate")
+    p_telemetry=sub.add_parser("telemetry"); telemetry_sub=p_telemetry.add_subparsers(dest="telemetry_command"); telemetry_sub.add_parser("show")
     sub.add_parser("resume", help="recover BLOCKED task from typed blocker")
     p_finding = sub.add_parser("finding", help="inspect findings")
     f_sub = p_finding.add_subparsers(dest="finding_command")
@@ -123,6 +124,8 @@ def main(argv=None) -> int:
         return controlplane.cmd_authorize(args.action.removeprefix("revoke-").replace("-", "_"), granted)
     if args.subcommand == "gate":
         return controlplane.cmd_gate()
+    if args.subcommand == "telemetry" and args.telemetry_command == "show":
+        return controlplane.cmd_telemetry_show()
     if args.subcommand == "resume":
         return controlplane.cmd_resume()
     if args.subcommand == "finding":

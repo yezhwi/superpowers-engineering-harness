@@ -24,6 +24,7 @@ import yaml
 
 from .budget import BudgetOverrideRequired, budget_action, check_budget, record_budget
 from .evidence_validator import ReuseRequest, can_reuse_evidence
+from .telemetry import update_telemetry
 from .workspace import git_head as workspace_head, snapshot
 
 VALID_TYPES = {
@@ -181,6 +182,7 @@ def main(argv=None):
     if task and action:
         record_budget(task, action, override)
         task_path.write_text(yaml.safe_dump(task, sort_keys=False))
+        update_telemetry(Path(args.harness_dir), task)
 
     print(f"evidence written: {out_file} "
           f"(exit_code={evidence['exit_code']}, commit={head[:12]})")

@@ -244,6 +244,15 @@ def cmd_evidence(evidence_type: str, command: str, finding_id=None, test_id=None
     return collect_evidence.main(args)
 
 
+def cmd_telemetry_show() -> int:
+    path = Path(".harness/telemetry.json")
+    if not path.is_file():
+        print("TELEMETRY_MISSING", file=sys.stderr)
+        return 1
+    print(path.read_text(), end="")
+    return 0
+
+
 def cmd_gate() -> int:
     """Evaluate Gate once and apply its deterministic convergence decision."""
     return _cmd_gate_convergence()
