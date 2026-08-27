@@ -20,6 +20,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from .evidence_validator import ReuseRequest, can_reuse_evidence
 from .workspace import git_head as workspace_head, snapshot
 
 VALID_TYPES = {
@@ -115,6 +116,7 @@ def main(argv=None):
     parser.add_argument("--scope", choices=["related", "full_suite"], default="related")
     parser.add_argument("--covered-test", action="append", default=[])
     parser.add_argument("--phase", choices=["red", "green", "full"])
+    parser.add_argument("--reuse-if-valid", action="store_true")
     args = parser.parse_args(argv)
 
     try:
@@ -135,14 +137,28 @@ def main(argv=None):
     if args.type == "unit_test" and args.scope == "related" and not args.covered_test:
         print("RELATED_COVERED_TEST_REQUIRED", file=sys.stderr)
         return 2
+    out_dir = Path(args.harness_dir) / "evidence"
+    out_file = out_dir / evidence_filename(args.type, finding_id=args.finding,
+                                            phase=args.phase)
+    if args.reuse_if_valid and not args.finding and args.phase is None:
+        request = ReuseRequest(args.type, args.command, args.scope,
+                               tuple(args.covered_test), args.phase,
+                               args.finding, args.test)
+        try:
+            candidate = json.loads(out_file.read_text())
+            if can_reuse_evidence(candidate, request, current_head=head,
+                                  current_workspace=workspace_fingerprint(),
+                                  current_runtime=runtime_metadata()):
+                print(f"EVIDENCE_REUSED: {out_file.name}")
+                return 0
+        except (OSError, json.JSONDecodeError):
+            pass
+
     evidence = collect(args.type, args.command, args.finding, args.test,
                        args.scope, tuple(args.covered_test), args.phase)
     evidence["commit"] = head
 
-    out_dir = Path(args.harness_dir) / "evidence"
     out_dir.mkdir(parents=True, exist_ok=True)
-    out_file = out_dir / evidence_filename(args.type, finding_id=args.finding,
-                                            phase=args.phase)
     out_file.write_text(json.dumps(evidence, indent=2))
 
     print(f"evidence written: {out_file} "

@@ -24,11 +24,13 @@ def _head() -> str:
     ).stdout.strip()
 
 
-def _collect(harness_dir: Path, etype="unit_test", cmd="true"):
+def _collect(harness_dir: Path, etype="unit_test", cmd="true", *, reuse_if_valid=False):
     args = [sys.executable, str(REPO / "scripts" / "collect_evidence.py"),
             "--type", etype, "--command", cmd, "--harness-dir", str(harness_dir)]
     if etype == "unit_test":
         args.extend(["--scope", "full_suite"])
+    if reuse_if_valid:
+        args.append("--reuse-if-valid")
     return subprocess.run(
         args,
         capture_output=True, text=True, cwd=REPO,
@@ -42,6 +44,22 @@ def test_evidence_filename_separates_finding_phases():
     assert evidence_filename("unit_test", finding_id="FND-001", phase="red") == "FND-001-red-unit-test.json"
     assert evidence_filename("unit_test", finding_id="FND-001", phase="green") == "FND-001-green-unit-test.json"
     assert evidence_filename("unit_test", phase="red") == "fast-red-unit-test.json"
+
+
+def test_reuse_hit_does_not_execute_or_rewrite_evidence(tmp_path):
+    marker = tmp_path / "ran"
+    command = f"sh -c 'echo ran > {marker}'"
+    assert _collect(tmp_path, "build", command).returncode == 0
+    marker.unlink()
+    path = tmp_path / "evidence/build.json"
+    before = path.read_bytes()
+
+    result = _collect(tmp_path, "build", command, reuse_if_valid=True)
+
+    assert result.returncode == 0
+    assert "EVIDENCE_REUSED: build.json" in result.stdout
+    assert not marker.exists()
+    assert path.read_bytes() == before
 
 
 def test_collect_success_evidence(tmp_path):
