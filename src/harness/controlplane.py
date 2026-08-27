@@ -588,7 +588,7 @@ def cmd_task_new(task_id: str, title: str = "") -> int:
   shutil.copy2(templates_dir()/name,h/name)
  for name in ('findings','evidence'):
   shutil.rmtree(h/name,ignore_errors=True);(h/name).mkdir()
- task=load_task(h);task['task']['id']=task_id;task['task']['title']=title;initialize_task_git(task,head)
+ task=load_task(h);task['task']['id']=task_id;task['task']['title']=title;task['timestamps']['created_at']=datetime.datetime.now(datetime.timezone.utc).isoformat();initialize_task_git(task,head)
  save_task(h,task);print(f'OK: archived task, created {task_id}');return 0
 
 def cmd_task_recover(task_id: str, title: str, reason: str) -> int:
@@ -651,6 +651,7 @@ def cmd_task_recover(task_id: str, title: str, reason: str) -> int:
     task = load_task(harness_dir)
     task["task"]["id"] = task_id
     task["task"]["title"] = title
+    task["timestamps"]["created_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
     initialize_task_git(task, head)
     save_task(harness_dir, task)
     print(f"OK: recovered {old_id}, created {task_id}")
