@@ -19,6 +19,10 @@ class GateBlocker:
     finding_id: str | None = None
     recover_to: str | None = None
 
+    def __contains__(self, text: str) -> bool:
+        """Compatibility for callers that searched legacy blocker strings."""
+        return text in self.message
+
 
 _PRIORITY = {
     "defect": 0,

@@ -294,6 +294,8 @@ def cmd_converge() -> int:
         print(f"INVALID_HARNESS_STATE: {exc}", file=sys.stderr)
         return 1
 
+    blocker_documents = [_load("blockers").blocker_document(blocker) for blocker in blockers]
+
     if status == "PASS":
         state_machine.require_legal("GATING", "CONVERGED")
         task["state"] = "CONVERGED"
@@ -322,7 +324,7 @@ def cmd_converge() -> int:
         state_machine.require_legal("BLOCKED", "ESCALATED")
         task["state"] = "ESCALATED"
         task["iteration"] = iteration + 1
-        task["gate"] = {"status": "BLOCKED", "blocked_by": blockers}
+        task["gate"] = {"status": "BLOCKED", "blocked_by": blocker_documents}
         save_task(harness_dir, task)
         print("DECISION: ESCALATED")
         print(f"REASON: REPEATED_REGRESSION ({reopened} was VERIFIED, "
@@ -334,23 +336,23 @@ def cmd_converge() -> int:
         state_machine.require_legal("BLOCKED", "ESCALATED")
         task["state"] = "ESCALATED"
         task["iteration"] = iteration + 1
-        task["gate"] = {"status": "BLOCKED", "blocked_by": blockers}
+        task["gate"] = {"status": "BLOCKED", "blocked_by": blocker_documents}
         save_task(harness_dir, task)
         print("DECISION: ESCALATED")
         print("REASON: MAX_ITERATIONS")
-        for b in blockers:
-            print(f"  blocker: {b}")
+        for blocker in blockers:
+            print(f"  blocker: {blocker.message}")
         return 0
 
     state_machine.require_legal("GATING", "BLOCKED")
     task["state"] = "BLOCKED"
     task["iteration"] = iteration + 1
-    task["gate"] = {"status": "BLOCKED", "blocked_by": blockers}
+    task["gate"] = {"status": "BLOCKED", "blocked_by": blocker_documents}
     save_task(harness_dir, task)
     print(f"DECISION: CONTINUE (iteration {task['iteration']} /"
       f" {max_iterations})")
-    for b in blockers:
-        print(f"  blocker: {b}")
+    for blocker in blockers:
+        print(f"  blocker: {blocker.message}")
     return 0
 
 
