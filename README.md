@@ -1,8 +1,8 @@
-# Superpowers Engineering Harness v0.2.2
+# Superpowers Engineering Harness v0.2.3
 
 [简体中文](README.zh-CN.md)
 
-`v0.2.2 current release`; `main` contains unreleased v0.2.3 risk-adaptive behavior.
+`v0.2.3 current release`; risk-adaptive behavior is included in this release.
 
 **Routing:** Q0 answers without task; Q1 / FAST uses RED/fix/GREEN/Light Gate; Q2 / STANDARD and Q3 / STRICT use full contract/review/Gate workflow.
 

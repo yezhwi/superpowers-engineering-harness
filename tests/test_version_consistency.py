@@ -10,6 +10,16 @@ import tomllib
 REPO = Path(__file__).resolve().parent.parent
 
 
+def test_v023_release_metadata_is_publishable():
+    expected = "0.2.3"
+    assert tomllib.loads((REPO / "pyproject.toml").read_text())["project"]["version"] == expected
+    assert json.loads((REPO / "package.json").read_text())["version"] == expected
+    assert f"# Superpowers Engineering Harness v{expected}" in (REPO / "README.md").read_text()
+    changelog = (REPO / "CHANGELOG.md").read_text()
+    assert f"## {expected}\n" in changelog
+    assert f"## {expected} (unreleased)" not in changelog
+
+
 def test_python_npm_readme_and_changelog_versions_match():
     """Break caught: npm or documentation release version drifts from Python package."""
     python_version = tomllib.loads((REPO / "pyproject.toml").read_text())["project"]["version"]
