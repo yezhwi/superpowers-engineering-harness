@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.3 (unreleased)
+
+- Add explicit rule-based Q1/Q2/Q3 task classification with FAST, STANDARD, and STRICT profiles.
+- Add FAST Light Gate with task-level RED/GREEN regression proof and protection for user changes present at classification.
+- Add independent per-task authorization records for commit, full suite, push, MR, merge, and deploy actions.
+- Defer evidence reuse, execution budgets, shortcut states, telemetry, and benchmark automation.
+
 ## 0.2.2
 
 - Add typed Gate blockers and `harness resume` reason-driven recovery.

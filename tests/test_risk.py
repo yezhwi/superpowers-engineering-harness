@@ -46,6 +46,24 @@ def run_cli(cwd: Path, *args: str):
     )
 
 
+def test_standard_profile_retains_complexity_requirement(tmp_path):
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    assert run_cli(tmp_path, "init").returncode == 0
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-qm", "base"], cwd=tmp_path, check=True)
+    flags = [item for pair in SAFE.items() for item in (f"--{pair[0]}", pair[1])]
+    assert run_cli(tmp_path, "task", "classify", "--level", "Q2", *flags).returncode == 0
+    current = tmp_path / ".harness/current-task.yaml"
+    task = yaml.safe_load(current.read_text())
+    task["state"] = "VERIFYING"
+    current.write_text(yaml.safe_dump(task))
+
+    result = run_cli(tmp_path, "transition", "REVIEWING")
+
+    assert result.returncode == 1
+    assert "COMPLEXITY_REVIEW_REQUIRED" in result.stderr
+
+
 def test_fast_profile_uses_lightweight_state_path(tmp_path):
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
     assert run_cli(tmp_path, "init").returncode == 0
