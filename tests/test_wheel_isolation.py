@@ -50,4 +50,5 @@ def test_wheel_runs_outside_checkout(tmp_path):
         [harness, "task", "recover", "TASK-005", "--reason", "stale"],
         cwd=outside, capture_output=True, text=True,
     )
-    assert result.returncode == 0, result.stderr
+    assert result.returncode == 2
+    assert "TASK_GIT_BASELINE_REQUIRED" in result.stderr
