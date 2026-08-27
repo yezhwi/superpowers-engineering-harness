@@ -71,7 +71,7 @@ Read `state` from `.harness/current-task.yaml`, then:
 | `CREATED` | Invoke **task-contract** skill. It advances CREATED -> SPECIFYING -> PLANNED. |
 | `PLANNED` | Invoke **minimal-implementation** before any implementation. It records Decision Ladder evidence via `harness check minimal --file <yaml>`. Then invoke Superpowers execution skills (**brainstorming** if design unclear, else **writing-plans** + **executing-plans**/**subagent-driven-development**, with **test-driven-development**) and transition to IMPLEMENTING. |
 | `IMPLEMENTING` | Continue execution skill. Before requesting VERIFYING, automatically record impacted files, dependents, contracts, risks, and related tests with `harness impact add-*`; use related tests by default. If impact recommends full suite, request explicit human authorization; never authorize it autonomously. Then transition to VERIFYING and collect evidence via `harness evidence --type <t> --command "<cmd>"`. |
-| `VERIFYING` | Run deterministic Verification Plan commands/tests. Any red -> IMPLEMENTING (TDD), then re-verify. All green -> invoke **complexity-reviewer** before REVIEWING; it records fresh Harness-calculated scope evidence via `harness review complexity --base <ref> --file <yaml>`. Only then transition to REVIEWING. |
+| `VERIFYING` | Run deterministic Verification Plan commands/tests. Any red -> IMPLEMENTING (TDD), then re-verify. All green -> invoke **complexity-reviewer** before REVIEWING; it records scope from task Git baseline via `harness review complexity --file <yaml>`. `--base <ref>` is explicit override; missing baseline fails closed. Only then transition to REVIEWING. |
 | `REVIEWING` | Invoke Superpowers review (**requesting-code-review** / spec-vs-standards review), then route only with `harness review outcome PASS`, `harness review outcome VERIFICATION_GAP --reason-code <code>`, or `harness review outcome DEFECT --reason-code <code> --finding FND-001`. A defect must enter Finding lifecycle; a verification gap returns to VERIFYING. |
 | `REPRODUCING` | Invoke **reproduce-finding** skill. CONFIRMED finding -> FIXING (fix with TDD) -> VERIFYING. REJECTED finding -> close it, return to REVIEWING. |
 | `GATING` | Run `harness gate`. Exit 0 -> CONVERGED -> DONE (transition, then report). Exit 1 -> BLOCKED; inspect `harness status`, then run `harness resume` so typed blocker selects recovery state. Exit 2 -> fix invalid harness state first (missing files/bad YAML). |
@@ -105,8 +105,10 @@ Never hand-judge what a script can judge:
 ```bash
 harness status                              # current state overview; status is read-only
 harness resume                              # route BLOCKED task from typed blocker
-harness review outcome PASS                 # route a clean review to GATING
-harness review complexity --base origin/main --file review.yaml
+harness review outcome PASS --reason-code REVIEW_CLEAN
+harness review outcome VERIFICATION_GAP --reason-code TEST_COVERAGE_INSUFFICIENT
+harness review complexity --file review.yaml       # task Git baseline
+harness review complexity --base origin/main --file review.yaml  # explicit override
 harness transition VERIFYING                # validate + persist transition
 harness evidence --type unit_test --command "pytest"   # HEAD-bound evidence
 harness gate                                # gate; exit 0=PASS 1=BLOCKED 2=INVALID

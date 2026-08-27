@@ -104,7 +104,7 @@ harness authorize full-suite
 harness evidence --type unit_test --scope full_suite --command "pytest"
 ```
 
-会话中断后运行 `harness status`；Harness 从 `.harness/current-task.yaml` 恢复。`status` 是只读 projection；Gate 阻塞后运行 `harness resume`，Harness 按 typed blocker 自动选择正确恢复状态。
+会话中断后运行 `harness status`；Harness 从 `.harness/current-task.yaml` 恢复。`status` 是只读 projection；Gate 阻塞后运行 `harness resume`，Harness 按 typed blocker code 自动选择正确恢复状态，不信任持久化 `recover_to`。Review reason code 为受控集合，例如 `TEST_COVERAGE_INSUFFICIENT`、`EVIDENCE_INCOMPLETE`、`LOGIC_ERROR`。
 
 ### 自动编排
 
@@ -121,10 +121,11 @@ harness check minimal --file minimal-implementation.yaml
 验证后，Complexity Reviewer 审查变更 diff，仅能创建具备证据的 DELETE、REUSE、STDLIB、NATIVE、YAGNI、SHRINK 类型 `CPLX-*` finding。
 
 ```bash
-harness review complexity --base origin/main --file complexity-review.yaml
+harness review complexity --file complexity-review.yaml
+# 可选 override：harness review complexity --base origin/main --file complexity-review.yaml
 ```
 
-开放 HIGH complexity finding 阻塞 gate；MEDIUM 和 LOW 仅提示。安全、授权、审计、兼容性、迁移、无障碍和 NFR 所需复杂度不自动视为过度设计。
+开放 HIGH complexity finding 阻塞 gate；MEDIUM 和 LOW 仅提示。安全、授权、审计、兼容性、迁移、无障碍和 NFR 所需复杂度不自动视为过度设计。Complexity review 默认使用任务 Git baseline，包含已提交、staged、unstaged 和相关 untracked 变更；`--base` 仅作显式 override。
 
 ## 依赖与 token 使用
 

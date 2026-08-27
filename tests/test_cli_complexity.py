@@ -1,5 +1,6 @@
 """v0.2 CLI behavior for minimal and complexity checks."""
 
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -133,6 +134,32 @@ def test_complexity_scope_rejects_artifact_omitting_dirty_file(tmp_path):
 
     assert result.returncode == 2
     assert "COMPLEXITY_REVIEW_SCOPE_MISMATCH" in result.stderr
+
+
+def test_complexity_defaults_to_task_baseline_for_clean_committed_change(tmp_path):
+    repo = make_repo(tmp_path)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, check=True)
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-qm", "baseline"], cwd=repo, check=True)
+    set_task_state(repo, "DONE")
+    assert run_cli(repo, "task", "new", "TASK-005").returncode == 0
+    (repo / "service.py").write_text("enabled = True\n")
+    subprocess.run(["git", "add", "service.py"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-qm", "service"], cwd=repo, check=True)
+    set_task_state(repo, "VERIFYING")
+    task_path = repo / ".harness/current-task.yaml"
+    task = yaml.safe_load(task_path.read_text())
+    task["task"]["id"] = "TASK-005"
+    task_path.write_text(yaml.safe_dump(task))
+    source = tmp_path / "review.yaml"
+    source.write_text(yaml.safe_dump({"task": "TASK-005", "findings": []}))
+
+    result = run_cli(repo, "review", "complexity", "--file", str(source))
+
+    assert result.returncode == 0, result.stderr
+    metadata = json.loads((repo / ".harness/evidence/complexity-review.json").read_text())
+    assert "service.py" in metadata["review_scope"]["files"]
 
 
 def test_check_minimal_rejects_task_mismatch(tmp_path):

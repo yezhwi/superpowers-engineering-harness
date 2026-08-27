@@ -104,7 +104,7 @@ harness authorize full-suite
 harness evidence --type unit_test --scope full_suite --command "pytest"
 ```
 
-Recover interrupted work with `harness status`; Harness resumes from `.harness/current-task.yaml`.
+Recover interrupted work with `harness status`; Harness resumes from `.harness/current-task.yaml`. Gate recovery derives target from blocker code, not persisted `recover_to`. Review reasons are controlled: use `REVIEW_CLEAN`, `TEST_COVERAGE_INSUFFICIENT`, `EVIDENCE_INCOMPLETE`, `INVARIANT_UNPROVEN`, `TEST_SCOPE_INSUFFICIENT`, `LOGIC_ERROR`, `REGRESSION`, `CONTRACT_VIOLATION`, or `INVARIANT_VIOLATION` for matching outcome.
 
 ### Automatic orchestration
 
@@ -121,10 +121,11 @@ harness check minimal --file minimal-implementation.yaml
 After verification, Complexity Reviewer inspects changed diff and may create evidence-backed `CPLX-*` findings only for DELETE, REUSE, STDLIB, NATIVE, YAGNI, or SHRINK.
 
 ```bash
-harness review complexity --base origin/main --file complexity-review.yaml
+harness review complexity --file complexity-review.yaml
+# Optional override: harness review complexity --base origin/main --file complexity-review.yaml
 ```
 
-Open HIGH complexity findings block gate. MEDIUM and LOW findings are advisory. Necessary security, authorization, audit, compatibility, migration, accessibility, and NFR complexity is not automatically over-engineering.
+Open HIGH complexity findings block gate. MEDIUM and LOW findings are advisory. Necessary security, authorization, audit, compatibility, migration, accessibility, and NFR complexity is not automatically over-engineering. Complexity review defaults to task Git baseline, covering committed, staged, unstaged, and relevant untracked changes; `--base` is an explicit override.
 
 ## Dependencies and token use
 

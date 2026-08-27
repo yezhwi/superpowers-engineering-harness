@@ -44,6 +44,14 @@ def test_skill_and_worked_example_document_v022_controlled_routes():
     assert "status is read-only" in skill
 
 
+def test_v022_docs_explain_baseline_and_controlled_reason_codes():
+    """Break caught: operator docs suggest unsafe HEAD fallback or arbitrary reason prose."""
+    for path in (REPO / "README.md", REPO / "README.zh-CN.md", REPO / "SKILL.md"):
+        text = path.read_text()
+        assert "baseline" in text.lower()
+        assert "TEST_COVERAGE_INSUFFICIENT" in text
+
+
 def test_workflow_makes_full_suite_advisory_after_focused_tests():
     workflow = (REPO / "SKILL.md").read_text()
     assert "exact regression + impact-related tests" in workflow

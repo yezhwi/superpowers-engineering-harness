@@ -5,7 +5,8 @@
 - Add typed Gate blockers and `harness resume` reason-driven recovery.
 - Add structured `harness review outcome` routing for pass, verification gaps, and defects.
 - Project current Evidence freshness in read-only `harness status`.
-- Calculate complexity review scope from Git base, committed, staged, unstaged, and relevant untracked changes.
+- Calculate complexity review scope from task Git baseline, committed, staged, unstaged, and relevant untracked changes.
+- Derive recovery target from typed blocker code; add controlled review reason codes and release version consistency coverage.
 
 ## 0.2.1
 
