@@ -107,6 +107,33 @@ def test_converge_pass_transitions_to_converged(tmp_path):
     assert "CONVERGED" in result.stdout or "PASS" in result.stdout
 
 
+def test_blocked_recovery_preserves_baseline_across_second_complexity_review(tmp_path):
+    h = make_repo(tmp_path, state="GATING")
+    task_path = h / "current-task.yaml"
+    task = yaml.safe_load(task_path.read_text())
+    base = subprocess.run(["git", "rev-parse", "HEAD"], cwd=tmp_path,
+                          check=True, capture_output=True, text=True).stdout.strip()
+    task["git"] = {"base_commit": base, "head": base}
+    task_path.write_text(yaml.safe_dump(task))
+    (h / "evidence" / "unit-test.json").unlink()
+
+    blocked = run_cli(tmp_path, "converge")
+
+    assert blocked.returncode == 0, blocked.stdout + blocked.stderr
+    assert yaml.safe_load(task_path.read_text())["git"]["base_commit"] == base
+    assert yaml.safe_load(task_path.read_text())["state"] == "BLOCKED"
+    resumed = run_cli(tmp_path, "resume")
+    assert resumed.returncode == 0, resumed.stderr
+    assert yaml.safe_load(task_path.read_text())["git"]["base_commit"] == base
+
+    source = tmp_path / "second-review.yaml"
+    source.write_text(yaml.safe_dump({"task": task["task"]["id"], "findings": []}))
+    second_review = run_cli(tmp_path, "review", "complexity", "--file", str(source))
+
+    assert second_review.returncode == 0, second_review.stderr
+    assert yaml.safe_load(task_path.read_text())["git"]["base_commit"] == base
+
+
 def test_converge_budget_exhausted_escalates(tmp_path):
     make_repo(tmp_path, state="GATING", iteration=5, max_iterations=5)
     # gate will be BLOCKED (no evidence yet written by this helper variant)

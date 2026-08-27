@@ -84,15 +84,27 @@ For Pi, open new session after installing skills. Skills load at session start.
 
 ## Daily operations
 
+Normal success path (`review outcome PASS` performs `REVIEWING → GATING`):
+
 ```bash
 harness status
 harness transition IMPLEMENTING
 harness evidence --type unit_test --command "pytest tests/test_cancel.py"
 harness transition VERIFYING
-harness review outcome VERIFICATION_GAP --reason-code TEST_COVERAGE_INSUFFICIENT
+harness review complexity --file review.yaml
+harness transition REVIEWING
+harness review outcome PASS --reason-code REVIEW_CLEAN
 harness gate
-harness resume
 harness converge
+harness transition DONE
+```
+
+Blocked recovery path (`harness converge` performs `GATING → BLOCKED`; `harness resume` derives target from blocker code):
+
+```bash
+harness gate
+harness converge
+harness resume
 ```
 
 Before `VERIFYING`, record impact and related tests. Full suite needs explicit authorization:

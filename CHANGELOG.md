@@ -7,6 +7,7 @@
 - Project current Evidence freshness in read-only `harness status`.
 - Calculate complexity review scope from task Git baseline, committed, staged, unstaged, and relevant untracked changes.
 - Derive recovery target from typed blocker code; add controlled review reason codes and release version consistency coverage.
+- Defer Gate/Converge evaluation consolidation to v0.2.3; retain current CLI behavior in v0.2.2.
 
 ## 0.2.1
 

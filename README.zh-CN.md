@@ -84,15 +84,27 @@ Pi 安装 Skills 后需新开会话。Skills 在会话启动时加载。
 
 ## 日常使用
 
+正常成功路径（`review outcome PASS` 执行 `REVIEWING → GATING`）：
+
 ```bash
 harness status
 harness transition IMPLEMENTING
 harness evidence --type unit_test --command "pytest tests/test_cancel.py"
 harness transition VERIFYING
-harness review outcome VERIFICATION_GAP --reason-code TEST_COVERAGE_INSUFFICIENT
+harness review complexity --file review.yaml
+harness transition REVIEWING
+harness review outcome PASS --reason-code REVIEW_CLEAN
 harness gate
-harness resume
 harness converge
+harness transition DONE
+```
+
+阻塞恢复路径（`harness converge` 执行 `GATING → BLOCKED`；`harness resume` 按 blocker code 推导目标状态）：
+
+```bash
+harness gate
+harness converge
+harness resume
 ```
 
 进入 `VERIFYING` 前记录影响范围和关联测试。全量测试需显式授权：

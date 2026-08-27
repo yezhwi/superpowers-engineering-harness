@@ -32,6 +32,19 @@ def test_readmes_document_v022_recovery_and_review_commands():
         assert "harness review complexity --base" in text
 
 
+def test_readmes_show_legal_normal_and_blocked_recovery_order():
+    """Break caught: docs call guarded commands from impossible states."""
+    for path in (REPO / "README.md", REPO / "README.zh-CN.md"):
+        text = path.read_text()
+        assert "harness transition REVIEWING" in text
+        assert "harness review outcome PASS --reason-code REVIEW_CLEAN" in text
+        assert "harness gate\nharness converge" in text
+        assert "harness converge\nharness resume" in text
+        assert "harness transition GATING" not in text
+        assert "harness transition BLOCKED" not in text
+        assert "harness gate\nharness resume" not in text
+
+
 def test_skill_and_worked_example_document_v022_controlled_routes():
     """Break caught: worker instructions retain v0.2.1 free recovery routes."""
     skill = (REPO / "SKILL.md").read_text()
