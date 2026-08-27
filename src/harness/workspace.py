@@ -78,6 +78,16 @@ def _fingerprint(repo_root: Path) -> str:
     return "sha256:" + hashlib.sha256(b"\0".join(parts)).hexdigest()
 
 
+def changed_paths_since(base_commit: str, repo_root: Path | None = None) -> tuple[str, ...]:
+    """Changed business paths from immutable baseline through current workspace."""
+    root = _root(repo_root)
+    exclude = ":(exclude).harness/**"
+    committed = _run(root, "diff", "--name-only", f"{base_commit}..HEAD", "--", ".", exclude)
+    paths = set(name for name in committed.decode().splitlines() if name)
+    paths.update(snapshot(root).changed_paths)
+    return tuple(sorted(paths))
+
+
 def protected_paths_fingerprint(paths: tuple[str, ...], repo_root: Path | None = None) -> str:
     """Fingerprint only declared pre-existing user changes."""
     root = _root(repo_root)

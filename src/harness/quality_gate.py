@@ -22,9 +22,10 @@ from jsonschema import ValidationError, validate
 from .blockers import GateBlocker, RECOVERY_POLICY, blocker_document
 from .evidence_validator import EvidenceValidationError, validate_evidence
 from .state_machine import STATES
+from .risk_boundaries import RiskBoundaryPolicyError, business_paths, load_boundaries, required_level
 from .workspace import (
-    WorkspaceError, git_head as workspace_head, protected_paths_fingerprint,
-    snapshot,
+    WorkspaceError, changed_paths_since, git_head as workspace_head,
+    protected_paths_fingerprint, snapshot,
 )
 
 # Finding statuses that must block the gate. Terminal/healthy:
@@ -125,6 +126,20 @@ def run_fast_gate(task: dict, harness_dir: Path, head: str,
         raise InvalidHarnessState(f"cannot verify user changes: {exc}") from exc
     if protected != user_changes.get("fingerprint"):
         block("FAST_USER_CHANGE_MODIFIED", "pre-existing user changes were modified")
+
+    try:
+        paths = business_paths(changed_paths_since(task["git"]["base_commit"]))
+    except (KeyError, WorkspaceError) as exc:
+        raise InvalidHarnessState(f"cannot revalidate FAST risk: {exc}") from exc
+    if paths:
+        try:
+            level = required_level(paths, load_boundaries(harness_dir / "risk-boundaries.yaml"))
+        except RiskBoundaryPolicyError:
+            block("RISK_REVALIDATION_POLICY_MISSING", "FAST business changes require risk-boundaries policy")
+        else:
+            current_level = risk.get("level")
+            if level and ("Q1", "Q2", "Q3").index(current_level) < ("Q1", "Q2", "Q3").index(level):
+                block("RISK_ESCALATION_REQUIRED", f"FAST changes require escalation to {level}")
 
     for phase, expected_success, require_current in (
         ("red", False, False), ("green", True, True),

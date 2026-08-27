@@ -80,6 +80,8 @@ def test_fast_gate_requires_only_task_phase_proof(tmp_path):
 
     h = make_harness(tmp_path)
     task = yaml.safe_load((h / "current-task.yaml").read_text())
+    task["git"]["base_commit"] = HEAD
+    (h / "risk-boundaries.yaml").write_text("boundaries:\n  q2: [never/**]\n  q3: [never/**]\n")
     task["risk"] = {
         "level": "Q1", "profile": "FAST",
         "dimensions": {"scope": "low", "contract": "none", "data": "none", "authorization": "none", "security": "none", "concurrency": "none", "deployment": "none"},
@@ -98,6 +100,26 @@ def test_fast_gate_requires_only_task_phase_proof(tmp_path):
     assert blockers == []
 
 
+def test_fast_gate_blocks_business_change_without_risk_policy(tmp_path, monkeypatch):
+    from harness.quality_gate import run_fast_gate
+    from harness.workspace import git_head, protected_paths_fingerprint, snapshot
+
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    (tmp_path / "base.txt").write_text("base\n")
+    subprocess.run(["git", "add", "base.txt"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-qm", "base"], cwd=tmp_path, check=True)
+    base = git_head(tmp_path)
+    (tmp_path / "src").mkdir(); (tmp_path / "src/api.py").write_text("changed\n")
+    monkeypatch.chdir(tmp_path)
+    h = tmp_path / ".harness"; (h / "evidence").mkdir(parents=True)
+    task = {"git": {"base_commit": base}, "risk": {"level": "Q1", "user_changes": {"paths": [], "fingerprint": protected_paths_fingerprint(())}}}
+
+    status, blockers = run_fast_gate(task, h, git_head(), snapshot().fingerprint)
+
+    assert status == "BLOCKED"
+    assert blockers[0].code == "RISK_REVALIDATION_POLICY_MISSING"
+
+
 def test_fast_gate_blocks_modified_preexisting_user_change(tmp_path, monkeypatch):
     from harness.quality_gate import run_fast_gate
     from harness.workspace import git_head, protected_paths_fingerprint, snapshot
@@ -111,7 +133,8 @@ def test_fast_gate_blocks_modified_preexisting_user_change(tmp_path, monkeypatch
     h = tmp_path / ".harness"
     (h / "evidence").mkdir(parents=True)
     paths = ("user.txt",)
-    task = {"risk": {"user_changes": {"paths": list(paths), "fingerprint": protected_paths_fingerprint(paths)}}}
+    (h / "risk-boundaries.yaml").write_text("boundaries:\n  q2: [never/**]\n  q3: [never/**]\n")
+    task = {"git": {"base_commit": git_head()}, "risk": {"level": "Q1", "user_changes": {"paths": list(paths), "fingerprint": protected_paths_fingerprint(paths)}}}
     write_evidence(tmp_path, h, "unit_test", exit_code=1, name="fast-red-unit-test.json")
     write_evidence(tmp_path, h, "unit_test", name="fast-green-unit-test.json")
     (tmp_path / "user.txt").write_text("overwritten\n")
