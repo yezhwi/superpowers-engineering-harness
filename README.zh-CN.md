@@ -155,6 +155,18 @@ harness evidence --type build --command "python -m pip wheel . --no-deps" --reus
 
 `EVIDENCE_REUSED` 表示未运行命令。复用要求之前成功、命令/证明身份完全一致、HEAD/workspace 未变、运行时完全一致。任一不匹配都会正常执行命令。
 
+### 自适应运行
+
+Evidence blocker 用 `harness resume` 恢复；review 测试缺口用 `harness review outcome VERIFICATION_GAP --reason-code TEST_COVERAGE_INSUFFICIENT`。禁止直接 state shortcut。
+
+FAST evidence budget 为 soft：test 2、build 1、相同失败 retry 1。超预算必须提供全部 override 字段：
+
+```bash
+harness evidence --type build --command "python -m pip wheel ." --budget-override-reason "new evidence" --budget-override-evidence build.json --budget-override-hypothesis "packaging path"
+```
+
+仅本地 telemetry：`harness telemetry show`。运行 fixture report：`harness benchmark run --fixtures benchmarks/fixtures`。
+
 ### 自动编排
 
 当 Engineering Harness Skill 控制任务时，它会在 `PLANNED` 自动调用 Minimal Implementation Check、在 `VERIFYING` 前记录 impact analysis、在验证全绿后且 `REVIEWING` 前调用 Complexity Reviewer。状态 guard 拒绝跳过记录。全量测试授权仍必须由人类显式决定。

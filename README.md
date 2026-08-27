@@ -155,6 +155,18 @@ harness evidence --type build --command "python -m pip wheel . --no-deps" --reus
 
 `EVIDENCE_REUSED` means no command ran. Reuse needs prior success plus exact command/proof identity, unchanged HEAD/workspace, and exact runtime. Any mismatch runs command normally.
 
+### Adaptive operations
+
+Evidence blockers recover through `harness resume`; review test gaps use `harness review outcome VERIFICATION_GAP --reason-code TEST_COVERAGE_INSUFFICIENT`. Do not use direct state shortcuts.
+
+FAST evidence budgets are soft: test 2, build 1, repeated retry 1. Over budget requires all override fields:
+
+```bash
+harness evidence --type build --command "python -m pip wheel ." --budget-override-reason "new evidence" --budget-override-evidence build.json --budget-override-hypothesis "packaging path"
+```
+
+Local-only telemetry: `harness telemetry show`. Run fixture report: `harness benchmark run --fixtures benchmarks/fixtures`.
+
 ### Automatic orchestration
 
 When Engineering Harness Skill controls a task, it automatically invokes Minimal Implementation Check in `PLANNED`, records impact analysis before `VERIFYING`, and invokes Complexity Reviewer after green verification but before `REVIEWING`. State guards reject skipped records. Full-suite authorization remains an explicit human decision.
