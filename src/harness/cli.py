@@ -71,6 +71,7 @@ def main(argv=None) -> int:
     p_auth=sub.add_parser("authorize"); p_auth.add_argument("action", choices=["commit", "full-suite", "push", "create-mr", "ready-mr", "merge", "deploy", "revoke-commit", "revoke-full-suite", "revoke-push", "revoke-create-mr", "revoke-ready-mr", "revoke-merge", "revoke-deploy"])
     sub.add_parser("gate", help="run the deterministic quality gate")
     p_telemetry=sub.add_parser("telemetry"); telemetry_sub=p_telemetry.add_subparsers(dest="telemetry_command"); telemetry_sub.add_parser("show")
+    p_benchmark=sub.add_parser("benchmark"); benchmark_sub=p_benchmark.add_subparsers(dest="benchmark_command"); p_benchmark_run=benchmark_sub.add_parser("run"); p_benchmark_run.add_argument("--fixtures", required=True)
     sub.add_parser("resume", help="recover BLOCKED task from typed blocker")
     p_finding = sub.add_parser("finding", help="inspect findings")
     f_sub = p_finding.add_subparsers(dest="finding_command")
@@ -126,6 +127,8 @@ def main(argv=None) -> int:
         return controlplane.cmd_gate()
     if args.subcommand == "telemetry" and args.telemetry_command == "show":
         return controlplane.cmd_telemetry_show()
+    if args.subcommand == "benchmark" and args.benchmark_command == "run":
+        return controlplane.cmd_benchmark_run(Path(args.fixtures))
     if args.subcommand == "resume":
         return controlplane.cmd_resume()
     if args.subcommand == "finding":

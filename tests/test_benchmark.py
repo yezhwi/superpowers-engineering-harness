@@ -1,7 +1,22 @@
 import json
+import subprocess
+import sys
 from pathlib import Path
 
 from harness.benchmark import run_benchmarks
+
+
+REPO = Path(__file__).resolve().parent.parent
+
+
+def test_cli_benchmark_run_writes_report(tmp_path):
+    harness = tmp_path / ".harness"; harness.mkdir()
+    (harness / "telemetry.json").write_text(json.dumps({"token_estimate": None}))
+    fixtures = tmp_path / "fixtures"; fixtures.mkdir()
+    (fixtures / "q1.yaml").write_text("id: q1\nrisk_level: Q1\nexpected_profile: FAST\nexpected_gate: PASS\n")
+    result = subprocess.run([sys.executable, "-m", "harness.cli", "benchmark", "run", "--fixtures", str(fixtures)], cwd=tmp_path, capture_output=True, text=True, env={"PYTHONPATH": str(REPO / "src")})
+    assert result.returncode == 0
+    assert (harness / "benchmark-report.json").is_file()
 
 
 def test_benchmark_report_uses_null_for_unavailable_metrics(tmp_path):

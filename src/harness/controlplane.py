@@ -244,6 +244,18 @@ def cmd_evidence(evidence_type: str, command: str, finding_id=None, test_id=None
     return collect_evidence.main(args)
 
 
+def cmd_benchmark_run(fixtures: Path) -> int:
+    harness_dir = Path(".harness")
+    try:
+        report = _load("benchmark").run_benchmarks(fixtures, harness_dir / "telemetry.json")
+    except (OSError, ValueError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    (harness_dir / "benchmark-report.json").write_text(json.dumps(report, indent=2))
+    print("BENCHMARK_REPORT_WRITTEN")
+    return 0
+
+
 def cmd_telemetry_show() -> int:
     path = Path(".harness/telemetry.json")
     if not path.is_file():
