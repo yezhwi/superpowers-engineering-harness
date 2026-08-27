@@ -44,6 +44,7 @@ def save_task(harness_dir: Path, task: dict) -> None:
     tmp.write_text(yaml.safe_dump(task, sort_keys=False, allow_unicode=True),
                    encoding="utf-8")
     tmp.replace(path)
+    _load("telemetry").update_telemetry(harness_dir, task)
 
 
 def cmd_status() -> int:
