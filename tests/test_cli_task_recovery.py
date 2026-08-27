@@ -67,6 +67,10 @@ def test_task_recover_rejects_terminal_task_without_mutation(tmp_path):
 
 def test_task_recover_archives_artifacts_and_creates_fresh_task(tmp_path):
     repo = make_repo(tmp_path)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, check=True)
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-qm", "base"], cwd=repo, check=True)
     set_task_state(repo, "IMPLEMENTING")
     findings = repo / ".harness/findings"
     evidence = repo / ".harness/evidence"
@@ -156,6 +160,21 @@ def test_task_recover_records_current_git_head_as_complexity_baseline(tmp_path):
     assert result.returncode == 0, result.stderr
     task = yaml.safe_load((repo / ".harness/current-task.yaml").read_text())
     assert task["git"] == {"head": head, "base_commit": head}
+
+
+def test_task_new_without_git_head_fails_without_mutation(tmp_path):
+    repo = make_repo(tmp_path)
+    set_task_state(repo, "DONE")
+    task_path = repo / ".harness/current-task.yaml"
+    before = task_path.read_bytes()
+
+    result = run_cli(repo, "task", "new", "TASK-005")
+
+    assert result.returncode == 2
+    assert "TASK_GIT_BASELINE_REQUIRED" in result.stderr
+    assert task_path.read_bytes() == before
+    history = repo / ".harness/history"
+    assert not history.exists() or not list(history.iterdir())
 
 
 def test_task_new_records_current_git_head_as_complexity_baseline(tmp_path):

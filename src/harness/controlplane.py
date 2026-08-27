@@ -440,13 +440,15 @@ def cmd_requirement_verify(rid,ref): return _verify_record('requirement',rid,ref
 def cmd_invariant_verify(rid,ref): return _verify_record('invariant',rid,ref)
 
 
-def initialize_task_git(task: dict) -> None:
+def initialize_task_git(task: dict, head: str) -> None:
     """Set replacement-task immutable baseline and current HEAD together."""
-    try:
-        head = _load("workspace").git_head()
-    except Exception:
-        head = None
     task["git"] = {"base_commit": head, "head": head}
+
+
+def task_git_head_or_error() -> str:
+    """Resolve required task baseline before any replacement-task mutation."""
+    workspace = _load("workspace")
+    return workspace.git_head()
 
 
 def cmd_task_new(task_id: str, title: str = "") -> int:
@@ -454,6 +456,8 @@ def cmd_task_new(task_id: str, title: str = "") -> int:
  if not re.fullmatch(r"TASK-[0-9]+",task_id): print("INVALID TASK ID",file=sys.stderr);return 2
  h=Path('.harness'); old=load_task(h)
  if old.get('state') not in {'DONE','ESCALATED'}: print('task new requires DONE or ESCALATED task',file=sys.stderr);return 1
+ try: head=task_git_head_or_error()
+ except _load('workspace').WorkspaceError as exc: print(f'TASK_GIT_BASELINE_REQUIRED: {exc}',file=sys.stderr);return 2
  archive=h/'history'/f"{old['task']['id']}-{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}";archive.mkdir(parents=True)
  for name in ('current-task.yaml','requirements.yaml','invariants.yaml','gate.yaml','findings','evidence'):
   src=h/name
@@ -463,7 +467,7 @@ def cmd_task_new(task_id: str, title: str = "") -> int:
   shutil.copy2(templates_dir()/name,h/name)
  for name in ('findings','evidence'):
   shutil.rmtree(h/name,ignore_errors=True);(h/name).mkdir()
- task=load_task(h);task['task']['id']=task_id;task['task']['title']=title;initialize_task_git(task)
+ task=load_task(h);task['task']['id']=task_id;task['task']['title']=title;initialize_task_git(task,head)
  save_task(h,task);print(f'OK: archived task, created {task_id}');return 0
 
 def cmd_task_recover(task_id: str, title: str, reason: str) -> int:
@@ -485,6 +489,12 @@ def cmd_task_recover(task_id: str, title: str, reason: str) -> int:
     if old.get("state") in {"DONE", "ESCALATED"}:
         print("task recover requires active task", file=sys.stderr)
         return 1
+
+    try:
+        head = task_git_head_or_error()
+    except _load("workspace").WorkspaceError as exc:
+        print(f"TASK_GIT_BASELINE_REQUIRED: {exc}", file=sys.stderr)
+        return 2
 
     old_id = old.get("task", {}).get("id") or "UNKNOWN"
     timestamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
@@ -520,7 +530,7 @@ def cmd_task_recover(task_id: str, title: str, reason: str) -> int:
     task = load_task(harness_dir)
     task["task"]["id"] = task_id
     task["task"]["title"] = title
-    initialize_task_git(task)
+    initialize_task_git(task, head)
     save_task(harness_dir, task)
     print(f"OK: recovered {old_id}, created {task_id}")
     return 0
