@@ -39,7 +39,9 @@ risk:
   profile: FAST
   dimensions: { scope: low, contract: none, data: none, authorization: none, security: none, concurrency: none, deployment: none }
   escalation_history: []
-  workspace_fingerprint: sha256:...
+  user_changes:
+    paths: [existing-user-change.py]
+    fingerprint: sha256:per-path-content-proof
 ```
 
 ## State and profiles
@@ -67,7 +69,7 @@ harness evidence --type unit_test --phase green --covered-test tests/x.py::test_
 
 This writes `fast-red-unit-test.json` and `fast-green-unit-test.json`. Existing Finding evidence still requires paired `--finding`, `--test`, and phase, retaining its current filename and lifecycle semantics. Light Gate runs only from GATING for profile FAST and requires:
 
-- no post-classification workspace change;
+- no modification or deletion of user changes present at classification;
 - HEAD-compatible RED evidence with nonzero exit and internally stable workspace fingerprint; later fix changes may make it historical;
 - current fresh GREEN evidence with zero exit;
 - no risk dimension requiring Q2/Q3;
@@ -104,7 +106,7 @@ All grants are independent. Existing `full_suite` authorization migrates compati
 
 ## User workspace protection
 
-Classification records workspace fingerprint. FAST Gate rejects a changed workspace with typed verification blocker; it never resets, checks out, stages, or overwrites user changes. Commit commands remain outside Harness and must use exact paths.
+Classification records pre-existing dirty paths plus a content fingerprint derived only from those paths. FAST Gate recomputes proof for that fixed path set and rejects modification or deletion with `FAST_USER_CHANGE_MODIFIED`; later agent changes on paths that were clean at classification are allowed. Harness never resets, checks out, stages, or overwrites user changes. Commit commands remain outside Harness and must use exact paths.
 
 ## Interfaces
 

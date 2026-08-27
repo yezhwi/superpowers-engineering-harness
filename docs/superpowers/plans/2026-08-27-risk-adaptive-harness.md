@@ -156,6 +156,7 @@ git commit -m "feat: classify tasks by risk profile"
 
 **Files:**
 - Modify: `src/harness/controlplane.py`
+- Modify: `src/harness/workspace.py`
 - Modify: `src/harness/collect_evidence.py`
 - Modify: `src/harness/quality_gate.py`
 - Modify: `src/harness/blockers.py`
@@ -239,7 +240,7 @@ Add legal transitions `IMPLEMENTING → VERIFYING`, `VERIFYING → GATING` while
 
 - [ ] **Step 8: Implement `run_fast_gate` and dispatch**
 
-At start of `run_gate`, after schema/load/head/workspace setup, dispatch when profile is FAST. Validate classification fingerprint equals current workspace fingerprint. Read exactly two evidence records named `fast-red-unit-test.json` and `fast-green-unit-test.json`; validate RED with existing `validate_evidence(expected_success=False, require_current_workspace=False)` and GREEN with `validate_evidence(expected_success=True, require_current_workspace=True)`. Return typed verification blockers for absent, stale, or wrong-result evidence. Do not load or require requirements, invariants, impact, findings, or complexity evidence in this branch.
+At classification, persist `risk.user_changes = {paths, fingerprint}` where `workspace.protected_paths_fingerprint(paths)` hashes only pre-existing dirty paths. At start of `run_gate`, after schema/load/head/workspace setup, dispatch when profile is FAST. Recompute proof only for persisted user-change paths; block `FAST_USER_CHANGE_MODIFIED` when it differs. Read exactly two evidence records named `fast-red-unit-test.json` and `fast-green-unit-test.json`; validate RED with existing `validate_evidence(expected_success=False, require_current_workspace=False)` and GREEN with `validate_evidence(expected_success=True, require_current_workspace=True)`. Return typed verification blockers for absent, stale, or wrong-result evidence. Do not load or require requirements, invariants, impact, findings, or complexity evidence in this branch.
 
 Add FAST code(s) to `RECOVERY_POLICY` with target VERIFYING. Preserve existing normal `run_gate` logic untouched for non-FAST profiles.
 
@@ -250,7 +251,10 @@ def test_fast_gate_blocks_when_workspace_changed_since_classification(tmp_path):
     h = fast_harness(tmp_path, state="GATING")
     write_fast_evidence(h, phase="red", exit_code=1)
     write_fast_evidence(h, phase="green", exit_code=0)
-    (tmp_path / "user-change.txt").write_text("do not overwrite")
+    user_change = tmp_path / "user-change.txt"
+    user_change.write_text("original user change")
+    h = classify_fast_task_with_existing_user_change(tmp_path, user_change)
+    user_change.write_text("agent overwrote user change")
     status, blockers = run_gate(h)
     assert status == "BLOCKED"
     assert blockers[0].code == "FAST_WORKSPACE_CHANGED"
@@ -262,7 +266,7 @@ Run: `python -m pytest tests/test_fast_workflow.py::test_fast_gate_blocks_when_w
 
 Expected before implementation: FAIL because changed workspace is accepted.
 
-Add `FAST_WORKSPACE_CHANGED: VERIFYING` to recovery policy. In `run_fast_gate`, compare the persisted classification fingerprint with current workspace fingerprint before accepting evidence. Never modify workspace files.
+Add `FAST_USER_CHANGE_MODIFIED: VERIFYING` to recovery policy. Add `workspace.protected_paths_fingerprint(paths)` that hashes staged/unstaged binary diffs for tracked paths and file bytes for untracked paths. In `run_fast_gate`, compare only the persisted user-change proof before accepting evidence. Never modify workspace files.
 
 - [ ] **Step 11: Run Task 2 tests GREEN**
 
@@ -273,7 +277,7 @@ Expected: PASS.
 - [ ] **Step 12: Commit Task 2**
 
 ```bash
-git add src/harness/controlplane.py src/harness/collect_evidence.py src/harness/quality_gate.py src/harness/blockers.py tests/test_fast_workflow.py tests/test_evidence.py tests/test_control_plane.py tests/test_quality_gate.py
+git add src/harness/controlplane.py src/harness/workspace.py src/harness/collect_evidence.py src/harness/quality_gate.py src/harness/blockers.py tests/test_fast_workflow.py tests/test_evidence.py tests/test_control_plane.py tests/test_quality_gate.py
 git diff --cached --check
 git commit -m "feat: add fast risk-adaptive gate"
 ```
