@@ -12,5 +12,8 @@ def run_benchmarks(fixtures: Path, telemetry: Path) -> dict:
         required = {"id", "risk_level", "expected_profile", "expected_gate"}
         if not isinstance(fixture, dict) or required - set(fixture):
             raise ValueError(f"BENCHMARK_FIXTURE_INVALID: {path}")
+        if (data.get("workflow_profile") != fixture["expected_profile"]
+                or data.get("gate_result") != fixture["expected_gate"]):
+            raise ValueError(f"BENCHMARK_EXPECTATION_MISMATCH: {fixture['id']}")
         rows.append(fixture)
     return {"fixtures": rows, "metrics": {"token_estimate": data.get("token_estimate")}}
