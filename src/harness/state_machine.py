@@ -37,6 +37,7 @@ TRANSITIONS: Set[tuple] = frozenset({
     ("GATING", "BLOCKED"),
     ("GATING", "CONVERGED"),
     ("BLOCKED", "IMPLEMENTING"),
+    ("BLOCKED", "VERIFYING"),
     ("BLOCKED", "REPRODUCING"),
     ("BLOCKED", "ESCALATED"),
     ("CONVERGED", "DONE"),

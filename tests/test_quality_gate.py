@@ -522,6 +522,25 @@ def test_verified_critical_invariant_without_evidence_blocked(tmp_path):
     assert "verified without verification evidence" in result.stdout
 
 
+def test_gate_returns_typed_evidence_blocker(tmp_path):
+    from harness.blockers import GateBlocker
+    from harness.quality_gate import run_gate
+
+    h = make_harness(tmp_path)
+    (h / "evidence" / "build.json").unlink()
+
+    status, blockers = run_gate(h)
+
+    assert status == "BLOCKED"
+    assert any(
+        blocker == GateBlocker(
+            "EVIDENCE_MISSING", "verification", "missing build evidence",
+            source="build", recover_to="VERIFYING",
+        )
+        for blocker in blockers
+    )
+
+
 def test_gate_from_reviewing_is_invalid_harness_state(tmp_path):
     h = make_harness(tmp_path)
     task = yaml.safe_load((h / "current-task.yaml").read_text())

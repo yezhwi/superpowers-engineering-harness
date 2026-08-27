@@ -61,6 +61,7 @@ def main(argv=None) -> int:
     p_imp=sub.add_parser("impact"); ims=p_imp.add_subparsers(dest="impact_action"); ims.add_parser("show"); ic=ims.add_parser("add-change"); ic.add_argument("value"); it=ims.add_parser("add-test"); it.add_argument("value"); idp=ims.add_parser("add-dependent"); idp.add_argument("value"); ict=ims.add_parser("add-contract"); ict.add_argument("value"); irk=ims.add_parser("add-risk"); irk.add_argument("value"); ir=ims.add_parser("require-full-suite"); ir.add_argument("--reason",required=True)
     p_auth=sub.add_parser("authorize"); p_auth.add_argument("action",choices=["full-suite","revoke-full-suite"])
     sub.add_parser("gate", help="run the deterministic quality gate")
+    sub.add_parser("resume", help="recover BLOCKED task from typed blocker")
     p_finding = sub.add_parser("finding", help="inspect findings")
     f_sub = p_finding.add_subparsers(dest="finding_command")
     f_sub.add_parser("list", help="list all findings")
@@ -103,6 +104,8 @@ def main(argv=None) -> int:
     if args.subcommand == "authorize": return controlplane.cmd_authorize_full_suite(args.action == "full-suite")
     if args.subcommand == "gate":
         return controlplane.cmd_gate()
+    if args.subcommand == "resume":
+        return controlplane.cmd_resume()
     if args.subcommand == "finding":
         if args.finding_command == "list":
             return controlplane.cmd_finding_list()

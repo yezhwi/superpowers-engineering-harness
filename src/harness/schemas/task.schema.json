@@ -181,7 +181,17 @@
         "blocked_by": {
           "type": "array",
           "items": {
-            "type": "string"
+            "type": "object",
+            "required": ["code", "category", "message"],
+            "properties": {
+              "code": {"type": "string"},
+              "category": {"enum": ["verification", "implementation", "defect", "harness", "convergence"]},
+              "message": {"type": "string"},
+              "source": {"type": ["string", "null"]},
+              "finding_id": {"type": ["string", "null"]},
+              "recover_to": {"type": ["string", "null"]}
+            },
+            "additionalProperties": false
           }
         }
       }

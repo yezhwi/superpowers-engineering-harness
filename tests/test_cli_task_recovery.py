@@ -94,6 +94,35 @@ def test_task_recover_archives_artifacts_and_creates_fresh_task(tmp_path):
     assert list(evidence.iterdir()) == []
 
 
+def test_resume_routes_typed_evidence_blocker_to_verifying(tmp_path):
+    repo = make_repo(tmp_path)
+    set_task_state(repo, "BLOCKED")
+    path = repo / ".harness/current-task.yaml"
+    task = yaml.safe_load(path.read_text())
+    task["gate"] = {"status": "BLOCKED", "blocked_by": [{
+        "code": "EVIDENCE_WORKSPACE_STALE", "category": "verification",
+        "message": "unit-test evidence stale", "source": "unit_test",
+        "finding_id": None, "recover_to": "VERIFYING",
+    }]}
+    path.write_text(yaml.safe_dump(task))
+
+    result = run_cli(repo, "resume")
+
+    assert result.returncode == 0, result.stderr
+    assert "BLOCKED -> VERIFYING" in result.stdout
+    assert yaml.safe_load(path.read_text())["state"] == "VERIFYING"
+
+
+def test_transition_cannot_bypass_resume_for_blocked_recovery(tmp_path):
+    repo = make_repo(tmp_path)
+    set_task_state(repo, "BLOCKED")
+
+    result = run_cli(repo, "transition", "VERIFYING")
+
+    assert result.returncode == 1
+    assert "RESUME_REQUIRED" in result.stderr
+
+
 def test_task_new_still_rejects_active_task(tmp_path):
     repo = make_repo(tmp_path)
 

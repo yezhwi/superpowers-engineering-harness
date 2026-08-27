@@ -54,6 +54,9 @@ def cmd_transition(target: str) -> int:
     harness_dir = Path(".harness")
     task = load_task(harness_dir)
     current = task.get("state")
+    if current == "BLOCKED" and target == "VERIFYING":
+        print("RESUME_REQUIRED: use harness resume", file=sys.stderr)
+        return 1
     # Reject malformed task identity/state before it can advance toward Gate.
     try:
         _load("quality_gate").validate_schema(
@@ -111,6 +114,33 @@ def cmd_transition(target: str) -> int:
     task["state"] = target
     save_task(harness_dir, task)
     print(f"OK: {current} -> {target}")
+    return 0
+
+
+def cmd_resume() -> int:
+    """Recover BLOCKED task using highest-priority typed blocker only."""
+    from harness.blockers import GateBlocker, select_recovery
+
+    harness_dir = Path(".harness")
+    task = load_task(harness_dir)
+    if task.get("state") != "BLOCKED":
+        print("resume requires state BLOCKED", file=sys.stderr)
+        return 1
+    try:
+        _load("quality_gate").validate_schema(
+            task, "task.schema.json", harness_dir / "current-task.yaml")
+        records = task.get("gate", {}).get("blocked_by", [])
+        blockers = [GateBlocker(**record) for record in records]
+        target = select_recovery(blockers)
+        if target is None:
+            raise ValueError("no deterministic recovery route")
+        _load("state_machine").require_legal("BLOCKED", target)
+    except Exception as exc:
+        print(f"INVALID_HARNESS_STATE: {exc}", file=sys.stderr)
+        return 2
+    task["state"] = target
+    save_task(harness_dir, task)
+    print(f"OK: BLOCKED -> {target}")
     return 0
 
 

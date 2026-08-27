@@ -19,6 +19,7 @@ from pathlib import Path
 import yaml
 from jsonschema import ValidationError, validate
 
+from .blockers import blocker_document, blocker_from_message
 from .evidence_validator import EvidenceValidationError, validate_evidence
 from .state_machine import STATES
 from .workspace import WorkspaceError, git_head as workspace_head, snapshot
@@ -329,8 +330,9 @@ def run_gate(harness_dir: Path, head: str | None = None,
         blockers.append(
             f"Confirmed finding {f['id']} has no regression test")
 
-    status = "PASS" if not blockers else "BLOCKED"
-    return status, blockers
+    typed_blockers = [blocker_from_message(message) for message in blockers]
+    status = "PASS" if not typed_blockers else "BLOCKED"
+    return status, typed_blockers
 
 
 def write_back(harness_dir: Path, status: str, blockers: list):
@@ -338,7 +340,7 @@ def write_back(harness_dir: Path, status: str, blockers: list):
     task = yaml.safe_load(path.read_text())
     task.setdefault("gate", {})
     task["gate"]["status"] = status
-    task["gate"]["blocked_by"] = blockers
+    task["gate"]["blocked_by"] = [blocker_document(blocker) for blocker in blockers]
     task["git"] = {"head": git_head()}
     path.write_text(yaml.safe_dump(task, sort_keys=False))
 
@@ -363,8 +365,8 @@ def main(argv=None):
     print("QUALITY GATE: BLOCKED")
     print()
     print("Blocking:")
-    for b in blockers:
-        print(f"- {b}")
+    for blocker in blockers:
+        print(f"- {blocker.message}")
     return 1
 
 
