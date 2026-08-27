@@ -2,6 +2,10 @@
 
 [简体中文](README.zh-CN.md)
 
+`v0.2.2 current release`; `main` contains unreleased v0.2.3 risk-adaptive behavior.
+
+**Routing:** Q0 answers without task; Q1 / FAST uses RED/fix/GREEN/Light Gate; Q2 / STANDARD and Q3 / STRICT use full contract/review/Gate workflow.
+
 Engineering Harness is deterministic control plane around [Superpowers](https://github.com/obra/superpowers) development workflows. It does not replace agent or worker skills. It persists task state, requires proof, and prevents an agent from declaring work done without gate approval.
 
 ## Why

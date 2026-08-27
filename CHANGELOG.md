@@ -5,7 +5,10 @@
 - Add explicit rule-based Q1/Q2/Q3 task classification with FAST, STANDARD, and STRICT profiles.
 - Add FAST Light Gate with task-level RED/GREEN regression proof and protection for user changes present at classification.
 - Add independent per-task authorization records for commit, full suite, push, MR, merge, and deploy actions.
-- Defer evidence reuse, execution budgets, shortcut states, telemetry, and benchmark automation.
+- Add same-task Evidence reuse with exact runtime/proof identity.
+- Add Soft evidence budgets, local telemetry, and fixture benchmarks with validation/comparison and INCONCLUSIVE evidence handling.
+- Add FAST risk-boundary revalidation and required repository verification.
+- Keep remote telemetry, external-agent execution, and unrecorded external metric claims unavailable.
 
 ## 0.2.2
 

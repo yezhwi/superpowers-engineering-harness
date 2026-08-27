@@ -21,6 +21,19 @@ def test_readmes_document_risk_profiles_and_independent_authorization():
         assert "harness authorize push" in text
 
 
+def test_docs_distinguish_current_release_from_unreleased_adaptive_main():
+    for path in (REPO / "README.md", REPO / "README.zh-CN.md"):
+        text = path.read_text()
+        assert "v0.2.2 current release" in text
+        assert "unreleased v0.2.3" in text
+        assert "Q1 / FAST" in text and "Q2 / STANDARD" in text and "Q3 / STRICT" in text
+    changelog = (REPO / "CHANGELOG.md").read_text()
+    assert "Evidence reuse" in changelog
+    assert "Soft evidence budgets" in changelog
+    assert "local telemetry" in changelog
+    assert "fixture benchmarks" in changelog
+
+
 def test_readmes_define_telemetry_measurement_boundary():
     for path in (REPO / "README.md", REPO / "README.zh-CN.md"):
         text = path.read_text()
