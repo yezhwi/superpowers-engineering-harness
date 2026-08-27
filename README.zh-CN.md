@@ -196,7 +196,15 @@ FAST evidence budget 为 soft：test 2、build 1、相同失败 retry 1。超预
 harness evidence --type build --command "python -m pip wheel ." --budget-override-reason "new evidence" --budget-override-evidence build.json --budget-override-hypothesis "packaging path"
 ```
 
-仅本地 telemetry：`harness telemetry show`。运行 fixture report：`harness benchmark run --fixtures benchmarks/fixtures`。
+仅本地 telemetry：`harness telemetry show`。运行 fixture validation：`harness benchmark run --fixtures benchmarks/fixtures`。
+
+比较已记录的 baseline/adaptive artifacts：
+
+```bash
+harness benchmark compare --fixtures benchmarks/fixtures --baseline baseline-artifacts --adaptive adaptive-artifacts
+```
+
+每个 fixture-required correctness 字段必须在两侧均为 true。缺少 proof 为 `INCONCLUSIVE`，不能声称 correctness preserved。Harness 不运行或证明 external agent runs、tokens、tool calls。
 
 ### 自动编排
 

@@ -21,6 +21,14 @@ def test_readmes_document_risk_profiles_and_independent_authorization():
         assert "harness authorize push" in text
 
 
+def test_readmes_define_benchmark_correctness_comparison_limits():
+    for path in (REPO / "README.md", REPO / "README.zh-CN.md"):
+        text = path.read_text()
+        assert "benchmark compare" in text
+        assert "INCONCLUSIVE" in text
+        assert "external agent" in text
+
+
 def test_skill_defines_fast_investigation_round_policy():
     skill = (REPO / "SKILL.md").read_text()
     assert "search/read rounds" in skill

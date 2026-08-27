@@ -248,6 +248,18 @@ def cmd_evidence(evidence_type: str, command: str, finding_id=None, test_id=None
     return collect_evidence.main(args)
 
 
+def cmd_benchmark_compare(fixtures: Path, baseline: Path, adaptive: Path) -> int:
+    harness_dir = Path(".harness")
+    try:
+        report = _load("benchmark").compare_benchmarks(fixtures, baseline, adaptive)
+    except (OSError, ValueError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    (harness_dir / "benchmark-report.json").write_text(json.dumps(report, indent=2))
+    print(report["overall"])
+    return 0
+
+
 def cmd_benchmark_run(fixtures: Path) -> int:
     harness_dir = Path(".harness")
     try:

@@ -46,6 +46,16 @@ def test_compare_is_inconclusive_for_missing_artifact(tmp_path):
     assert compare_benchmarks(fixtures, tmp_path / "baseline", tmp_path / "adaptive")["overall"] == "INCONCLUSIVE"
 
 
+def test_cli_benchmark_compare_writes_correctness_report(tmp_path):
+    (tmp_path / ".harness").mkdir()
+    fixtures = _write_fixture(tmp_path, ["gate_pass"])
+    _write_artifact(tmp_path, "baseline", {"gate_pass": True}, {})
+    _write_artifact(tmp_path, "adaptive", {"gate_pass": True}, {})
+    result = subprocess.run([sys.executable, "-m", "harness.cli", "benchmark", "compare", "--fixtures", str(fixtures), "--baseline", str(tmp_path / "baseline"), "--adaptive", str(tmp_path / "adaptive")], cwd=tmp_path, capture_output=True, text=True, env={"PYTHONPATH": str(REPO / "src")})
+    assert result.returncode == 0
+    assert json.loads((tmp_path / ".harness/benchmark-report.json").read_text())["overall"] == "CORRECTNESS_PRESERVED"
+
+
 def test_cli_benchmark_run_writes_report(tmp_path):
     harness = tmp_path / ".harness"; harness.mkdir()
     (harness / "telemetry.json").write_text(json.dumps({"token_estimate": None, "workflow_profile": "FAST", "gate_result": "PASS"}))
