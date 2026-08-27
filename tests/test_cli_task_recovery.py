@@ -142,6 +142,22 @@ def test_transition_cannot_bypass_resume_for_blocked_recovery(tmp_path):
     assert "RESUME_REQUIRED" in result.stderr
 
 
+def test_task_recover_records_current_git_head_as_complexity_baseline(tmp_path):
+    repo = make_repo(tmp_path)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, check=True)
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-qm", "base"], cwd=repo, check=True)
+    set_task_state(repo, "IMPLEMENTING")
+    head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True, text=True).stdout.strip()
+
+    result = run_cli(repo, "task", "recover", "TASK-005", "--reason", "restart")
+
+    assert result.returncode == 0, result.stderr
+    task = yaml.safe_load((repo / ".harness/current-task.yaml").read_text())
+    assert task["git"] == {"head": head, "base_commit": head}
+
+
 def test_task_new_records_current_git_head_as_complexity_baseline(tmp_path):
     repo = make_repo(tmp_path)
     subprocess.run(["git", "add", "-A"], cwd=repo, check=True)

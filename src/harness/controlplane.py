@@ -439,6 +439,16 @@ def _verify_record(kind: str, rid: str, ref: str) -> int:
 def cmd_requirement_verify(rid,ref): return _verify_record('requirement',rid,ref)
 def cmd_invariant_verify(rid,ref): return _verify_record('invariant',rid,ref)
 
+
+def initialize_task_git(task: dict) -> None:
+    """Set replacement-task immutable baseline and current HEAD together."""
+    try:
+        head = _load("workspace").git_head()
+    except Exception:
+        head = None
+    task["git"] = {"base_commit": head, "head": head}
+
+
 def cmd_task_new(task_id: str, title: str = "") -> int:
  import shutil, datetime, re
  if not re.fullmatch(r"TASK-[0-9]+",task_id): print("INVALID TASK ID",file=sys.stderr);return 2
@@ -453,9 +463,7 @@ def cmd_task_new(task_id: str, title: str = "") -> int:
   shutil.copy2(templates_dir()/name,h/name)
  for name in ('findings','evidence'):
   shutil.rmtree(h/name,ignore_errors=True);(h/name).mkdir()
- task=load_task(h);task['task']['id']=task_id;task['task']['title']=title
- try: task.setdefault('git',{})['base_commit']=_load('workspace').git_head()
- except Exception: task.setdefault('git',{})['base_commit']=None
+ task=load_task(h);task['task']['id']=task_id;task['task']['title']=title;initialize_task_git(task)
  save_task(h,task);print(f'OK: archived task, created {task_id}');return 0
 
 def cmd_task_recover(task_id: str, title: str, reason: str) -> int:
@@ -512,6 +520,7 @@ def cmd_task_recover(task_id: str, title: str, reason: str) -> int:
     task = load_task(harness_dir)
     task["task"]["id"] = task_id
     task["task"]["title"] = title
+    initialize_task_git(task)
     save_task(harness_dir, task)
     print(f"OK: recovered {old_id}, created {task_id}")
     return 0
