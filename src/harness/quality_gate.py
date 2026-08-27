@@ -238,7 +238,7 @@ def run_gate(harness_dir: Path, head: str | None = None,
         severity = inv.get("severity")
         iid = inv.get("id")
         if status == "violated":
-            block("INVARIANT_UNVERIFIED", "implementation", f"{iid} violated", invariant_id=iid)
+            block("INVARIANT_VIOLATED", "implementation", f"{iid} violated", invariant_id=iid)
         elif status != "verified":
             if severity in ("critical", "major"):
                 block("INVARIANT_UNVERIFIED", "verification", f"{iid} not verified (pending {severity} invariant is not proven)", invariant_id=iid)

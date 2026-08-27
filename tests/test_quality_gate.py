@@ -321,6 +321,36 @@ def test_violated_invariant_blocked(tmp_path):
     assert "INV-001 violated" in result.stdout
 
 
+def test_violated_invariant_emits_implementation_reason_code(tmp_path):
+    from harness.quality_gate import run_gate
+
+    h = make_harness(tmp_path)
+    inv = yaml.safe_load((h / "invariants.yaml").read_text())
+    inv["invariants"][0]["status"] = "violated"
+    (h / "invariants.yaml").write_text(yaml.safe_dump(inv))
+
+    status, blockers = run_gate(h)
+
+    assert status == "BLOCKED"
+    assert blockers[0].code == "INVARIANT_VIOLATED"
+    assert blockers[0].category == "implementation"
+
+
+def test_unproven_invariant_retains_verification_reason_code(tmp_path):
+    from harness.quality_gate import run_gate
+
+    h = make_harness(tmp_path)
+    inv = yaml.safe_load((h / "invariants.yaml").read_text())
+    inv["invariants"][0]["status"] = "pending"
+    (h / "invariants.yaml").write_text(yaml.safe_dump(inv))
+
+    status, blockers = run_gate(h)
+
+    assert status == "BLOCKED"
+    assert blockers[0].code == "INVARIANT_UNVERIFIED"
+    assert blockers[0].category == "verification"
+
+
 def test_pending_critical_invariant_blocks(tmp_path):
     # pending = not proven = BLOCKED for critical/major (review fix #6)
     h = make_harness(tmp_path)

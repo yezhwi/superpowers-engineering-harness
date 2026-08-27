@@ -34,6 +34,15 @@ def test_requirement_evidence_missing_routes_to_verifying_without_message_parsin
     assert select_recovery([blocker]) == "VERIFYING"
 
 
+def test_violated_invariant_routes_to_implementing():
+    """Break caught: proven invariant violation is treated as missing proof."""
+    from harness.blockers import GateBlocker, select_recovery
+
+    assert select_recovery([
+        GateBlocker("INVARIANT_VIOLATED", "implementation", "INV-001 violated"),
+    ]) == "IMPLEMENTING"
+
+
 def test_unrouteable_harness_blocker_fails_closed():
     """Break caught: corrupted Harness data receives guessed recovery route."""
     from harness.blockers import GateBlocker, select_recovery

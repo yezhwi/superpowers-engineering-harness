@@ -107,6 +107,25 @@ def test_converge_pass_transitions_to_converged(tmp_path):
     assert "CONVERGED" in result.stdout or "PASS" in result.stdout
 
 
+def test_violated_invariant_gate_resumes_to_implementing(tmp_path):
+    h = make_repo(tmp_path, state="GATING")
+    invariants_path = h / "invariants.yaml"
+    invariants = yaml.safe_load(invariants_path.read_text())
+    invariants["invariants"][0]["status"] = "violated"
+    invariants_path.write_text(yaml.safe_dump(invariants))
+
+    gate = run_cli(tmp_path, "gate")
+
+    assert gate.returncode == 0, gate.stdout + gate.stderr
+    task_path = h / "current-task.yaml"
+    task = yaml.safe_load(task_path.read_text())
+    assert task["state"] == "BLOCKED"
+    assert task["gate"]["blocked_by"][0]["code"] == "INVARIANT_VIOLATED"
+    resumed = run_cli(tmp_path, "resume")
+    assert resumed.returncode == 0, resumed.stderr
+    assert yaml.safe_load(task_path.read_text())["state"] == "IMPLEMENTING"
+
+
 def test_blocked_recovery_preserves_baseline_across_second_complexity_review(tmp_path):
     h = make_repo(tmp_path, state="GATING")
     task_path = h / "current-task.yaml"
