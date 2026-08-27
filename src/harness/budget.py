@@ -1,10 +1,23 @@
 """Soft budgets for Harness-observable FAST evidence actions."""
+import hashlib
 
 LIMITS = {"test": 2, "build": 1, "retry": 1}
 
 
 class BudgetOverrideRequired(ValueError):
     pass
+
+
+def _command_hash(command: str) -> str:
+    return "sha256:" + hashlib.sha256(command.encode()).hexdigest()
+
+
+def is_retry(task: dict, command: str) -> bool:
+    return (task.get("budget") or {}).get("last_failed_command") == _command_hash(command)
+
+
+def record_failure(task: dict, command: str) -> None:
+    task.setdefault("budget", {})["last_failed_command"] = _command_hash(command)
 
 
 def budget_action(evidence_type: str, exit_code: int, command: str) -> str | None:

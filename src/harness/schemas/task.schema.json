@@ -73,7 +73,8 @@
         "test_runs": {"type": "integer", "minimum": 0},
         "build_runs": {"type": "integer", "minimum": 0},
         "retry_runs": {"type": "integer", "minimum": 0},
-        "overrides": {"type": "array", "items": {"type": "object", "required": ["action", "reason", "evidence", "hypothesis"], "additionalProperties": false, "properties": {"action": {"enum": ["test", "build", "retry"]}, "reason": {"type": "string"}, "evidence": {"type": "string"}, "hypothesis": {"type": "string"}}}}
+        "last_failed_command": {"type": "string"},
+        "overrides":  {"type": "array", "items": {"type": "object", "required": ["action", "reason", "evidence", "hypothesis"], "additionalProperties": false, "properties": {"action": {"enum": ["test", "build", "retry"]}, "reason": {"type": "string"}, "evidence": {"type": "string"}, "hypothesis": {"type": "string"}}}}
       },
       "additionalProperties": false
     },

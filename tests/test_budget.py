@@ -4,11 +4,18 @@ import sys
 import pytest
 import yaml
 
-from harness.budget import BudgetOverrideRequired, budget_action, check_budget, record_budget
+from harness.budget import BudgetOverrideRequired, budget_action, check_budget, is_retry, record_failure, record_budget
 
 
 def fast_task(test_runs=0):
     return {"risk": {"profile": "FAST"}, "budget": {"test_runs": test_runs, "build_runs": 0, "retry_runs": 0, "overrides": []}}
+
+
+def test_retry_requires_same_prior_failed_command():
+    task = fast_task()
+    record_failure(task, "pytest tests/x.py")
+    assert is_retry(task, "pytest tests/x.py")
+    assert not is_retry(task, "pytest tests/y.py")
 
 
 def test_budget_action_classifies_observable_evidence():

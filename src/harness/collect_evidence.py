@@ -22,7 +22,7 @@ from pathlib import Path
 
 import yaml
 
-from .budget import BudgetOverrideRequired, budget_action, check_budget, record_budget
+from .budget import BudgetOverrideRequired, budget_action, check_budget, is_retry, record_budget, record_failure
 from .evidence_validator import ReuseRequest, can_reuse_evidence
 from .telemetry import update_telemetry
 from .workspace import git_head as workspace_head, snapshot
@@ -169,7 +169,10 @@ def main(argv=None):
     action = budget_action(args.type, 0, args.command)
     override = ({"reason": args.budget_override_reason, "evidence": args.budget_override_evidence, "hypothesis": args.budget_override_hypothesis} if all(override_values) else None)
     try:
-        if task and action: check_budget(task, action, override)
+        if task and action:
+            check_budget(task, action, override)
+            if is_retry(task, args.command):
+                check_budget(task, "retry", override)
     except BudgetOverrideRequired as exc:
         print(str(exc), file=sys.stderr); return 2
 
@@ -181,6 +184,10 @@ def main(argv=None):
     out_file.write_text(json.dumps(evidence, indent=2))
     if task and action:
         record_budget(task, action, override)
+        if is_retry(task, args.command):
+            record_budget(task, "retry", override)
+        if evidence["exit_code"]:
+            record_failure(task, args.command)
         task_path.write_text(yaml.safe_dump(task, sort_keys=False))
         update_telemetry(Path(args.harness_dir), task)
 
