@@ -57,6 +57,9 @@ def cmd_transition(target: str) -> int:
     if current == "BLOCKED" and target == "VERIFYING":
         print("RESUME_REQUIRED: use harness resume", file=sys.stderr)
         return 1
+    if current == "REVIEWING" and target in {"GATING", "VERIFYING", "REPRODUCING"}:
+        print("REVIEW_OUTCOME_REQUIRED: use harness review outcome", file=sys.stderr)
+        return 1
     # Reject malformed task identity/state before it can advance toward Gate.
     try:
         _load("quality_gate").validate_schema(
@@ -159,6 +162,34 @@ def cmd_check_minimal(source: Path) -> int:
         print(f"INVALID MINIMAL IMPLEMENTATION: {exc}", file=sys.stderr)
         return 2
     print(f"minimal implementation evidence written: {path}")
+    return 0
+
+
+def cmd_review_outcome(outcome: str, reason_code: str, finding_ids: list[str]) -> int:
+    """Persist a structured review outcome and take its sole legal route."""
+    routes = {"PASS": "GATING", "VERIFICATION_GAP": "VERIFYING", "DEFECT": "REPRODUCING"}
+    harness_dir = Path(".harness")
+    task = load_task(harness_dir)
+    if task.get("state") != "REVIEWING":
+        print("review outcome requires state REVIEWING", file=sys.stderr)
+        return 1
+    if outcome == "DEFECT":
+        findings = {finding.get("id"): finding for finding in _findings(harness_dir)}
+        terminal = {"VERIFIED", "CLOSED", "REJECTED"}
+        if (not finding_ids or any(
+                finding_id not in findings or findings[finding_id].get("status") in terminal
+                for finding_id in finding_ids)):
+            print("DEFECT_FINDING_REQUIRED", file=sys.stderr)
+            return 2
+    elif finding_ids:
+        print("FINDING_NOT_ALLOWED_FOR_REVIEW_OUTCOME", file=sys.stderr)
+        return 2
+    target = routes[outcome]
+    task["review"] = {"outcome": outcome, "reason_code": reason_code,
+                      "message": "", "finding_ids": finding_ids}
+    task["state"] = target
+    save_task(harness_dir, task)
+    print(f"OK: REVIEWING -> {target}")
     return 0
 
 
