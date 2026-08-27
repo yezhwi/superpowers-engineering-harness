@@ -21,6 +21,14 @@ def test_readmes_document_risk_profiles_and_independent_authorization():
         assert "harness authorize push" in text
 
 
+def test_docs_define_fast_verification_and_authorization_boundary():
+    for path in (REPO / "SKILL.md", REPO / "README.md", REPO / "README.zh-CN.md"):
+        text = path.read_text()
+        assert "gate.fast.verification" in text
+        assert "FAST_REPOSITORY_VERIFICATION_MISSING" in text
+        assert "outside Harness" in text
+
+
 def test_docs_explain_fast_risk_boundary_escalation():
     for path in (REPO / "README.md", REPO / "README.zh-CN.md", REPO / "SKILL.md"):
         text = path.read_text()

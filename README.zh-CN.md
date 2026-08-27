@@ -145,6 +145,19 @@ harness authorize push
 
 Evidence reuse、执行预算、telemetry、benchmark automation 均已延期，v0.2.3 不提供。
 
+### FAST 仓库验证
+
+FAST 默认要求 RED/GREEN 和 fresh build evidence。项目检查配置在 `gate.fast.verification`；typecheck 为 opt-in：
+
+```yaml
+fast:
+  verification:
+    build: required
+    typecheck: optional
+```
+
+缺失、失败、过期的 required evidence 以 `FAST_REPOSITORY_VERIFICATION_MISSING` 阻塞并返回验证。授权只控制 Harness 动作；Harness 无法检测 outside Harness 执行的动作。
+
 ### FAST 风险边界
 
 FAST 不通过关键词猜测 API/安全风险。在 `.harness/risk-boundaries.yaml` 声明变更风险路径：

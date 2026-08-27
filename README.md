@@ -145,6 +145,19 @@ harness authorize push
 
 Evidence reuse, execution budgets, telemetry, and benchmark automation are deferred; unavailable in v0.2.3.
 
+### FAST repository verification
+
+FAST always requires RED/GREEN plus fresh build evidence by default. Configure project-specific checks under `gate.fast.verification`; typecheck is opt-in:
+
+```yaml
+fast:
+  verification:
+    build: required
+    typecheck: optional
+```
+
+Missing, failed, or stale required evidence blocks with `FAST_REPOSITORY_VERIFICATION_MISSING` and returns to verification. Authorization grants control Harness actions only; Harness cannot detect actions executed outside Harness.
+
 ### FAST risk boundaries
 
 FAST never infers API/security risk from keywords. Declare changed-risk paths in `.harness/risk-boundaries.yaml`:

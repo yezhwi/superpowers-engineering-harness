@@ -87,7 +87,7 @@ harness task classify --level Q1 --scope low --contract none --data none \
   --authorization none --security none --concurrency none --deployment none
 ```
 
-4. **Q1 / FAST:** `CREATED → CLASSIFIED → IMPLEMENTING`; collect task RED proof before fix and GREEN proof after fix, then `VERIFYING → GATING → Gate`. Do not invoke task contract, minimal implementation, impact, or complexity ceremony.
+4. **Q1 / FAST:** `CREATED → CLASSIFIED → IMPLEMENTING`; collect task RED proof before fix and GREEN proof after fix, then `VERIFYING → GATING → Gate`. FAST also requires `gate.fast.verification` build by default; missing/stale/failed proof blocks `FAST_REPOSITORY_VERIFICATION_MISSING`. Typecheck is opt-in. Do not invoke task contract, minimal implementation, impact, or complexity ceremony. Authorization controls Harness actions only; it cannot detect actions outside Harness.
 5. **Q2 / STANDARD** and **Q3 / STRICT:** use task contract, minimal implementation, verification, review, and Gate workflow below. FAST revalidates changed business paths against `.harness/risk-boundaries.yaml`; `RISK_ESCALATION_REQUIRED` requires persisted escalation. Never downgrade risk. Escalate only with:
 
 ```bash
