@@ -15,10 +15,11 @@ Exit codes: 0 = evidence written; 2 = invalid harness state / usage.
 import argparse
 import datetime
 import json
-import hashlib
 import subprocess
 import sys
 from pathlib import Path
+
+from .workspace import git_head as workspace_head, snapshot
 
 VALID_TYPES = {
     "build", "lint", "typecheck", "unit_test", "integration_test",
@@ -29,41 +30,16 @@ TAIL_CHARS = 4000
 
 
 def git_head() -> str:
-    result = subprocess.run(
-        ["git", "rev-parse", "HEAD"], capture_output=True, text=True
-    )
-    if result.returncode != 0:
-        raise RuntimeError(
-            f"not a git repository or git failed: {result.stderr.strip()}"
-        )
-    return result.stdout.strip()
+    """Compatibility wrapper for shared workspace HEAD lookup."""
+    try:
+        return workspace_head()
+    except RuntimeError as exc:
+        raise RuntimeError(f"not a git repository or git failed: {exc}") from exc
 
 
 def workspace_fingerprint(repo_root: Path | None = None) -> str:
-    """Stable snapshot of tracked changes and untracked business files.
-
-    `.harness/` is runtime state and excluded so evidence writing does not
-    invalidate its own snapshot.
-    """
-    cwd = repo_root or Path.cwd()
-    def run(*args):
-        result = subprocess.run(["git", *args], cwd=cwd, capture_output=True)
-        if result.returncode:
-            raise RuntimeError(result.stderr.decode().strip())
-        return result.stdout
-    # Exclude harness runtime state from BOTH tracked diffs and untracked scan.
-    # Attach/collect commands modify .harness by design; those writes must not
-    # invalidate business-code evidence.
-    exclude = ":(exclude).harness/**"
-    parts = [run("rev-parse", "HEAD"), run("diff", "--binary", "HEAD", "--", ".", exclude),
-             run("diff", "--cached", "--binary", "HEAD", "--", ".", exclude)]
-    for name in sorted(run("ls-files", "--others", "--exclude-standard").decode().splitlines()):
-        if name.startswith(".harness/"):
-            continue
-        path = cwd / name
-        if path.is_file():
-            parts.extend([name.encode(), hashlib.sha256(path.read_bytes()).digest()])
-    return "sha256:" + hashlib.sha256(b"\0".join(parts)).hexdigest()
+    """Compatibility wrapper for shared workspace snapshot fingerprint."""
+    return snapshot(repo_root).fingerprint
 
 
 def evidence_filename(evidence_type: str, *, finding_id: str | None = None,

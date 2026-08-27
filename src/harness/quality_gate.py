@@ -13,7 +13,6 @@ Exit codes:
 
 import argparse
 import json
-import subprocess
 import sys
 from pathlib import Path
 
@@ -22,6 +21,7 @@ from jsonschema import ValidationError, validate
 
 from .evidence_validator import EvidenceValidationError, validate_evidence
 from .state_machine import STATES
+from .workspace import WorkspaceError, git_head as workspace_head, snapshot
 
 # Finding statuses that must block the gate. Terminal/healthy:
 # VERIFIED, CLOSED, REJECTED. FIXED (test green, regression pending)
@@ -69,14 +69,10 @@ def _load_yaml(path: Path):
 
 
 def git_head() -> str:
-    result = subprocess.run(
-        ["git", "rev-parse", "HEAD"], capture_output=True, text=True
-    )
-    if result.returncode != 0:
-        raise InvalidHarnessState(
-            f"cannot resolve git HEAD: {result.stderr.strip()}"
-        )
-    return result.stdout.strip()
+    try:
+        return workspace_head()
+    except WorkspaceError as exc:
+        raise InvalidHarnessState(str(exc)) from exc
 
 
 def load_evidence(evidence_dir: Path) -> dict:
@@ -141,12 +137,11 @@ def run_gate(harness_dir: Path, head: str | None = None,
     findings = load_findings(harness_dir / "findings")
     impact_path = harness_dir / "impact.yaml"
     impact = _load_yaml(impact_path) if impact_path.exists() else {}
-    # HEAD alone misses uncommitted edits. Recompute the business-workspace
-    # snapshot; collect_evidence excludes .harness runtime files.
+    # HEAD alone misses uncommitted edits. Shared snapshot excludes harness
+    # runtime files, so evidence writes do not invalidate business proof.
     try:
-        from .collect_evidence import workspace_fingerprint
-        current_workspace = workspace_fingerprint()
-    except RuntimeError as exc:
+        current_workspace = snapshot().fingerprint
+    except WorkspaceError as exc:
         raise InvalidHarnessState(f"cannot fingerprint workspace: {exc}") from exc
 
     # Terminal/near-terminal findings require real proof records, not only

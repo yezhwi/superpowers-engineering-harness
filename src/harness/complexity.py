@@ -4,7 +4,7 @@ import datetime
 import json
 from pathlib import Path
 
-from .collect_evidence import git_head, workspace_fingerprint
+from .workspace import git_head, snapshot
 
 import yaml
 from jsonschema import ValidationError, validate
@@ -91,7 +91,7 @@ def write_complexity_review(harness_dir: Path, review: dict) -> list[Path]:
         paths.append(path)
     evidence_dir = harness_dir / "evidence"
     evidence_dir.mkdir(parents=True, exist_ok=True)
-    fingerprint = workspace_fingerprint()
+    fingerprint = snapshot().fingerprint
     metadata = {
         "type": "review", "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "command": "harness review complexity", "exit_code": 0, "commit": git_head(),
