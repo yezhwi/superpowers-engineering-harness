@@ -1,8 +1,24 @@
 """Review outcomes route only through deterministic control-plane command."""
 
+from importlib import resources
+
+import pytest
 import yaml
 
+from harness.quality_gate import InvalidHarnessState, validate_schema
 from test_cli_task_recovery import make_repo, run_cli, set_task_state
+
+
+def test_task_schema_rejects_invalid_persisted_review_reason(tmp_path):
+    """Break caught: direct YAML review facts bypass runtime reason-code validation."""
+    task = yaml.safe_load(resources.files("harness").joinpath("templates", "current-task.yaml").read_text())
+    task["review"] = {
+        "outcome": "VERIFICATION_GAP", "reason_code": "tests",
+        "message": "forged", "finding_ids": [],
+    }
+
+    with pytest.raises(InvalidHarnessState, match="review"):
+        validate_schema(task, "task.schema.json", tmp_path / "current-task.yaml")
 
 
 def test_verification_gap_routes_reviewing_to_verifying(tmp_path):
