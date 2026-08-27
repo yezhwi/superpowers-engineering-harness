@@ -66,6 +66,20 @@
       },
       "additionalProperties": false
     },
+    "authorizations": {
+      "type": "object",
+      "propertyNames": {"enum": ["commit", "full_suite", "push", "create_mr", "ready_mr", "merge", "deploy"]},
+      "additionalProperties": {
+        "type": "object",
+        "required": ["granted", "granted_at", "source"],
+        "properties": {
+          "granted": {"type": "boolean"},
+          "granted_at": {"type": ["string", "null"]},
+          "source": {"type": ["string", "null"]}
+        },
+        "additionalProperties": false
+      }
+    },
     "state": {
       "description": "Fixed enum; only CONVERGED -> DONE is legal",
       "enum": [

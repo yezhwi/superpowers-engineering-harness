@@ -116,6 +116,35 @@ harness evidence --type unit_test --scope full_suite --command "pytest"
 
 Recover interrupted work with `harness status`; Harness resumes from `.harness/current-task.yaml`. Gate recovery derives target from blocker code, not persisted `recover_to`. Review reasons are controlled: use `REVIEW_CLEAN`, `TEST_COVERAGE_INSUFFICIENT`, `EVIDENCE_INCOMPLETE`, `INVARIANT_UNPROVEN`, `TEST_SCOPE_INSUFFICIENT`, `LOGIC_ERROR`, `REGRESSION`, `CONTRACT_VIOLATION`, or `INVARIANT_VIOLATION` for matching outcome.
 
+### Risk-adaptive workflow (v0.2.3)
+
+- **Q0:** direct answer; no Harness task.
+- **Q1 / FAST:** narrow, low-risk work only. Classify explicitly; FAST still needs task-level failing RED and passing GREEN evidence, then Light Gate. It skips impact, complexity review, requirements, and invariants ceremony.
+- **Q2 / STANDARD** and **Q3 / STRICT:** use current full Harness workflow. Risk may only escalate, never downgrade.
+
+```bash
+harness task classify --level Q1 --scope low --contract none --data none \
+  --authorization none --security none --concurrency none --deployment none
+harness transition IMPLEMENTING
+# collect a failing regression proof before fix, then passing proof after fix
+harness evidence --type unit_test --phase red --covered-test tests/test_x.py::test_x --command "pytest tests/test_x.py::test_x"
+harness evidence --type unit_test --phase green --covered-test tests/test_x.py::test_x --command "pytest tests/test_x.py::test_x"
+harness transition VERIFYING
+harness transition GATING
+harness gate
+```
+
+FAST does not grant external actions. Authorizations are independent per task; grant only requested action:
+
+```bash
+harness authorize commit
+harness authorize full-suite
+harness authorize push
+# also: create-mr, ready-mr, merge, deploy; revoke with revoke-<action>
+```
+
+Evidence reuse, execution budgets, telemetry, and benchmark automation are deferred; unavailable in v0.2.3.
+
 ### Automatic orchestration
 
 When Engineering Harness Skill controls a task, it automatically invokes Minimal Implementation Check in `PLANNED`, records impact analysis before `VERIFYING`, and invokes Complexity Reviewer after green verification but before `REVIEWING`. State guards reject skipped records. Full-suite authorization remains an explicit human decision.

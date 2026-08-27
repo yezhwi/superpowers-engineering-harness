@@ -64,7 +64,7 @@ def main(argv=None) -> int:
     p_ev.add_argument("--covered-test", action="append", default=[])
     p_ev.add_argument("--phase", choices=["red", "green", "full"])
     p_imp=sub.add_parser("impact"); ims=p_imp.add_subparsers(dest="impact_action"); ims.add_parser("show"); ic=ims.add_parser("add-change"); ic.add_argument("value"); it=ims.add_parser("add-test"); it.add_argument("value"); idp=ims.add_parser("add-dependent"); idp.add_argument("value"); ict=ims.add_parser("add-contract"); ict.add_argument("value"); irk=ims.add_parser("add-risk"); irk.add_argument("value"); ir=ims.add_parser("require-full-suite"); ir.add_argument("--reason",required=True)
-    p_auth=sub.add_parser("authorize"); p_auth.add_argument("action",choices=["full-suite","revoke-full-suite"])
+    p_auth=sub.add_parser("authorize"); p_auth.add_argument("action", choices=["commit", "full-suite", "push", "create-mr", "ready-mr", "merge", "deploy", "revoke-commit", "revoke-full-suite", "revoke-push", "revoke-create-mr", "revoke-ready-mr", "revoke-merge", "revoke-deploy"])
     sub.add_parser("gate", help="run the deterministic quality gate")
     sub.add_parser("resume", help="recover BLOCKED task from typed blocker")
     p_finding = sub.add_parser("finding", help="inspect findings")
@@ -105,13 +105,15 @@ def main(argv=None) -> int:
         return controlplane.cmd_review_outcome(args.outcome, args.reason_code, args.finding)
     if args.subcommand == "evidence":
         
-        if args.scope == "full_suite" and not controlplane.load_task(Path(".harness")).get("authorization",{}).get("full_suite",{}).get("granted"):
+        if args.scope == "full_suite" and not controlplane.authorization_granted(controlplane.load_task(Path(".harness")), "full_suite"):
             print("FULL_SUITE_AUTHORIZATION_REQUIRED", file=sys.stderr); return 2
         return controlplane.cmd_evidence(args.type, args.evidence_command,
                                          args.finding, args.test, args.scope,
                                          args.covered_test, args.phase)
     if args.subcommand == "impact": return controlplane.cmd_impact(args.impact_action,getattr(args,"value",None),getattr(args,"reason",None))
-    if args.subcommand == "authorize": return controlplane.cmd_authorize_full_suite(args.action == "full-suite")
+    if args.subcommand == "authorize":
+        granted = not args.action.startswith("revoke-")
+        return controlplane.cmd_authorize(args.action.removeprefix("revoke-").replace("-", "_"), granted)
     if args.subcommand == "gate":
         return controlplane.cmd_gate()
     if args.subcommand == "resume":

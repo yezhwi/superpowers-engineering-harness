@@ -116,6 +116,35 @@ harness evidence --type unit_test --scope full_suite --command "pytest"
 
 会话中断后运行 `harness status`；Harness 从 `.harness/current-task.yaml` 恢复。`status` 是只读 projection；Gate 阻塞后运行 `harness resume`，Harness 按 typed blocker code 自动选择正确恢复状态，不信任持久化 `recover_to`。Review reason code 为受控集合，例如 `TEST_COVERAGE_INSUFFICIENT`、`EVIDENCE_INCOMPLETE`、`LOGIC_ERROR`。
 
+### 风险自适应流程（v0.2.3）
+
+- **Q0：** 直接回答；不创建 Harness task。
+- **Q1 / FAST：** 仅限范围窄、低风险工作。必须显式分类；FAST 仍要求 task 级失败 RED、成功 GREEN 证据和 Light Gate，但跳过 impact、复杂度审查、requirements、invariants ceremony。
+- **Q2 / STANDARD** 与 **Q3 / STRICT：** 使用现有完整 Harness 流程。风险只能升级，不能降级。
+
+```bash
+harness task classify --level Q1 --scope low --contract none --data none \
+  --authorization none --security none --concurrency none --deployment none
+harness transition IMPLEMENTING
+# 修复前记录失败 regression proof，修复后记录通过 proof
+harness evidence --type unit_test --phase red --covered-test tests/test_x.py::test_x --command "pytest tests/test_x.py::test_x"
+harness evidence --type unit_test --phase green --covered-test tests/test_x.py::test_x --command "pytest tests/test_x.py::test_x"
+harness transition VERIFYING
+harness transition GATING
+harness gate
+```
+
+FAST 不授予外部操作权限。每种授权在当前 task 内独立；只授权用户请求的动作：
+
+```bash
+harness authorize commit
+harness authorize full-suite
+harness authorize push
+# 另有 create-mr、ready-mr、merge、deploy；用 revoke-<action> 撤销
+```
+
+Evidence reuse、执行预算、telemetry、benchmark automation 均已延期，v0.2.3 不提供。
+
 ### 自动编排
 
 当 Engineering Harness Skill 控制任务时，它会在 `PLANNED` 自动调用 Minimal Implementation Check、在 `VERIFYING` 前记录 impact analysis、在验证全绿后且 `REVIEWING` 前调用 Complexity Reviewer。状态 guard 拒绝跳过记录。全量测试授权仍必须由人类显式决定。

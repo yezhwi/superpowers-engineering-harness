@@ -7,6 +7,15 @@ state: CREATED
 
 risk: null
 
+authorizations:
+  commit: {granted: false, granted_at: null, source: null}
+  full_suite: {granted: false, granted_at: null, source: null}
+  push: {granted: false, granted_at: null, source: null}
+  create_mr: {granted: false, granted_at: null, source: null}
+  ready_mr: {granted: false, granted_at: null, source: null}
+  merge: {granted: false, granted_at: null, source: null}
+  deploy: {granted: false, granted_at: null, source: null}
+
 iteration: 0
 max_iterations: 5
 

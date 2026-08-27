@@ -5,6 +5,15 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 
 
+def test_readmes_document_risk_profiles_and_independent_authorization():
+    for path in (REPO / "README.md", REPO / "README.zh-CN.md"):
+        text = path.read_text()
+        assert "Q1" in text and "FAST" in text
+        assert "harness task classify" in text
+        assert "harness authorize commit" in text
+        assert "harness authorize push" in text
+
+
 def test_bilingual_readmes_link_and_document_core_commands():
     """Break caught: language mirror or documented core workflow disappears."""
     english = (REPO / "README.md").read_text()
@@ -41,7 +50,7 @@ def test_readmes_show_legal_normal_and_blocked_recovery_order():
         assert "harness gate\nharness transition DONE" in text
         assert "harness gate\nharness resume" in text
         assert "harness converge" not in text
-        assert "harness transition GATING" not in text
+        assert "Q1" in text and "harness transition GATING" in text
         assert "harness transition BLOCKED" not in text
 
 
