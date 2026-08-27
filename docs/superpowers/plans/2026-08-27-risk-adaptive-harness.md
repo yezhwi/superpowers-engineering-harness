@@ -156,15 +156,17 @@ git commit -m "feat: classify tasks by risk profile"
 
 **Files:**
 - Modify: `src/harness/controlplane.py`
+- Modify: `src/harness/collect_evidence.py`
 - Modify: `src/harness/quality_gate.py`
 - Modify: `src/harness/blockers.py`
 - Test: `tests/test_fast_workflow.py`
+- Test: `tests/test_evidence.py`
 - Test: `tests/test_control_plane.py`
 - Test: `tests/test_quality_gate.py`
 
 **Interfaces:**
 - Consumes `task["risk"]["profile"]`, existing `run_gate`, `validate_evidence`, `workspace_fingerprint`, and typed `GateBlocker`.
-- Produces `run_fast_gate(harness_dir: Path, head: str, workspace: str) -> tuple[str, list[GateBlocker]]` and FAST blocker code `FAST_REGRESSION_EVIDENCE_MISSING` routed to VERIFYING.
+- Produces `run_fast_gate(harness_dir: Path, head: str, workspace: str) -> tuple[str, list[GateBlocker]]`, FAST task evidence files `fast-red-unit-test.json`/`fast-green-unit-test.json`, and FAST blocker code `FAST_REGRESSION_EVIDENCE_MISSING` routed to VERIFYING.
 
 - [ ] **Step 1: Write FAST transition and Light Gate failing tests**
 
@@ -195,7 +197,37 @@ Run: `python -m pytest tests/test_fast_workflow.py -q`
 
 Expected: FAIL because FAST bypass and Light Gate do not exist.
 
-- [ ] **Step 3: Implement FAST state guard behavior**
+- [ ] **Step 3: Write task-level phase evidence failing test**
+
+```python
+def test_task_phase_evidence_writes_fast_filename_without_finding(tmp_path):
+    repo = make_repo(tmp_path)
+    result = run_cli(
+        repo, "evidence", "--type", "unit_test", "--phase", "red",
+        "--scope", "related", "--covered-test", "tests/test_bug.py::test_bug",
+        "--command", "false",
+    )
+    assert result.returncode == 0
+    assert (repo / ".harness/evidence/fast-red-unit-test.json").is_file()
+```
+
+- [ ] **Step 4: Run task-level phase evidence test RED**
+
+Run: `python -m pytest tests/test_evidence.py::test_task_phase_evidence_writes_fast_filename_without_finding -q`
+
+Expected: FAIL because phase currently requires a Finding/test pair.
+
+- [ ] **Step 5: Implement task-level phase evidence**
+
+Update `evidence_filename` to return `fast-{phase}-{type-with-dashes}.json` when `finding_id is None` and phase is `red` or `green`. Keep the current Finding filename when `finding_id` is non-null. In collector validation, permit `--phase red|green` without `--finding/--test`; reject `--phase full` without a Finding. Keep `--finding`/`--test` pairing mandatory. Do not add Finding subject metadata to task-level phase evidence.
+
+- [ ] **Step 6: Run task-level phase evidence test GREEN**
+
+Run: `python -m pytest tests/test_evidence.py::test_task_phase_evidence_writes_fast_filename_without_finding -q`
+
+Expected: PASS.
+
+- [ ] **Step 7: Implement FAST state guard behavior**
 
 In `cmd_transition`, detect `task.get("risk", {}).get("profile") == "FAST"`:
 
@@ -205,13 +237,13 @@ In `cmd_transition`, detect `task.get("risk", {}).get("profile") == "FAST"`:
 
 Add legal transitions `IMPLEMENTING → VERIFYING`, `VERIFYING → GATING` while retaining all existing STANDARD/STRICT transitions.
 
-- [ ] **Step 4: Implement `run_fast_gate` and dispatch**
+- [ ] **Step 8: Implement `run_fast_gate` and dispatch**
 
 At start of `run_gate`, after schema/load/head/workspace setup, dispatch when profile is FAST. Validate classification fingerprint equals current workspace fingerprint. Read exactly two evidence records named `fast-red-unit-test.json` and `fast-green-unit-test.json`; validate commit/fingerprint via existing `validate_evidence`, expecting false then true. Return typed verification blockers for absent, stale, or wrong-result evidence. Do not load or require requirements, invariants, impact, findings, or complexity evidence in this branch.
 
 Add FAST code(s) to `RECOVERY_POLICY` with target VERIFYING. Preserve existing normal `run_gate` logic untouched for non-FAST profiles.
 
-- [ ] **Step 5: Add workspace-protection failing test**
+- [ ] **Step 9: Add workspace-protection failing test**
 
 ```python
 def test_fast_gate_blocks_when_workspace_changed_since_classification(tmp_path):
@@ -224,7 +256,7 @@ def test_fast_gate_blocks_when_workspace_changed_since_classification(tmp_path):
     assert blockers[0].code == "FAST_WORKSPACE_CHANGED"
 ```
 
-- [ ] **Step 6: Run workspace test RED, then implement blocker**
+- [ ] **Step 10: Run workspace test RED, then implement blocker**
 
 Run: `python -m pytest tests/test_fast_workflow.py::test_fast_gate_blocks_when_workspace_changed_since_classification -q`
 
@@ -232,16 +264,16 @@ Expected before implementation: FAIL because changed workspace is accepted.
 
 Add `FAST_WORKSPACE_CHANGED: VERIFYING` to recovery policy. In `run_fast_gate`, compare the persisted classification fingerprint with current workspace fingerprint before accepting evidence. Never modify workspace files.
 
-- [ ] **Step 7: Run Task 2 tests GREEN**
+- [ ] **Step 11: Run Task 2 tests GREEN**
 
 Run: `python -m pytest tests/test_fast_workflow.py tests/test_control_plane.py tests/test_quality_gate.py -q`
 
 Expected: PASS.
 
-- [ ] **Step 8: Commit Task 2**
+- [ ] **Step 12: Commit Task 2**
 
 ```bash
-git add src/harness/controlplane.py src/harness/quality_gate.py src/harness/blockers.py tests/test_fast_workflow.py tests/test_control_plane.py tests/test_quality_gate.py
+git add src/harness/controlplane.py src/harness/collect_evidence.py src/harness/quality_gate.py src/harness/blockers.py tests/test_fast_workflow.py tests/test_evidence.py tests/test_control_plane.py tests/test_quality_gate.py
 git diff --cached --check
 git commit -m "feat: add fast risk-adaptive gate"
 ```

@@ -58,7 +58,14 @@ State guards inspect `task.risk.profile`, not agent prose.
 
 ## FAST evidence and Light Gate
 
-Existing evidence phase metadata (`red`, `green`) supplies FAST proof. Light Gate runs only from GATING for profile FAST and requires:
+Extend existing evidence phase metadata so task-level Q1 proof does not require a Finding:
+
+```bash
+harness evidence --type unit_test --phase red --covered-test tests/x.py::test_bug --command "pytest tests/x.py::test_bug"
+harness evidence --type unit_test --phase green --covered-test tests/x.py::test_bug --command "pytest tests/x.py::test_bug"
+```
+
+This writes `fast-red-unit-test.json` and `fast-green-unit-test.json`. Existing Finding evidence still requires paired `--finding`, `--test`, and phase, retaining its current filename and lifecycle semantics. Light Gate runs only from GATING for profile FAST and requires:
 
 - no post-classification workspace change;
 - current fresh RED evidence with nonzero exit;
