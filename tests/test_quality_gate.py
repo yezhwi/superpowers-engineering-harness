@@ -147,6 +147,36 @@ def test_gate_writes_back_status(tmp_path):
 
 # 1. missing evidence -------------------------------------------------------
 
+def test_gate_write_back_preserves_task_git_baseline(tmp_path):
+    """Break caught: a Gate observation overwrites immutable task review baseline."""
+    h = make_harness(tmp_path)
+    task_path = h / "current-task.yaml"
+    task = yaml.safe_load(task_path.read_text())
+    task["git"]["base_commit"] = "b" * 40
+    task_path.write_text(yaml.safe_dump(task))
+
+    result = _gate(h)
+
+    assert result.returncode == 0
+    persisted = yaml.safe_load(task_path.read_text())
+    assert persisted["git"] == {"base_commit": "b" * 40, "head": HEAD}
+
+
+def test_blocked_gate_write_back_preserves_task_git_baseline(tmp_path):
+    """Break caught: recovery loop loses baseline only when Gate blocks."""
+    h = make_harness(tmp_path)
+    task_path = h / "current-task.yaml"
+    task = yaml.safe_load(task_path.read_text())
+    task["git"]["base_commit"] = "b" * 40
+    task_path.write_text(yaml.safe_dump(task))
+    (h / "evidence" / "build.json").unlink()
+
+    result = _gate(h)
+
+    assert result.returncode == 1
+    assert yaml.safe_load(task_path.read_text())["git"]["base_commit"] == "b" * 40
+
+
 @pytest.mark.parametrize("missing", ["build", "unit-test"])
 def test_missing_evidence_blocked(tmp_path, missing):
     h = make_harness(tmp_path)

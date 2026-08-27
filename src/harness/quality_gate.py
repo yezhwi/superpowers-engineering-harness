@@ -340,7 +340,7 @@ def write_back(harness_dir: Path, status: str, blockers: list):
     task.setdefault("gate", {})
     task["gate"]["status"] = status
     task["gate"]["blocked_by"] = [blocker_document(blocker) for blocker in blockers]
-    task["git"] = {"head": git_head()}
+    task.setdefault("git", {})["head"] = git_head()
     path.write_text(yaml.safe_dump(task, sort_keys=False))
 
 
