@@ -226,7 +226,8 @@ def cmd_review_complexity(source: Path, base_ref: str | None = None) -> int:
 
 def cmd_evidence(evidence_type: str, command: str, finding_id=None, test_id=None,
                  scope="related", covered_tests=(), phase=None,
-                 reuse_if_valid=False) -> int:
+                 reuse_if_valid=False, budget_override_reason=None,
+                 budget_override_evidence=None, budget_override_hypothesis=None) -> int:
     collect_evidence = _load("collect_evidence")
     args = ["--type", evidence_type, "--command", command, "--scope", scope]
     for covered_test in covered_tests:
@@ -237,6 +238,9 @@ def cmd_evidence(evidence_type: str, command: str, finding_id=None, test_id=None
         args.extend(["--finding", finding_id, "--test", test_id])
     if reuse_if_valid:
         args.append("--reuse-if-valid")
+    for flag, value in (("--budget-override-reason", budget_override_reason), ("--budget-override-evidence", budget_override_evidence), ("--budget-override-hypothesis", budget_override_hypothesis)):
+        if value is not None:
+            args.extend([flag, value])
     return collect_evidence.main(args)
 
 

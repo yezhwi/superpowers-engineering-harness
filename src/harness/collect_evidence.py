@@ -20,6 +20,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+import yaml
+
+from .budget import BudgetOverrideRequired, budget_action, check_budget, record_budget
 from .evidence_validator import ReuseRequest, can_reuse_evidence
 from .workspace import git_head as workspace_head, snapshot
 
@@ -117,6 +120,9 @@ def main(argv=None):
     parser.add_argument("--covered-test", action="append", default=[])
     parser.add_argument("--phase", choices=["red", "green", "full"])
     parser.add_argument("--reuse-if-valid", action="store_true")
+    parser.add_argument("--budget-override-reason")
+    parser.add_argument("--budget-override-evidence")
+    parser.add_argument("--budget-override-hypothesis")
     args = parser.parse_args(argv)
 
     try:
@@ -154,12 +160,27 @@ def main(argv=None):
         except (OSError, json.JSONDecodeError):
             pass
 
+    override_values = (args.budget_override_reason, args.budget_override_evidence, args.budget_override_hypothesis)
+    if any(override_values) and not all(override_values):
+        print("BUDGET_OVERRIDE_REQUIRED", file=sys.stderr); return 2
+    task_path = Path(args.harness_dir) / "current-task.yaml"
+    task = yaml.safe_load(task_path.read_text()) if task_path.exists() else None
+    action = budget_action(args.type, 0, args.command)
+    override = ({"reason": args.budget_override_reason, "evidence": args.budget_override_evidence, "hypothesis": args.budget_override_hypothesis} if all(override_values) else None)
+    try:
+        if task and action: check_budget(task, action, override)
+    except BudgetOverrideRequired as exc:
+        print(str(exc), file=sys.stderr); return 2
+
     evidence = collect(args.type, args.command, args.finding, args.test,
                        args.scope, tuple(args.covered_test), args.phase)
     evidence["commit"] = head
 
     out_dir.mkdir(parents=True, exist_ok=True)
     out_file.write_text(json.dumps(evidence, indent=2))
+    if task and action:
+        record_budget(task, action, override)
+        task_path.write_text(yaml.safe_dump(task, sort_keys=False))
 
     print(f"evidence written: {out_file} "
           f"(exit_code={evidence['exit_code']}, commit={head[:12]})")
