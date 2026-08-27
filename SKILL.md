@@ -62,13 +62,34 @@ run gate
 If `.harness/current-task.yaml` does not exist: create it from
 `templates/current-task.yaml` with `state: CREATED`, then proceed below.
 
+## Request Routing (Risk-Adaptive)
+
+Before reading task dispatch:
+
+1. Determine whether request is **Q0** inquiry. Q0 means answer/advice only: do not create or advance Harness task.
+2. For mutating work, inspect `AGENTS.md` when present and `git status --short`; preserve user workspace changes.
+3. Create task when no active task exists, then persist explicit seven-dimension classification:
+
+```bash
+harness task classify --level Q1 --scope low --contract none --data none \
+  --authorization none --security none --concurrency none --deployment none
+```
+
+4. **Q1 / FAST:** `CREATED → CLASSIFIED → IMPLEMENTING`; collect task RED proof before fix and GREEN proof after fix, then `VERIFYING → GATING → Gate`. Do not invoke task contract, minimal implementation, impact, or complexity ceremony.
+5. **Q2 / STANDARD** and **Q3 / STRICT:** use task contract, minimal implementation, verification, review, and Gate workflow below. Never downgrade risk. Escalate only with:
+
+```bash
+harness task escalate --level Q2 --reason "contract risk discovered"
+```
+
 ## Phase Dispatch Table
 
-Read `state` from `.harness/current-task.yaml`, then:
+Read persisted `state` and `risk.profile` from `.harness/current-task.yaml`, then:
 
 | State | Action |
 |---|---|
-| `CREATED` | Invoke **task-contract** skill. It advances CREATED -> SPECIFYING -> PLANNED. |
+| `CREATED` | Classify mutating task first with `harness task classify`; do not invoke task-contract before profile selection. |
+| `CLASSIFIED` | FAST only: transition to IMPLEMENTING and follow RED/fix/GREEN/Light Gate. Q2/Q3 classification must use standard task contract before implementation. |
 | `PLANNED` | Invoke **minimal-implementation** before any implementation. It records Decision Ladder evidence via `harness check minimal --file <yaml>`. Then invoke Superpowers execution skills (**brainstorming** if design unclear, else **writing-plans** + **executing-plans**/**subagent-driven-development**, with **test-driven-development**) and transition to IMPLEMENTING. |
 | `IMPLEMENTING` | Continue execution skill. Before requesting VERIFYING, automatically record impacted files, dependents, contracts, risks, and related tests with `harness impact add-*`; use related tests by default. If impact recommends full suite, request explicit human authorization; never authorize it autonomously. Then transition to VERIFYING and collect evidence via `harness evidence --type <t> --command "<cmd>"`. |
 | `VERIFYING` | Run deterministic Verification Plan commands/tests. Any red -> IMPLEMENTING (TDD), then re-verify. All green -> invoke **complexity-reviewer** before REVIEWING; it records scope from task Git baseline via `harness review complexity --file <yaml>`. `--base <ref>` is explicit override; missing baseline fails closed. Only then transition to REVIEWING. |

@@ -46,6 +46,19 @@ def run_cli(cwd: Path, *args: str):
     )
 
 
+def test_classified_profile_routes_to_its_required_entry_state(tmp_path):
+    for level, target in (("Q1", "IMPLEMENTING"), ("Q2", "SPECIFYING"), ("Q3", "SPECIFYING")):
+        repo = tmp_path / level
+        repo.mkdir()
+        subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+        assert run_cli(repo, "init").returncode == 0
+        subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+        subprocess.run(["git", "commit", "-qm", "base"], cwd=repo, check=True)
+        flags = [item for pair in SAFE.items() for item in (f"--{pair[0]}", pair[1])]
+        assert run_cli(repo, "task", "classify", "--level", level, *flags).returncode == 0
+        assert run_cli(repo, "transition", target).returncode == 0
+
+
 def test_standard_profile_retains_complexity_requirement(tmp_path):
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
     assert run_cli(tmp_path, "init").returncode == 0

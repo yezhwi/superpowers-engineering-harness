@@ -56,6 +56,10 @@ def cmd_transition(target: str) -> int:
     harness_dir = Path(".harness")
     task = load_task(harness_dir)
     current = task.get("state")
+    profile = (task.get("risk") or {}).get("profile")
+    if current == "CLASSIFIED" and ((profile == "FAST" and target != "IMPLEMENTING") or (profile in {"STANDARD", "STRICT"} and target != "SPECIFYING")):
+        print("PROFILE_ENTRY_STATE_REQUIRED", file=sys.stderr)
+        return 1
     if current == "BLOCKED" and target == "VERIFYING":
         print("RESUME_REQUIRED: use harness resume", file=sys.stderr)
         return 1
@@ -88,7 +92,6 @@ def cmd_transition(target: str) -> int:
         except Exception as exc:
             print(f"MINIMAL_IMPLEMENTATION_REQUIRED: {exc}", file=sys.stderr)
             return 1
-    profile = (task.get("risk") or {}).get("profile")
     if current == "VERIFYING" and target == "GATING" and profile != "FAST":
         print("REVIEW_OUTCOME_REQUIRED: STANDARD/STRICT tasks must use review outcome", file=sys.stderr)
         return 1

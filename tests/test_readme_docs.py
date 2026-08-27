@@ -21,6 +21,13 @@ def test_readmes_document_risk_profiles_and_independent_authorization():
         assert "harness authorize push" in text
 
 
+def test_skill_routes_risk_adaptive_workflow_before_task_contract():
+    skill = (REPO / "SKILL.md").read_text()
+    for term in ("Q0", "Q1", "Q2", "Q3", "FAST", "STANDARD", "STRICT", "CLASSIFIED", "harness task classify", "harness task escalate"):
+        assert term in skill
+    assert skill.index("harness task classify") < skill.index("## Phase Dispatch Table")
+
+
 def test_bilingual_readmes_link_and_document_core_commands():
     """Break caught: language mirror or documented core workflow disappears."""
     english = (REPO / "README.md").read_text()
