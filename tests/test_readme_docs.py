@@ -5,6 +5,13 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 
 
+def test_readmes_document_explicit_fail_closed_evidence_reuse():
+    for path in (REPO / "README.md", REPO / "README.zh-CN.md"):
+        text = path.read_text()
+        assert "--reuse-if-valid" in text
+        assert "EVIDENCE_REUSED" in text
+
+
 def test_readmes_document_risk_profiles_and_independent_authorization():
     for path in (REPO / "README.md", REPO / "README.zh-CN.md"):
         text = path.read_text()

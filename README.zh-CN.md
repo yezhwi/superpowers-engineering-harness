@@ -145,6 +145,16 @@ harness authorize push
 
 Evidence reuse、执行预算、telemetry、benchmark automation 均已延期，v0.2.3 不提供。
 
+### 证据复用
+
+复用必须显式请求，且只限当前 task：
+
+```bash
+harness evidence --type build --command "python -m pip wheel . --no-deps" --reuse-if-valid
+```
+
+`EVIDENCE_REUSED` 表示未运行命令。复用要求之前成功、命令/证明身份完全一致、HEAD/workspace 未变、运行时完全一致。任一不匹配都会正常执行命令。
+
 ### 自动编排
 
 当 Engineering Harness Skill 控制任务时，它会在 `PLANNED` 自动调用 Minimal Implementation Check、在 `VERIFYING` 前记录 impact analysis、在验证全绿后且 `REVIEWING` 前调用 Complexity Reviewer。状态 guard 拒绝跳过记录。全量测试授权仍必须由人类显式决定。

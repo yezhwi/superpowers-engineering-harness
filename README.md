@@ -145,6 +145,16 @@ harness authorize push
 
 Evidence reuse, execution budgets, telemetry, and benchmark automation are deferred; unavailable in v0.2.3.
 
+### Evidence reuse
+
+Reuse is explicit and same-task only:
+
+```bash
+harness evidence --type build --command "python -m pip wheel . --no-deps" --reuse-if-valid
+```
+
+`EVIDENCE_REUSED` means no command ran. Reuse needs prior success plus exact command/proof identity, unchanged HEAD/workspace, and exact runtime. Any mismatch runs command normally.
+
 ### Automatic orchestration
 
 When Engineering Harness Skill controls a task, it automatically invokes Minimal Implementation Check in `PLANNED`, records impact analysis before `VERIFYING`, and invokes Complexity Reviewer after green verification but before `REVIEWING`. State guards reject skipped records. Full-suite authorization remains an explicit human decision.
