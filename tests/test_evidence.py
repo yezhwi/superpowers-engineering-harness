@@ -41,6 +41,7 @@ def test_evidence_filename_separates_finding_phases():
     assert evidence_filename("unit_test") == "unit-test.json"
     assert evidence_filename("unit_test", finding_id="FND-001", phase="red") == "FND-001-red-unit-test.json"
     assert evidence_filename("unit_test", finding_id="FND-001", phase="green") == "FND-001-green-unit-test.json"
+    assert evidence_filename("unit_test", phase="red") == "fast-red-unit-test.json"
 
 
 def test_collect_success_evidence(tmp_path):

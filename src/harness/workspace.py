@@ -78,6 +78,19 @@ def _fingerprint(repo_root: Path) -> str:
     return "sha256:" + hashlib.sha256(b"\0".join(parts)).hexdigest()
 
 
+def protected_paths_fingerprint(paths: tuple[str, ...], repo_root: Path | None = None) -> str:
+    """Fingerprint only declared pre-existing user changes."""
+    root = _root(repo_root)
+    parts: list[bytes] = []
+    for name in sorted(paths):
+        path = root / name
+        diff = _run(root, "diff", "--binary", "HEAD", "--", name)
+        parts.extend([name.encode(), diff])
+        if not diff and path.is_file():
+            parts.append(hashlib.sha256(path.read_bytes()).digest())
+    return "sha256:" + hashlib.sha256(b"\0".join(parts)).hexdigest()
+
+
 def snapshot(repo_root: Path | None = None) -> WorkspaceSnapshot:
     """Return HEAD plus all current business changes under one ignore policy."""
     root = _root(repo_root)

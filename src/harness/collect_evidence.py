@@ -47,9 +47,11 @@ def evidence_filename(evidence_type: str, *, finding_id: str | None = None,
     """Return deterministic generic or finding evidence filename."""
     stem = evidence_type.replace("_", "-")
     if finding_id is None:
-        if phase is not None:
-            raise ValueError("phase requires finding")
-        return f"{stem}.json"
+        if phase is None:
+            return f"{stem}.json"
+        if phase not in {"red", "green"}:
+            raise ValueError("task phase must be red or green")
+        return f"fast-{phase}-{stem}.json"
     if phase not in {"red", "green", "full"}:
         raise ValueError("finding evidence requires phase red, green, or full")
     return f"{finding_id}-{phase}-{stem}.json"
@@ -113,8 +115,11 @@ def main(argv=None):
     if bool(args.finding) != bool(args.test):
         print("INVALID_USAGE: --finding and --test must be paired", file=sys.stderr)
         return 2
-    if bool(args.finding) != bool(args.phase):
-        print("INVALID_USAGE: --finding and --phase must be paired", file=sys.stderr)
+    if args.finding and not args.phase:
+        print("INVALID_USAGE: --finding requires --phase", file=sys.stderr)
+        return 2
+    if not args.finding and args.phase == "full":
+        print("INVALID_USAGE: task phase must be red or green", file=sys.stderr)
         return 2
     if args.type == "unit_test" and args.scope == "related" and not args.covered_test:
         print("RELATED_COVERED_TEST_REQUIRED", file=sys.stderr)

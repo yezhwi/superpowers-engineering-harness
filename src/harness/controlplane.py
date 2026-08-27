@@ -438,10 +438,15 @@ def cmd_task_classify(level: str, dimensions: dict[str, str]) -> int:
         risk = _load("risk")
         profile = risk.classify(level, dimensions)
         _load("state_machine").require_legal("CREATED", "CLASSIFIED")
+        workspace = _load("workspace")
+        user_changes = workspace.snapshot().changed_paths
         task["risk"] = {
             "level": level, "profile": profile, "dimensions": dimensions,
             "escalation_history": [],
-            "workspace_fingerprint": _load("collect_evidence").workspace_fingerprint(),
+            "user_changes": {
+                "paths": list(user_changes),
+                "fingerprint": workspace.protected_paths_fingerprint(user_changes),
+            },
         }
     except Exception as exc:
         print(f"RISK_CLASSIFICATION_INVALID: {exc}", file=sys.stderr)

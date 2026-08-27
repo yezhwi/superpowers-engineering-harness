@@ -59,4 +59,4 @@ def test_task_classify_persists_fast_profile_and_enters_classified(tmp_path):
     assert result.returncode == 0, result.stderr
     assert task["state"] == "CLASSIFIED"
     assert task["risk"]["profile"] == "FAST"
-    assert task["risk"]["workspace_fingerprint"]
+    assert task["risk"]["user_changes"] == {"paths": [], "fingerprint": task["risk"]["user_changes"]["fingerprint"]}

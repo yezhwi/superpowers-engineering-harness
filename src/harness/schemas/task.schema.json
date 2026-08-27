@@ -35,7 +35,7 @@
     },
     "risk": {
       "type": ["object", "null"],
-      "required": ["level", "profile", "dimensions", "escalation_history", "workspace_fingerprint"],
+      "required": ["level", "profile", "dimensions", "escalation_history", "user_changes"],
       "properties": {
         "level": {"enum": ["Q1", "Q2", "Q3"]},
         "profile": {"enum": ["FAST", "STANDARD", "STRICT"]},
@@ -54,7 +54,15 @@
           "additionalProperties": false
         },
         "escalation_history": {"type": "array", "items": {"type": "object"}},
-        "workspace_fingerprint": {"type": "string"}
+        "user_changes": {
+          "type": "object",
+          "required": ["paths", "fingerprint"],
+          "properties": {
+            "paths": {"type": "array", "items": {"type": "string"}},
+            "fingerprint": {"type": "string"}
+          },
+          "additionalProperties": false
+        }
       },
       "additionalProperties": false
     },

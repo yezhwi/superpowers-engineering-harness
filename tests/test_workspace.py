@@ -42,6 +42,18 @@ def test_snapshot_lists_all_business_changes_and_ignores_harness(tmp_path):
     assert len(state.fingerprint) == 71
 
 
+def test_protected_paths_fingerprint_changes_when_preexisting_dirty_file_changes(tmp_path):
+    from harness.workspace import protected_paths_fingerprint
+
+    repo = committed_repo(tmp_path)
+    path = repo / "tracked.py"
+    path.write_text("value = 2\n")
+    before = protected_paths_fingerprint(("tracked.py",), repo)
+    path.write_text("value = 3\n")
+
+    assert protected_paths_fingerprint(("tracked.py",), repo) != before
+
+
 def test_review_scope_with_base_at_head_includes_dirty_and_untracked_files(tmp_path):
     """Break caught: base==HEAD produces empty complexity review despite workspace changes."""
     from harness.workspace import review_scope
