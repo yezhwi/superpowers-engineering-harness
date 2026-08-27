@@ -19,6 +19,17 @@ def test_verification_gap_routes_reviewing_to_verifying(tmp_path):
     assert "REVIEWING -> VERIFYING" in result.stdout
 
 
+def test_invalid_review_reason_code_is_rejected_without_transition(tmp_path):
+    """Break caught: arbitrary prose becomes a machine-meaningful review reason."""
+    repo = make_repo(tmp_path)
+    set_task_state(repo, "REVIEWING")
+
+    result = run_cli(repo, "review", "outcome", "VERIFICATION_GAP", "--reason-code", "tests")
+
+    assert result.returncode == 2
+    assert yaml.safe_load((repo / ".harness/current-task.yaml").read_text())["state"] == "REVIEWING"
+
+
 def test_defect_requires_existing_nonterminal_finding(tmp_path):
     """Break caught: reviewer declares defect without entering Finding lifecycle."""
     repo = make_repo(tmp_path)

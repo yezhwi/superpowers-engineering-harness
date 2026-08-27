@@ -113,6 +113,25 @@ def test_resume_routes_typed_evidence_blocker_to_verifying(tmp_path):
     assert yaml.safe_load(path.read_text())["state"] == "VERIFYING"
 
 
+def test_resume_ignores_tampered_persisted_recovery_target(tmp_path):
+    repo = make_repo(tmp_path)
+    set_task_state(repo, "BLOCKED")
+    path = repo / ".harness/current-task.yaml"
+    task = yaml.safe_load(path.read_text())
+    task["gate"] = {"status": "BLOCKED", "blocked_by": [{
+        "code": "EVIDENCE_MISSING", "category": "verification",
+        "message": "missing build evidence", "source": "build",
+        "requirement_id": None, "invariant_id": None, "finding_id": None,
+        "recover_to": "IMPLEMENTING",
+    }]}
+    path.write_text(yaml.safe_dump(task))
+
+    result = run_cli(repo, "resume")
+
+    assert result.returncode == 0, result.stderr
+    assert yaml.safe_load(path.read_text())["state"] == "VERIFYING"
+
+
 def test_transition_cannot_bypass_resume_for_blocked_recovery(tmp_path):
     repo = make_repo(tmp_path)
     set_task_state(repo, "BLOCKED")
@@ -121,6 +140,19 @@ def test_transition_cannot_bypass_resume_for_blocked_recovery(tmp_path):
 
     assert result.returncode == 1
     assert "RESUME_REQUIRED" in result.stderr
+
+
+def test_task_new_records_current_git_head_as_complexity_baseline(tmp_path):
+    repo = make_repo(tmp_path)
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-qm", "base"], cwd=repo, check=True)
+    set_task_state(repo, "DONE")
+    head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True, text=True).stdout.strip()
+
+    result = run_cli(repo, "task", "new", "TASK-005")
+
+    assert result.returncode == 0, result.stderr
+    assert yaml.safe_load((repo / ".harness/current-task.yaml").read_text())["git"]["base_commit"] == head
 
 
 def test_task_new_still_rejects_active_task(tmp_path):

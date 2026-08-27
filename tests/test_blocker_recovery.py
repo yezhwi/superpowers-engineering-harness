@@ -22,6 +22,18 @@ def test_verification_blocker_routes_to_verifying():
     ]) == "VERIFYING"
 
 
+def test_requirement_evidence_missing_routes_to_verifying_without_message_parsing():
+    """Break caught: requirement proof gap is misclassified as implementation work."""
+    from harness.blockers import GateBlocker, select_recovery
+
+    blocker = GateBlocker(
+        "EVIDENCE_MISSING", "verification", "REQ-001 evidence missing: unit-test.json",
+        source="unit-test.json", requirement_id="REQ-001", recover_to="IMPLEMENTING",
+    )
+
+    assert select_recovery([blocker]) == "VERIFYING"
+
+
 def test_unrouteable_harness_blocker_fails_closed():
     """Break caught: corrupted Harness data receives guessed recovery route."""
     from harness.blockers import GateBlocker, select_recovery

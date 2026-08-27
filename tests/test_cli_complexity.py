@@ -107,7 +107,7 @@ def test_review_complexity_writes_findings_and_metadata(tmp_path):
     source = tmp_path / "review.yaml"
     source.write_text(yaml.safe_dump(review, sort_keys=False))
 
-    result = run_cli(repo, "review", "complexity", "--file", str(source))
+    result = run_cli(repo, "review", "complexity", "--base", "HEAD", "--file", str(source))
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert (repo / ".harness/findings/CPLX-001.yaml").is_file()

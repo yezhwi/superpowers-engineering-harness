@@ -173,6 +173,9 @@ def cmd_review_outcome(outcome: str, reason_code: str, finding_ids: list[str]) -
     if task.get("state") != "REVIEWING":
         print("review outcome requires state REVIEWING", file=sys.stderr)
         return 1
+    if not _load("review_outcome").is_allowed(outcome, reason_code):
+        print(f"INVALID_REVIEW_REASON_CODE: {reason_code}", file=sys.stderr)
+        return 2
     if outcome == "DEFECT":
         findings = {finding.get("id"): finding for finding in _findings(harness_dir)}
         terminal = {"VERIFIED", "CLOSED", "REJECTED"}
@@ -193,7 +196,7 @@ def cmd_review_outcome(outcome: str, reason_code: str, finding_ids: list[str]) -
     return 0
 
 
-def cmd_review_complexity(source: Path, base_ref: str = "HEAD") -> int:
+def cmd_review_complexity(source: Path, base_ref: str | None = None) -> int:
     import yaml
 
     try:
@@ -201,6 +204,9 @@ def cmd_review_complexity(source: Path, base_ref: str = "HEAD") -> int:
         task = load_task(Path(".harness"))
         if not isinstance(review, dict) or review.get("task") != task.get("task", {}).get("id"):
             raise ValueError("task mismatch")
+        base_ref = base_ref or task.get("git", {}).get("base_commit")
+        if not base_ref:
+            raise ValueError("TASK_GIT_BASELINE_REQUIRED: provide --base or create a task with base_commit")
         scope = _load("workspace").review_scope(base_ref)
         claimed_scope = review.get("review_scope")
         if claimed_scope is not None and claimed_scope.get("files") != list(scope.files):
@@ -447,7 +453,7 @@ def cmd_task_new(task_id: str, title: str = "") -> int:
   shutil.copy2(templates_dir()/name,h/name)
  for name in ('findings','evidence'):
   shutil.rmtree(h/name,ignore_errors=True);(h/name).mkdir()
- task=load_task(h);task['task']['id']=task_id;task['task']['title']=title;save_task(h,task);print(f'OK: archived task, created {task_id}');return 0
+ task=load_task(h);task['task']['id']=task_id;task['task']['title']=title;task.setdefault('git',{})['base_commit']=_load('workspace').git_head();save_task(h,task);print(f'OK: archived task, created {task_id}');return 0
 
 def cmd_task_recover(task_id: str, title: str, reason: str) -> int:
     """Archive an active task with an explicit recovery audit."""

@@ -16,13 +16,30 @@ class GateBlocker:
     category: BlockerCategory
     message: str
     source: str | None = None
+    requirement_id: str | None = None
+    invariant_id: str | None = None
     finding_id: str | None = None
-    recover_to: str | None = None
+    recover_to: str | None = None  # Derived display field; never routing authority.
 
     def __contains__(self, text: str) -> bool:
         """Compatibility for callers that searched legacy blocker strings."""
         return text in self.message
 
+
+RECOVERY_POLICY = {
+    "EVIDENCE_MISSING": "VERIFYING",
+    "EVIDENCE_WORKSPACE_STALE": "VERIFYING",
+    "EVIDENCE_HEAD_MISMATCH": "VERIFYING",
+    "EVIDENCE_RESULT_MISMATCH": "VERIFYING",
+    "REQUIRED_VERIFICATION_MISSING": "VERIFYING",
+    "REQUIREMENT_UNVERIFIED": "VERIFYING",
+    "INVARIANT_UNVERIFIED": "VERIFYING",
+    "COMPLEXITY_REVIEW_MISSING": "VERIFYING",
+    "COMPLEXITY_REVIEW_STALE": "VERIFYING",
+    "FINDING_OPEN": "REPRODUCING",
+    "IMPLEMENTATION_INCOMPLETE": "IMPLEMENTING",
+    "MAX_CONVERGENCE_ITERATIONS": "ESCALATED",
+}
 
 _PRIORITY = {
     "defect": 0,
@@ -62,4 +79,4 @@ def select_recovery(blockers: list[GateBlocker]) -> str | None:
     if not blockers:
         return None
     blocker = min(blockers, key=lambda item: _PRIORITY[item.category])
-    return blocker.recover_to
+    return RECOVERY_POLICY.get(blocker.code)

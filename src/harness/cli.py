@@ -48,7 +48,7 @@ def main(argv=None) -> int:
     review_sub = p_review.add_subparsers(dest="review_command")
     p_complexity = review_sub.add_parser("complexity", help="persist complexity review")
     p_complexity.add_argument("--file", required=True, dest="source_file")
-    p_complexity.add_argument("--base", default="HEAD")
+    p_complexity.add_argument("--base")
     p_outcome = review_sub.add_parser("outcome", help="persist and route review outcome")
     p_outcome.add_argument("outcome", choices=["PASS", "VERIFICATION_GAP", "DEFECT"])
     p_outcome.add_argument("--reason-code", required=True)

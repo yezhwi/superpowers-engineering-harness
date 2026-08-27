@@ -19,7 +19,7 @@ from pathlib import Path
 import yaml
 from jsonschema import ValidationError, validate
 
-from .blockers import blocker_document, blocker_from_message
+from .blockers import GateBlocker, RECOVERY_POLICY, blocker_document
 from .evidence_validator import EvidenceValidationError, validate_evidence
 from .state_machine import STATES
 from .workspace import WorkspaceError, git_head as workspace_head, snapshot
@@ -179,7 +179,12 @@ def run_gate(harness_dir: Path, head: str | None = None,
                     f"{finding['id']} full regression evidence invalid: {exc}"
                 ) from exc
 
-    blockers = []
+    blockers: list[GateBlocker] = []
+
+    def block(code: str, category: str, message: str, **identity) -> None:
+        blockers.append(GateBlocker(
+            code, category, message, recover_to=RECOVERY_POLICY.get(code), **identity
+        ))
 
     # 1. Requirements: priority=must must be verified WITH fresh evidence.
     # A self-declared status=verified carries no weight on its own: each
@@ -195,24 +200,21 @@ def run_gate(harness_dir: Path, head: str | None = None,
             if req.get("priority") != "must":
                 continue
             if req.get("status") != "verified":
-                blockers.append(f"{req.get('id')} not verified")
+                block("REQUIREMENT_UNVERIFIED", "verification", f"{req.get('id')} not verified", requirement_id=req.get("id"))
                 continue
             refs = req.get("evidence") or []
             if not refs:
-                blockers.append(
-                    f"{req.get('id')} verified without evidence")
+                block("EVIDENCE_MISSING", "verification", f"{req.get('id')} verified without evidence", requirement_id=req.get("id"))
                 continue
             for ref in refs:
                 name = ref if isinstance(ref, str) else                     (ref or {}).get("ref", "")
                 if not name:
-                    blockers.append(
-                        f"{req.get('id')} has an empty evidence ref")
+                    block("EVIDENCE_MISSING", "verification", f"{req.get('id')} has an empty evidence ref", requirement_id=req.get("id"))
                     continue
                 fname = name if name.endswith(".json") else f"{name}.json"
                 path = evidence_dir / fname
                 if not path.is_file():
-                    blockers.append(
-                        f"{req.get('id')} evidence missing: {fname}")
+                    block("EVIDENCE_MISSING", "verification", f"{req.get('id')} evidence missing: {fname}", source=fname, requirement_id=req.get("id"))
                     continue
                 try:
                     ev = json.loads(path.read_text())
@@ -223,7 +225,7 @@ def run_gate(harness_dir: Path, head: str | None = None,
                     validate_evidence(ev, current_head=head, current_workspace=current_workspace,
                                       expected_success=True)
                 except EvidenceValidationError as exc:
-                    blockers.append(f"{req.get('id')} evidence {fname} invalid: {exc}")
+                    block(str(exc).split(":", 1)[0], "verification", f"{req.get('id')} evidence {fname} invalid: {exc}", source=fname, requirement_id=req.get("id"))
 
     # 2. Invariants: violated blocks; unproven blocks for critical/major.
     # pending == not proven == BLOCKED. Only proven-safe (verified)
@@ -236,29 +238,29 @@ def run_gate(harness_dir: Path, head: str | None = None,
         severity = inv.get("severity")
         iid = inv.get("id")
         if status == "violated":
-            blockers.append(f"{iid} violated")
+            block("INVARIANT_UNVERIFIED", "implementation", f"{iid} violated", invariant_id=iid)
         elif status != "verified":
             if severity in ("critical", "major"):
-                blockers.append(f"{iid} not verified (pending {severity} invariant is not proven)")
+                block("INVARIANT_UNVERIFIED", "verification", f"{iid} not verified (pending {severity} invariant is not proven)", invariant_id=iid)
             elif severity == "minor" and minor_verified:
-                blockers.append(f"{iid} not verified")
+                block("INVARIANT_UNVERIFIED", "verification", f"{iid} not verified", invariant_id=iid)
         elif severity in ("critical", "major") or minor_verified:
             refs = inv.get("verification") or []
             if not refs:
-                blockers.append(f"{iid} verified without verification evidence")
+                block("EVIDENCE_MISSING", "verification", f"{iid} verified without verification evidence", invariant_id=iid)
             for ref in refs:
                 name = ref if isinstance(ref, str) else (ref or {}).get("ref", "")
                 path = evidence_dir / (name if name.endswith(".json") else f"{name}.json")
                 try:
                     ev = json.loads(path.read_text())
                 except (OSError, json.JSONDecodeError):
-                    blockers.append(f"{iid} verification evidence missing: {name}")
+                    block("EVIDENCE_MISSING", "verification", f"{iid} verification evidence missing: {name}", source=name, invariant_id=iid)
                     continue
                 try:
                     validate_evidence(ev, current_head=head, current_workspace=current_workspace,
                                       expected_success=True)
                 except EvidenceValidationError as exc:
-                    blockers.append(f"{iid} verification evidence {name} invalid: {exc}")
+                    block(str(exc).split(":", 1)[0], "verification", f"{iid} verification evidence {name} invalid: {exc}", source=name, invariant_id=iid)
 
     # 3. Required verification evidence exists, exit_code==0, fresh HEAD.
     ver_cfg = gate_cfg.get("verification", {})
@@ -271,13 +273,13 @@ def run_gate(harness_dir: Path, head: str | None = None,
         ev = evidence.get(vtype)
         label = vtype.replace("_", "-")
         if ev is None:
-            blockers.append(f"missing {label} evidence")
+            block("EVIDENCE_MISSING", "verification", f"missing {label} evidence", source=vtype)
             continue
         try:
             validate_evidence(ev, current_head=head, current_workspace=current_workspace,
                               expected_success=True)
         except EvidenceValidationError as exc:
-            blockers.append(f"{label} evidence invalid: {exc}")
+            block(str(exc).split(":", 1)[0], "verification", f"{label} evidence invalid: {exc}", source=vtype)
 
     # 4. Complexity: required review evidence and configured open severities.
     complexity_cfg = gate_cfg.get("complexity", {})
@@ -287,20 +289,19 @@ def run_gate(harness_dir: Path, head: str | None = None,
             review = json.loads(review_path.read_text())
             validate_schema(review, "evidence.schema.json", review_path)
         except (OSError, json.JSONDecodeError, InvalidHarnessState):
-            blockers.append("missing complexity-review evidence")
+            block("COMPLEXITY_REVIEW_MISSING", "verification", "missing complexity-review evidence", source="complexity-review")
         else:
             try:
                 validate_evidence(review, current_head=head, current_workspace=current_workspace,
                                   expected_success=True)
             except EvidenceValidationError as exc:
-                blockers.append(f"complexity-review evidence invalid: {exc}")
+                block(str(exc).split(":", 1)[0], "verification", f"complexity-review evidence invalid: {exc}", source="complexity-review")
         blocking = set(complexity_cfg.get("blocking", ["high"]))
         for finding in findings:
             if (finding.get("id", "").startswith("CPLX-")
                     and finding.get("status") == "open"
                     and finding.get("severity") in blocking):
-                blockers.append(
-                    f"{finding['severity'].title()} complexity finding {finding['id']} is open")
+                block("IMPLEMENTATION_INCOMPLETE", "implementation", f"{finding['severity'].title()} complexity finding {finding['id']} is open", finding_id=finding["id"])
 
     # 5. Findings: open critical/major counts, regression debt.
     find_cfg = gate_cfg.get("findings", {})
@@ -315,9 +316,9 @@ def run_gate(harness_dir: Path, head: str | None = None,
     open_major = [f for f in findings
                   if is_open(f) and f.get("severity") == "major"]
     for f in open_critical[critical_allowed:]:
-        blockers.append(f"Critical finding {f['id']} is open")
+        block("FINDING_OPEN", "defect", f"Critical finding {f['id']} is open", finding_id=f["id"])
     for f in open_major[major_allowed:]:
-        blockers.append(f"Major finding {f['id']} is open")
+        block("FINDING_OPEN", "defect", f"Major finding {f['id']} is open", finding_id=f["id"])
 
     # Confirmed findings must carry a regression test (LAW 4).
     confirmed = [f for f in findings if f.get("status") == "CONFIRMED"]
@@ -327,12 +328,10 @@ def run_gate(harness_dir: Path, head: str | None = None,
     no_test = [f for f in confirmed
                if not (f.get("regression_test") or {}).get("path")]
     for f in no_test[without_test_allowed:]:
-        blockers.append(
-            f"Confirmed finding {f['id']} has no regression test")
+        block("IMPLEMENTATION_INCOMPLETE", "implementation", f"Confirmed finding {f['id']} has no regression test", finding_id=f["id"])
 
-    typed_blockers = [blocker_from_message(message) for message in blockers]
-    status = "PASS" if not typed_blockers else "BLOCKED"
-    return status, typed_blockers
+    status = "PASS" if not blockers else "BLOCKED"
+    return status, blockers
 
 
 def write_back(harness_dir: Path, status: str, blockers: list):

@@ -188,6 +188,8 @@
               "category": {"enum": ["verification", "implementation", "defect", "harness", "convergence"]},
               "message": {"type": "string"},
               "source": {"type": ["string", "null"]},
+              "requirement_id": {"type": ["string", "null"]},
+              "invariant_id": {"type": ["string", "null"]},
               "finding_id": {"type": ["string", "null"]},
               "recover_to": {"type": ["string", "null"]}
             },
@@ -200,6 +202,12 @@
       "type": "object",
       "properties": {
         "head": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "base_commit": {
           "type": [
             "string",
             "null"

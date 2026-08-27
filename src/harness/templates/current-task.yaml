@@ -36,6 +36,7 @@ gate:
 
 git:
   head: null
+  base_commit: null
 
 timestamps:
   created_at: null
