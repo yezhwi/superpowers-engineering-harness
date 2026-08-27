@@ -1,4 +1,4 @@
-# Superpowers Engineering Harness v0.2.1
+# Superpowers Engineering Harness v0.2.2
 
 [English](README.md)
 
@@ -89,7 +89,9 @@ harness status
 harness transition IMPLEMENTING
 harness evidence --type unit_test --command "pytest tests/test_cancel.py"
 harness transition VERIFYING
+harness review outcome VERIFICATION_GAP --reason-code TEST_COVERAGE_INSUFFICIENT
 harness gate
+harness resume
 harness converge
 ```
 
@@ -102,7 +104,7 @@ harness authorize full-suite
 harness evidence --type unit_test --scope full_suite --command "pytest"
 ```
 
-会话中断后运行 `harness status`；Harness 从 `.harness/current-task.yaml` 恢复。
+会话中断后运行 `harness status`；Harness 从 `.harness/current-task.yaml` 恢复。`status` 是只读 projection；Gate 阻塞后运行 `harness resume`，Harness 按 typed blocker 自动选择正确恢复状态。
 
 ### 自动编排
 
@@ -119,7 +121,7 @@ harness check minimal --file minimal-implementation.yaml
 验证后，Complexity Reviewer 审查变更 diff，仅能创建具备证据的 DELETE、REUSE、STDLIB、NATIVE、YAGNI、SHRINK 类型 `CPLX-*` finding。
 
 ```bash
-harness review complexity --file complexity-review.yaml
+harness review complexity --base origin/main --file complexity-review.yaml
 ```
 
 开放 HIGH complexity finding 阻塞 gate；MEDIUM 和 LOW 仅提示。安全、授权、审计、兼容性、迁移、无障碍和 NFR 所需复杂度不自动视为过度设计。
@@ -132,6 +134,7 @@ Harness 依赖 Superpowers worker Skills，尤其 brainstorming、writing-plans�
 
 ## 文档与开发
 
+- [v0.2.2 flow hardening 设计](docs/superpowers/specs/2026-08-26-v022-flow-hardening-design.md)
 - [v0.2 设计](docs/superpowers/specs/2026-08-25-v02-minimal-complexity-design.md)
 - [完整生命周期示例](docs/worked-example.md)
 - [历史 v0.1 实施手册](docs/engineering-harness-v0.1.md)

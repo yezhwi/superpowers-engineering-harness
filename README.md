@@ -1,4 +1,4 @@
-# Superpowers Engineering Harness v0.2.1
+# Superpowers Engineering Harness v0.2.2
 
 [简体中文](README.zh-CN.md)
 
@@ -89,7 +89,9 @@ harness status
 harness transition IMPLEMENTING
 harness evidence --type unit_test --command "pytest tests/test_cancel.py"
 harness transition VERIFYING
+harness review outcome VERIFICATION_GAP --reason-code TEST_COVERAGE_INSUFFICIENT
 harness gate
+harness resume
 harness converge
 ```
 
@@ -119,7 +121,7 @@ harness check minimal --file minimal-implementation.yaml
 After verification, Complexity Reviewer inspects changed diff and may create evidence-backed `CPLX-*` findings only for DELETE, REUSE, STDLIB, NATIVE, YAGNI, or SHRINK.
 
 ```bash
-harness review complexity --file complexity-review.yaml
+harness review complexity --base origin/main --file complexity-review.yaml
 ```
 
 Open HIGH complexity findings block gate. MEDIUM and LOW findings are advisory. Necessary security, authorization, audit, compatibility, migration, accessibility, and NFR complexity is not automatically over-engineering.
@@ -132,6 +134,7 @@ Caveman Mode is recommended to reduce agent output tokens. Keep code, commands, 
 
 ## Docs and development
 
+- [v0.2.2 flow hardening design](docs/superpowers/specs/2026-08-26-v022-flow-hardening-design.md)
 - [v0.2 design](docs/superpowers/specs/2026-08-25-v02-minimal-complexity-design.md)
 - [Worked lifecycle example](docs/worked-example.md)
 - [Historical v0.1 implementation guide](docs/engineering-harness-v0.1.md)

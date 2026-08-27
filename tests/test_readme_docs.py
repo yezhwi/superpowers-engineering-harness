@@ -22,6 +22,16 @@ def test_bilingual_readmes_link_and_document_core_commands():
     assert "README.md" in chinese
 
 
+def test_readmes_document_v022_recovery_and_review_commands():
+    """Break caught: released CLI behavior lacks user-operable documentation."""
+    for path in (REPO / "README.md", REPO / "README.zh-CN.md"):
+        text = path.read_text()
+        assert "v0.2.2" in text
+        assert "harness resume" in text
+        assert "harness review outcome" in text
+        assert "harness review complexity --base" in text
+
+
 def test_workflow_makes_full_suite_advisory_after_focused_tests():
     workflow = (REPO / "SKILL.md").read_text()
     assert "exact regression + impact-related tests" in workflow

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.2
+
+- Add typed Gate blockers and `harness resume` reason-driven recovery.
+- Add structured `harness review outcome` routing for pass, verification gaps, and defects.
+- Project current Evidence freshness in read-only `harness status`.
+- Calculate complexity review scope from Git base, committed, staged, unstaged, and relevant untracked changes.
+
 ## 0.2.1
 
 - Package runtime modules, schemas, and templates inside installed distributions.
