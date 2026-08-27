@@ -33,7 +33,7 @@ from harness.state_machine import (
 # ---------------------------------------------------------------------------
 
 EXPECTED_STATES = {
-    "CREATED", "SPECIFYING", "PLANNED", "IMPLEMENTING", "VERIFYING",
+    "CREATED", "CLASSIFIED", "SPECIFYING", "PLANNED", "IMPLEMENTING", "VERIFYING",
     "REVIEWING", "REPRODUCING", "FIXING", "GATING", "BLOCKED",
     "CONVERGED", "DONE", "ESCALATED",
 }
@@ -44,7 +44,7 @@ def test_states_are_fixed_enum():
 
 
 def test_no_extra_states():
-    assert len(STATES) == 13
+    assert len(STATES) == 14
 
 
 # ---------------------------------------------------------------------------
@@ -52,7 +52,9 @@ def test_no_extra_states():
 # ---------------------------------------------------------------------------
 
 EXPECTED_TRANSITIONS = {
+    ("CREATED", "CLASSIFIED"),
     ("CREATED", "SPECIFYING"),
+    ("CLASSIFIED", "IMPLEMENTING"),
     ("SPECIFYING", "PLANNED"),
     ("PLANNED", "IMPLEMENTING"),
     ("IMPLEMENTING", "VERIFYING"),

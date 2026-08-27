@@ -5,6 +5,8 @@ task:
 
 state: CREATED
 
+risk: null
+
 iteration: 0
 max_iterations: 5
 

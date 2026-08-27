@@ -8,6 +8,7 @@ from typing import Dict, Set
 
 STATES = frozenset({
     "CREATED",
+    "CLASSIFIED",
     "SPECIFYING",
     "PLANNED",
     "IMPLEMENTING",
@@ -23,7 +24,9 @@ STATES = frozenset({
 })
 
 TRANSITIONS: Set[tuple] = frozenset({
+    ("CREATED", "CLASSIFIED"),
     ("CREATED", "SPECIFYING"),
+    ("CLASSIFIED", "IMPLEMENTING"),
     ("SPECIFYING", "PLANNED"),
     ("PLANNED", "IMPLEMENTING"),
     ("IMPLEMENTING", "VERIFYING"),

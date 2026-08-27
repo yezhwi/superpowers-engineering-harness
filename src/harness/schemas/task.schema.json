@@ -33,10 +33,36 @@
         }
       }
     },
+    "risk": {
+      "type": ["object", "null"],
+      "required": ["level", "profile", "dimensions", "escalation_history", "workspace_fingerprint"],
+      "properties": {
+        "level": {"enum": ["Q1", "Q2", "Q3"]},
+        "profile": {"enum": ["FAST", "STANDARD", "STRICT"]},
+        "dimensions": {
+          "type": "object",
+          "required": ["scope", "contract", "data", "authorization", "security", "concurrency", "deployment"],
+          "properties": {
+            "scope": {"enum": ["low", "high"]},
+            "contract": {"enum": ["none", "low", "high"]},
+            "data": {"enum": ["none", "low", "high"]},
+            "authorization": {"enum": ["none", "low", "high"]},
+            "security": {"enum": ["none", "low", "high"]},
+            "concurrency": {"enum": ["none", "low", "high"]},
+            "deployment": {"enum": ["none", "low", "high"]}
+          },
+          "additionalProperties": false
+        },
+        "escalation_history": {"type": "array", "items": {"type": "object"}},
+        "workspace_fingerprint": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
     "state": {
       "description": "Fixed enum; only CONVERGED -> DONE is legal",
       "enum": [
         "CREATED",
+        "CLASSIFIED",
         "SPECIFYING",
         "PLANNED",
         "IMPLEMENTING",
@@ -55,6 +81,7 @@
       "description": "Optional: last persisted state, used to re-check legality of the recorded transition",
       "enum": [
         "CREATED",
+        "CLASSIFIED",
         "SPECIFYING",
         "PLANNED",
         "IMPLEMENTING",

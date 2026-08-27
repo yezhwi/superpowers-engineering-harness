@@ -78,6 +78,9 @@ def main(argv=None) -> int:
     p_task=sub.add_parser("task"); ts=p_task.add_subparsers(dest="task_command"); p_mid=ts.add_parser("migrate-id"); p_mid.add_argument("id")
     p_new=ts.add_parser("new"); p_new.add_argument("id"); p_new.add_argument("--title",default="")
     p_recover=ts.add_parser("recover"); p_recover.add_argument("id"); p_recover.add_argument("--title",default=""); p_recover.add_argument("--reason",required=True)
+    p_classify=ts.add_parser("classify"); p_classify.add_argument("--level", choices=["Q1", "Q2", "Q3"], required=True)
+    for dimension in ("scope", "contract", "data", "authorization", "security", "concurrency", "deployment"): p_classify.add_argument(f"--{dimension}", required=True)
+    p_escalate=ts.add_parser("escalate"); p_escalate.add_argument("--level", choices=["Q2", "Q3"], required=True); p_escalate.add_argument("--reason", required=True)
     sub.add_parser("converge", help="deterministic convergence decision")
 
     args = parser.parse_args(argv)
@@ -128,6 +131,8 @@ def main(argv=None) -> int:
         if args.task_command == "migrate-id": return controlplane.cmd_task_migrate_id(args.id)
         if args.task_command == "new": return controlplane.cmd_task_new(args.id,args.title)
         if args.task_command == "recover": return controlplane.cmd_task_recover(args.id,args.title,args.reason)
+        if args.task_command == "classify": return controlplane.cmd_task_classify(args.level, {name: getattr(args, name) for name in ("scope", "contract", "data", "authorization", "security", "concurrency", "deployment")})
+        if args.task_command == "escalate": return controlplane.cmd_task_escalate(args.level, args.reason)
         return 2
     if args.subcommand == "converge":
         return controlplane.cmd_converge()

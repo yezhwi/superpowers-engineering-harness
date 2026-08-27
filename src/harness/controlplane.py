@@ -428,6 +428,51 @@ def cmd_task_migrate_id(task_id: str) -> int:
     task=load_task(Path('.harness')); task.setdefault('task',{})['id']=task_id
     save_task(Path('.harness'),task); print(f"OK: task id -> {task_id}"); return 0
 
+def cmd_task_classify(level: str, dimensions: dict[str, str]) -> int:
+    harness_dir = Path(".harness")
+    task = load_task(harness_dir)
+    if task.get("state") != "CREATED":
+        print("task classify requires state CREATED", file=sys.stderr)
+        return 1
+    try:
+        risk = _load("risk")
+        profile = risk.classify(level, dimensions)
+        _load("state_machine").require_legal("CREATED", "CLASSIFIED")
+        task["risk"] = {
+            "level": level, "profile": profile, "dimensions": dimensions,
+            "escalation_history": [],
+            "workspace_fingerprint": _load("collect_evidence").workspace_fingerprint(),
+        }
+    except Exception as exc:
+        print(f"RISK_CLASSIFICATION_INVALID: {exc}", file=sys.stderr)
+        return 2
+    task["state"] = "CLASSIFIED"
+    save_task(harness_dir, task)
+    print(f"OK: classified {level}/{profile}")
+    return 0
+
+
+def cmd_task_escalate(level: str, reason: str) -> int:
+    harness_dir = Path(".harness")
+    task = load_task(harness_dir)
+    risk_record = task.get("risk")
+    if not isinstance(risk_record, dict) or not reason.strip():
+        print("RISK_ESCALATION_INVALID", file=sys.stderr)
+        return 2
+    try:
+        risk = _load("risk")
+        risk.validate_escalation(risk_record["level"], level)
+    except Exception as exc:
+        print(f"RISK_ESCALATION_INVALID: {exc}", file=sys.stderr)
+        return 2
+    risk_record["escalation_history"].append({"from": risk_record["level"], "to": level, "reason": reason})
+    risk_record["level"] = level
+    risk_record["profile"] = risk.PROFILES[level]
+    save_task(harness_dir, task)
+    print(f"OK: escalated to {level}/{risk_record['profile']}")
+    return 0
+
+
 def _verify_record(kind: str, rid: str, ref: str) -> int:
  import yaml,json
  hp=Path('.harness'); path=hp/("requirements.yaml" if kind=="requirement" else "invariants.yaml"); doc=yaml.safe_load(path.read_text()); key="requirements" if kind=="requirement" else "invariants"
