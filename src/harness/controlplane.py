@@ -453,7 +453,10 @@ def cmd_task_new(task_id: str, title: str = "") -> int:
   shutil.copy2(templates_dir()/name,h/name)
  for name in ('findings','evidence'):
   shutil.rmtree(h/name,ignore_errors=True);(h/name).mkdir()
- task=load_task(h);task['task']['id']=task_id;task['task']['title']=title;task.setdefault('git',{})['base_commit']=_load('workspace').git_head();save_task(h,task);print(f'OK: archived task, created {task_id}');return 0
+ task=load_task(h);task['task']['id']=task_id;task['task']['title']=title
+ try: task.setdefault('git',{})['base_commit']=_load('workspace').git_head()
+ except Exception: task.setdefault('git',{})['base_commit']=None
+ save_task(h,task);print(f'OK: archived task, created {task_id}');return 0
 
 def cmd_task_recover(task_id: str, title: str, reason: str) -> int:
     """Archive an active task with an explicit recovery audit."""
