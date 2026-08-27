@@ -32,6 +32,18 @@ def test_readmes_document_v022_recovery_and_review_commands():
         assert "harness review complexity --base" in text
 
 
+def test_skill_and_worked_example_document_v022_controlled_routes():
+    """Break caught: worker instructions retain v0.2.1 free recovery routes."""
+    skill = (REPO / "SKILL.md").read_text()
+    example = (REPO / "docs/worked-example.md").read_text()
+
+    for text in (skill, example):
+        assert "harness resume" in text
+        assert "harness review outcome" in text
+        assert "harness review complexity --base" in text
+    assert "status is read-only" in skill
+
+
 def test_workflow_makes_full_suite_advisory_after_focused_tests():
     workflow = (REPO / "SKILL.md").read_text()
     assert "exact regression + impact-related tests" in workflow

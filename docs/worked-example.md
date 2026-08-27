@@ -15,8 +15,9 @@ IMPLEMENTING
 VERIFYING
   record impact and run related test as fresh evidence
 REVIEWING
-  Complexity Reviewer checks changed diff
+  Complexity Reviewer checks Harness-calculated changed scope
   Adversarial Review emits FND-001: concurrent cancellation may still double-refund
+  harness review outcome DEFECT --reason-code CONCURRENCY_ERROR --finding FND-001
 REPRODUCING
   concurrent regression test RED → FND-001 CONFIRMED
 FIXING
@@ -36,7 +37,10 @@ harness status
 harness check minimal --file minimal-implementation.yaml
 harness impact add-test tests/test_cancel.py::test_duplicate_cancel_single_refund
 harness evidence --type unit_test --command "pytest tests/test_cancel.py::test_duplicate_cancel_single_refund"
-harness review complexity --file complexity-review.yaml
+harness review complexity --base origin/main --file complexity-review.yaml
+harness review outcome VERIFICATION_GAP --reason-code TEST_COVERAGE_INSUFFICIENT
+harness review outcome DEFECT --reason-code CONCURRENCY_ERROR --finding FND-001
+harness resume
 harness gate
 harness converge
 ```
