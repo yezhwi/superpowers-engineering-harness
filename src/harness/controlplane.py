@@ -261,7 +261,11 @@ def cmd_benchmark_corpus_validate(corpus: Path) -> int:
 def cmd_benchmark_compare(fixtures: Path, baseline: Path, adaptive: Path) -> int:
     harness_dir = Path(".harness")
     try:
-        report = _load("benchmark").compare_benchmarks(fixtures, baseline, adaptive)
+        benchmark = _load("benchmark")
+        report = benchmark.compare_benchmarks(fixtures, baseline, adaptive)
+        import yaml
+        fixture_rows = [yaml.safe_load(path.read_text()) for path in sorted(fixtures.glob("*.yaml"))]
+        report["acceptance"] = benchmark.evaluate_acceptance(report, fixture_rows)
     except (OSError, ValueError) as exc:
         print(str(exc), file=sys.stderr)
         return 2

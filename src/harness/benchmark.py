@@ -64,10 +64,37 @@ def compare_benchmarks(fixtures: Path, baseline: Path, adaptive: Path) -> dict:
             left = before["metrics"].get(key) if before else None
             right = after["metrics"].get(key) if after else None
             metrics[f"{key}_delta"] = right - left if isinstance(left, (int, float)) and isinstance(right, (int, float)) else None
-        rows.append({"id": fid, "status": status, "metrics": metrics})
+        rows.append({"id": fid, "level": fixture.get("level"), "required_correctness": fixture["required_correctness"], "status": status, "metrics": metrics, "baseline": before, "adaptive": after})
     statuses = {row["status"] for row in rows}
     overall = "CORRECTNESS_REGRESSION" if "CORRECTNESS_REGRESSION" in statuses else ("INCONCLUSIVE" if "INCONCLUSIVE" in statuses else "CORRECTNESS_PRESERVED")
     return {"overall": overall, "fixtures": rows}
+
+
+def evaluate_acceptance(report: dict, fixtures: list[dict]) -> dict:
+    rows = report.get("fixtures", [])
+    result = {}
+    q1 = [row for row in rows if row.get("level") == "Q1"]
+    for ac, metric in (("AC16", "tool_calls"), ("AC17", "token_estimate"), ("AC18", "elapsed_seconds")):
+        if len(q1) != 20:
+            result[ac] = {"status": "INCONCLUSIVE"}
+            continue
+        pairs = [((row.get("baseline") or {}).get("metrics", {}).get(metric), (row.get("adaptive") or {}).get("metrics", {}).get(metric)) for row in q1]
+        if not all(isinstance(left, (int, float)) and isinstance(right, (int, float)) for left, right in pairs):
+            result[ac] = {"status": "INCONCLUSIVE"}
+        else:
+            result[ac] = {"status": "PASS" if sum(right for _, right in pairs) / 20 < sum(left for left, _ in pairs) / 20 else "FAIL"}
+    expected_rows = len(fixtures) if fixtures else len(rows)
+    complete = expected_rows == 50 and len(rows) == expected_rows and all(
+        row.get("status") == "CORRECTNESS_PRESERVED"
+        and all((row.get("baseline") or {}).get("correctness", {}).get(key) is True
+                and (row.get("adaptive") or {}).get("correctness", {}).get(key) is True
+                for key in next((item.get("required_correctness", []) for item in fixtures if item.get("id") == row.get("id")), []))
+        for row in rows
+    )
+    result["AC19"] = {"status": "PASS" if complete else "INCONCLUSIVE"}
+    q23 = [row for row in rows if row.get("level") in {"Q2", "Q3"}]
+    result["AC20"] = {"status": "PASS" if complete and len(q23) == 20 else "INCONCLUSIVE"}
+    return result
 
 
 def run_benchmarks(fixtures: Path, telemetry: Path) -> dict:

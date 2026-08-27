@@ -5,10 +5,32 @@ import pytest
 import sys
 from pathlib import Path
 
-from harness.benchmark import compare_benchmarks, run_benchmarks, validate_corpus
+from harness.benchmark import compare_benchmarks, evaluate_acceptance, run_benchmarks, validate_corpus
 
 
 REPO = Path(__file__).resolve().parent.parent
+
+
+def test_acceptance_marks_complete_improving_q1_metrics_pass():
+    rows = []
+    for index in range(20):
+        rows.append({"id": f"q1-{index}", "level": "Q1", "status": "CORRECTNESS_PRESERVED", "baseline": {"correctness": {"gate_pass": True, "regression_detected": True}, "metrics": {"tool_calls": 10, "token_estimate": 100, "elapsed_seconds": 20}}, "adaptive": {"correctness": {"gate_pass": True, "regression_detected": True}, "metrics": {"tool_calls": 5, "token_estimate": 50, "elapsed_seconds": 10}}})
+    report = {"fixtures": rows}
+    result = evaluate_acceptance(report, [])
+    assert result["AC16"]["status"] == result["AC17"]["status"] == result["AC18"]["status"] == "PASS"
+
+
+def test_acceptance_passes_success_and_detection_only_with_complete_corpus_rows():
+    rows = []
+    fixtures = []
+    for level, count in (("Q0", 10), ("Q1", 20), ("Q2", 10), ("Q3", 10)):
+        for index in range(count):
+            required = [] if level == "Q0" else ["gate_pass", "regression_detected"]
+            fixtures.append({"id": f"{level}-{index}", "level": level, "required_correctness": required})
+            proof = {"correctness": {key: True for key in required}}
+            rows.append({"id": f"{level}-{index}", "level": level, "status": "CORRECTNESS_PRESERVED", "baseline": proof, "adaptive": proof})
+    result = evaluate_acceptance({"fixtures": rows}, fixtures)
+    assert result["AC19"]["status"] == result["AC20"]["status"] == "PASS"
 
 
 def test_validate_corpus_requires_exact_level_distribution(tmp_path):
@@ -64,7 +86,9 @@ def test_cli_benchmark_compare_writes_correctness_report(tmp_path):
     _write_artifact(tmp_path, "adaptive", {"gate_pass": True}, {})
     result = subprocess.run([sys.executable, "-m", "harness.cli", "benchmark", "compare", "--fixtures", str(fixtures), "--baseline", str(tmp_path / "baseline"), "--adaptive", str(tmp_path / "adaptive")], cwd=tmp_path, capture_output=True, text=True, env={"PYTHONPATH": str(REPO / "src")})
     assert result.returncode == 0
-    assert json.loads((tmp_path / ".harness/benchmark-report.json").read_text())["overall"] == "CORRECTNESS_PRESERVED"
+    report = json.loads((tmp_path / ".harness/benchmark-report.json").read_text())
+    assert report["overall"] == "CORRECTNESS_PRESERVED"
+    assert report["acceptance"]["AC16"]["status"] == "INCONCLUSIVE"
 
 
 def test_cli_benchmark_run_writes_report(tmp_path):
