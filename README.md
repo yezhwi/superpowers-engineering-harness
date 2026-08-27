@@ -95,15 +95,13 @@ harness review complexity --file review.yaml
 harness transition REVIEWING
 harness review outcome PASS --reason-code REVIEW_CLEAN
 harness gate
-harness converge
 harness transition DONE
 ```
 
-Blocked recovery path (`harness converge` performs `GATING → BLOCKED`; `harness resume` derives target from blocker code):
+Blocked recovery path (`harness gate` performs `GATING → BLOCKED`; `harness resume` derives target from blocker code):
 
 ```bash
 harness gate
-harness converge
 harness resume
 ```
 

@@ -233,8 +233,8 @@ def cmd_evidence(evidence_type: str, command: str, finding_id=None, test_id=None
 
 
 def cmd_gate() -> int:
-    quality_gate = _load("quality_gate")
-    return quality_gate.main([])
+    """Evaluate Gate once and apply its deterministic convergence decision."""
+    return _cmd_gate_convergence()
 
 
 def _findings(harness_dir: Path) -> list:
@@ -274,7 +274,7 @@ def cmd_finding_show(finding_id: str) -> int:
     return 1
 
 
-def cmd_converge() -> int:
+def _cmd_gate_convergence() -> int:
     """Deterministic convergence decision (convergence skill v0.1 rules).
 
     PASS     (gate exit 0)          -> GATING  -> CONVERGED
@@ -300,6 +300,8 @@ def cmd_converge() -> int:
         print(f"INVALID_HARNESS_STATE: {exc}", file=sys.stderr)
         return 1
 
+    quality_gate.write_back(harness_dir, status, blockers)
+    task = load_task(harness_dir)
     blocker_documents = [_load("blockers").blocker_document(blocker) for blocker in blockers]
 
     if status == "PASS":
@@ -360,6 +362,12 @@ def cmd_converge() -> int:
     for blocker in blockers:
         print(f"  blocker: {blocker.message}")
     return 0
+
+
+def cmd_converge() -> int:
+    """Deprecated compatibility command; Gate now owns convergence."""
+    print("DEPRECATED: use harness gate", file=sys.stderr)
+    return 2
 
 
 def gate_pass(harness_dir: Path) -> bool:

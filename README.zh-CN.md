@@ -95,15 +95,13 @@ harness review complexity --file review.yaml
 harness transition REVIEWING
 harness review outcome PASS --reason-code REVIEW_CLEAN
 harness gate
-harness converge
 harness transition DONE
 ```
 
-阻塞恢复路径（`harness converge` 执行 `GATING → BLOCKED`；`harness resume` 按 blocker code 推导目标状态）：
+阻塞恢复路径（`harness gate` 执行 `GATING → BLOCKED`；`harness resume` 按 blocker code 推导目标状态）：
 
 ```bash
 harness gate
-harness converge
 harness resume
 ```
 

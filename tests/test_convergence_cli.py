@@ -99,7 +99,7 @@ def test_finding_show_missing_id_exit_2(tmp_path):
 
 def test_converge_pass_transitions_to_converged(tmp_path):
     make_repo(tmp_path, state="GATING")
-    result = run_cli(tmp_path, "converge")
+    result = run_cli(tmp_path, "gate")
     assert result.returncode == 0, result.stdout + result.stderr
     task = yaml.safe_load((tmp_path / ".harness" /
                            "current-task.yaml").read_text())
@@ -117,7 +117,7 @@ def test_blocked_recovery_preserves_baseline_across_second_complexity_review(tmp
     task_path.write_text(yaml.safe_dump(task))
     (h / "evidence" / "unit-test.json").unlink()
 
-    blocked = run_cli(tmp_path, "converge")
+    blocked = run_cli(tmp_path, "gate")
 
     assert blocked.returncode == 0, blocked.stdout + blocked.stderr
     assert yaml.safe_load(task_path.read_text())["git"]["base_commit"] == base
@@ -140,7 +140,7 @@ def test_converge_budget_exhausted_escalates(tmp_path):
     h = tmp_path / ".harness"
     for f in ("build.json", "unit-test.json"):
         (h / "evidence" / f).unlink()
-    result = run_cli(tmp_path, "converge")
+    result = run_cli(tmp_path, "gate")
     assert result.returncode == 0, result.stdout + result.stderr
     task = yaml.safe_load((h / "current-task.yaml").read_text())
     assert task["state"] == "ESCALATED"
@@ -151,7 +151,7 @@ def test_converge_blocked_under_budget_continues(tmp_path):
     h = make_repo(tmp_path, state="GATING", iteration=2, max_iterations=5)
     for f in ("build.json", "unit-test.json"):
         (h / "evidence" / f).unlink()
-    result = run_cli(tmp_path, "converge")
+    result = run_cli(tmp_path, "gate")
     assert result.returncode == 0, result.stdout + result.stderr
     task = yaml.safe_load((h / "current-task.yaml").read_text())
     assert task["state"] == "BLOCKED"
@@ -159,9 +159,19 @@ def test_converge_blocked_under_budget_continues(tmp_path):
     assert "CONTINUE" in result.stdout
 
 
-def test_converge_from_wrong_state_exit_1(tmp_path):
+def test_gate_from_wrong_state_exit_1(tmp_path):
     make_repo(tmp_path, state="IMPLEMENTING")
-    assert run_cli(tmp_path, "converge").returncode == 1
+    assert run_cli(tmp_path, "gate").returncode == 1
+
+
+def test_converge_is_deprecated_without_evaluating_gate(tmp_path):
+    make_repo(tmp_path, state="GATING")
+
+    result = run_cli(tmp_path, "converge")
+
+    assert result.returncode == 2
+    assert "DEPRECATED: use harness gate" in result.stderr
+    assert yaml.safe_load((tmp_path / ".harness/current-task.yaml").read_text())["state"] == "GATING"
 
 
 # -- deterministic REPEATED_REGRESSION ----------------------------------------
@@ -175,7 +185,7 @@ def test_converge_reopened_verified_finding_escalates(tmp_path):
     rec["status"] = "REPRODUCING"      # open again...
     rec["verified_at"] = "2026-01-01T00:00:00+00:00"   # ...after being VERIFIED
     p.write_text(_y.safe_dump(rec))
-    result = run_cli(tmp_path, "converge")
+    result = run_cli(tmp_path, "gate")
     assert result.returncode == 0, result.stdout + result.stderr
     assert "REPEATED_REGRESSION" in result.stdout
     task = _y.safe_load((h / "current-task.yaml").read_text())
@@ -192,5 +202,5 @@ def test_converge_rejected_finding_does_not_escalate(tmp_path):
     rec["attempts"] = ["reproduction attempt"]
     rec["rejection_reason"] = "scenario proven impossible"
     p.write_text(_y.safe_dump(rec))
-    result = run_cli(tmp_path, "converge")
+    result = run_cli(tmp_path, "gate")
     assert "CONVERGED" in result.stdout

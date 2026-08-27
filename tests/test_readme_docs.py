@@ -14,7 +14,7 @@ def test_bilingual_readmes_link_and_document_core_commands():
         "harness init",
         "harness check minimal",
         "harness review complexity",
-        "harness converge",
+        "harness gate",
     ):
         assert command in english
         assert command in chinese
@@ -38,11 +38,11 @@ def test_readmes_show_legal_normal_and_blocked_recovery_order():
         text = path.read_text()
         assert "harness transition REVIEWING" in text
         assert "harness review outcome PASS --reason-code REVIEW_CLEAN" in text
-        assert "harness gate\nharness converge" in text
-        assert "harness converge\nharness resume" in text
+        assert "harness gate\nharness transition DONE" in text
+        assert "harness gate\nharness resume" in text
+        assert "harness converge" not in text
         assert "harness transition GATING" not in text
         assert "harness transition BLOCKED" not in text
-        assert "harness gate\nharness resume" not in text
 
 
 def test_skill_and_worked_example_document_v022_controlled_routes():

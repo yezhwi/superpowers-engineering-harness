@@ -176,7 +176,7 @@ def test_gate_pass_maps_to_zero_and_writes_back(tmp_path):
 
 def test_done_rejected_when_workspace_changes_after_convergence(tmp_path):
     _passing_harness(tmp_path)
-    assert run_cli(tmp_path, "converge").returncode == 0
+    assert run_cli(tmp_path, "gate").returncode == 0
     (tmp_path / "business.py").write_text("changed")
 
     result = run_cli(tmp_path, "transition", "DONE")
@@ -189,19 +189,20 @@ def test_done_rejected_when_workspace_changes_after_convergence(tmp_path):
 
 def test_done_allowed_when_current_gate_passes(tmp_path):
     _passing_harness(tmp_path)
-    assert run_cli(tmp_path, "converge").returncode == 0
+    assert run_cli(tmp_path, "gate").returncode == 0
 
     result = run_cli(tmp_path, "transition", "DONE")
 
     assert result.returncode == 0
 
 
-def test_gate_blocked_maps_to_one(tmp_path):
+def test_gate_blocked_transitions_to_blocked(tmp_path):
     h = _passing_harness(tmp_path)
     reqs = {"requirements": [
         {"id": "REQ-001", "statement": "works", "priority": "must",
          "status": "pending", "evidence": []}]}
     (h / "requirements.yaml").write_text(yaml.safe_dump(reqs))
     result = run_cli(tmp_path, "gate")
-    assert result.returncode == 1
+    assert result.returncode == 0
     assert "not verified" in result.stdout
+    assert yaml.safe_load((h / "current-task.yaml").read_text())["state"] == "BLOCKED"
