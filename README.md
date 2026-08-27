@@ -196,7 +196,7 @@ FAST evidence budgets are soft: test 2, build 1, repeated retry 1. Over budget r
 harness evidence --type build --command "python -m pip wheel ." --budget-override-reason "new evidence" --budget-override-evidence build.json --budget-override-hypothesis "packaging path"
 ```
 
-Local-only telemetry: `harness telemetry show`. Run fixture validation: `harness benchmark run --fixtures benchmarks/fixtures`.
+Local-only telemetry: `harness telemetry show`. It measures `elapsed_seconds`, `harness_command_calls`, and evidence counts. Agent metrics remain unavailable: `token_estimate: null`, tool calls/search rounds null. Run fixture validation: `harness benchmark run --fixtures benchmarks/fixtures`.
 
 Compare recorded baseline/adaptive artifacts:
 

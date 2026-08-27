@@ -21,6 +21,14 @@ def test_readmes_document_risk_profiles_and_independent_authorization():
         assert "harness authorize push" in text
 
 
+def test_readmes_define_telemetry_measurement_boundary():
+    for path in (REPO / "README.md", REPO / "README.zh-CN.md"):
+        text = path.read_text()
+        assert "harness_command_calls" in text
+        assert "elapsed_seconds" in text
+        assert "token_estimate: null" in text
+
+
 def test_readmes_define_benchmark_correctness_comparison_limits():
     for path in (REPO / "README.md", REPO / "README.zh-CN.md"):
         text = path.read_text()

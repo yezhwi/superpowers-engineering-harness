@@ -196,7 +196,7 @@ FAST evidence budget 为 soft：test 2、build 1、相同失败 retry 1。超预
 harness evidence --type build --command "python -m pip wheel ." --budget-override-reason "new evidence" --budget-override-evidence build.json --budget-override-hypothesis "packaging path"
 ```
 
-仅本地 telemetry：`harness telemetry show`。运行 fixture validation：`harness benchmark run --fixtures benchmarks/fixtures`。
+仅本地 telemetry：`harness telemetry show`。它测量 `elapsed_seconds`、`harness_command_calls`、evidence counts；agent metrics 不可用：`token_estimate: null`，tool calls/search rounds 为 null。运行 fixture validation：`harness benchmark run --fixtures benchmarks/fixtures`。
 
 比较已记录的 baseline/adaptive artifacts：
 
