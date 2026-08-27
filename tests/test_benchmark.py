@@ -5,10 +5,45 @@ import pytest
 import sys
 from pathlib import Path
 
-from harness.benchmark import run_benchmarks
+from harness.benchmark import compare_benchmarks, run_benchmarks
 
 
 REPO = Path(__file__).resolve().parent.parent
+
+
+def _write_fixture(root, required):
+    fixtures = root / "fixtures"; fixtures.mkdir()
+    (fixtures / "q1.json.yaml").write_text("id: q1\nrequired_correctness:\n" + "".join(f"  - {item}\n" for item in required))
+    return fixtures
+
+
+def _write_artifact(root, mode, correctness, metrics):
+    path = root / mode; path.mkdir()
+    (path / "q1.json").write_text(json.dumps({"fixture_id": "q1", "mode": mode, "correctness": correctness, "metrics": metrics}))
+
+
+def test_compare_reports_correctness_preserved_and_numeric_deltas(tmp_path):
+    fixtures = _write_fixture(tmp_path, ["gate_pass", "regression_detected"])
+    _write_artifact(tmp_path, "baseline", {"gate_pass": True, "regression_detected": True}, {"tool_calls": 10, "elapsed_seconds": 20})
+    _write_artifact(tmp_path, "adaptive", {"gate_pass": True, "regression_detected": True}, {"tool_calls": 5, "elapsed_seconds": 10})
+
+    report = compare_benchmarks(fixtures, tmp_path / "baseline", tmp_path / "adaptive")
+
+    assert report["overall"] == "CORRECTNESS_PRESERVED"
+    assert report["fixtures"][0]["metrics"]["tool_calls_delta"] == -5
+
+
+def test_compare_reports_adaptive_required_false_as_regression(tmp_path):
+    fixtures = _write_fixture(tmp_path, ["gate_pass"])
+    _write_artifact(tmp_path, "baseline", {"gate_pass": True}, {})
+    _write_artifact(tmp_path, "adaptive", {"gate_pass": False}, {})
+    assert compare_benchmarks(fixtures, tmp_path / "baseline", tmp_path / "adaptive")["overall"] == "CORRECTNESS_REGRESSION"
+
+
+def test_compare_is_inconclusive_for_missing_artifact(tmp_path):
+    fixtures = _write_fixture(tmp_path, ["gate_pass"])
+    _write_artifact(tmp_path, "baseline", {"gate_pass": True}, {})
+    assert compare_benchmarks(fixtures, tmp_path / "baseline", tmp_path / "adaptive")["overall"] == "INCONCLUSIVE"
 
 
 def test_cli_benchmark_run_writes_report(tmp_path):
