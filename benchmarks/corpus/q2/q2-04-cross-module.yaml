@@ -1,0 +1,6 @@
+id: q2-04-cross-module
+level: Q2
+expected_profile: STANDARD
+scenario: cross module scenario
+risk_tags: [cross-module]
+required_correctness: ['gate_pass', 'regression_detected', 'contract_violation_detected']

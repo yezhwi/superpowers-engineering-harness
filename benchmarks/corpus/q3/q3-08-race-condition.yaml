@@ -1,0 +1,6 @@
+id: q3-08-race-condition
+level: Q3
+expected_profile: STRICT
+scenario: race condition scenario
+risk_tags: [race-condition]
+required_correctness: ['gate_pass', 'regression_detected', 'contract_violation_detected', 'security_violation_detected']

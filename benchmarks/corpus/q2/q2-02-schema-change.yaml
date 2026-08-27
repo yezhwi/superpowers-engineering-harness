@@ -1,0 +1,6 @@
+id: q2-02-schema-change
+level: Q2
+expected_profile: STANDARD
+scenario: schema change scenario
+risk_tags: [schema-change]
+required_correctness: ['gate_pass', 'regression_detected', 'contract_violation_detected']

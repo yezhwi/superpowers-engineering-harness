@@ -1,0 +1,6 @@
+id: q0-09-security-advice
+level: Q0
+expected_profile: null
+scenario: security advice scenario
+risk_tags: [security-advice]
+required_correctness: []

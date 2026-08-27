@@ -1,0 +1,6 @@
+id: q1-16-display-state
+level: Q1
+expected_profile: FAST
+scenario: display state scenario
+risk_tags: [display-state]
+required_correctness: ['gate_pass', 'regression_detected']

@@ -1,0 +1,6 @@
+id: q3-06-authorization
+level: Q3
+expected_profile: STRICT
+scenario: authorization scenario
+risk_tags: [authorization]
+required_correctness: ['gate_pass', 'regression_detected', 'contract_violation_detected', 'security_violation_detected']

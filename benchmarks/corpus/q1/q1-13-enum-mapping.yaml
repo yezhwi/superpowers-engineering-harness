@@ -1,0 +1,6 @@
+id: q1-13-enum-mapping
+level: Q1
+expected_profile: FAST
+scenario: enum mapping scenario
+risk_tags: [enum-mapping]
+required_correctness: ['gate_pass', 'regression_detected']

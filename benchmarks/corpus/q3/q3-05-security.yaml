@@ -1,0 +1,6 @@
+id: q3-05-security
+level: Q3
+expected_profile: STRICT
+scenario: security scenario
+risk_tags: [security]
+required_correctness: ['gate_pass', 'regression_detected', 'contract_violation_detected', 'security_violation_detected']

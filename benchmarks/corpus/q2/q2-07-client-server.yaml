@@ -1,0 +1,6 @@
+id: q2-07-client-server
+level: Q2
+expected_profile: STANDARD
+scenario: client server scenario
+risk_tags: [client-server]
+required_correctness: ['gate_pass', 'regression_detected', 'contract_violation_detected']

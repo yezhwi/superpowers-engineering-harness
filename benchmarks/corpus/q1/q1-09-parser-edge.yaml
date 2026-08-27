@@ -1,0 +1,6 @@
+id: q1-09-parser-edge
+level: Q1
+expected_profile: FAST
+scenario: parser edge scenario
+risk_tags: [parser-edge]
+required_correctness: ['gate_pass', 'regression_detected']

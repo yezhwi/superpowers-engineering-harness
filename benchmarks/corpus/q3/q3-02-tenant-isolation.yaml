@@ -1,0 +1,6 @@
+id: q3-02-tenant-isolation
+level: Q3
+expected_profile: STRICT
+scenario: tenant isolation scenario
+risk_tags: [tenant-isolation]
+required_correctness: ['gate_pass', 'regression_detected', 'contract_violation_detected', 'security_violation_detected']

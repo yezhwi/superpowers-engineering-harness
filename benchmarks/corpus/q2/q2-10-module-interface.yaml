@@ -1,0 +1,6 @@
+id: q2-10-module-interface
+level: Q2
+expected_profile: STANDARD
+scenario: module interface scenario
+risk_tags: [module-interface]
+required_correctness: ['gate_pass', 'regression_detected', 'contract_violation_detected']

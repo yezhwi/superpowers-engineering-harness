@@ -1,0 +1,6 @@
+id: q1-08-null-guard
+level: Q1
+expected_profile: FAST
+scenario: null guard scenario
+risk_tags: [null-guard]
+required_correctness: ['gate_pass', 'regression_detected']

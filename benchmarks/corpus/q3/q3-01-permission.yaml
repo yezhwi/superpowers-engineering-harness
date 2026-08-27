@@ -1,0 +1,6 @@
+id: q3-01-permission
+level: Q3
+expected_profile: STRICT
+scenario: permission scenario
+risk_tags: [permission]
+required_correctness: ['gate_pass', 'regression_detected', 'contract_violation_detected', 'security_violation_detected']

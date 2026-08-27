@@ -1,0 +1,6 @@
+id: q0-05-error-explanation
+level: Q0
+expected_profile: null
+scenario: error explanation scenario
+risk_tags: [error-explanation]
+required_correctness: []

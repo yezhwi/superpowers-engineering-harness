@@ -1,0 +1,6 @@
+id: q0-07-compatibility-question
+level: Q0
+expected_profile: null
+scenario: compatibility question scenario
+risk_tags: [compatibility-question]
+required_correctness: []

@@ -1,0 +1,6 @@
+id: q3-04-concurrency
+level: Q3
+expected_profile: STRICT
+scenario: concurrency scenario
+risk_tags: [concurrency]
+required_correctness: ['gate_pass', 'regression_detected', 'contract_violation_detected', 'security_violation_detected']

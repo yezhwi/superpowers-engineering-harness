@@ -5,10 +5,21 @@ import pytest
 import sys
 from pathlib import Path
 
-from harness.benchmark import compare_benchmarks, run_benchmarks
+from harness.benchmark import compare_benchmarks, run_benchmarks, validate_corpus
 
 
 REPO = Path(__file__).resolve().parent.parent
+
+
+def test_validate_corpus_requires_exact_level_distribution(tmp_path):
+    corpus = tmp_path / "corpus"
+    for level, count in {"Q0": 10, "Q1": 20, "Q2": 10, "Q3": 9}.items():
+        directory = corpus / level.lower(); directory.mkdir(parents=True)
+        for index in range(count):
+            profile = {"Q0": "null", "Q1": "FAST", "Q2": "STANDARD", "Q3": "STRICT"}[level]
+            (directory / f"{level.lower()}-{index:02d}-case.yaml").write_text(f"id: {level.lower()}-{index:02d}-case\nlevel: {level}\nexpected_profile: {profile}\nscenario: case\nrisk_tags: [tag]\nrequired_correctness: []\n")
+    with pytest.raises(ValueError, match="BENCHMARK_CORPUS_INVALID"):
+        validate_corpus(corpus)
 
 
 def _write_fixture(root, required):

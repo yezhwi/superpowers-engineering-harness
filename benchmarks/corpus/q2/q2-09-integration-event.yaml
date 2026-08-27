@@ -1,0 +1,6 @@
+id: q2-09-integration-event
+level: Q2
+expected_profile: STANDARD
+scenario: integration event scenario
+risk_tags: [integration-event]
+required_correctness: ['gate_pass', 'regression_detected', 'contract_violation_detected']

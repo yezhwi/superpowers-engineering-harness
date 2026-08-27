@@ -4,6 +4,35 @@ from pathlib import Path
 import yaml
 
 
+def validate_corpus(corpus: Path) -> list[dict]:
+    profiles = {"Q0": None, "Q1": "FAST", "Q2": "STANDARD", "Q3": "STRICT"}
+    expected = {"Q0": 10, "Q1": 20, "Q2": 10, "Q3": 10}
+    rows = []
+    try:
+        for directory in sorted(corpus.iterdir()):
+            if not directory.is_dir():
+                continue
+            for path in sorted(directory.glob("*.yaml")):
+                data = yaml.safe_load(path.read_text())
+                required = {"id", "level", "expected_profile", "scenario", "risk_tags", "required_correctness"}
+                if not isinstance(data, dict) or required - set(data) or directory.name != data["level"].lower():
+                    raise ValueError
+                if data["level"] not in profiles or data["expected_profile"] != profiles[data["level"]]:
+                    raise ValueError
+                if not isinstance(data["id"], str) or not data["id"].startswith(data["level"].lower() + "-") or not isinstance(data["scenario"], str) or not data["scenario"]:
+                    raise ValueError
+                if not isinstance(data["risk_tags"], list) or not all(isinstance(tag, str) and tag for tag in data["risk_tags"]):
+                    raise ValueError
+                if not isinstance(data["required_correctness"], list) or (data["level"] == "Q0" and data["required_correctness"]):
+                    raise ValueError
+                rows.append(data)
+        if len({row["id"] for row in rows}) != len(rows) or {level: sum(row["level"] == level for row in rows) for level in expected} != expected:
+            raise ValueError
+        return rows
+    except (OSError, TypeError, yaml.YAMLError, ValueError) as exc:
+        raise ValueError("BENCHMARK_CORPUS_INVALID") from exc
+
+
 def _artifact(path: Path, fixture_id: str, mode: str):
     try:
         data = json.loads(path.read_text())

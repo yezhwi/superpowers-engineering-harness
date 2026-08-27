@@ -1,0 +1,6 @@
+id: q1-18-config-parse
+level: Q1
+expected_profile: FAST
+scenario: config parse scenario
+risk_tags: [config-parse]
+required_correctness: ['gate_pass', 'regression_detected']

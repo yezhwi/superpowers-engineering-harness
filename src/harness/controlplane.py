@@ -248,6 +248,16 @@ def cmd_evidence(evidence_type: str, command: str, finding_id=None, test_id=None
     return collect_evidence.main(args)
 
 
+def cmd_benchmark_corpus_validate(corpus: Path) -> int:
+    try:
+        rows = _load("benchmark").validate_corpus(corpus)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    print(f"BENCHMARK_CORPUS_VALID: {len(rows)}")
+    return 0
+
+
 def cmd_benchmark_compare(fixtures: Path, baseline: Path, adaptive: Path) -> int:
     harness_dir = Path(".harness")
     try:

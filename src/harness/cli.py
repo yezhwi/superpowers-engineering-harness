@@ -71,7 +71,7 @@ def main(argv=None) -> int:
     p_auth=sub.add_parser("authorize"); p_auth.add_argument("action", choices=["commit", "full-suite", "push", "create-mr", "ready-mr", "merge", "deploy", "revoke-commit", "revoke-full-suite", "revoke-push", "revoke-create-mr", "revoke-ready-mr", "revoke-merge", "revoke-deploy"])
     sub.add_parser("gate", help="run the deterministic quality gate")
     p_telemetry=sub.add_parser("telemetry"); telemetry_sub=p_telemetry.add_subparsers(dest="telemetry_command"); telemetry_sub.add_parser("show")
-    p_benchmark=sub.add_parser("benchmark"); benchmark_sub=p_benchmark.add_subparsers(dest="benchmark_command"); p_benchmark_run=benchmark_sub.add_parser("run"); p_benchmark_run.add_argument("--fixtures", required=True); p_benchmark_compare=benchmark_sub.add_parser("compare"); p_benchmark_compare.add_argument("--fixtures", required=True); p_benchmark_compare.add_argument("--baseline", required=True); p_benchmark_compare.add_argument("--adaptive", required=True)
+    p_benchmark=sub.add_parser("benchmark"); benchmark_sub=p_benchmark.add_subparsers(dest="benchmark_command"); p_benchmark_run=benchmark_sub.add_parser("run"); p_benchmark_run.add_argument("--fixtures", required=True); p_benchmark_compare=benchmark_sub.add_parser("compare"); p_benchmark_compare.add_argument("--fixtures", required=True); p_benchmark_compare.add_argument("--baseline", required=True); p_benchmark_compare.add_argument("--adaptive", required=True); p_corpus=benchmark_sub.add_parser("corpus"); corpus_sub=p_corpus.add_subparsers(dest="corpus_command"); p_corpus_validate=corpus_sub.add_parser("validate"); p_corpus_validate.add_argument("--corpus", required=True)
     sub.add_parser("resume", help="recover BLOCKED task from typed blocker")
     p_finding = sub.add_parser("finding", help="inspect findings")
     f_sub = p_finding.add_subparsers(dest="finding_command")
@@ -131,6 +131,8 @@ def main(argv=None) -> int:
         return controlplane.cmd_benchmark_run(Path(args.fixtures))
     if args.subcommand == "benchmark" and args.benchmark_command == "compare":
         return controlplane.cmd_benchmark_compare(Path(args.fixtures), Path(args.baseline), Path(args.adaptive))
+    if args.subcommand == "benchmark" and args.benchmark_command == "corpus" and args.corpus_command == "validate":
+        return controlplane.cmd_benchmark_corpus_validate(Path(args.corpus))
     if args.subcommand == "resume":
         return controlplane.cmd_resume()
     if args.subcommand == "finding":

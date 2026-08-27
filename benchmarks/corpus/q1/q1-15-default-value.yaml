@@ -1,0 +1,6 @@
+id: q1-15-default-value
+level: Q1
+expected_profile: FAST
+scenario: default value scenario
+risk_tags: [default-value]
+required_correctness: ['gate_pass', 'regression_detected']

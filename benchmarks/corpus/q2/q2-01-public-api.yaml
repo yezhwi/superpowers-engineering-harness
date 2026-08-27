@@ -1,0 +1,6 @@
+id: q2-01-public-api
+level: Q2
+expected_profile: STANDARD
+scenario: public api scenario
+risk_tags: [public-api]
+required_correctness: ['gate_pass', 'regression_detected', 'contract_violation_detected']

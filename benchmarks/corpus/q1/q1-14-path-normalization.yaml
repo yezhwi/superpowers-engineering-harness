@@ -1,0 +1,6 @@
+id: q1-14-path-normalization
+level: Q1
+expected_profile: FAST
+scenario: path normalization scenario
+risk_tags: [path-normalization]
+required_correctness: ['gate_pass', 'regression_detected']

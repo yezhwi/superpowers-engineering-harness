@@ -1,0 +1,6 @@
+id: q0-04-configuration-question
+level: Q0
+expected_profile: null
+scenario: configuration question scenario
+risk_tags: [configuration-question]
+required_correctness: []
