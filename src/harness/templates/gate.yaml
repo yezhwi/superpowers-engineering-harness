@@ -8,6 +8,11 @@ gate:
     # NOTE: no violated_allowed knob - ANY violated invariant blocks, by law.
     minor_verified: false   # true => even minor invariants must be verified
 
+  fast:
+    verification:
+      build: required
+      typecheck: optional
+
   verification:
     build: required
     unit_test: required

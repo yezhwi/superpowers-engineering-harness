@@ -75,6 +75,31 @@ def make_harness(tmp_path: Path) -> Path:
     return h
 
 
+def test_fast_gate_requires_build_by_default(tmp_path):
+    from harness.workspace import protected_paths_fingerprint
+
+    h = make_harness(tmp_path)
+    task = yaml.safe_load((h / "current-task.yaml").read_text())
+    task["git"]["base_commit"] = HEAD
+    (h / "risk-boundaries.yaml").write_text("boundaries:\n  q2: [never/**]\n  q3: [never/**]\n")
+    task["risk"] = {
+        "level": "Q1", "profile": "FAST",
+        "dimensions": {"scope": "low", "contract": "none", "data": "none", "authorization": "none", "security": "none", "concurrency": "none", "deployment": "none"},
+        "escalation_history": [],
+        "user_changes": {"paths": [], "fingerprint": protected_paths_fingerprint(())},
+    }
+    (h / "current-task.yaml").write_text(yaml.safe_dump(task))
+    (h / "requirements.yaml").unlink(); (h / "invariants.yaml").unlink()
+    write_evidence(REPO, h, "unit_test", exit_code=1, name="fast-red-unit-test.json")
+    write_evidence(REPO, h, "unit_test", name="fast-green-unit-test.json")
+    (h / "evidence" / "build.json").unlink()
+
+    status, blockers = __import__("harness.quality_gate", fromlist=["run_gate"]).run_gate(h)
+
+    assert status == "BLOCKED"
+    assert any(item.code == "FAST_REPOSITORY_VERIFICATION_MISSING" for item in blockers)
+
+
 def test_fast_gate_requires_only_task_phase_proof(tmp_path):
     from harness.workspace import protected_paths_fingerprint
 

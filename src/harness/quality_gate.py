@@ -107,6 +107,18 @@ def load_findings(findings_dir: Path) -> list:
     return findings
 
 
+def fast_verification_policy(harness_dir: Path) -> dict[str, str]:
+    try:
+        policy = _load_yaml(harness_dir / "gate.yaml").get("gate", {}).get("fast", {}).get("verification")
+    except InvalidHarnessState:
+        policy = None
+    if policy is None:
+        return {"build": "required"}
+    if not isinstance(policy, dict) or any(value not in {"required", "optional"} for value in policy.values()):
+        raise InvalidHarnessState("FAST verification policy invalid")
+    return policy
+
+
 def run_fast_gate(task: dict, harness_dir: Path, head: str,
                   current_workspace: str) -> tuple[str, list[GateBlocker]]:
     """Run Q1 Light Gate without STANDARD/STRICT ceremony artifacts."""
@@ -140,6 +152,17 @@ def run_fast_gate(task: dict, harness_dir: Path, head: str,
             current_level = risk.get("level")
             if level and ("Q1", "Q2", "Q3").index(current_level) < ("Q1", "Q2", "Q3").index(level):
                 block("RISK_ESCALATION_REQUIRED", f"FAST changes require escalation to {level}")
+
+    for evidence_type, policy in fast_verification_policy(harness_dir).items():
+        if policy != "required":
+            continue
+        path = harness_dir / "evidence" / f"{evidence_type.replace('_', '-')}.json"
+        try:
+            validate_evidence(json.loads(path.read_text()), current_head=head,
+                              current_workspace=current_workspace, expected_success=True)
+        except (OSError, json.JSONDecodeError, EvidenceValidationError) as exc:
+            block("FAST_REPOSITORY_VERIFICATION_MISSING",
+                  f"FAST {evidence_type.replace('_', '-')} evidence invalid: {exc}")
 
     for phase, expected_success, require_current in (
         ("red", False, False), ("green", True, True),
