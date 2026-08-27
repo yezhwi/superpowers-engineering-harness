@@ -22,7 +22,10 @@ from jsonschema import ValidationError, validate
 from .blockers import GateBlocker, RECOVERY_POLICY, blocker_document
 from .evidence_validator import EvidenceValidationError, validate_evidence
 from .state_machine import STATES
-from .workspace import WorkspaceError, git_head as workspace_head, snapshot
+from .workspace import (
+    WorkspaceError, git_head as workspace_head, protected_paths_fingerprint,
+    snapshot,
+)
 
 # Finding statuses that must block the gate. Terminal/healthy:
 # VERIFIED, CLOSED, REJECTED. FIXED (test green, regression pending)
@@ -103,25 +106,49 @@ def load_findings(findings_dir: Path) -> list:
     return findings
 
 
+def run_fast_gate(task: dict, harness_dir: Path, head: str,
+                  current_workspace: str) -> tuple[str, list[GateBlocker]]:
+    """Run Q1 Light Gate without STANDARD/STRICT ceremony artifacts."""
+    risk = task.get("risk") or {}
+    user_changes = risk.get("user_changes") or {}
+    paths = tuple(user_changes.get("paths") or [])
+    blockers: list[GateBlocker] = []
+
+    def block(code: str, message: str) -> None:
+        blockers.append(GateBlocker(
+            code, "verification", message, recover_to=RECOVERY_POLICY.get(code)
+        ))
+
+    try:
+        protected = protected_paths_fingerprint(paths)
+    except WorkspaceError as exc:
+        raise InvalidHarnessState(f"cannot verify user changes: {exc}") from exc
+    if protected != user_changes.get("fingerprint"):
+        block("FAST_USER_CHANGE_MODIFIED", "pre-existing user changes were modified")
+
+    for phase, expected_success, require_current in (
+        ("red", False, False), ("green", True, True),
+    ):
+        path = harness_dir / "evidence" / f"fast-{phase}-unit-test.json"
+        try:
+            record = json.loads(path.read_text())
+            validate_evidence(
+                record, current_head=head, current_workspace=current_workspace,
+                expected_success=expected_success,
+                require_current_workspace=require_current,
+            )
+        except (OSError, json.JSONDecodeError, EvidenceValidationError) as exc:
+            block("FAST_REGRESSION_EVIDENCE_MISSING",
+                  f"FAST {phase} regression evidence invalid: {exc}")
+    return ("PASS" if not blockers else "BLOCKED"), blockers
+
+
 def run_gate(harness_dir: Path, head: str | None = None,
              allow_converged: bool = False) -> tuple[str, list]:
     """Returns (status, blockers). status in {'PASS','BLOCKED'}.
     Raises InvalidHarnessState."""
     task = _load_yaml(harness_dir / "current-task.yaml")
-    requirements_doc = _load_yaml(harness_dir / "requirements.yaml")
-    invariants_doc = _load_yaml(harness_dir / "invariants.yaml")
-    gate_doc = _load_yaml(harness_dir / "gate.yaml")
-
     validate_schema(task, "task.schema.json", harness_dir / "current-task.yaml")
-    validate_schema(
-        requirements_doc, "requirement.schema.json",
-        harness_dir / "requirements.yaml",
-    )
-    validate_schema(
-        invariants_doc, "invariant.schema.json",
-        harness_dir / "invariants.yaml",
-    )
-    gate_cfg = gate_doc.get("gate", {})
 
     state = task.get("state")
     if state not in STATES:
@@ -134,17 +161,25 @@ def run_gate(harness_dir: Path, head: str | None = None,
         )
 
     head = head if head is not None else git_head()
+    try:
+        current_workspace = snapshot().fingerprint
+    except WorkspaceError as exc:
+        raise InvalidHarnessState(f"cannot fingerprint workspace: {exc}") from exc
+    if (task.get("risk") or {}).get("profile") == "FAST":
+        return run_fast_gate(task, harness_dir, head, current_workspace)
+
+    requirements_doc = _load_yaml(harness_dir / "requirements.yaml")
+    invariants_doc = _load_yaml(harness_dir / "invariants.yaml")
+    gate_doc = _load_yaml(harness_dir / "gate.yaml")
+    validate_schema(requirements_doc, "requirement.schema.json", harness_dir / "requirements.yaml")
+    validate_schema(invariants_doc, "invariant.schema.json", harness_dir / "invariants.yaml")
+    gate_cfg = gate_doc.get("gate", {})
     evidence = load_evidence(harness_dir / "evidence")
     findings = load_findings(harness_dir / "findings")
     impact_path = harness_dir / "impact.yaml"
     impact = _load_yaml(impact_path) if impact_path.exists() else {}
     # HEAD alone misses uncommitted edits. Shared snapshot excludes harness
     # runtime files, so evidence writes do not invalidate business proof.
-    try:
-        current_workspace = snapshot().fingerprint
-    except WorkspaceError as exc:
-        raise InvalidHarnessState(f"cannot fingerprint workspace: {exc}") from exc
-
     # Terminal/near-terminal findings require real proof records, not only
     # schema-shaped strings. Fail closed before open-finding policy runs.
     def finding_proof(finding, ref, expected_success, label, test_id=None):

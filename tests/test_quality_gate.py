@@ -75,6 +75,53 @@ def make_harness(tmp_path: Path) -> Path:
     return h
 
 
+def test_fast_gate_requires_only_task_phase_proof(tmp_path):
+    from harness.workspace import protected_paths_fingerprint
+
+    h = make_harness(tmp_path)
+    task = yaml.safe_load((h / "current-task.yaml").read_text())
+    task["risk"] = {
+        "level": "Q1", "profile": "FAST",
+        "dimensions": {"scope": "low", "contract": "none", "data": "none", "authorization": "none", "security": "none", "concurrency": "none", "deployment": "none"},
+        "escalation_history": [],
+        "user_changes": {"paths": [], "fingerprint": protected_paths_fingerprint(())},
+    }
+    (h / "current-task.yaml").write_text(yaml.safe_dump(task))
+    (h / "requirements.yaml").unlink()
+    (h / "invariants.yaml").unlink()
+    write_evidence(REPO, h, "unit_test", exit_code=1, name="fast-red-unit-test.json")
+    write_evidence(REPO, h, "unit_test", name="fast-green-unit-test.json")
+
+    status, blockers = __import__("harness.quality_gate", fromlist=["run_gate"]).run_gate(h)
+
+    assert status == "PASS"
+    assert blockers == []
+
+
+def test_fast_gate_blocks_modified_preexisting_user_change(tmp_path, monkeypatch):
+    from harness.quality_gate import run_fast_gate
+    from harness.workspace import git_head, protected_paths_fingerprint, snapshot
+
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    (tmp_path / "user.txt").write_text("base\n")
+    subprocess.run(["git", "add", "user.txt"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-qm", "base"], cwd=tmp_path, check=True)
+    (tmp_path / "user.txt").write_text("user work\n")
+    monkeypatch.chdir(tmp_path)
+    h = tmp_path / ".harness"
+    (h / "evidence").mkdir(parents=True)
+    paths = ("user.txt",)
+    task = {"risk": {"user_changes": {"paths": list(paths), "fingerprint": protected_paths_fingerprint(paths)}}}
+    write_evidence(tmp_path, h, "unit_test", exit_code=1, name="fast-red-unit-test.json")
+    write_evidence(tmp_path, h, "unit_test", name="fast-green-unit-test.json")
+    (tmp_path / "user.txt").write_text("overwritten\n")
+
+    status, blockers = run_fast_gate(task, h, git_head(), snapshot().fingerprint)
+
+    assert status == "BLOCKED"
+    assert blockers[0].code == "FAST_USER_CHANGE_MODIFIED"
+
+
 def test_all_conditions_pass(tmp_path):
     h = make_harness(tmp_path)
     result = _gate(h)
