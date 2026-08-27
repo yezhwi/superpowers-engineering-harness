@@ -46,6 +46,21 @@ def run_cli(cwd: Path, *args: str):
     )
 
 
+def test_fast_profile_uses_lightweight_state_path(tmp_path):
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    assert run_cli(tmp_path, "init").returncode == 0
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-qm", "base"], cwd=tmp_path, check=True)
+    flags = [item for pair in SAFE.items() for item in (f"--{pair[0]}", pair[1])]
+    assert run_cli(tmp_path, "task", "classify", "--level", "Q1", *flags).returncode == 0
+    assert run_cli(tmp_path, "transition", "IMPLEMENTING").returncode == 0
+    assert run_cli(tmp_path, "transition", "VERIFYING").returncode == 0
+
+    result = run_cli(tmp_path, "transition", "GATING")
+
+    assert result.returncode == 0, result.stderr
+
+
 def test_task_classify_persists_fast_profile_and_enters_classified(tmp_path):
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
     assert run_cli(tmp_path, "init").returncode == 0

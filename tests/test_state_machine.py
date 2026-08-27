@@ -59,6 +59,7 @@ EXPECTED_TRANSITIONS = {
     ("PLANNED", "IMPLEMENTING"),
     ("IMPLEMENTING", "VERIFYING"),
     ("VERIFYING", "IMPLEMENTING"),
+    ("VERIFYING", "GATING"),
     ("VERIFYING", "REVIEWING"),
     ("REVIEWING", "REPRODUCING"),
     ("REVIEWING", "VERIFYING"),
@@ -155,7 +156,7 @@ def test_validate_state_cli_invalid_state_name():
 
 
 def test_legal_targets_helper():
-    assert legal_targets("VERIFYING") == {"IMPLEMENTING", "REVIEWING"}
+    assert legal_targets("VERIFYING") == {"IMPLEMENTING", "REVIEWING", "GATING"}
     assert legal_targets("DONE") == set()
 
 

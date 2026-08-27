@@ -5,6 +5,7 @@ imported from the scripts directory -- never re-implemented here, so the
 CLI and the scripts can never diverge.
 """
 
+import datetime
 import importlib
 import json
 import sys
@@ -86,7 +87,11 @@ def cmd_transition(target: str) -> int:
         except Exception as exc:
             print(f"MINIMAL_IMPLEMENTATION_REQUIRED: {exc}", file=sys.stderr)
             return 1
-    if current == "VERIFYING" and target == "REVIEWING":
+    profile = (task.get("risk") or {}).get("profile")
+    if current == "VERIFYING" and target == "GATING" and profile != "FAST":
+        print("REVIEW_OUTCOME_REQUIRED: STANDARD/STRICT tasks must use review outcome", file=sys.stderr)
+        return 1
+    if current == "VERIFYING" and target == "REVIEWING" and profile != "FAST":
         review_path = harness_dir / "evidence" / "complexity-review.json"
         try:
             review = json.loads(review_path.read_text(encoding="utf-8"))
@@ -98,7 +103,7 @@ def cmd_transition(target: str) -> int:
         except Exception as exc:
             print(f"COMPLEXITY_REVIEW_REQUIRED: {exc}", file=sys.stderr)
             return 1
-    if target == "VERIFYING":
+    if target == "VERIFYING" and profile != "FAST":
         _, impact = _impact()
         plan = impact["impact"]
         if not plan.get("required_tests"):
@@ -594,9 +599,46 @@ def cmd_task_recover(task_id: str, title: str, reason: str) -> int:
     return 0
 
 
+AUTHORIZATION_ACTIONS = (
+    "commit", "full_suite", "push", "create_mr", "ready_mr", "merge", "deploy",
+)
+
+
+def _authorization_record(granted: bool = False) -> dict:
+    return {"granted": granted, "granted_at": None, "source": None}
+
+
+def authorization_granted(task: dict, action: str) -> bool:
+    """Check one action only; legacy authorization applies only to full suite."""
+    normalized = (task.get("authorizations") or {}).get(action)
+    if isinstance(normalized, dict):
+        return normalized.get("granted") is True
+    if action == "full_suite":
+        return (task.get("authorization") or {}).get("full_suite", {}).get("granted") is True
+    return False
+
+
+def cmd_authorize(action: str, granted: bool) -> int:
+    if action not in AUTHORIZATION_ACTIONS:
+        print("AUTHORIZATION_ACTION_INVALID", file=sys.stderr)
+        return 2
+    harness_dir = Path(".harness")
+    task = load_task(harness_dir)
+    records = task.setdefault("authorizations", {})
+    for name in AUTHORIZATION_ACTIONS:
+        records.setdefault(name, _authorization_record())
+    records[action] = {
+        "granted": granted,
+        "granted_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "source": "user",
+    }
+    save_task(harness_dir, task)
+    return 0
+
+
 def cmd_authorize_full_suite(granted: bool) -> int:
- import yaml,datetime
- h=Path('.harness');t=load_task(h);t.setdefault('authorization',{})['full_suite']={'granted':granted,'granted_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'source':'user'};save_task(h,t);return 0
+    """Backward-compatible internal API."""
+    return cmd_authorize("full_suite", granted)
 
 def _impact():
  import yaml
