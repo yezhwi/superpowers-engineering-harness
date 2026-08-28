@@ -92,6 +92,26 @@ def cmd_transition(target: str) -> int:
         except Exception as exc:
             print(f"MINIMAL_IMPLEMENTATION_REQUIRED: {exc}", file=sys.stderr)
             return 1
+        if profile in {"STANDARD", "STRICT"}:
+            requirements_path = harness_dir / "requirements.yaml"
+            invariants_path = harness_dir / "invariants.yaml"
+            try:
+                requirements = yaml.safe_load(requirements_path.read_text(encoding="utf-8"))
+                invariants = yaml.safe_load(invariants_path.read_text(encoding="utf-8"))
+                quality_gate = _load("quality_gate")
+                quality_gate.validate_schema(requirements, "requirement.schema.json", requirements_path)
+                quality_gate.validate_schema(invariants, "invariant.schema.json", invariants_path)
+                issues = _load("test_plan").validate_test_plan(requirements, invariants)
+            except Exception as exc:
+                print("TEST_PLAN_BLOCKED", file=sys.stderr)
+                print(f"  TEST_PLAN_SCHEMA_INVALID: {exc}", file=sys.stderr)
+                return 1
+            if issues:
+                print("TEST_PLAN_BLOCKED", file=sys.stderr)
+                for issue in issues:
+                    subject = issue.requirement_id or issue.invariant_id or "TEST_PLAN"
+                    print(f"  {subject}: {issue.code}", file=sys.stderr)
+                return 1
     if current == "VERIFYING" and target == "GATING" and profile != "FAST":
         print("REVIEW_OUTCOME_REQUIRED: STANDARD/STRICT tasks must use review outcome", file=sys.stderr)
         return 1

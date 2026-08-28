@@ -22,6 +22,7 @@ from jsonschema import ValidationError, validate
 from .blockers import GateBlocker, RECOVERY_POLICY, blocker_document
 from .evidence_validator import EvidenceValidationError, validate_evidence
 from .state_machine import STATES
+from .test_plan import validate_test_coverage
 from .risk_boundaries import RiskBoundaryPolicyError, business_paths, load_boundaries, required_level
 from .workspace import (
     WorkspaceError, changed_paths_since, git_head as workspace_head,
@@ -80,9 +81,9 @@ def git_head() -> str:
         raise InvalidHarnessState(str(exc)) from exc
 
 
-def load_evidence(evidence_dir: Path) -> dict:
-    """Return {type: evidence_dict}; invalid files raise INVALID."""
-    evidence = {}
+def load_evidence(evidence_dir: Path) -> list[dict]:
+    """Return every evidence record; same-type records must not overwrite proof."""
+    evidence = []
     if not evidence_dir.is_dir():
         return evidence
     for path in sorted(evidence_dir.glob("*.json")):
@@ -91,8 +92,7 @@ def load_evidence(evidence_dir: Path) -> dict:
         except json.JSONDecodeError as exc:
             raise InvalidHarnessState(f"bad JSON in {path}: {exc}")
         validate_schema(data, "evidence.schema.json", path)
-        etype = data["type"]
-        evidence[etype] = data
+        evidence.append(data)
     return evidence
 
 
@@ -343,16 +343,38 @@ def run_gate(harness_dir: Path, head: str | None = None,
     for vtype, policy in ver_cfg.items():
         if policy != "required":
             continue
-        ev = evidence.get(vtype)
+        matching = [record for record in evidence if record.get("type") == vtype]
         label = vtype.replace("_", "-")
-        if ev is None:
+        if not matching:
             block("EVIDENCE_MISSING", "verification", f"missing {label} evidence", source=vtype)
             continue
+        for ev in matching:
+            try:
+                validate_evidence(ev, current_head=head, current_workspace=current_workspace,
+                                  expected_success=True)
+                break
+            except EvidenceValidationError as exc:
+                last_error = exc
+        else:
+            block(str(last_error).split(":", 1)[0], "verification", f"{label} evidence invalid: {last_error}", source=vtype)
+
+    # 3b. Test Plan: every automated binding needs fresh successful evidence.
+    def evidence_is_fresh(record):
         try:
-            validate_evidence(ev, current_head=head, current_workspace=current_workspace,
+            validate_evidence(record, current_head=head, current_workspace=current_workspace,
                               expected_success=True)
-        except EvidenceValidationError as exc:
-            block(str(exc).split(":", 1)[0], "verification", f"{label} evidence invalid: {exc}", source=vtype)
+            return True
+        except EvidenceValidationError:
+            return False
+
+    for issue in validate_test_coverage(
+            requirements_doc, invariants_doc, evidence, evidence_is_fresh):
+        if issue.code == "TEST_BINDING_MISSING":
+            block(issue.code, "implementation", issue.message,
+                  requirement_id=issue.requirement_id, invariant_id=issue.invariant_id)
+        else:
+            block(issue.code, "verification", issue.message,
+                  requirement_id=issue.requirement_id, invariant_id=issue.invariant_id)
 
     # 4. Complexity: required review evidence and configured open severities.
     complexity_cfg = gate_cfg.get("complexity", {})

@@ -3,62 +3,59 @@
   "$id": "requirement.schema.json",
   "title": "Engineering Harness Requirements",
   "type": "object",
-  "required": [
-    "requirements"
-  ],
+  "required": ["requirements"],
   "properties": {
     "requirements": {
       "type": "array",
       "items": {
         "type": "object",
-        "required": [
-          "id",
-          "statement",
-          "priority",
-          "status"
-        ],
+        "required": ["id", "statement", "priority", "status"],
         "properties": {
-          "id": {
-            "type": "string",
-            "pattern": "^REQ-[0-9]+$"
-          },
-          "statement": {
-            "type": "string",
-            "minLength": 1
-          },
-          "source": {
-            "enum": [
-              "user",
-              "spec"
-            ]
-          },
-          "priority": {
-            "enum": [
-              "must",
-              "should",
-              "could"
-            ]
-          },
-          "status": {
-            "enum": [
-              "pending",
-              "implemented",
-              "verified",
-              "blocked"
-            ]
-          },
+          "id": {"type": "string", "pattern": "^REQ-[0-9]+$"},
+          "statement": {"type": "string", "minLength": 1},
+          "source": {"enum": ["user", "spec"]},
+          "priority": {"enum": ["must", "should", "could"]},
+          "status": {"enum": ["pending", "implemented", "verified", "blocked"]},
+          "type": {"enum": ["feature", "bugfix", "refactor", "nonfunctional"]},
+          "test_plan": {"$ref": "#/definitions/testPlan"},
           "evidence": {
             "type": "array",
-            "items": {
-              "type": [
-                "string",
-                "object"
-              ]
-            }
+            "items": {"type": ["string", "object"]}
           }
         },
         "additionalProperties": false
       }
+    }
+  },
+  "definitions": {
+    "testPlan": {
+      "type": "object",
+      "required": ["strategies", "cases"],
+      "properties": {
+        "strategies": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"enum": ["unit", "integration", "e2e", "regression", "concurrency", "security", "contract", "manual"]}
+        },
+        "cases": {
+          "type": "array",
+          "items": {"$ref": "#/definitions/testCase"}
+        }
+      },
+      "additionalProperties": false
+    },
+    "testCase": {
+      "type": "object",
+      "required": ["id", "type", "strategy", "description"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^TC-[0-9]+$"},
+        "type": {"enum": ["happy_path", "negative", "boundary", "regression", "invariant", "concurrency", "security", "contract"]},
+        "strategy": {"enum": ["unit", "integration", "e2e", "regression", "concurrency", "security", "contract", "manual"]},
+        "description": {"type": "string", "minLength": 1},
+        "tests": {"type": "array", "items": {"type": "string", "minLength": 1}}
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false

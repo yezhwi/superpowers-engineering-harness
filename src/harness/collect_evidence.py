@@ -102,6 +102,7 @@ def collect(evidence_type: str, command: str, finding_id: str | None = None,
     }
     if evidence_type == "unit_test":
         evidence["scope"] = scope
+    if covered_tests:
         evidence["covered_tests"] = list(covered_tests)
     if finding_id is not None:
         evidence["subject"] = {"kind": "finding", "id": finding_id}

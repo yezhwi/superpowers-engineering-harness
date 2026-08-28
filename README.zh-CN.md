@@ -1,8 +1,8 @@
-# Superpowers Engineering Harness v0.2.3
+# Superpowers Engineering Harness v0.2.4
 
 [English](README.md)
 
-`v0.2.3 current release`；本 release 已包含 risk-adaptive behavior。
+`v0.2.4 current release`；本 release 已包含 risk-adaptive behavior 与 Test Plan Gate。
 
 **Routing：** Q0 直接回答、不创建 task；Q1 / FAST 使用 RED/fix/GREEN/Light Gate；Q2 / STANDARD 与 Q3 / STRICT 使用完整 contract/review/Gate 流程。
 

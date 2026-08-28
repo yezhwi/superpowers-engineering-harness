@@ -135,6 +135,18 @@ def test_collect_related_scope_requires_covered_test(tmp_path):
     assert "RELATED_COVERED_TEST_REQUIRED" in result.stderr
 
 
+def test_collect_integration_evidence_records_covered_tests(tmp_path):
+    result = subprocess.run(
+        [sys.executable, str(REPO / "scripts" / "collect_evidence.py"),
+         "--type", "integration_test", "--covered-test", "tests/test_api.py::test_create",
+         "--command", "true", "--harness-dir", str(tmp_path)],
+        capture_output=True, text=True, cwd=REPO,
+    )
+    assert result.returncode == 0, result.stderr
+    evidence = json.loads((tmp_path / "evidence" / "integration-test.json").read_text())
+    assert evidence["covered_tests"] == ["tests/test_api.py::test_create"]
+
+
 def test_collect_failure_still_writes_evidence(tmp_path):
     result = _collect(tmp_path, "build", "false")
     assert result.returncode == 0, result.stderr

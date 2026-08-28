@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.4
+
+- Add Test Plan Gate for STANDARD and STRICT `PLANNED → IMPLEMENTING` transitions.
+- Add structured `test_plan` strategies, cases, executable bindings, and Test Case-to-Evidence traceability.
+- Require fresh Evidence coverage for automated case bindings and typed recovery for missing plans, bindings, and proof.
+- Preserve Q1/FAST Light Gate behavior and existing Requirement/Invariant Evidence fields.
+
 ## 0.2.3
 
 - Add explicit rule-based Q1/Q2/Q3 task classification with FAST, STANDARD, and STRICT profiles.

@@ -1,1 +1,16 @@
 requirements: []
+# Example:
+#   - id: REQ-001
+#     statement: Replace with requirement
+#     type: feature
+#     priority: must
+#     status: pending
+#     evidence: []
+#     test_plan:
+#       strategies: [unit]
+#       cases:
+#         - id: TC-001
+#           type: happy_path
+#           strategy: unit
+#           description: Replace with expected behavior
+#           tests: []

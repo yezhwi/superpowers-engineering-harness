@@ -1,1 +1,16 @@
 invariants: []
+# Example:
+#   - id: INV-001
+#     statement: Replace with invariant
+#     category: correctness
+#     severity: critical
+#     status: pending
+#     verification: []
+#     test_plan:
+#       strategies: [integration]
+#       cases:
+#         - id: TC-101
+#           type: invariant
+#           strategy: integration
+#           description: Verify invariant always holds
+#           tests: []
