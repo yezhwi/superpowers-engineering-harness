@@ -69,6 +69,9 @@ For each Requirement and Invariant, try at least one attack from these angles:
 - boundary input: empty, huge, malformed, adversarial values
 - ordering: steps executed out of expected order
 - partial failure: some steps succeed, others fail
+- control-plane tampering: delete, empty, or alter any field that selects whether a requirement/invariant is checked
+- policy downgrade: change priority, status, profile, or compatibility metadata to bypass a blocking obligation
+- compatibility fallback: supply old/missing persisted fields and verify the default is fail-closed
 
 A finding is only written if you can state a CONCRETE scenario: who does what,
 in which order, with which inputs, and what observable contract violation
@@ -122,6 +125,7 @@ Final report format:
 - [ ] Zero style/refactor/best-practice items?
 - [ ] Every `target` references an existing REQ or INV?
 - [ ] Every scenario is concrete (actors, order, inputs, observable violation)?
+- [ ] For every conditional gate, did attacks cover missing/mutable control fields and policy downgrades?
 - [ ] All statuses are `PROPOSED`? No "confirmed" language anywhere?
 - [ ] YAML validates against `schemas/finding.schema.json`?
 - [ ] No business code modified?

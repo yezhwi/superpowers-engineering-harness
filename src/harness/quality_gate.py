@@ -358,11 +358,10 @@ def run_gate(harness_dir: Path, head: str | None = None,
         else:
             block(str(last_error).split(":", 1)[0], "verification", f"{label} evidence invalid: {last_error}", source=vtype)
 
-    # 3b. Test Plan: revalidate plans accepted at implementation entry.
-    if task.get("test_plan_required"):
-        for issue in validate_test_plan(requirements_doc, invariants_doc):
-            block("TEST_PLAN_INCOMPLETE", "implementation", issue.message,
-                  requirement_id=issue.requirement_id, invariant_id=issue.invariant_id)
+    # 3b. Test Plan: all non-FAST tasks must remain complete at Final Gate.
+    for issue in validate_test_plan(requirements_doc, invariants_doc):
+        block("TEST_PLAN_INCOMPLETE", "implementation", issue.message,
+              requirement_id=issue.requirement_id, invariant_id=issue.invariant_id)
 
     # 3c. Test Plan: every automated binding needs fresh successful evidence.
     def evidence_is_fresh(record):

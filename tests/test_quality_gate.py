@@ -50,14 +50,24 @@ def make_harness(tmp_path: Path) -> Path:
 
     requirements = {"requirements": [
         {"id": "REQ-001", "statement": "works", "priority": "must",
-         "status": "verified", "evidence": ["build.json"]},
+         "status": "verified", "evidence": ["build.json"], "test_plan": {
+             "strategies": ["manual"], "cases": [{
+                 "id": "TC-002", "type": "regression", "strategy": "manual",
+                 "description": "verify works", "tests": [],
+             }],
+         }},
     ]}
     (h / "requirements.yaml").write_text(yaml.safe_dump(requirements))
 
     invariants = {"invariants": [
         {"id": "INV-001", "statement": "safe", "category": "correctness",
          "severity": "critical", "status": "verified",
-         "verification": ["build.json"]},
+         "verification": ["build.json"], "test_plan": {
+             "strategies": ["manual"], "cases": [{
+                 "id": "TC-101", "type": "invariant", "strategy": "manual",
+                 "description": "verify safe", "tests": [],
+             }],
+         }},
     ]}
     (h / "invariants.yaml").write_text(yaml.safe_dump(invariants))
 
@@ -65,6 +75,9 @@ def make_harness(tmp_path: Path) -> Path:
     evidence_dir.mkdir()
     for etype in ("build", "unit_test"):
         write_evidence(REPO, h, etype)
+    build_evidence = json.loads((evidence_dir / "build.json").read_text())
+    build_evidence["covered_test_cases"] = ["TC-002", "TC-101"]
+    (evidence_dir / "build.json").write_text(json.dumps(build_evidence))
     review = json.loads((evidence_dir / "build.json").read_text())
     review["type"] = "review"
     (evidence_dir / "complexity-review.json").write_text(json.dumps(review))
@@ -394,14 +407,14 @@ def test_unverified_requirement_blocked(tmp_path):
     assert "REQ-001 not verified" in result.stdout
 
 
-def test_should_requirement_unverified_does_not_block(tmp_path):
+def test_should_requirement_without_test_plan_blocks(tmp_path):
     h = make_harness(tmp_path)
     reqs = yaml.safe_load((h / "requirements.yaml").read_text())
     reqs["requirements"].append(
         {"id": "REQ-002", "statement": "nice", "priority": "should",
          "status": "pending", "evidence": []})
     (h / "requirements.yaml").write_text(yaml.safe_dump(reqs))
-    assert _gate(h).returncode == 0
+    assert _gate(h).returncode == 1
 
 
 # 5. violated invariant -----------------------------------------------------
@@ -587,13 +600,13 @@ def test_verified_requirement_failed_evidence_blocked(tmp_path):
     assert "EVIDENCE_RESULT_MISMATCH" in _gate(h).stdout
 
 
-def test_should_requirement_without_evidence_not_blocked(tmp_path):
+def test_should_requirement_without_test_plan_blocks_even_if_verified(tmp_path):
     h = make_harness(tmp_path)
     reqs = {"requirements": [
         {"id": "REQ-001", "statement": "works", "priority": "should",
          "status": "verified", "evidence": []}]}
     (h / "requirements.yaml").write_text(yaml.safe_dump(reqs))
-    assert _gate(h).returncode == 0
+    assert _gate(h).returncode == 1
 
 
 def test_violated_invariant_blocks_even_if_allowance_configured(tmp_path):

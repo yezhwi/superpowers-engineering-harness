@@ -58,6 +58,15 @@ def test_requirement_without_test_plan_strategy_is_rejected():
     ) == {"TEST_PLAN_REQUIREMENT_STRATEGY_MISSING", "TEST_PLAN_CASE_STRATEGY_MISMATCH"}
 
 
+def test_requirement_priority_cannot_disable_test_plan_validation():
+    """Break caught: downgrading priority bypasses the Final Gate."""
+    optional = requirement()
+    optional["priority"] = "should"
+    assert issue_codes(requirements=[optional]) == {
+        "TEST_PLAN_REQUIREMENT_STRATEGY_MISSING"
+    }
+
+
 def test_critical_invariant_without_case_is_rejected():
     """Break caught: critical invariant has a method label but no scenario."""
     assert issue_codes(invariants=[invariant(test_plan=plan(["integration"]))]) == {

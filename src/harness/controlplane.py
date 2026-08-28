@@ -112,7 +112,6 @@ def cmd_transition(target: str) -> int:
                     subject = issue.requirement_id or issue.invariant_id or "TEST_PLAN"
                     print(f"  {subject}: {issue.code}", file=sys.stderr)
                 return 1
-            task["test_plan_required"] = True
     if current == "VERIFYING" and target == "GATING" and profile != "FAST":
         print("REVIEW_OUTCOME_REQUIRED: STANDARD/STRICT tasks must use review outcome", file=sys.stderr)
         return 1

@@ -2,6 +2,7 @@
 
 import json
 
+import pytest
 import yaml
 
 from evidence_factory import write_evidence
@@ -40,10 +41,6 @@ def test_gate_blocks_deleted_critical_invariant_test_plan(tmp_path):
     from harness.quality_gate import run_gate
 
     harness_dir = make_harness(tmp_path)
-    task_path = harness_dir / "current-task.yaml"
-    task = yaml.safe_load(task_path.read_text())
-    task["test_plan_required"] = True
-    task_path.write_text(yaml.safe_dump(task))
     invariant_path = harness_dir / "invariants.yaml"
     invariants = yaml.safe_load(invariant_path.read_text())
     invariants["invariants"][0]["test_plan"] = {
@@ -57,6 +54,31 @@ def test_gate_blocks_deleted_critical_invariant_test_plan(tmp_path):
 
     assert status == "BLOCKED"
     assert blocker_codes(blockers) == {"TEST_PLAN_INCOMPLETE"}
+
+
+@pytest.mark.parametrize("priority,status", [
+    ("must", "pending"), ("must", "verified"),
+    ("should", "pending"), ("should", "verified"),
+    ("could", "pending"), ("could", "verified"),
+])
+def test_gate_blocks_deleted_requirement_test_plan_for_all_priority_statuses(
+        tmp_path, priority, status):
+    """Break caught: mutable Requirement metadata bypasses Plan validation."""
+    from harness.quality_gate import run_gate
+
+    harness_dir = make_harness(tmp_path)
+    path = harness_dir / "requirements.yaml"
+    requirements = yaml.safe_load(path.read_text())
+    requirement = requirements["requirements"][0]
+    requirement["priority"] = priority
+    requirement["status"] = status
+    del requirement["test_plan"]
+    path.write_text(yaml.safe_dump(requirements))
+
+    gate_status, blockers = run_gate(harness_dir)
+
+    assert gate_status == "BLOCKED"
+    assert "TEST_PLAN_INCOMPLETE" in blocker_codes(blockers)
 
 
 def test_gate_blocks_manual_case_without_explicit_case_evidence(tmp_path):
