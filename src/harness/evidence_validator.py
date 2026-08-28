@@ -24,6 +24,7 @@ class ReuseRequest:
     phase: str | None
     finding_id: str | None
     test_id: str | None
+    covered_test_cases: tuple[str, ...] = ()
 
 
 def _schema_valid(record: object) -> bool:
@@ -48,6 +49,8 @@ def can_reuse_evidence(record: object, request: ReuseRequest, *,
         record.get("scope") != request.scope
         or set(record.get("covered_tests", [])) != set(request.covered_tests)
     ):
+        return False
+    if set(record.get("covered_test_cases", [])) != set(request.covered_test_cases):
         return False
     if record.get("commit") != current_head or record.get("workspace_fingerprint") != current_workspace:
         return False

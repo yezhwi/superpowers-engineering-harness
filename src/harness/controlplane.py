@@ -112,6 +112,7 @@ def cmd_transition(target: str) -> int:
                     subject = issue.requirement_id or issue.invariant_id or "TEST_PLAN"
                     print(f"  {subject}: {issue.code}", file=sys.stderr)
                 return 1
+            task["test_plan_required"] = True
     if current == "VERIFYING" and target == "GATING" and profile != "FAST":
         print("REVIEW_OUTCOME_REQUIRED: STANDARD/STRICT tasks must use review outcome", file=sys.stderr)
         return 1
@@ -249,13 +250,15 @@ def cmd_review_complexity(source: Path, base_ref: str | None = None) -> int:
 
 
 def cmd_evidence(evidence_type: str, command: str, finding_id=None, test_id=None,
-                 scope="related", covered_tests=(), phase=None,
+                 scope="related", covered_tests=(), covered_test_cases=(), phase=None,
                  reuse_if_valid=False, budget_override_reason=None,
                  budget_override_evidence=None, budget_override_hypothesis=None) -> int:
     collect_evidence = _load("collect_evidence")
     args = ["--type", evidence_type, "--command", command, "--scope", scope]
     for covered_test in covered_tests:
         args.extend(["--covered-test", covered_test])
+    for test_case in covered_test_cases:
+        args.extend(["--covered-test-case", test_case])
     if phase is not None:
         args.extend(["--phase", phase])
     if finding_id is not None:

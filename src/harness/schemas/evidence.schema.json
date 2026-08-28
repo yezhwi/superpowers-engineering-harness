@@ -60,6 +60,11 @@
       "type": "array",
       "items": {"type": "string", "minLength": 1}
     },
+    "covered_test_cases": {
+      "type": "array",
+      "items": {"type": "string", "pattern": "^TC-[0-9]+$"},
+      "uniqueItems": true
+    },
     "subject": {
       "type": "object",
       "required": ["kind", "id"],

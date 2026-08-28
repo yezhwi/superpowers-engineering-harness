@@ -35,6 +35,69 @@ def blocker_codes(blockers):
     return {blocker.code for blocker in blockers}
 
 
+def test_gate_blocks_deleted_critical_invariant_test_plan(tmp_path):
+    """Break caught: implementation deletes critical proof plan after entry Gate."""
+    from harness.quality_gate import run_gate
+
+    harness_dir = make_harness(tmp_path)
+    task_path = harness_dir / "current-task.yaml"
+    task = yaml.safe_load(task_path.read_text())
+    task["test_plan_required"] = True
+    task_path.write_text(yaml.safe_dump(task))
+    invariant_path = harness_dir / "invariants.yaml"
+    invariants = yaml.safe_load(invariant_path.read_text())
+    invariants["invariants"][0]["test_plan"] = {
+        "strategies": ["integration"],
+        "cases": [{"id": "TC-099", "type": "invariant", "strategy": "integration", "description": "holds", "tests": [NODE_A]}],
+    }
+    del invariants["invariants"][0]["test_plan"]
+    invariant_path.write_text(yaml.safe_dump(invariants))
+
+    status, blockers = run_gate(harness_dir)
+
+    assert status == "BLOCKED"
+    assert blocker_codes(blockers) == {"TEST_PLAN_INCOMPLETE"}
+
+
+def test_gate_blocks_manual_case_without_explicit_case_evidence(tmp_path):
+    """Break caught: unrelated fresh build evidence proves a manual case."""
+    from harness.quality_gate import run_gate
+
+    harness_dir = make_harness(tmp_path)
+    configure_requirement_case(harness_dir, tests=[])
+    requirements_path = harness_dir / "requirements.yaml"
+    requirements = yaml.safe_load(requirements_path.read_text())
+    requirements["requirements"][0]["test_plan"]["strategies"] = ["manual"]
+    requirements["requirements"][0]["test_plan"]["cases"][0]["strategy"] = "manual"
+    requirements_path.write_text(yaml.safe_dump(requirements))
+
+    status, blockers = run_gate(harness_dir)
+
+    assert status == "BLOCKED"
+    assert blocker_codes(blockers) == {"TEST_EVIDENCE_MISSING"}
+
+
+def test_gate_accepts_manual_case_with_explicit_case_evidence(tmp_path):
+    """Break caught: valid manual verification remains permanently blocked."""
+    from harness.quality_gate import run_gate
+
+    harness_dir = make_harness(tmp_path)
+    configure_requirement_case(harness_dir, tests=[])
+    requirements_path = harness_dir / "requirements.yaml"
+    requirements = yaml.safe_load(requirements_path.read_text())
+    requirements["requirements"][0]["test_plan"]["strategies"] = ["manual"]
+    requirements["requirements"][0]["test_plan"]["cases"][0]["strategy"] = "manual"
+    requirements_path.write_text(yaml.safe_dump(requirements))
+    manual = json.loads((harness_dir / "evidence" / "build.json").read_text())
+    manual["covered_test_cases"] = ["TC-001"]
+    (harness_dir / "evidence" / "manual.json").write_text(json.dumps(manual))
+
+    status, blockers = run_gate(harness_dir)
+
+    assert status == "PASS"
+    assert blockers == []
+
+
 def test_gate_blocks_automated_case_without_executable_binding(tmp_path):
     """Break caught: plan claims automation but no test can execute it."""
     from harness.quality_gate import run_gate

@@ -62,6 +62,7 @@ def main(argv=None) -> int:
     p_ev.add_argument("--finding")
     p_ev.add_argument("--test")
     p_ev.add_argument("--covered-test", action="append", default=[])
+    p_ev.add_argument("--covered-test-case", action="append", default=[])
     p_ev.add_argument("--phase", choices=["red", "green", "full"])
     p_ev.add_argument("--reuse-if-valid", action="store_true")
     p_ev.add_argument("--budget-override-reason")
@@ -115,7 +116,7 @@ def main(argv=None) -> int:
             print("FULL_SUITE_AUTHORIZATION_REQUIRED", file=sys.stderr); return 2
         return controlplane.cmd_evidence(args.type, args.evidence_command,
                                          args.finding, args.test, args.scope,
-                                         args.covered_test, args.phase,
+                                         args.covered_test, args.covered_test_case, args.phase,
                                          args.reuse_if_valid,
                                          args.budget_override_reason, args.budget_override_evidence,
                                          args.budget_override_hypothesis)

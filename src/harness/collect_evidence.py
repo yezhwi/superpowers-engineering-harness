@@ -80,7 +80,8 @@ def _tail(text: str) -> str:
 
 def collect(evidence_type: str, command: str, finding_id: str | None = None,
             test_id: str | None = None, scope: str = "related",
-            covered_tests: tuple[str, ...] = (), phase: str | None = None) -> dict:
+            covered_tests: tuple[str, ...] = (), covered_test_cases: tuple[str, ...] = (),
+            phase: str | None = None) -> dict:
     before = workspace_fingerprint()
     run = subprocess.run(
         command, shell=True, capture_output=True, text=True
@@ -104,6 +105,8 @@ def collect(evidence_type: str, command: str, finding_id: str | None = None,
         evidence["scope"] = scope
     if covered_tests:
         evidence["covered_tests"] = list(covered_tests)
+    if covered_test_cases:
+        evidence["covered_test_cases"] = list(covered_test_cases)
     if finding_id is not None:
         evidence["subject"] = {"kind": "finding", "id": finding_id}
         evidence["test"] = {"node_id": test_id}
@@ -120,6 +123,7 @@ def main(argv=None):
     parser.add_argument("--test")
     parser.add_argument("--scope", choices=["related", "full_suite"], default="related")
     parser.add_argument("--covered-test", action="append", default=[])
+    parser.add_argument("--covered-test-case", action="append", default=[])
     parser.add_argument("--phase", choices=["red", "green", "full"])
     parser.add_argument("--reuse-if-valid", action="store_true")
     parser.add_argument("--budget-override-reason")
@@ -151,7 +155,8 @@ def main(argv=None):
     if args.reuse_if_valid and not args.finding and args.phase is None:
         request = ReuseRequest(args.type, args.command, args.scope,
                                tuple(args.covered_test), args.phase,
-                               args.finding, args.test)
+                               args.finding, args.test,
+                               tuple(args.covered_test_case))
         try:
             candidate = json.loads(out_file.read_text())
             if can_reuse_evidence(candidate, request, current_head=head,
@@ -178,7 +183,7 @@ def main(argv=None):
         print(str(exc), file=sys.stderr); return 2
 
     evidence = collect(args.type, args.command, args.finding, args.test,
-                       args.scope, tuple(args.covered_test), args.phase)
+                       args.scope, tuple(args.covered_test), tuple(args.covered_test_case), args.phase)
     evidence["commit"] = head
 
     out_dir.mkdir(parents=True, exist_ok=True)

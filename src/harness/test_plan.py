@@ -113,8 +113,11 @@ def validate_test_coverage(requirements: dict, invariants: dict, evidence_record
             for record in evidence_records
         )
 
-    def has_manual_evidence() -> bool:
-        return any(evidence_is_fresh(record) for record in evidence_records)
+    def has_manual_evidence(case_id: str) -> bool:
+        return any(
+            case_id in record.get("covered_test_cases", []) and evidence_is_fresh(record)
+            for record in evidence_records
+        )
 
     def inspect(document: dict, key: str) -> None:
         for record in document.get(key, []):
@@ -126,7 +129,7 @@ def validate_test_coverage(requirements: dict, invariants: dict, evidence_record
                 strategy = test_case.get("strategy")
                 tests = test_case.get("tests") or []
                 if strategy == "manual":
-                    if not has_manual_evidence():
+                    if not has_manual_evidence(case_id):
                         issue("TEST_EVIDENCE_MISSING", f"{case_id} manual case has no fresh evidence", test_case_id=case_id, **identity)
                 elif not tests:
                     issue("TEST_BINDING_MISSING", f"{case_id} has no executable test binding", test_case_id=case_id, **identity)

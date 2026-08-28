@@ -22,7 +22,7 @@ from jsonschema import ValidationError, validate
 from .blockers import GateBlocker, RECOVERY_POLICY, blocker_document
 from .evidence_validator import EvidenceValidationError, validate_evidence
 from .state_machine import STATES
-from .test_plan import validate_test_coverage
+from .test_plan import validate_test_coverage, validate_test_plan
 from .risk_boundaries import RiskBoundaryPolicyError, business_paths, load_boundaries, required_level
 from .workspace import (
     WorkspaceError, changed_paths_since, git_head as workspace_head,
@@ -358,7 +358,13 @@ def run_gate(harness_dir: Path, head: str | None = None,
         else:
             block(str(last_error).split(":", 1)[0], "verification", f"{label} evidence invalid: {last_error}", source=vtype)
 
-    # 3b. Test Plan: every automated binding needs fresh successful evidence.
+    # 3b. Test Plan: revalidate plans accepted at implementation entry.
+    if task.get("test_plan_required"):
+        for issue in validate_test_plan(requirements_doc, invariants_doc):
+            block("TEST_PLAN_INCOMPLETE", "implementation", issue.message,
+                  requirement_id=issue.requirement_id, invariant_id=issue.invariant_id)
+
+    # 3c. Test Plan: every automated binding needs fresh successful evidence.
     def evidence_is_fresh(record):
         try:
             validate_evidence(record, current_head=head, current_workspace=current_workspace,
