@@ -10,14 +10,21 @@ import tomllib
 REPO = Path(__file__).resolve().parent.parent
 
 
-def test_v024_release_metadata_is_publishable():
-    expected = "0.2.4"
+def test_v025_release_metadata_is_publishable():
+    expected = "0.2.5"
     assert tomllib.loads((REPO / "pyproject.toml").read_text())["project"]["version"] == expected
     assert json.loads((REPO / "package.json").read_text())["version"] == expected
     assert f"# Superpowers Engineering Harness v{expected}" in (REPO / "README.md").read_text()
     changelog = (REPO / "CHANGELOG.md").read_text()
     assert f"## {expected}\n" in changelog
     assert f"## {expected} (unreleased)" not in changelog
+
+
+def test_v025_release_notes_document_diagnosability():
+    changelog = (REPO / "CHANGELOG.md").read_text()
+    release = changelog.split("## 0.2.4", 1)[0]
+    for phrase in ("Observability Contract", "DIAG Finding", "Q2/Q3", "non-goals"):
+        assert phrase in release
 
 
 def test_python_npm_readme_and_changelog_versions_match():

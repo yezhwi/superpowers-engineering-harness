@@ -1,8 +1,8 @@
-# Superpowers Engineering Harness v0.2.4
+# Superpowers Engineering Harness v0.2.5
 
 [English](README.md)
 
-`v0.2.4 current release`；本 release 已包含 risk-adaptive behavior 与 Test Plan Gate。
+`v0.2.5 current release`；本 release 已包含 Production Diagnosability Standard、risk-adaptive behavior 与 Test Plan Gate。
 
 **Routing：** Q0 直接回答、不创建 task；Q1 / FAST 使用 RED/fix/GREEN/Light Gate；Q2 / STANDARD 与 Q3 / STRICT 使用完整 contract/review/Gate 流程。
 
@@ -32,6 +32,49 @@ State + Contract + Invariant + Executable Test + Evidence + Deterministic Gate
 | Tests / compiler / gate | 事实来源 |
 
 Harness 适合 Agent 驱动功能开发和 bug 修复交付；不替代 CI、安全扫描或人工架构决策。
+
+## 版本演进
+
+```text
+v0.1    State + Evidence + Gate
+  ↓
+v0.2    最小实现检查 + 复杂度 Review
+  ↓
+v0.2.3  Q0/Q1/Q2/Q3 风险自适应工作流
+  ↓
+v0.2.4  Test Plan → 可执行绑定 → fresh evidence
+  ↓
+v0.2.5  Production Diagnosability Contract + DIAG Finding + Gate
+```
+
+## Engineering Quality
+
+```text
+                         Requirement
+                             │
+                             ▼
+          Contract / Invariants / Test Plan
+                             │
+                             ▼
+                    Implementation
+                             │
+          ┌──────────────────┼──────────────────┐
+          ▼                  ▼                  ▼
+     Correctness        Maintainability    Diagnosability
+       Tests         Complexity Review   Logs / Trace Context
+          │                  │                  │
+          └──────────────────┼──────────────────┘
+                             ▼
+                  Evidence + Review + Findings
+                             │
+                             ▼
+                 确定性质量门禁
+                             │
+                             ▼
+                            DONE
+```
+
+Harness 负责状态、证据、Finding 生命周期和 Gate；Agent 判断业务语义与日志质量。Harness 不提供 logger SDK、OpenTelemetry、APM、自动插日志或通用源码扫描。
 
 ## 流程
 

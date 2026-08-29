@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.5
+
+- Add Production Diagnosability Observability Contract for Q2/Q3 tasks, including applicability, business keys, failure boundaries, and bugfix observability-gap analysis.
+- Add scope-bound diagnosability review evidence, DIAG Finding static-compliance lifecycle, and Q2/Q3 Gate enforcement for critical and major diagnosability findings.
+- Keep logger frameworks, OpenTelemetry, automatic log insertion, and universal source scanning as explicit non-goals.
+
 ## 0.2.4
 
 - Add Test Plan Gate for STANDARD and STRICT `PLANNED → IMPLEMENTING` transitions.

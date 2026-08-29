@@ -1,8 +1,8 @@
-# Superpowers Engineering Harness v0.2.4
+# Superpowers Engineering Harness v0.2.5
 
 [简体中文](README.zh-CN.md)
 
-`v0.2.4 current release`; risk-adaptive behavior and Test Plan Gate are included in this release.
+`v0.2.5 current release`; Production Diagnosability Standard, risk-adaptive behavior, and Test Plan Gate are included in this release.
 
 **Routing:** Q0 answers without task; Q1 / FAST uses RED/fix/GREEN/Light Gate; Q2 / STANDARD and Q3 / STRICT use full contract/review/Gate workflow.
 
@@ -28,6 +28,49 @@ State + Contract + Invariant + Executable Test + Evidence + Deterministic Gate
 | Tests / compiler / gate | Source of truth |
 
 Harness is suitable for agentic feature and bug-fix delivery. It is not a replacement for CI, security scanning, or human architecture decisions.
+
+## Version evolution
+
+```text
+v0.1    State + Evidence + Gate
+  ↓
+v0.2    Minimal Implementation + Complexity Review
+  ↓
+v0.2.3  Q0/Q1/Q2/Q3 risk-adaptive workflow
+  ↓
+v0.2.4  Test Plan → executable binding → fresh evidence
+  ↓
+v0.2.5  Production Diagnosability Contract + DIAG Finding + Gate
+```
+
+## Engineering Quality
+
+```text
+                         Requirement
+                             │
+                             ▼
+          Contract / Invariants / Test Plan
+                             │
+                             ▼
+                    Implementation
+                             │
+          ┌──────────────────┼──────────────────┐
+          ▼                  ▼                  ▼
+     Correctness        Maintainability    Diagnosability
+       Tests         Complexity Review   Logs / Trace Context
+          │                  │                  │
+          └──────────────────┼──────────────────┘
+                             ▼
+                  Evidence + Review + Findings
+                             │
+                             ▼
+                 Deterministic Quality Gate
+                             │
+                             ▼
+                            DONE
+```
+
+Harness controls state, proof, Finding lifecycle, and Gate. Agent judges business semantics and logging quality. Harness does not provide logger SDK, OpenTelemetry, APM, automatic log insertion, or universal source scanning.
 
 ## Workflow
 

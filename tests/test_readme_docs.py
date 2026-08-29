@@ -5,6 +5,15 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 
 
+def test_readmes_document_engineering_quality_architecture():
+    for name in ("README.md", "README.zh-CN.md"):
+        text = (REPO / name).read_text(encoding="utf-8")
+        assert "Engineering Quality" in text
+        assert "Version evolution" in text or "版本演进" in text
+        assert "Deterministic Quality Gate" in text or "确定性质量门禁" in text
+        assert "does not provide" in text or "不提供" in text
+
+
 def test_readmes_document_production_diagnosability_routing():
     for name in ("README.md", "README.zh-CN.md"):
         text = (REPO / name).read_text(encoding="utf-8")
@@ -31,7 +40,7 @@ def test_readmes_document_risk_profiles_and_independent_authorization():
 def test_docs_identify_current_adaptive_release():
     for path in (REPO / "README.md", REPO / "README.zh-CN.md"):
         text = path.read_text()
-        assert "v0.2.4 current release" in text
+        assert "v0.2.5 current release" in text
         assert "risk-adaptive behavior" in text
         assert "Q1 / FAST" in text and "Q2 / STANDARD" in text and "Q3 / STRICT" in text
     changelog = (REPO / "CHANGELOG.md").read_text()
