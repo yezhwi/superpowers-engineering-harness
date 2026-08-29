@@ -151,17 +151,19 @@ def _passing_harness(tmp_path):
     h = make_repo(tmp_path, state="GATING")
     reqs = {"requirements": [
         {"id": "REQ-001", "statement": "works", "priority": "must",
-         "status": "verified", "evidence": ["unit-test.json"]}]}
+         "status": "verified", "evidence": ["unit-test.json"], "test_plan": {"strategies": ["manual"], "cases": [{"id": "TC-800", "type": "happy_path", "strategy": "manual", "description": "fixture requirement", "tests": []}]}}]}
     (h / "requirements.yaml").write_text(yaml.safe_dump(reqs))
     invs = {"invariants": [
         {"id": "INV-001", "statement": "safe", "category": "correctness",
-         "severity": "critical", "status": "verified",
-         "verification": ["build.json"]}]}
+         "severity": "critical", "status": "verified", "verification": ["build.json"], "test_plan": {"strategies": ["manual"], "cases": [{"id": "TC-801", "type": "invariant", "strategy": "manual", "description": "fixture invariant", "tests": []}]}}]}
     (h / "invariants.yaml").write_text(yaml.safe_dump(invs))
     edir = h / "evidence"
     for etype in ("build", "unit_test"):
         write_evidence(tmp_path, h, etype)
     write_complexity_review(tmp_path, h)
+    build = json.loads((edir / "build.json").read_text())
+    build["covered_test_cases"] = ["TC-800", "TC-801"]
+    (edir / "build.json").write_text(json.dumps(build))
     return h
 
 

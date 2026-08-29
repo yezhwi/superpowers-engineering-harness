@@ -45,15 +45,10 @@ def make_harness(tmp_path: Path) -> Path:
     (h / "gate.yaml").write_text(
         resources.files("harness").joinpath("templates", "gate.yaml").read_text())
     requirements = {"requirements": [
-        {"id": "REQ-001", "statement": "works", "priority": "must",
-         "status": "verified", "evidence": ["build.json"]},
-    ]}
+        {"id": "REQ-001", "statement": "works", "priority": "must", "status": "verified", "evidence": ["build.json"], "test_plan": {"strategies": ["manual"], "cases": [{"id": "TC-700", "type": "happy_path", "strategy": "manual", "description": "fixture requirement", "tests": []}]}}] }
     (h / "requirements.yaml").write_text(yaml.safe_dump(requirements))
     invariants = {"invariants": [
-        {"id": "INV-001", "statement": "safe", "category": "correctness",
-         "severity": "critical", "status": "verified",
-         "verification": ["build.json"]},
-    ]}
+        {"id": "INV-001", "statement": "safe", "category": "correctness", "severity": "critical", "status": "verified", "verification": ["build.json"], "test_plan": {"strategies": ["manual"], "cases": [{"id": "TC-701", "type": "invariant", "strategy": "manual", "description": "fixture invariant", "tests": []}]}}] }
     (h / "invariants.yaml").write_text(yaml.safe_dump(invariants))
 
     evidence_dir = h / "evidence"
@@ -61,6 +56,9 @@ def make_harness(tmp_path: Path) -> Path:
     for etype in ("build", "unit_test"):
         write_evidence(REPO, h, etype)
     write_complexity_review(REPO, h)
+    build = json.loads((evidence_dir / "build.json").read_text())
+    build["covered_test_cases"] = ["TC-700", "TC-701"]
+    (evidence_dir / "build.json").write_text(json.dumps(build))
 
     (h / "findings").mkdir()
     return h
