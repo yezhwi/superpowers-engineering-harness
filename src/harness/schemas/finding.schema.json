@@ -110,17 +110,91 @@
         "verified_at": {
           "type": "string",
           "description": "ISO timestamp, set at VERIFIED"
+        },
+        "category": {
+          "enum": [
+            "diagnosability"
+          ]
+        },
+        "reason_code": {
+          "enum": [
+            "DIAG_MISSING_BUSINESS_ID",
+            "DIAG_MISSING_CRITICAL_EVENT",
+            "DIAG_MISSING_STATE_TRANSITION",
+            "DIAG_MISSING_EXTERNAL_FAILURE_CONTEXT",
+            "DIAG_MISSING_REASON_CODE",
+            "DIAG_UNDIAGNOSABLE_EXCEPTION",
+            "DIAG_DUPLICATE_EXCEPTION_LOG",
+            "DIAG_SENSITIVE_DATA_LOGGED",
+            "DIAG_EXCESSIVE_LOGGING",
+            "DIAG_LOW_VALUE_LOGGING"
+          ]
+        },
+        "location": {
+          "type": "object",
+          "required": [
+            "file"
+          ],
+          "properties": {
+            "file": {
+              "type": "string",
+              "minLength": 1
+            },
+            "line": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        "compliance": {
+          "type": "object",
+          "required": [
+            "evidence_kind",
+            "required_checks"
+          ],
+          "properties": {
+            "evidence_kind": {
+              "const": "static_compliance"
+            },
+            "required_checks": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": true,
       "allOf": [
         {
           "if": {
-            "properties": {
-              "status": {
-                "const": "CONFIRMED"
+            "allOf": [
+              {
+                "not": {
+                  "required": [
+                    "category"
+                  ],
+                  "properties": {
+                    "category": {
+                      "const": "diagnosability"
+                    }
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "status": {
+                    "const": "CONFIRMED"
+                  }
+                }
               }
-            }
+            ]
           },
           "then": {
             "required": [
@@ -140,11 +214,27 @@
         },
         {
           "if": {
-            "properties": {
-              "status": {
-                "const": "FIXING"
+            "allOf": [
+              {
+                "not": {
+                  "required": [
+                    "category"
+                  ],
+                  "properties": {
+                    "category": {
+                      "const": "diagnosability"
+                    }
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "status": {
+                    "const": "FIXING"
+                  }
+                }
               }
-            }
+            ]
           },
           "then": {
             "required": [
@@ -162,11 +252,27 @@
         },
         {
           "if": {
-            "properties": {
-              "status": {
-                "const": "FIXED"
+            "allOf": [
+              {
+                "not": {
+                  "required": [
+                    "category"
+                  ],
+                  "properties": {
+                    "category": {
+                      "const": "diagnosability"
+                    }
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "status": {
+                    "const": "FIXED"
+                  }
+                }
               }
-            }
+            ]
           },
           "then": {
             "required": [
@@ -185,11 +291,27 @@
         },
         {
           "if": {
-            "properties": {
-              "status": {
-                "const": "VERIFIED"
+            "allOf": [
+              {
+                "not": {
+                  "required": [
+                    "category"
+                  ],
+                  "properties": {
+                    "category": {
+                      "const": "diagnosability"
+                    }
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "status": {
+                    "const": "VERIFIED"
+                  }
+                }
               }
-            }
+            ]
           },
           "then": {
             "required": [
@@ -210,11 +332,27 @@
         },
         {
           "if": {
-            "properties": {
-              "status": {
-                "const": "CLOSED"
+            "allOf": [
+              {
+                "not": {
+                  "required": [
+                    "category"
+                  ],
+                  "properties": {
+                    "category": {
+                      "const": "diagnosability"
+                    }
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "status": {
+                    "const": "CLOSED"
+                  }
+                }
               }
-            }
+            ]
           },
           "then": {
             "required": [
@@ -235,11 +373,27 @@
         },
         {
           "if": {
-            "properties": {
-              "status": {
-                "const": "REJECTED"
+            "allOf": [
+              {
+                "not": {
+                  "required": [
+                    "category"
+                  ],
+                  "properties": {
+                    "category": {
+                      "const": "diagnosability"
+                    }
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "status": {
+                    "const": "REJECTED"
+                  }
+                }
               }
-            }
+            ]
           },
           "then": {
             "required": [
@@ -251,6 +405,124 @@
                 "minItems": 1
               }
             }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "category"
+            ],
+            "properties": {
+              "category": {
+                "const": "diagnosability"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "reason_code",
+              "location",
+              "compliance"
+            ]
+          }
+        },
+        {
+          "if": {
+            "allOf": [
+              {
+                "required": [
+                  "category"
+                ],
+                "properties": {
+                  "category": {
+                    "const": "diagnosability"
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "reason_code": {
+                    "const": "DIAG_SENSITIVE_DATA_LOGGED"
+                  }
+                },
+                "required": [
+                  "reason_code"
+                ]
+              }
+            ]
+          },
+          "then": {
+            "properties": {
+              "severity": {
+                "const": "critical"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "allOf": [
+              {
+                "required": [
+                  "category"
+                ],
+                "properties": {
+                  "category": {
+                    "const": "diagnosability"
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "status": {
+                    "const": "CONFIRMED"
+                  }
+                },
+                "required": [
+                  "status"
+                ]
+              }
+            ]
+          },
+          "then": {
+            "required": [
+              "confirmed_at"
+            ]
+          }
+        },
+        {
+          "if": {
+            "allOf": [
+              {
+                "required": [
+                  "category"
+                ],
+                "properties": {
+                  "category": {
+                    "const": "diagnosability"
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "status": {
+                    "enum": [
+                      "VERIFIED",
+                      "CLOSED"
+                    ]
+                  }
+                },
+                "required": [
+                  "status"
+                ]
+              }
+            ]
+          },
+          "then": {
+            "required": [
+              "evidence",
+              "verified_at"
+            ]
           }
         }
       ]

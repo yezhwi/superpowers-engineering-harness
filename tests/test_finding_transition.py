@@ -43,6 +43,18 @@ def test_cli_enforces_full_proof_chain(tmp_path):
     assert cli(tmp_path,"finding","transition","FND-001","CLOSED").returncode==0
     assert status(h)=="CLOSED"
 
+def test_diag_cli_lifecycle_uses_passing_review_without_red_green(tmp_path):
+    h = setup(tmp_path)
+    finding = yaml.safe_load((h / "findings" / "fnd-001.yaml").read_text())
+    finding.update({"category": "diagnosability", "reason_code": "DIAG_MISSING_BUSINESS_ID", "severity": "major", "location": {"file": "x.py"}, "compliance": {"evidence_kind": "static_compliance", "required_checks": ["business_keys"]}})
+    (h / "findings" / "fnd-001.yaml").write_text(yaml.safe_dump(finding))
+    review = json.loads((h / "evidence" / "full.json").read_text())
+    review.update({"type": "diagnosability_review", "checks": {"business_keys": "pass"}})
+    (h / "evidence" / "diagnosability-review.json").write_text(json.dumps(review))
+    for target, args in (("REPRODUCING", ("--attempt", "review")), ("CONFIRMED", ()), ("FIXING", ()), ("FIXED", ()), ("VERIFIED", ("--evidence", "diagnosability-review.json"))):
+        assert cli(tmp_path, "finding", "transition", "FND-001", target, *args).returncode == 0
+
+
 def test_confirmed_rejects_unstructured_failed_evidence(tmp_path):
     h = setup(tmp_path)
     red_path = h / "evidence" / "red.json"

@@ -505,9 +505,12 @@ def cmd_finding_transition(fid,target,evidence=None,test=None,attempt=None,reaso
    if not attempt: raise ValueError('REPRODUCING requires --attempt')
    finding.setdefault('attempts',[]).append(attempt)
   elif target=='CONFIRMED':
-   if not test: raise ValueError('CONFIRMED requires --test')
-   proof(evidence,False,test); finding['test']=test; finding['regression_test']={'path':test,'red_evidence':evidence}; finding['confirmed_at']=datetime.datetime.now(datetime.timezone.utc).isoformat()
-  elif target=='FIXED': proof(evidence,True,finding['regression_test']['path']); finding['regression_test']['green_evidence']=evidence
+   if finding.get('category')=='diagnosability': finding['confirmed_at']=datetime.datetime.now(datetime.timezone.utc).isoformat()
+   else:
+    if not test: raise ValueError('CONFIRMED requires --test')
+    proof(evidence,False,test); finding['test']=test; finding['regression_test']={'path':test,'red_evidence':evidence}; finding['confirmed_at']=datetime.datetime.now(datetime.timezone.utc).isoformat()
+  elif target=='FIXED':
+   if finding.get('category')!='diagnosability': proof(evidence,True,finding['regression_test']['path']); finding['regression_test']['green_evidence']=evidence
   elif target=='VERIFIED':
    if not evidence: raise ValueError('missing --evidence')
    p=Path('.harness/evidence')/(evidence if evidence.endswith('.json') else evidence+'.json')
@@ -516,7 +519,8 @@ def cmd_finding_transition(fid,target,evidence=None,test=None,attempt=None,reaso
    if critical_related_approved:
     if finding.get('severity') != 'critical' or d.get('scope') != 'related': raise ValueError('--critical-related-approved requires critical related evidence')
     finding['closure']={'mode':'related','critical_related_approved':True,'approved_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'source':'user'}
-   _load('evidence_validator').validate_finding_closure_evidence(finding,d,impact,current_head=head,current_workspace=workspace)
+   if finding.get('category')=='diagnosability': _load('diagnosability').validate_compliance_closure(finding,d,current_head=head,current_workspace=workspace)
+   else: _load('evidence_validator').validate_finding_closure_evidence(finding,d,impact,current_head=head,current_workspace=workspace)
    finding['evidence']=evidence; finding['verified_at']=datetime.datetime.now(datetime.timezone.utc).isoformat()
   elif target=='REJECTED':
    if not reason or not finding.get('attempts'): raise ValueError('REJECTED requires attempts and --reason')

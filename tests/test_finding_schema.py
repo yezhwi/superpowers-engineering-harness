@@ -26,9 +26,46 @@ BASE = {
     "severity": "critical",
 }
 
+DIAG_BASE = {
+    "id": "FND-004",
+    "kind": "requirement_violation",
+    "target": "REQ-003",
+    "category": "diagnosability",
+    "reason_code": "DIAG_MISSING_EXTERNAL_FAILURE_CONTEXT",
+    "severity": "major",
+    "scenario": "payment timeout has no order id or dependency context",
+    "location": {"file": "src/orders/refund.py", "line": 84},
+    "compliance": {
+        "evidence_kind": "static_compliance",
+        "required_checks": ["business_keys", "external_failure_context"],
+    },
+}
+
 
 def test_proposed_minimal():
     validate({**BASE, "status": "PROPOSED"})
+
+
+def test_diag_finding_requires_reason_location_and_compliance():
+    from jsonschema import ValidationError
+    with pytest.raises(ValidationError):
+        validate({
+            "id": "FND-004", "kind": "requirement_violation", "target": "REQ-003",
+            "category": "diagnosability", "severity": "major", "status": "PROPOSED",
+            "scenario": "timeout lacks order id",
+        })
+    validate({**DIAG_BASE, "status": "PROPOSED"})
+
+
+def test_sensitive_data_diag_finding_must_be_critical():
+    from jsonschema import ValidationError
+    with pytest.raises(ValidationError):
+        validate({**DIAG_BASE, "reason_code": "DIAG_SENSITIVE_DATA_LOGGED", "status": "PROPOSED"})
+    validate({**DIAG_BASE, "reason_code": "DIAG_SENSITIVE_DATA_LOGGED", "severity": "critical", "status": "PROPOSED"})
+
+
+def test_diag_confirmed_does_not_require_regression_test():
+    validate({**DIAG_BASE, "status": "CONFIRMED", "confirmed_at": "2026-01-01T00:00:00+00:00"})
 
 
 def test_reproducing_with_attempts():

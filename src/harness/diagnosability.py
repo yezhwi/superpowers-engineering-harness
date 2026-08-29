@@ -113,6 +113,20 @@ def load_review_input(path: Path, *, task_id: str) -> DiagnosabilityReview:
     return validate_review_input(document, task_id=task_id)
 
 
+def validate_compliance_closure(finding: dict, record: dict, *, current_head: str, current_workspace: str) -> None:
+    """Validate terminal DIAG proof without accepting ordinary Finding proof."""
+    if finding.get("category") != "diagnosability":
+        raise ValueError("DIAG_COMPLIANCE_FINDING_REQUIRED")
+    if record.get("type") != "diagnosability_review" or record.get("exit_code") != 0:
+        raise ValueError("DIAG_COMPLIANCE_EVIDENCE_INVALID")
+    if record.get("commit") != current_head or record.get("workspace_fingerprint") != current_workspace or record.get("workspace_fingerprint_after") != current_workspace:
+        raise ValueError("DIAG_COMPLIANCE_EVIDENCE_STALE")
+    checks = record.get("checks") or {}
+    for name in finding["compliance"]["required_checks"]:
+        if checks.get(name) != "pass":
+            raise ValueError("DIAG_COMPLIANCE_CHECK_FAILED")
+
+
 def write_review(harness_dir: Path, review: DiagnosabilityReview, *, base_ref: str) -> Path:
     contract = load_contract(harness_dir)
     scope = review_scope(base_ref)
