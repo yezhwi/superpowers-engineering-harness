@@ -86,7 +86,7 @@ bug_fix:
 - `version` is integer `1`.
 - `required` is boolean.
 - `applicability.reasons` and `applicability.inspected_paths` are nonempty unique strings.
-- `required: false` permits only `version`, `required`, and `applicability`. `applicability.reasons` states why none of external dependency, caller rejection, state transition, async/retry/fallback, compensation, consistency, permission, or critical business object applies.
+- `required: false` permits only `version`, `required`, and `applicability`, except bugfix tasks may also contain `bug_fix`. `applicability.reasons` states why none of external dependency, caller rejection, state transition, async/retry/fallback, compensation, consistency, permission, or critical business object applies.
 - `required: true` requires nonempty `business_keys` and `failure_boundaries`, plus at least one nonempty applicable diagnostic dimension: `critical_events`, `state_transitions`, or `external_dependencies`.
 - `state_transitions` records semantic transition data, not logger call locations.
 - `external_dependencies.required_context` contains only required semantic fields. It does not prescribe a logger framework or message format.
