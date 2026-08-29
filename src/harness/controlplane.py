@@ -225,6 +225,24 @@ def cmd_review_outcome(outcome: str, reason_code: str, finding_ids: list[str]) -
     return 0
 
 
+def cmd_review_diagnosability(source: Path, base_ref: str | None = None) -> int:
+    harness_dir = Path(".harness")
+    try:
+        task = load_task(harness_dir)
+        if task.get("state") != "REVIEWING":
+            raise ValueError("review requires state REVIEWING")
+        base = base_ref or task.get("git", {}).get("base_commit")
+        if not base:
+            raise ValueError("TASK_GIT_BASELINE_REQUIRED")
+        review = _load("diagnosability").load_review_input(source, task_id=task["task"]["id"])
+        path = _load("diagnosability").write_review(harness_dir, review, base_ref=base)
+    except Exception as exc:
+        print(f"INVALID DIAGNOSABILITY REVIEW: {exc}", file=sys.stderr)
+        return 2
+    print(f"diagnosability review written: {path}")
+    return 0
+
+
 def cmd_review_complexity(source: Path, base_ref: str | None = None) -> int:
     import yaml
 
