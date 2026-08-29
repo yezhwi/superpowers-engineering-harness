@@ -16,6 +16,7 @@ REQUIRED_FILES = (
     "invariants.yaml",
     "gate.yaml",
     "impact.yaml",
+    "observability.yaml",
 )
 
 REQUIRED_DIRS = (

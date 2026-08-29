@@ -1,0 +1,37 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "observability.schema.json",
+  "title": "Engineering Harness Observability Contract",
+  "type": "object",
+  "required": ["version", "required", "applicability"],
+  "properties": {
+    "version": {"const": 1},
+    "required": {"type": "boolean"},
+    "applicability": {
+      "type": "object",
+      "required": ["reasons", "inspected_paths"],
+      "properties": {
+        "reasons": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "inspected_paths": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "existing_conventions": {
+          "type": "object",
+          "properties": {
+            "logging": {"type": "string", "minLength": 1},
+            "correlation": {"type": "string", "minLength": 1},
+            "masking": {"type": "string", "minLength": 1}
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "business_keys": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "critical_events": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "state_transitions": {"type": "array", "minItems": 1, "items": {"type": "object", "required": ["business_key", "from", "to", "trigger"], "properties": {"business_key": {"type": "string", "minLength": 1}, "from": {"type": "string", "minLength": 1}, "to": {"type": "string", "minLength": 1}, "trigger": {"type": "string", "minLength": 1}}, "additionalProperties": false}},
+    "external_dependencies": {"type": "array", "minItems": 1, "items": {"type": "object", "required": ["name", "operations", "required_context"], "properties": {"name": {"type": "string", "minLength": 1}, "operations": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}}, "required_context": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}}}, "additionalProperties": false}},
+    "failure_boundaries": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "sensitive_data": {"type": "object", "required": ["policy", "prohibited"], "properties": {"policy": {"type": "string", "minLength": 1}, "prohibited": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}}}, "additionalProperties": false},
+    "bug_fix": {"type": "object", "required": ["observability_gap", "basis"], "properties": {"observability_gap": {"type": "boolean"}, "basis": {"type": "string", "minLength": 1}, "missing_information": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}}, "improvement": {"type": "string", "minLength": 1}}, "additionalProperties": false}
+  },
+  "additionalProperties": false
+}

@@ -42,6 +42,20 @@ def test_creates_findings_and_evidence_dirs(repo):
     assert (repo / ".harness" / "evidence").is_dir()
 
 
+def test_creates_observability_contract(repo):
+    init_harness(repo)
+    assert (repo / ".harness" / "observability.yaml").read_text(encoding="utf-8") == \
+        (templates_dir() / "observability.yaml").read_text(encoding="utf-8")
+
+
+def test_does_not_overwrite_existing_observability_contract(repo):
+    init_harness(repo)
+    target = repo / ".harness" / "observability.yaml"
+    target.write_text("version: 1\nrequired: false\n", encoding="utf-8")
+    init_harness(repo)
+    assert target.read_text(encoding="utf-8") == "version: 1\nrequired: false\n"
+
+
 def test_files_match_templates(repo):
     init_harness(repo)
     for name in REQUIRED_FILES:
