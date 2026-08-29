@@ -1,0 +1,26 @@
+task_type: feature
+contract:
+  version: 1
+  required: true
+  applicability: {reasons: [external_dependency], inspected_paths: [src/auth.py]}
+  business_keys: [user_id]
+  failure_boundaries: [login]
+  critical_events: [login_requested]
+review:
+  task: TASK-001
+  contract_required: true
+  finding_ids: [FND-001]
+  direct_dependencies: []
+  review_scope: {files: [src/auth.py]}
+  checks: {business_keys: pass, external_failure_context: not_applicable, state_transitions: not_applicable, caller_rejections: not_applicable, sensitive_data: fail, duplicate_exception_logging: pass, low_value_logging: pass}
+finding:
+  id: FND-001
+  kind: requirement_violation
+  target: REQ-001
+  category: diagnosability
+  reason_code: DIAG_SENSITIVE_DATA_LOGGED
+  severity: critical
+  status: PROPOSED
+  scenario: login request logs password
+  location: {file: src/auth.py}
+  compliance: {evidence_kind: static_compliance, required_checks: [sensitive_data]}

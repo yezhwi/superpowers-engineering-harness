@@ -2,6 +2,8 @@
 
 from importlib import resources
 
+from pathlib import Path
+
 import pytest
 import yaml
 
@@ -80,6 +82,12 @@ def test_required_contract_accepts_external_dependency_dimension():
 def test_load_contract_rejects_missing_artifact(tmp_path):
     with pytest.raises(ValueError, match="OBSERVABILITY_CONTRACT_INVALID"):
         load_contract(tmp_path / ".harness")
+
+
+@pytest.mark.parametrize("fixture", Path("tests/fixtures/diagnosability").glob("*.yaml"))
+def test_fixture_contracts_validate(fixture):
+    case = yaml.safe_load(fixture.read_text())
+    validate_contract(case["contract"], task_type=case["task_type"])
 
 
 def test_default_template_is_schema_valid_initial_contract():

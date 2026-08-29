@@ -1,0 +1,15 @@
+task_type: feature
+contract:
+  version: 1
+  required: true
+  applicability: {reasons: [critical_business_object], inspected_paths: [src/order.py]}
+  business_keys: [order_id]
+  failure_boundaries: [order_creation]
+  critical_events: [order_created]
+review:
+  task: TASK-001
+  contract_required: true
+  finding_ids: [FND-001]
+  direct_dependencies: []
+  review_scope: {files: [src/order.py]}
+  checks: {business_keys: pass, external_failure_context: not_applicable, state_transitions: not_applicable, caller_rejections: not_applicable, sensitive_data: pass, duplicate_exception_logging: pass, low_value_logging: fail}

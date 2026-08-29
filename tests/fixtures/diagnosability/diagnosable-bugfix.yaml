@@ -1,0 +1,15 @@
+task_type: bugfix
+contract:
+  version: 1
+  required: false
+  applicability: {reasons: [pure_calculation], inspected_paths: [src/math.py]}
+  bug_fix:
+    observability_gap: false
+    basis: existing trace identifies business object and failure boundary
+review:
+  task: TASK-001
+  contract_required: false
+  finding_ids: []
+  direct_dependencies: []
+  review_scope: {files: [src/math.py]}
+  checks: {business_keys: not_applicable, external_failure_context: not_applicable, state_transitions: not_applicable, caller_rejections: not_applicable, sensitive_data: not_applicable, duplicate_exception_logging: not_applicable, low_value_logging: not_applicable}

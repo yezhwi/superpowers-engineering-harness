@@ -1,0 +1,15 @@
+task_type: feature
+contract:
+  version: 1
+  required: true
+  applicability: {reasons: [state_transition], inspected_paths: [src/order.py]}
+  business_keys: [order_id]
+  failure_boundaries: [order_state_update]
+  state_transitions: [{business_key: order_id, from: PAID, to: REFUNDED, trigger: refund_requested}]
+review:
+  task: TASK-001
+  contract_required: true
+  finding_ids: [FND-001]
+  direct_dependencies: []
+  review_scope: {files: [src/order.py]}
+  checks: {business_keys: pass, external_failure_context: not_applicable, state_transitions: fail, caller_rejections: not_applicable, sensitive_data: not_applicable, duplicate_exception_logging: pass, low_value_logging: pass}

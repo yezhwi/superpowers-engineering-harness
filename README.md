@@ -231,6 +231,10 @@ harness review complexity --file complexity-review.yaml
 
 Open HIGH complexity findings block gate. MEDIUM and LOW findings are advisory. Necessary security, authorization, audit, compatibility, migration, accessibility, and NFR complexity is not automatically over-engineering. Complexity review defaults to task Git baseline, covering committed, staged, unstaged, and relevant untracked changes; `--base` is an explicit override.
 
+## Production diagnosability (v0.2.5)
+
+Q0 skips diagnosability. Q1 performs a lightweight business-ID, exception-context, and sensitive-data check. Q2 requires `.harness/observability.yaml` and `harness review diagnosability` only when the Contract is required. Q3 always requires valid applicability and fresh review evidence. Harness validates artifacts and Gate state; it does not provide a logging SDK, OpenTelemetry, automatic log insertion, or universal source scanning.
+
 ## Dependencies and token use
 
 Harness depends on Superpowers worker skills, especially brainstorming, writing-plans, TDD, review, and verification. Harness controls their delivery loop; it does not duplicate them.

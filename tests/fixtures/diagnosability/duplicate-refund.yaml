@@ -1,0 +1,15 @@
+task_type: feature
+contract:
+  version: 1
+  required: true
+  applicability: {reasons: [caller_rejection], inspected_paths: [src/refund.py]}
+  business_keys: [order_id, refund_id]
+  failure_boundaries: [refund_validation]
+  critical_events: [refund_rejected]
+review:
+  task: TASK-001
+  contract_required: true
+  finding_ids: []
+  direct_dependencies: []
+  review_scope: {files: [src/refund.py]}
+  checks: {business_keys: pass, external_failure_context: not_applicable, state_transitions: not_applicable, caller_rejections: pass, sensitive_data: pass, duplicate_exception_logging: pass, low_value_logging: pass}

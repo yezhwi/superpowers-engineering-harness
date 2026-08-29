@@ -5,6 +5,13 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 
 
+def test_readmes_document_production_diagnosability_routing():
+    for name in ("README.md", "README.zh-CN.md"):
+        text = (REPO / name).read_text(encoding="utf-8")
+        assert "observability.yaml" in text
+        assert "harness review diagnosability" in text
+
+
 def test_readmes_document_explicit_fail_closed_evidence_reuse():
     for path in (REPO / "README.md", REPO / "README.zh-CN.md"):
         text = path.read_text()

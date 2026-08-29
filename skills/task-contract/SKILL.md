@@ -137,6 +137,15 @@ After both YAML files exist and validate against their schemas:
 2. Transition state `SPECIFYING -> PLANNED` via the state machine.
 3. Run `harness status` to confirm persistence (raw `python scripts/harness_status.py` only works inside the harness repo root).
 
+## Production Diagnosability
+
+For Q2/Q3, inspect changed paths and direct dependencies for external calls, state transitions, caller rejection, async/retry/fallback, compensation, consistency, permission, and critical business objects. Persist `.harness/observability.yaml`.
+
+- `required: true`: create linked `priority: must` diagnosability `REQ-*`; declare business keys, failure boundaries, and relevant events, transitions, or dependencies.
+- `required: false`: record applicability reasons; create no logging implementation obligation.
+- Bugfix: require `bug_fix.observability_gap: true|false` plus basis. `true` requires missing information and improvement; `false` forbids them.
+- Follow target project logger, correlation, reason-code, masking, and exception conventions. Never require log per method or log every bugfix.
+
 ## Outputs (complete list)
 
 | File | Action |

@@ -1,0 +1,15 @@
+task_type: feature
+contract:
+  version: 1
+  required: true
+  applicability: {reasons: [external_dependency], inspected_paths: [src/payment.py]}
+  business_keys: [order_id]
+  failure_boundaries: [payment_refund]
+  external_dependencies: [{name: payment_gateway, operations: [refund], required_context: [order_id, dependency, operation]}]
+review:
+  task: TASK-001
+  contract_required: true
+  finding_ids: [FND-001]
+  direct_dependencies: []
+  review_scope: {files: [src/payment.py]}
+  checks: {business_keys: pass, external_failure_context: fail, state_transitions: not_applicable, caller_rejections: not_applicable, sensitive_data: not_applicable, duplicate_exception_logging: pass, low_value_logging: pass}
