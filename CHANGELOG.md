@@ -6,6 +6,22 @@
 - Add scope-bound diagnosability review evidence, DIAG Finding static-compliance lifecycle, and Q2/Q3 Gate enforcement for critical and major diagnosability findings.
 - Keep logger frameworks, OpenTelemetry, automatic log insertion, and universal source scanning as explicit non-goals.
 
+### User impact
+
+Production failures in declared Q2/Q3 paths now retain a reviewed diagnostic contract: business keys, failure boundaries, and context needed to distinguish caller, dependency, and local failures. Critical and major DIAG Findings block completion; low-value logging remains advisory.
+
+### Install
+
+Pin this release from Git:
+
+```bash
+pi install git:github.com/yezhwi/superpowers-engineering-harness@v0.2.5
+```
+
+### Boundaries
+
+This release does not provide a logger SDK, OpenTelemetry integration, APM, automatic log insertion, or universal source scanning. Harness persists and gates diagnostic intent and review proof; agents judge business semantics and logging quality.
+
 ## 0.2.4
 
 - Add Test Plan Gate for STANDARD and STRICT `PLANNED → IMPLEMENTING` transitions.
