@@ -624,11 +624,11 @@ def cmd_task_new(task_id: str, title: str = "") -> int:
  try: head=task_git_head_or_error()
  except _load('workspace').WorkspaceError as exc: print(f'TASK_GIT_BASELINE_REQUIRED: {exc}',file=sys.stderr);return 2
  archive=h/'history'/f"{old['task']['id']}-{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}";archive.mkdir(parents=True)
- for name in ('current-task.yaml','requirements.yaml','invariants.yaml','gate.yaml','findings','evidence'):
+ for name in ('current-task.yaml','requirements.yaml','invariants.yaml','gate.yaml','observability.yaml','findings','evidence'):
   src=h/name
   if src.exists(): shutil.copytree(src,archive/name) if src.is_dir() else shutil.copy2(src,archive/name)
  from harness.templates import templates_dir
- for name in ('current-task.yaml','requirements.yaml','invariants.yaml','gate.yaml'):
+ for name in ('current-task.yaml','requirements.yaml','invariants.yaml','gate.yaml','observability.yaml'):
   shutil.copy2(templates_dir()/name,h/name)
  for name in ('findings','evidence'):
   shutil.rmtree(h/name,ignore_errors=True);(h/name).mkdir()
@@ -670,7 +670,7 @@ def cmd_task_recover(task_id: str, title: str, reason: str) -> int:
         print(f"RECOVERY_ARCHIVE_EXISTS: {archive}", file=sys.stderr)
         return 1
 
-    for name in ("current-task.yaml", "requirements.yaml", "invariants.yaml", "gate.yaml"):
+    for name in ("current-task.yaml", "requirements.yaml", "invariants.yaml", "gate.yaml", "observability.yaml"):
         source = harness_dir / name
         if source.exists():
             shutil.copy2(source, archive / name)
@@ -690,7 +690,7 @@ def cmd_task_recover(task_id: str, title: str, reason: str) -> int:
             shutil.move(str(source), str(archive / name))
         (harness_dir / name).mkdir()
 
-    for name in ("current-task.yaml", "requirements.yaml", "invariants.yaml", "gate.yaml"):
+    for name in ("current-task.yaml", "requirements.yaml", "invariants.yaml", "gate.yaml", "observability.yaml"):
         shutil.copy2(templates_dir() / name, harness_dir / name)
     task = load_task(harness_dir)
     task["task"]["id"] = task_id

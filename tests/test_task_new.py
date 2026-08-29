@@ -12,6 +12,13 @@ def test_task_new_archives_done_task(tmp_path):
  h=setup(tmp_path);r=cli(tmp_path,'task','new','TASK-002','--title','next');assert r.returncode==0
  t=yaml.safe_load((h/'current-task.yaml').read_text());assert t['task']['id']=='TASK-002' and t['state']=='CREATED'
  assert any((h/'history').iterdir())
+def test_task_new_resets_observability_contract(tmp_path):
+ h=setup(tmp_path)
+ (h/'observability.yaml').write_text('version: 1\nrequired: true\napplicability: {reasons: [old], inspected_paths: [old.py]}\nbusiness_keys: [old_id]\nfailure_boundaries: [old_boundary]\ncritical_events: [old_event]\n')
+ r=cli(tmp_path,'task','new','TASK-002');assert r.returncode==0
+ assert yaml.safe_load((h/'observability.yaml').read_text())['required'] is False
+
+
 def test_task_new_refuses_active_task(tmp_path):
  setup(tmp_path,'IMPLEMENTING');assert cli(tmp_path,'task','new','TASK-002').returncode==1
 def test_task_new_rejects_invalid_id(tmp_path):
