@@ -259,6 +259,9 @@ def run_gate(harness_dir: Path, head: str | None = None,
             code, category, message, recover_to=RECOVERY_POLICY.get(code), **identity
         ))
 
+    from .diagnosability import gate_blockers
+    blockers.extend(gate_blockers(harness_dir, task, head=head, workspace=current_workspace))
+
     # 1. Requirements: priority=must must be verified WITH fresh evidence.
     # A self-declared status=verified carries no weight on its own: each
     # verified must-requirement needs >=1 evidence ref resolving to an

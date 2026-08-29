@@ -23,6 +23,11 @@ gate:
     blocking:
       - high
 
+  diagnosability:
+    standard: required_when_contract_required
+    strict: required
+    blocking: [critical, major]
+
   findings:
     critical_allowed: 0
     major_allowed: 0

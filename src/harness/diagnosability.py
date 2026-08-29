@@ -113,6 +113,32 @@ def load_review_input(path: Path, *, task_id: str) -> DiagnosabilityReview:
     return validate_review_input(document, task_id=task_id)
 
 
+def gate_blockers(harness_dir: Path, task: dict, *, head: str, workspace: str):
+    """Return deterministic Contract/readiness blockers; never inspect source."""
+    from .blockers import GateBlocker
+    risk = (task.get("risk") or {}).get("level")
+    if risk not in {"Q2", "Q3"}:
+        return []
+    try:
+        contract = load_contract(harness_dir)
+    except ValueError as exc:
+        return [GateBlocker("OBSERVABILITY_CONTRACT_INVALID", "implementation", str(exc), recover_to="IMPLEMENTING")]
+    if risk == "Q3" and contract["applicability"]["reasons"] == ["not_assessed"]:
+        return [GateBlocker("OBSERVABILITY_CONTRACT_INVALID", "implementation", "Q3 observability contract is not assessed", recover_to="IMPLEMENTING")]
+    required = risk == "Q3" or contract["required"]
+    if not required:
+        return []
+    path = harness_dir / "evidence" / "diagnosability-review.json"
+    if not path.exists():
+        return [GateBlocker("DIAGNOSABILITY_REVIEW_MISSING", "verification", "missing diagnosability review evidence", recover_to="VERIFYING")]
+    try:
+        record = json.loads(path.read_text())
+        validate_compliance_closure({"category": "diagnosability", "compliance": {"required_checks": [name for name, value in record.get("checks", {}).items() if value == "pass"]}}, record, current_head=head, current_workspace=workspace)
+    except (OSError, json.JSONDecodeError, ValueError):
+        return [GateBlocker("DIAGNOSABILITY_REVIEW_STALE", "verification", "diagnosability review evidence is invalid or stale", recover_to="VERIFYING")]
+    return []
+
+
 def validate_compliance_closure(finding: dict, record: dict, *, current_head: str, current_workspace: str) -> None:
     """Validate terminal DIAG proof without accepting ordinary Finding proof."""
     if finding.get("category") != "diagnosability":
