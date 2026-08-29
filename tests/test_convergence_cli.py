@@ -36,12 +36,15 @@ def make_repo(tmp_path: Path, state="GATING", iteration=0,
     (h / "current-task.yaml").write_text(yaml.safe_dump(task))
     reqs = {"requirements": [
         {"id": "REQ-001", "statement": "works", "priority": "must",
-         "status": "verified", "evidence": ["build.json"]}]}
+         "status": "verified", "evidence": ["build.json"], "test_plan": {
+             "strategies": ["manual"], "cases": [{"id": "TC-900", "type": "happy_path", "strategy": "manual", "description": "fixture baseline", "tests": []}],
+         }}]}
     (h / "requirements.yaml").write_text(yaml.safe_dump(reqs))
     invs = {"invariants": [
         {"id": "INV-001", "statement": "safe", "category": "correctness",
-         "severity": "critical", "status": "verified",
-         "verification": ["build.json"]}]}
+         "severity": "critical", "status": "verified", "verification": ["build.json"], "test_plan": {
+             "strategies": ["manual"], "cases": [{"id": "TC-901", "type": "invariant", "strategy": "manual", "description": "fixture invariant", "tests": []}],
+         }}]}
     (h / "invariants.yaml").write_text(yaml.safe_dump(invs))
     head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=tmp_path,
                           capture_output=True, text=True).stdout.strip()
@@ -49,6 +52,9 @@ def make_repo(tmp_path: Path, state="GATING", iteration=0,
     for etype in ("build", "unit_test"):
         write_evidence(tmp_path, h, etype)
     write_complexity_review(tmp_path, h)
+    build = json.loads((edir / "build.json").read_text())
+    build["covered_test_cases"] = ["TC-900", "TC-901"]
+    (edir / "build.json").write_text(json.dumps(build))
     return h
 
 
