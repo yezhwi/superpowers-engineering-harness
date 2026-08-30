@@ -120,6 +120,13 @@ def test_review_readiness_rejects_failed_check_without_linked_finding():
         validate_review_readiness({"required": True, "business_keys": ["order_id"], "failure_boundaries": ["payment"], "critical_events": ["created"]}, {"contract_required": True, "checks": {"business_keys": "fail"}, "finding_ids": []}, [], scope_files=("src/order.py",))
 
 
+def test_review_readiness_rejects_failed_check_without_listed_finding():
+    from harness.diagnosability import validate_review_readiness
+    finding = {"id": "FND-001", "category": "diagnosability", "location": {"file": "src/order.py"}, "compliance": {"required_checks": ["business_keys"]}}
+    with pytest.raises(ValueError, match="DIAG_FINDING_REQUIRED"):
+        validate_review_readiness({"required": True}, {"contract_required": True, "checks": {"business_keys": "fail"}, "finding_ids": []}, [finding], scope_files=("src/order.py",))
+
+
 def test_default_template_is_schema_valid_initial_contract():
     document = yaml.safe_load(
         resources.files("harness").joinpath("templates", "observability.yaml").read_text()
