@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from importlib import resources
 from pathlib import Path
 
+from .transaction import StagedArtifact, publish, stage
 from .workspace import git_head, review_scope, snapshot
 
 import yaml
@@ -190,15 +191,8 @@ def write_review(harness_dir: Path, review: DiagnosabilityReview, *, base_ref: s
         path = harness_dir / "findings" / f"{finding['id']}.yaml"
         if path.exists():
             raise ValueError("DIAG_FINDING_EXISTS")
-    for finding in review.findings:
-        path = harness_dir / "findings" / f"{finding['id']}.yaml"
-        temp = path.with_suffix('.yaml.tmp')
-        temp.write_text(yaml.safe_dump(finding, sort_keys=False), encoding='utf-8')
-        temp.replace(path)
     record = {"type": "diagnosability_review", "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(), "command": "harness review diagnosability", "exit_code": 0, "commit": git_head(), "workspace_fingerprint": current.fingerprint, "workspace_fingerprint_after": current.fingerprint, "review_scope": {"files": list(files), "direct_dependencies": list(review.direct_dependencies)}, "contract_required": review.contract_required, "checks": review.checks, "finding_ids": list(review.finding_ids)}
-    evidence = harness_dir / "evidence" / "diagnosability-review.json"
-    evidence.parent.mkdir(parents=True, exist_ok=True)
-    temp = evidence.with_suffix(".json.tmp")
-    temp.write_text(json.dumps(record, indent=2), encoding="utf-8")
-    temp.replace(evidence)
-    return evidence
+    artifacts = [StagedArtifact(f"findings/{finding['id']}.yaml", yaml.safe_dump(finding, sort_keys=False).encode()) for finding in review.findings]
+    artifacts.append(StagedArtifact("evidence/diagnosability-review.json", json.dumps(record, indent=2).encode(), replace=True))
+    publish(harness_dir, stage(harness_dir, artifacts), replace_paths=frozenset({"evidence/diagnosability-review.json"}))
+    return harness_dir / "evidence" / "diagnosability-review.json"
