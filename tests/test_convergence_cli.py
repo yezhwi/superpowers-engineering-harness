@@ -8,6 +8,7 @@ from pathlib import Path
 import yaml
 
 from evidence_factory import write_complexity_review, write_evidence
+from fixtures.harness import populate_complete_harness
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -55,7 +56,7 @@ def make_repo(tmp_path: Path, state="GATING", iteration=0,
     build = json.loads((edir / "build.json").read_text())
     build["covered_test_cases"] = ["TC-900", "TC-901"]
     (edir / "build.json").write_text(json.dumps(build))
-    return h
+    return populate_complete_harness(tmp_path, h)
 
 
 def add_finding(h: Path, fid: str, status="PROPOSED", severity="major"):
