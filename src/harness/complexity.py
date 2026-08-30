@@ -4,6 +4,7 @@ import datetime
 import json
 from pathlib import Path
 
+from .transaction import StagedArtifact, publish, stage
 from .workspace import git_head, snapshot
 
 import yaml
@@ -77,20 +78,14 @@ def write_complexity_review(harness_dir: Path, review: dict, scope=None) -> list
     required = {"task", "findings"}
     if not isinstance(review, dict) or required - review.keys() or not isinstance(review["findings"], list):
         _invalid("complexity review requires task and findings")
-    findings_dir = harness_dir / "findings"
-    findings_dir.mkdir(parents=True, exist_ok=True)
-    paths = []
+    finding_ids = set()
     for finding in review["findings"]:
         validate_complexity_finding(finding)
-        path = findings_dir / f"{finding['id']}.yaml"
-        if path.exists():
+        if finding["id"] in finding_ids:
+            _invalid(f"duplicate complexity finding: {finding['id']}")
+        finding_ids.add(finding["id"])
+        if (harness_dir / "findings" / f"{finding['id']}.yaml").exists():
             _invalid(f"complexity finding already exists: {finding['id']}")
-        temporary = path.with_suffix(".yaml.tmp")
-        temporary.write_text(yaml.safe_dump(finding, sort_keys=False, allow_unicode=True))
-        temporary.replace(path)
-        paths.append(path)
-    evidence_dir = harness_dir / "evidence"
-    evidence_dir.mkdir(parents=True, exist_ok=True)
     fingerprint = snapshot().fingerprint
     metadata = {
         "type": "review", "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
@@ -107,11 +102,22 @@ def write_complexity_review(harness_dir: Path, review: dict, scope=None) -> list
             "files": list(scope.files),
         } if scope else None,
     }
-    path = evidence_dir / "complexity-review.json"
-    temporary = path.with_suffix(".json.tmp")
-    temporary.write_text(json.dumps(metadata, indent=2))
-    temporary.replace(path)
-    return paths
+    artifacts = [
+        StagedArtifact(
+            f"findings/{finding['id']}.yaml",
+            yaml.safe_dump(finding, sort_keys=False, allow_unicode=True).encode(),
+        )
+        for finding in review["findings"]
+    ]
+    artifacts.append(
+        StagedArtifact("evidence/complexity-review.json", json.dumps(metadata, indent=2).encode(), replace=True)
+    )
+    publish(
+        harness_dir,
+        stage(harness_dir, artifacts),
+        replace_paths=frozenset({"evidence/complexity-review.json"}),
+    )
+    return [harness_dir / "findings" / f"{finding['id']}.yaml" for finding in review["findings"]]
 
 
 def write_minimal_decision(harness_dir: Path, document: dict) -> Path:

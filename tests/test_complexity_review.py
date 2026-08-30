@@ -57,6 +57,21 @@ def test_write_complexity_review_persists_findings_and_metadata(tmp_path):
     assert metadata["finding_ids"] == ["CPLX-001"]
 
 
+def test_complexity_review_validation_failure_leaves_no_canonical_artifacts(tmp_path):
+    harness_dir = tmp_path / ".harness"
+    invalid = finding(id="CPLX-002")
+    del invalid["evidence"]
+
+    with pytest.raises(ValidationError):
+        write_complexity_review(
+            harness_dir,
+            {"task": "TASK-004", "findings": [finding(), invalid]},
+        )
+
+    assert not list((harness_dir / "findings").glob("CPLX-*.yaml"))
+    assert not (harness_dir / "evidence" / "complexity-review.json").exists()
+
+
 def test_complexity_finding_requires_concrete_evidence():
     """Break caught: reviewer can emit unsupported complexity claim."""
     unsupported = finding()

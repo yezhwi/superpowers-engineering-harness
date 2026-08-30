@@ -20,6 +20,19 @@ def setup(repo):
     subprocess.run(["git", "commit", "-qm", "init"], cwd=repo, check=True)
 
 
+def test_cli_rejects_covered_test_not_selected_by_pytest_command(tmp_path):
+    setup(tmp_path)
+    result = cli(
+        tmp_path, "evidence", "--type", "unit_test", "--scope", "related",
+        "--covered-test", "tests/test_claimed.py::test_claimed",
+        "--command", "pytest tests/test_other.py",
+    )
+
+    assert result.returncode == 2
+    assert "COVERED_TEST_NOT_EXECUTED" in result.stderr
+    assert not (tmp_path / ".harness/evidence/unit-test.json").exists()
+
+
 def test_cli_passes_reuse_flag_to_collector(tmp_path):
     setup(tmp_path)
     first = cli(tmp_path, "evidence", "--type", "build", "--command", "true")

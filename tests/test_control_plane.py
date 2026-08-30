@@ -50,12 +50,44 @@ def test_status_renders_state(tmp_path):
     assert "State        GATING" in result.stdout
 
 
+def test_status_from_repository_subdirectory_uses_root_harness(tmp_path):
+    h = make_repo(tmp_path, state="GATING")
+    nested = tmp_path / "src" / "nested"
+    nested.mkdir(parents=True)
+
+    result = run_cli(nested, "status")
+
+    assert result.returncode == 0
+    assert "State        GATING" in result.stdout
+    assert not (nested / ".harness").exists()
+
+
+def test_cli_main_restores_callers_working_directory(tmp_path, monkeypatch):
+    make_repo(tmp_path, state="GATING")
+    nested = tmp_path / "src" / "nested"
+    nested.mkdir(parents=True)
+    monkeypatch.chdir(nested)
+    from harness.cli import main
+
+    assert main(["status"]) == 0
+    assert Path.cwd() == nested
+
+
 def test_status_invalid_state_exit_2(tmp_path):
     make_repo(tmp_path, state="WAT")
     assert run_cli(tmp_path, "status").returncode == 2
 
 
 # -- transition ------------------------------------------------------------
+
+def test_transition_cannot_reenter_specifying_without_risk_escalation(tmp_path):
+    make_repo(tmp_path, state="IMPLEMENTING")
+
+    result = run_cli(tmp_path, "transition", "SPECIFYING")
+
+    assert result.returncode == 1
+    assert "RISK_ESCALATION_REQUIRED" in result.stderr
+
 
 def test_transition_legal_persists_new_state(tmp_path):
     h = make_repo(tmp_path, state="PLANNED")

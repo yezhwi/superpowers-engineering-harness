@@ -21,6 +21,7 @@ from jsonschema import ValidationError, validate
 
 from .blockers import GateBlocker, RECOVERY_POLICY, blocker_document
 from .evidence_validator import EvidenceValidationError, validate_evidence
+from .paths import EvidenceReferenceError, evidence_path
 from .state_machine import STATES
 from .test_plan import validate_test_coverage, validate_test_plan
 from .risk_boundaries import RiskBoundaryPolicyError, business_paths, load_boundaries, required_level
@@ -198,20 +199,29 @@ def run_gate(harness_dir: Path, head: str | None = None,
             f"state {state} does not allow gate execution (must be GATING)"
         )
 
+    risk = task.get("risk")
+    if isinstance(risk, dict):
+        expected_profile = {"Q1": "FAST", "Q2": "STANDARD", "Q3": "STRICT"}.get(
+            risk.get("level")
+        )
+        if expected_profile is None or risk.get("profile") != expected_profile:
+            raise InvalidHarnessState("RISK_PROFILE_INVALID")
+
     head = head if head is not None else git_head()
     try:
         current_workspace = snapshot().fingerprint
     except WorkspaceError as exc:
         raise InvalidHarnessState(f"cannot fingerprint workspace: {exc}") from exc
+    gate_doc = _load_yaml(harness_dir / "gate.yaml")
+    validate_schema(gate_doc, "gate.schema.json", harness_dir / "gate.yaml")
     if (task.get("risk") or {}).get("profile") == "FAST":
         return run_fast_gate(task, harness_dir, head, current_workspace)
 
     requirements_doc = _load_yaml(harness_dir / "requirements.yaml")
     invariants_doc = _load_yaml(harness_dir / "invariants.yaml")
-    gate_doc = _load_yaml(harness_dir / "gate.yaml")
     validate_schema(requirements_doc, "requirement.schema.json", harness_dir / "requirements.yaml")
     validate_schema(invariants_doc, "invariant.schema.json", harness_dir / "invariants.yaml")
-    gate_cfg = gate_doc.get("gate", {})
+    gate_cfg = gate_doc["gate"]
     evidence = load_evidence(harness_dir / "evidence")
     findings = load_findings(harness_dir / "findings")
     impact_path = harness_dir / "impact.yaml"
@@ -221,33 +231,45 @@ def run_gate(harness_dir: Path, head: str | None = None,
     # Terminal/near-terminal findings require real proof records, not only
     # schema-shaped strings. Fail closed before open-finding policy runs.
     def finding_proof(finding, ref, expected_success, label, test_id=None):
-        path = harness_dir / "evidence" / (ref if ref.endswith(".json") else f"{ref}.json")
         try:
+            path = evidence_path(harness_dir, ref)
             record = json.loads(path.read_text())
             validate_evidence(record, current_head=head, current_workspace=current_workspace,
                               expected_success=expected_success,
                               require_current_workspace=expected_success,
                               finding_id=finding["id"] if test_id else None,
                               test_id=test_id)
-        except (OSError, json.JSONDecodeError, EvidenceValidationError) as exc:
+        except (OSError, json.JSONDecodeError, EvidenceValidationError, EvidenceReferenceError) as exc:
             raise InvalidHarnessState(f"{finding['id']} {label} evidence invalid: {exc}") from exc
     for finding in findings:
         state = finding["status"]
+        if finding.get("category") == "diagnosability":
+            if state in {"VERIFIED", "CLOSED"}:
+                try:
+                    record = json.loads(evidence_path(harness_dir, finding["evidence"]).read_text())
+                    from .diagnosability import validate_compliance_closure
+                    validate_compliance_closure(
+                        finding, record, current_head=head,
+                        current_workspace=current_workspace,
+                    )
+                except (OSError, json.JSONDecodeError, ValueError, EvidenceReferenceError) as exc:
+                    raise InvalidHarnessState(
+                        f"{finding['id']} compliance evidence invalid: {exc}"
+                    ) from exc
+            continue
         if state in {"CONFIRMED", "FIXING", "FIXED", "VERIFIED", "CLOSED"}:
             finding_proof(finding, finding["regression_test"]["red_evidence"], False, "red", finding["regression_test"]["path"])
         if state in {"FIXED", "VERIFIED", "CLOSED"}:
             finding_proof(finding, finding["regression_test"]["green_evidence"], True, "green", finding["regression_test"]["path"])
         if state in {"VERIFIED", "CLOSED"}:
-            ref = finding["evidence"]
-            path = harness_dir / "evidence" / (ref if ref.endswith(".json") else f"{ref}.json")
             try:
-                record = json.loads(path.read_text())
+                record = json.loads(evidence_path(harness_dir, finding["evidence"]).read_text())
                 from .evidence_validator import validate_finding_closure_evidence
                 validate_finding_closure_evidence(
                     finding, record, impact, current_head=head,
                     current_workspace=current_workspace,
                 )
-            except (OSError, json.JSONDecodeError, EvidenceValidationError) as exc:
+            except (OSError, json.JSONDecodeError, EvidenceValidationError, EvidenceReferenceError) as exc:
                 raise InvalidHarnessState(
                     f"{finding['id']} full regression evidence invalid: {exc}"
                 ) from exc
@@ -268,9 +290,6 @@ def run_gate(harness_dir: Path, head: str | None = None,
     # evidence file that exists, ran successfully, and matches HEAD.
     req_cfg = gate_cfg.get("requirements", {})
     if req_cfg.get("must_verified", True):
-        must_match_head = bool(
-            gate_cfg.get("evidence", {}).get("must_match_head", True)
-        )
         evidence_dir = harness_dir / "evidence"
         for req in requirements_doc.get("requirements", []):
             if req.get("priority") != "must":
@@ -287,10 +306,13 @@ def run_gate(harness_dir: Path, head: str | None = None,
                 if not name:
                     block("EVIDENCE_MISSING", "verification", f"{req.get('id')} has an empty evidence ref", requirement_id=req.get("id"))
                     continue
-                fname = name if name.endswith(".json") else f"{name}.json"
-                path = evidence_dir / fname
+                try:
+                    path = evidence_path(harness_dir, name)
+                except EvidenceReferenceError:
+                    block("EVIDENCE_MISSING", "verification", f"{req.get('id')} evidence reference invalid", requirement_id=req.get("id"))
+                    continue
                 if not path.is_file():
-                    block("EVIDENCE_MISSING", "verification", f"{req.get('id')} evidence missing: {fname}", source=fname, requirement_id=req.get("id"))
+                    block("EVIDENCE_MISSING", "verification", f"{req.get('id')} evidence missing: {path.name}", source=path.name, requirement_id=req.get("id"))
                     continue
                 try:
                     ev = json.loads(path.read_text())
@@ -301,7 +323,7 @@ def run_gate(harness_dir: Path, head: str | None = None,
                     validate_evidence(ev, current_head=head, current_workspace=current_workspace,
                                       expected_success=True)
                 except EvidenceValidationError as exc:
-                    block(str(exc).split(":", 1)[0], "verification", f"{req.get('id')} evidence {fname} invalid: {exc}", source=fname, requirement_id=req.get("id"))
+                    block(str(exc).split(":", 1)[0], "verification", f"{req.get('id')} evidence {path.name} invalid: {exc}", source=path.name, requirement_id=req.get("id"))
 
     # 2. Invariants: violated blocks; unproven blocks for critical/major.
     # pending == not proven == BLOCKED. Only proven-safe (verified)
@@ -326,7 +348,11 @@ def run_gate(harness_dir: Path, head: str | None = None,
                 block("EVIDENCE_MISSING", "verification", f"{iid} verified without verification evidence", invariant_id=iid)
             for ref in refs:
                 name = ref if isinstance(ref, str) else (ref or {}).get("ref", "")
-                path = evidence_dir / (name if name.endswith(".json") else f"{name}.json")
+                try:
+                    path = evidence_path(harness_dir, name)
+                except EvidenceReferenceError:
+                    block("EVIDENCE_MISSING", "verification", f"{iid} verification evidence reference invalid", invariant_id=iid)
+                    continue
                 try:
                     ev = json.loads(path.read_text())
                 except (OSError, json.JSONDecodeError):
@@ -340,9 +366,6 @@ def run_gate(harness_dir: Path, head: str | None = None,
 
     # 3. Required verification evidence exists, exit_code==0, fresh HEAD.
     ver_cfg = gate_cfg.get("verification", {})
-    must_match_head = bool(
-        gate_cfg.get("evidence", {}).get("must_match_head", True)
-    )
     for vtype, policy in ver_cfg.items():
         if policy != "required":
             continue
@@ -424,7 +447,11 @@ def run_gate(harness_dir: Path, head: str | None = None,
         block("FINDING_OPEN", "defect", f"Major finding {f['id']} is open", finding_id=f["id"])
 
     # Confirmed findings must carry a regression test (LAW 4).
-    confirmed = [f for f in findings if f.get("status") == "CONFIRMED"]
+    confirmed = [
+        finding for finding in findings
+        if finding.get("status") == "CONFIRMED"
+        and finding.get("category") != "diagnosability"
+    ]
     regression_cfg = gate_cfg.get("regression", {})
     without_test_allowed = int(
         regression_cfg.get("confirmed_finding_without_test", 0))

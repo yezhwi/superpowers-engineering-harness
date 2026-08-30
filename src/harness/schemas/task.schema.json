@@ -311,6 +311,9 @@
   "allOf": [
     {"if": {"required": ["review"], "properties": {"review": {"properties": {"outcome": {"const": "PASS"}}}}}, "then": {"properties": {"review": {"properties": {"reason_code": {"const": "REVIEW_CLEAN"}, "finding_ids": {"maxItems": 0}}}}}},
     {"if": {"required": ["review"], "properties": {"review": {"properties": {"outcome": {"const": "VERIFICATION_GAP"}}}}}, "then": {"properties": {"review": {"properties": {"reason_code": {"enum": ["TEST_COVERAGE_INSUFFICIENT", "EVIDENCE_INCOMPLETE", "INVARIANT_UNPROVEN", "TEST_SCOPE_INSUFFICIENT"]}, "finding_ids": {"maxItems": 0}}}}}},
-    {"if": {"required": ["review"], "properties": {"review": {"properties": {"outcome": {"const": "DEFECT"}}}}}, "then": {"properties": {"review": {"properties": {"reason_code": {"enum": ["LOGIC_ERROR", "REGRESSION", "CONTRACT_VIOLATION", "INVARIANT_VIOLATION", "DIAGNOSABILITY_VIOLATION"]}, "finding_ids": {"minItems": 1}}}}}}
+    {"if": {"required": ["review"], "properties": {"review": {"properties": {"outcome": {"const": "DEFECT"}}}}}, "then": {"properties": {"review": {"properties": {"reason_code": {"enum": ["LOGIC_ERROR", "REGRESSION", "CONTRACT_VIOLATION", "INVARIANT_VIOLATION", "DIAGNOSABILITY_VIOLATION"]}, "finding_ids": {"minItems": 1}}}}}},
+    {"if": {"required": ["risk"], "properties": {"risk": {"properties": {"level": {"const": "Q1"}}}}}, "then": {"properties": {"risk": {"properties": {"profile": {"const": "FAST"}}}}}},
+    {"if": {"required": ["risk"], "properties": {"risk": {"properties": {"level": {"const": "Q2"}}}}}, "then": {"properties": {"risk": {"properties": {"profile": {"const": "STANDARD"}}}}}},
+    {"if": {"required": ["risk"], "properties": {"risk": {"properties": {"level": {"const": "Q3"}}}}}, "then": {"properties": {"risk": {"properties": {"profile": {"const": "STRICT"}}}}}}
   ]
 }

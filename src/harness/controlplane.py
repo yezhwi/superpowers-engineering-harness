@@ -1,8 +1,7 @@
-"""Control-plane subcommands (guide v0.1 section 34).
+"""Control-plane command handlers for packaged ``src/harness`` runtime.
 
-Thin wrappers over the deterministic scripts in <repo>/scripts. Logic is
-imported from the scripts directory -- never re-implemented here, so the
-CLI and the scripts can never diverge.
+CLI parsing lives in :mod:`harness.cli`; deterministic policy lives in focused
+Harness modules. Compatibility wrappers in ``scripts/`` re-export this source.
 """
 
 import datetime
@@ -11,6 +10,8 @@ import json
 import sys
 from pathlib import Path
 
+from harness.paths import evidence_path
+from harness.task_replacement import publish_replacement, replacement_workspace
 from harness.templates import templates_dir
 
 
@@ -47,8 +48,8 @@ def save_task(harness_dir: Path, task: dict) -> None:
     _load("telemetry").update_telemetry(harness_dir, task)
 
 
-def cmd_status() -> int:
-    return _load("harness_status").main([])
+def cmd_status(harness_dir: Path = Path(".harness")) -> int:
+    return _load("harness_status").main(["--harness-dir", str(harness_dir)])
 
 
 def cmd_transition(target: str) -> int:
@@ -60,8 +61,11 @@ def cmd_transition(target: str) -> int:
     if current == "CLASSIFIED" and ((profile == "FAST" and target != "IMPLEMENTING") or (profile in {"STANDARD", "STRICT"} and target != "SPECIFYING")):
         print("PROFILE_ENTRY_STATE_REQUIRED", file=sys.stderr)
         return 1
-    if current == "BLOCKED" and target == "VERIFYING":
+    if current == "BLOCKED":
         print("RESUME_REQUIRED: use harness resume", file=sys.stderr)
+        return 1
+    if current == "IMPLEMENTING" and target == "SPECIFYING":
+        print("RISK_ESCALATION_REQUIRED: use harness task escalate", file=sys.stderr)
         return 1
     if current == "REVIEWING" and target in {"GATING", "VERIFYING", "REPRODUCING"}:
         print("REVIEW_OUTCOME_REQUIRED: use harness review outcome", file=sys.stderr)
@@ -380,7 +384,7 @@ def cmd_finding_show(finding_id: str) -> int:
 def _cmd_gate_convergence() -> int:
     """Deterministic convergence decision (convergence skill v0.1 rules).
 
-    PASS     (gate exit 0)          -> GATING  -> CONVERGED
+    PASS     (Gate status PASS)     -> GATING  -> CONVERGED
     ESCALATE (blocked, no budget)   -> via BLOCKED -> ESCALATED,
                                         reason MAX_ITERATIONS
     CONTINUE (blocked, budget left) -> GATING  -> BLOCKED, iteration += 1
@@ -495,11 +499,12 @@ def cmd_finding_transition(fid,target,evidence=None,test=None,attempt=None,reaso
  if target not in _FINDING_TRANSITIONS.get(current,set()): print(f'INVALID FINDING TRANSITION: {current} -> {target}',file=sys.stderr); return 1
  def proof(ref,ok,test_id=None):
   if not ref: raise ValueError('missing --evidence')
-  p=Path('.harness/evidence')/(ref if ref.endswith('.json') else ref+'.json')
+  p=evidence_path(Path('.harness'),ref)
   d=json.loads(p.read_text()); head=_load('quality_gate').git_head()
   workspace=_load('collect_evidence').workspace_fingerprint()
   try: _load('evidence_validator').validate_evidence(d,current_head=head,current_workspace=workspace,expected_success=ok,finding_id=fid if test_id else None,test_id=test_id)
   except Exception as exc: raise ValueError(str(exc)) from exc
+  return p.name
  try:
   if target=='REPRODUCING':
    if not attempt: raise ValueError('REPRODUCING requires --attempt')
@@ -508,13 +513,13 @@ def cmd_finding_transition(fid,target,evidence=None,test=None,attempt=None,reaso
    if finding.get('category')=='diagnosability': finding['confirmed_at']=datetime.datetime.now(datetime.timezone.utc).isoformat()
    else:
     if not test: raise ValueError('CONFIRMED requires --test')
-    proof(evidence,False,test); finding['test']=test; finding['regression_test']={'path':test,'red_evidence':evidence}; finding['confirmed_at']=datetime.datetime.now(datetime.timezone.utc).isoformat()
+    evidence=proof(evidence,False,test); finding['test']=test; finding['regression_test']={'path':test,'red_evidence':evidence}; finding['confirmed_at']=datetime.datetime.now(datetime.timezone.utc).isoformat()
   elif target=='FIXED':
-   if finding.get('category')!='diagnosability': proof(evidence,True,finding['regression_test']['path']); finding['regression_test']['green_evidence']=evidence
+   if finding.get('category')!='diagnosability': evidence=proof(evidence,True,finding['regression_test']['path']); finding['regression_test']['green_evidence']=evidence
   elif target=='VERIFIED':
    if not evidence: raise ValueError('missing --evidence')
-   p=Path('.harness/evidence')/(evidence if evidence.endswith('.json') else evidence+'.json')
-   d=json.loads(p.read_text()); head=_load('quality_gate').git_head(); workspace=_load('collect_evidence').workspace_fingerprint()
+   p=evidence_path(Path('.harness'),evidence)
+   evidence=p.name; d=json.loads(p.read_text()); head=_load('quality_gate').git_head(); workspace=_load('collect_evidence').workspace_fingerprint()
    impact_path=Path('.harness/impact.yaml'); impact=yaml.safe_load(impact_path.read_text()) if impact_path.exists() else {}
    if critical_related_approved:
     if finding.get('severity') != 'critical' or d.get('scope') != 'related': raise ValueError('--critical-related-approved requires critical related evidence')
@@ -565,6 +570,8 @@ def cmd_task_classify(level: str, dimensions: dict[str, str]) -> int:
 
 
 def cmd_task_escalate(level: str, reason: str) -> int:
+    import shutil
+
     harness_dir = Path(".harness")
     task = load_task(harness_dir)
     risk_record = task.get("risk")
@@ -577,11 +584,32 @@ def cmd_task_escalate(level: str, reason: str) -> int:
     except Exception as exc:
         print(f"RISK_ESCALATION_INVALID: {exc}", file=sys.stderr)
         return 2
-    risk_record["escalation_history"].append({"from": risk_record["level"], "to": level, "reason": reason})
-    risk_record["level"] = level
-    risk_record["profile"] = risk.PROFILES[level]
-    save_task(harness_dir, task)
-    print(f"OK: escalated to {level}/{risk_record['profile']}")
+    fast_task = risk_record.get("profile") == "FAST"
+    if fast_task and task.get("state") not in {"CLASSIFIED", "IMPLEMENTING"}:
+        print("RISK_ESCALATION_REQUIRES_RESTART", file=sys.stderr)
+        return 1
+    try:
+        staged = replacement_workspace(harness_dir)
+        staged_task = load_task(staged)
+        staged_risk = staged_task["risk"]
+        restarting_contract = fast_task and staged_task["state"] == "IMPLEMENTING"
+        if restarting_contract:
+            _load("state_machine").require_legal("IMPLEMENTING", "SPECIFYING")
+            for name in ("requirements.yaml", "invariants.yaml", "observability.yaml"):
+                shutil.copy2(templates_dir() / name, staged / name)
+            (staged / "evidence" / "minimal-implementation.yaml").unlink(missing_ok=True)
+            staged_task["state"] = "SPECIFYING"
+        staged_risk["escalation_history"].append({"from": staged_risk["level"], "to": level, "reason": reason})
+        staged_risk["level"] = level
+        staged_risk["profile"] = risk.PROFILES[level]
+        save_task(staged, staged_task)
+        publish_replacement(harness_dir, staged)
+    except Exception as exc:
+        if "staged" in locals():
+            shutil.rmtree(staged, ignore_errors=True)
+        print(f"RISK_ESCALATION_INVALID: {exc}", file=sys.stderr)
+        return 2
+    print(f"OK: escalated to {level}/{risk.PROFILES[level]}")
     return 0
 
 
@@ -590,15 +618,14 @@ def _verify_record(kind: str, rid: str, ref: str) -> int:
  hp=Path('.harness'); path=hp/("requirements.yaml" if kind=="requirement" else "invariants.yaml"); doc=yaml.safe_load(path.read_text()); key="requirements" if kind=="requirement" else "invariants"
  rec=next((x for x in doc.get(key,[]) if x.get('id')==rid),None)
  if not rec: print(f"{kind} not found: {rid}",file=sys.stderr); return 1
- ep=hp/'evidence'/(ref if ref.endswith('.json') else ref+'.json')
- try: ev=json.loads(ep.read_text())
- except Exception: print(f"INVALID EVIDENCE: {ref}",file=sys.stderr); return 2
+ try: ep=evidence_path(hp,ref); ev=json.loads(ep.read_text())
+ except Exception as exc: print(f"INVALID EVIDENCE: {exc}",file=sys.stderr); return 2
  try:
   gate=_load('quality_gate'); current=_load('collect_evidence').workspace_fingerprint()
   _load('evidence_validator').validate_evidence(ev,current_head=gate.git_head(),current_workspace=current,expected_success=True)
  except Exception as exc: print(f"INVALID EVIDENCE: {exc}",file=sys.stderr); return 2
  field='evidence' if kind=='requirement' else 'verification'; rec.setdefault(field,[])
- if ref not in rec[field]: rec[field].append(ref)
+ if ep.name not in rec[field]: rec[field].append(ep.name)
  rec['status']='verified'; tmp=path.with_suffix('.tmp');tmp.write_text(yaml.safe_dump(doc,sort_keys=False));tmp.replace(path);print(f"OK: {rid} verified");return 0
 
 def cmd_requirement_verify(rid,ref): return _verify_record('requirement',rid,ref)
@@ -617,27 +644,50 @@ def task_git_head_or_error() -> str:
 
 
 def cmd_task_new(task_id: str, title: str = "") -> int:
- import shutil, datetime, re
- if not re.fullmatch(r"TASK-[0-9]+",task_id): print("INVALID TASK ID",file=sys.stderr);return 2
- h=Path('.harness'); old=load_task(h)
- if old.get('state') not in {'DONE','ESCALATED'}: print('task new requires DONE or ESCALATED task',file=sys.stderr);return 1
- try: head=task_git_head_or_error()
- except _load('workspace').WorkspaceError as exc: print(f'TASK_GIT_BASELINE_REQUIRED: {exc}',file=sys.stderr);return 2
- archive=h/'history'/f"{old['task']['id']}-{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}";archive.mkdir(parents=True)
- for name in ('current-task.yaml','requirements.yaml','invariants.yaml','gate.yaml','observability.yaml','findings','evidence'):
-  src=h/name
-  if src.exists(): shutil.copytree(src,archive/name) if src.is_dir() else shutil.copy2(src,archive/name)
- from harness.templates import templates_dir
- for name in ('current-task.yaml','requirements.yaml','invariants.yaml','gate.yaml','observability.yaml'):
-  shutil.copy2(templates_dir()/name,h/name)
- for name in ('findings','evidence'):
-  shutil.rmtree(h/name,ignore_errors=True);(h/name).mkdir()
- task=load_task(h);task['task']['id']=task_id;task['task']['title']=title;task['timestamps']['created_at']=datetime.datetime.now(datetime.timezone.utc).isoformat();initialize_task_git(task,head)
- save_task(h,task);print(f'OK: archived task, created {task_id}');return 0
+    import re
+    import shutil
+
+    if not re.fullmatch(r"TASK-[0-9]+", task_id):
+        print("INVALID TASK ID", file=sys.stderr)
+        return 2
+    harness_dir = Path(".harness")
+    old = load_task(harness_dir)
+    if old.get("state") not in {"DONE", "ESCALATED"}:
+        print("task new requires DONE or ESCALATED task", file=sys.stderr)
+        return 1
+    try:
+        head = task_git_head_or_error()
+    except _load("workspace").WorkspaceError as exc:
+        print(f"TASK_GIT_BASELINE_REQUIRED: {exc}", file=sys.stderr)
+        return 2
+    try:
+        staged = replacement_workspace(harness_dir)
+        archive = staged / "history" / f"{old['task']['id']}-{datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')}"
+        archive.mkdir(parents=True, exist_ok=False)
+        for name in ("current-task.yaml", "requirements.yaml", "invariants.yaml", "gate.yaml", "impact.yaml", "observability.yaml", "findings", "evidence"):
+            source = staged / name
+            if source.exists():
+                shutil.copytree(source, archive / name) if source.is_dir() else shutil.copy2(source, archive / name)
+        for name in ("current-task.yaml", "requirements.yaml", "invariants.yaml", "gate.yaml", "impact.yaml", "observability.yaml"):
+            shutil.copy2(templates_dir() / name, staged / name)
+        for name in ("findings", "evidence"):
+            shutil.rmtree(staged / name, ignore_errors=True)
+            (staged / name).mkdir()
+        task = load_task(staged)
+        task["task"]["id"] = task_id
+        task["task"]["title"] = title
+        task["timestamps"]["created_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        initialize_task_git(task, head)
+        save_task(staged, task)
+        publish_replacement(harness_dir, staged)
+    except Exception as exc:
+        print(f"TASK_REPLACEMENT_FAILED: {exc}", file=sys.stderr)
+        return 2
+    print(f"OK: archived task, created {task_id}")
+    return 0
 
 def cmd_task_recover(task_id: str, title: str, reason: str) -> int:
-    """Archive an active task with an explicit recovery audit."""
-    import datetime
+    """Atomically archive active task and publish replacement task."""
     import re
     import shutil
     import yaml
@@ -648,56 +698,49 @@ def cmd_task_recover(task_id: str, title: str, reason: str) -> int:
     if not reason.strip():
         print("RECOVERY_REASON_REQUIRED", file=sys.stderr)
         return 2
-
     harness_dir = Path(".harness")
     old = load_task(harness_dir)
     if old.get("state") in {"DONE", "ESCALATED"}:
         print("task recover requires active task", file=sys.stderr)
         return 1
-
+    old_id = old.get("task", {}).get("id") or "UNKNOWN"
     try:
         head = task_git_head_or_error()
     except _load("workspace").WorkspaceError as exc:
         print(f"TASK_GIT_BASELINE_REQUIRED: {exc}", file=sys.stderr)
         return 2
-
-    old_id = old.get("task", {}).get("id") or "UNKNOWN"
-    timestamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
-    archive = harness_dir / "history" / f"{old_id}-{timestamp}"
     try:
+        staged = replacement_workspace(harness_dir)
+        timestamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+        archive = staged / "history" / f"{old_id}-{timestamp}"
         archive.mkdir(parents=True, exist_ok=False)
-    except FileExistsError:
-        print(f"RECOVERY_ARCHIVE_EXISTS: {archive}", file=sys.stderr)
-        return 1
-
-    for name in ("current-task.yaml", "requirements.yaml", "invariants.yaml", "gate.yaml", "observability.yaml"):
-        source = harness_dir / name
-        if source.exists():
-            shutil.copy2(source, archive / name)
-
-    audit = {
-        "recovered_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-        "reason": reason,
-        "previous_task_id": old_id,
-        "previous_state": old.get("state"),
-        "replacement_task_id": task_id,
-    }
-    (archive / "recovery.yaml").write_text(yaml.safe_dump(audit, sort_keys=False))
-
-    for name in ("findings", "evidence"):
-        source = harness_dir / name
-        if source.exists():
-            shutil.move(str(source), str(archive / name))
-        (harness_dir / name).mkdir()
-
-    for name in ("current-task.yaml", "requirements.yaml", "invariants.yaml", "gate.yaml", "observability.yaml"):
-        shutil.copy2(templates_dir() / name, harness_dir / name)
-    task = load_task(harness_dir)
-    task["task"]["id"] = task_id
-    task["task"]["title"] = title
-    task["timestamps"]["created_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
-    initialize_task_git(task, head)
-    save_task(harness_dir, task)
+        for name in ("current-task.yaml", "requirements.yaml", "invariants.yaml", "gate.yaml", "impact.yaml", "observability.yaml", "findings", "evidence"):
+            source = staged / name
+            if source.exists():
+                shutil.copytree(source, archive / name) if source.is_dir() else shutil.copy2(source, archive / name)
+        audit = {
+            "recovered_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "reason": reason,
+            "previous_task_id": old_id,
+            "previous_state": old.get("state"),
+            "replacement_task_id": task_id,
+        }
+        (archive / "recovery.yaml").write_text(yaml.safe_dump(audit, sort_keys=False))
+        for name in ("current-task.yaml", "requirements.yaml", "invariants.yaml", "gate.yaml", "impact.yaml", "observability.yaml"):
+            shutil.copy2(templates_dir() / name, staged / name)
+        for name in ("findings", "evidence"):
+            shutil.rmtree(staged / name, ignore_errors=True)
+            (staged / name).mkdir()
+        task = load_task(staged)
+        task["task"]["id"] = task_id
+        task["task"]["title"] = title
+        task["timestamps"]["created_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        initialize_task_git(task, head)
+        save_task(staged, task)
+        publish_replacement(harness_dir, staged)
+    except Exception as exc:
+        print(f"TASK_REPLACEMENT_FAILED: {exc}", file=sys.stderr)
+        return 2
     print(f"OK: recovered {old_id}, created {task_id}")
     return 0
 

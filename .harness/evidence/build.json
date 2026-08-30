@@ -1,9 +1,0 @@
-{
-  "type": "build",
-  "timestamp": "2026-08-24T09:51:13.436760+00:00",
-  "command": "pip install -e . -q",
-  "exit_code": 0,
-  "commit": "a6e1ea988e24d48dbf250b524b9b62ffcce4b85d",
-  "stdout_tail": "",
-  "stderr_tail": ""
-}

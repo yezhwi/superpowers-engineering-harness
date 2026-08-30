@@ -18,7 +18,10 @@ def stage(harness_dir: Path, artifacts: list[StagedArtifact], *, operation_id: s
     """Write complete artifact set outside canonical Harness paths."""
     stage_dir = harness_dir / ".staging" / (operation_id or uuid4().hex)
     for artifact in artifacts:
-        target = stage_dir / artifact.relative_path
+        relative = Path(artifact.relative_path)
+        if relative.is_absolute() or ".." in relative.parts or not artifact.relative_path:
+            raise ValueError("STAGED_ARTIFACT_PATH_INVALID")
+        target = stage_dir / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(artifact.content)
     return stage_dir

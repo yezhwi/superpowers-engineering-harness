@@ -35,8 +35,5 @@ gate:
   regression:
     confirmed_finding_without_test: 0
 
-  evidence:
-    must_match_head: true
-
   convergence:
     max_iterations: 5

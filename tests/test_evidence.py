@@ -147,6 +147,15 @@ def test_collect_integration_evidence_records_covered_tests(tmp_path):
     assert evidence["covered_tests"] == ["tests/test_api.py::test_create"]
 
 
+def test_collect_timeout_records_deterministic_failed_evidence():
+    from harness.collect_evidence import collect
+
+    evidence = collect("build", "python -c 'import time; time.sleep(1)'", timeout_seconds=0.01)
+
+    assert evidence["exit_code"] != 0
+    assert evidence["error"] == "EVIDENCE_COMMAND_TIMEOUT"
+
+
 def test_collect_failure_still_writes_evidence(tmp_path):
     result = _collect(tmp_path, "build", "false")
     assert result.returncode == 0, result.stderr

@@ -19,6 +19,15 @@ def test_task_new_resets_observability_contract(tmp_path):
  assert yaml.safe_load((h/'observability.yaml').read_text())['required'] is False
 
 
+def test_task_new_archives_and_resets_impact(tmp_path):
+ h=setup(tmp_path)
+ (h/'impact.yaml').write_text('impact:\n  changed: [src/old.py]\n  direct_dependents: []\n  contracts: []\n  risks: []\n  required_tests: [tests/test_old.py]\n  full_suite: {recommended: false, reason: null}\n')
+ r=cli(tmp_path,'task','new','TASK-002');assert r.returncode==0
+ archive=next((h/'history').iterdir())
+ assert yaml.safe_load((archive/'impact.yaml').read_text())['impact']['required_tests']==['tests/test_old.py']
+ assert yaml.safe_load((h/'impact.yaml').read_text())['impact']['required_tests']==[]
+
+
 def test_task_new_defaults_type_to_feature(tmp_path):
  h=setup(tmp_path)
  task=yaml.safe_load((h/'current-task.yaml').read_text())

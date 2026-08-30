@@ -39,8 +39,8 @@ Blocker dispatch:
 Any one holds → transition to ESCALATED:
 
 ```text
-iteration >= max_iterations                          -> detected by harness converge
-same finding VERIFIED then open again (regression)   -> detected by harness converge
+iteration >= max_iterations                          -> detected by harness gate
+same finding VERIFIED then open again (regression)   -> detected by harness gate
 same invariant repeatedly violated                   -> human/skill declares
 test suite unstable                                  -> human/skill declares
 architecture defect suspected                        -> human/skill declares
@@ -55,12 +55,12 @@ UNSTABLE_TEST  | REVIEW_DISAGREEMENT  | MAX_ITERATIONS
 ```
 
 Code-detected codes (MAX_ITERATIONS, REPEATED_REGRESSION) are emitted by
-`harness converge`. For the others YOU must declare them explicitly to the
+`harness gate`. For the others YOU must declare them explicitly to the
 user with evidence - never silently retry past a judgment-call blocker.
 
 ## Hard Boundaries
 
-1. DONE only via CONVERGED → DONE, and CONVERGED only after gate exit 0.
+1. DONE only via CONVERGED → DONE, and CONVERGED only after `DECISION: CONVERGED`.
 2. ESCALATED ends the autonomous loop. Report reason + full status to user;
    do not silently retry.
 3. Never reset `iteration` to dodge `max_iterations`.

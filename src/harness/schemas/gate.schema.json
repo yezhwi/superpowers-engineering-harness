@@ -1,0 +1,29 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "gate.schema.json",
+  "type": "object",
+  "required": ["gate"],
+  "properties": {
+    "gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "requirements": {"$ref": "#/definitions/requirementPolicy"},
+        "invariants": {"type": "object", "additionalProperties": false, "properties": {"minor_verified": {"type": "boolean"}}},
+        "fast": {"type": "object", "additionalProperties": false, "properties": {"verification": {"$ref": "#/definitions/verificationPolicy"}}},
+        "verification": {"$ref": "#/definitions/verificationPolicy"},
+        "complexity": {"type": "object", "additionalProperties": false, "properties": {"required": {"type": "boolean"}, "blocking": {"type": "array", "items": {"enum": ["critical", "major", "minor", "high"]}}}},
+        "diagnosability": {"type": "object", "additionalProperties": false, "properties": {"standard": {"enum": ["required_when_contract_required"]}, "strict": {"enum": ["required"]}, "blocking": {"type": "array", "items": {"enum": ["critical", "major", "minor"]}}}},
+        "findings": {"$ref": "#/definitions/findingPolicy"},
+        "regression": {"type": "object", "additionalProperties": false, "properties": {"confirmed_finding_without_test": {"type": "integer", "minimum": 0}}},
+        "convergence": {"type": "object", "additionalProperties": false, "properties": {"max_iterations": {"type": "integer", "minimum": 0}}}
+      }
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "verificationPolicy": {"type": "object", "additionalProperties": {"enum": ["required", "optional"]}},
+    "requirementPolicy": {"type": "object", "additionalProperties": false, "properties": {"must_verified": {"type": "boolean"}, "uncovered_allowed": {"type": "integer", "minimum": 0}}},
+    "findingPolicy": {"type": "object", "additionalProperties": false, "properties": {"critical_allowed": {"const": 0}, "major_allowed": {"const": 0}}}
+  }
+}

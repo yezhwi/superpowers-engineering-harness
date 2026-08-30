@@ -1,6 +1,6 @@
 ---
 name: task-contract
-description: "Turn a User Requirement into a Task Contract: Acceptance Criteria, Requirements, Invariants, Risks, Verification Plan. Produces .harness/requirements.yaml and .harness/invariants.yaml and advances task state CREATED -> SPECIFYING -> PLANNED. This skill MUST NOT implement business code."
+description: "Turn a User Requirement into a Task Contract: Acceptance Criteria, Requirements, Invariants, Risks, Verification Plan. Produces .harness/requirements.yaml and .harness/invariants.yaml and advances task state CLASSIFIED -> SPECIFYING -> PLANNED. This skill MUST NOT implement business code."
 ---
 
 # Task Contract Skill
@@ -41,9 +41,7 @@ contract downstream.
 
 ### 1. Enter SPECIFYING
 
-Transition the persisted state `CREATED -> SPECIFYING`. Use the shared state
-machine (`scripts/state_machine.py` / `scripts/validate_state.py`); never edit
-the state field ad hoc without validating the transition.
+For Q2/Q3, transition persisted state `CLASSIFIED -> SPECIFYING` with `harness transition SPECIFYING`; never edit task state ad hoc. CLI is source of transition behavior.
 
 ### 2. Derive Acceptance Criteria
 

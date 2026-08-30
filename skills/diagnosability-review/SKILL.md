@@ -5,6 +5,8 @@ description: Review Q2/Q3 changed business paths for production diagnosability a
 
 # Diagnosability Review
 
+Run only in `REVIEWING`: `harness review diagnosability --file <file>` rejects other task states.
+
 Read `.harness/observability.yaml`, changed files, declared direct dependencies, and existing logging, correlation, masking, exception-handler, and reason-code conventions.
 
 Do not scan whole repository. Do not add code. Do not prescribe logger framework.

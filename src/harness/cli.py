@@ -8,12 +8,13 @@ Exit codes:
 """
 
 import argparse
+import os
 import sys
 
 from pathlib import Path
 from harness import controlplane
 from harness.init import InitResult, init_current_repository
-from harness.repository import RepositoryNotFoundError
+from harness.repository import RepositoryNotFoundError, find_git_root
 
 
 def _render(result: InitResult) -> str:
@@ -27,7 +28,7 @@ def _render(result: InitResult) -> str:
     return "\n".join(lines)
 
 
-def main(argv=None) -> int:
+def _main(argv=None) -> int:
     parser = argparse.ArgumentParser(
         prog="harness",
         description="Engineering Harness deterministic control plane",
@@ -95,6 +96,18 @@ def main(argv=None) -> int:
 
     args = parser.parse_args(argv)
 
+    invocation_dir = Path.cwd()
+    for attribute in ("source_file", "fixtures", "baseline", "adaptive", "corpus"):
+        value = getattr(args, attribute, None)
+        if value is not None:
+            setattr(args, attribute, str((invocation_dir / value).resolve()))
+    if args.subcommand not in {"init", "benchmark"}:
+        try:
+            os.chdir(find_git_root(invocation_dir))
+        except RepositoryNotFoundError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 1
+
     if args.subcommand == "init":
         try:
             result = init_current_repository()
@@ -104,7 +117,7 @@ def main(argv=None) -> int:
         print(_render(result))
         return 0
     if args.subcommand == "status":
-        return controlplane.cmd_status()
+        return controlplane.cmd_status(Path(args.harness_dir).resolve())
     if args.subcommand == "transition":
         return controlplane.cmd_transition(args.target)
     if args.subcommand == "check" and args.check_command == "minimal":
@@ -125,7 +138,11 @@ def main(argv=None) -> int:
                                          args.reuse_if_valid,
                                          args.budget_override_reason, args.budget_override_evidence,
                                          args.budget_override_hypothesis)
-    if args.subcommand == "impact": return controlplane.cmd_impact(args.impact_action,getattr(args,"value",None),getattr(args,"reason",None))
+    if args.subcommand == "impact":
+        if args.impact_action is None:
+            parser.print_usage(sys.stderr)
+            return 2
+        return controlplane.cmd_impact(args.impact_action, getattr(args, "value", None), getattr(args, "reason", None))
     if args.subcommand == "authorize":
         granted = not args.action.startswith("revoke-")
         return controlplane.cmd_authorize(args.action.removeprefix("revoke-").replace("-", "_"), granted)
@@ -164,6 +181,15 @@ def main(argv=None) -> int:
 
     parser.print_usage(sys.stderr)
     return 2
+
+
+def main(argv=None) -> int:
+    """Run CLI without leaking its repository-root CWD into caller process."""
+    original_dir = Path.cwd()
+    try:
+        return _main(argv)
+    finally:
+        os.chdir(original_dir)
 
 
 if __name__ == "__main__":

@@ -19,14 +19,15 @@ harness gate
 
 | Exit | Meaning | Action |
 |---|---|---|
-| 0 | PASS | Transition GATING → CONVERGED (validate via `scripts/state_machine.py`), then convergence skill decides DONE. |
-| 1 | BLOCKED | Transition GATING → BLOCKED. Copy blockers from stdout into `gate.blocked_by`. Dispatch per blocker type (finding → reproduce-finding; failed requirement → IMPLEMENTING). |
-| 2 | INVALID_HARNESS_STATE | Fix harness state first (missing file, bad YAML, unknown state). Do NOT loop implementation for this. |
+| 0 | Command completed | Read `DECISION:` and then `harness status`. `CONVERGED` permits `harness transition DONE`; `CONTINUE` requires `harness resume`; `ESCALATED` ends autonomous work. |
+| 1 | Invalid invocation/state | Fix reported CLI precondition. Do not edit state or blockers yourself. |
+
+`harness gate` persists `gate.blocked_by` and task state itself. Never copy blockers or transition Gate states manually.
 
 ## Hard Boundaries (不得违反)
 
-1. **禁止 Skill 自己评估**："综合来看质量足够好" is forbidden. Exit code 0 is
-   the ONLY pass signal.
-2. **Only exit 0 permits GATING → CONVERGED.**
+1. **禁止 Skill 自己评估**："综合来看质量足够好" is forbidden. Persisted
+   `DECISION: CONVERGED` is the ONLY pass signal.
+2. **Only `DECISION: CONVERGED` permits `CONVERGED → DONE`.**
 3. Gate must be re-run after ANY new evidence, finding update, or commit —
    a previous PASS is void once inputs change.

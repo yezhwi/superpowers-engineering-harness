@@ -25,7 +25,7 @@ def test_wheel_runs_outside_checkout(tmp_path):
         cwd=REPO, check=True, capture_output=True, text=True,
     )
     venv_dir = tmp_path / "venv"
-    venv.EnvBuilder(with_pip=True, system_site_packages=True).create(venv_dir)
+    venv.EnvBuilder(with_pip=True, system_site_packages=False).create(venv_dir)
     python = _python(venv_dir)
     harness = _harness(venv_dir)
     wheel = next(dist.glob("*.whl"))

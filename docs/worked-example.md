@@ -4,6 +4,8 @@ Example requirement: cancelling same order twice must issue at most one refund.
 
 ```text
 CREATED
+  → classify
+CLASSIFIED
   → task-contract
 SPECIFYING
   REQ-001: duplicate cancellation issues one refund
@@ -42,5 +44,5 @@ harness review outcome VERIFICATION_GAP --reason-code TEST_COVERAGE_INSUFFICIENT
 harness review outcome DEFECT --reason-code CONCURRENCY_ERROR --finding FND-001
 harness resume
 harness gate
-harness converge
+# inspect DECISION: and harness status; use resume only after CONTINUE
 ```

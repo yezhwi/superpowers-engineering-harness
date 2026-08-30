@@ -77,6 +77,41 @@ def test_standard_profile_retains_complexity_requirement(tmp_path):
     assert "COMPLEXITY_REVIEW_REQUIRED" in result.stderr
 
 
+def test_fast_implementation_escalation_restarts_standard_contract(tmp_path):
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    assert run_cli(tmp_path, "init").returncode == 0
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-qm", "base"], cwd=tmp_path, check=True)
+    flags = [item for pair in SAFE.items() for item in (f"--{pair[0]}", pair[1])]
+    assert run_cli(tmp_path, "task", "classify", "--level", "Q1", *flags).returncode == 0
+    assert run_cli(tmp_path, "transition", "IMPLEMENTING").returncode == 0
+
+    result = run_cli(tmp_path, "task", "escalate", "--level", "Q3", "--reason", "security risk discovered")
+
+    assert result.returncode == 0, result.stderr
+    task = yaml.safe_load((tmp_path / ".harness/current-task.yaml").read_text())
+    assert task["state"] == "SPECIFYING"
+    assert task["risk"]["profile"] == "STRICT"
+    assert run_cli(tmp_path, "transition", "IMPLEMENTING").returncode == 1
+
+
+def test_fast_escalation_after_implementation_is_rejected(tmp_path):
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    assert run_cli(tmp_path, "init").returncode == 0
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-qm", "base"], cwd=tmp_path, check=True)
+    flags = [item for pair in SAFE.items() for item in (f"--{pair[0]}", pair[1])]
+    assert run_cli(tmp_path, "task", "classify", "--level", "Q1", *flags).returncode == 0
+    assert run_cli(tmp_path, "transition", "IMPLEMENTING").returncode == 0
+    assert run_cli(tmp_path, "transition", "VERIFYING").returncode == 0
+
+    result = run_cli(tmp_path, "task", "escalate", "--level", "Q3", "--reason", "security risk discovered")
+
+    assert result.returncode == 1
+    assert "RISK_ESCALATION_REQUIRES_RESTART" in result.stderr
+    assert yaml.safe_load((tmp_path / ".harness/current-task.yaml").read_text())["risk"]["profile"] == "FAST"
+
+
 def test_fast_profile_uses_lightweight_state_path(tmp_path):
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
     assert run_cli(tmp_path, "init").returncode == 0

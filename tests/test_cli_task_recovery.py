@@ -155,11 +155,12 @@ def test_resume_ignores_tampered_persisted_recovery_target(tmp_path):
     assert yaml.safe_load(path.read_text())["state"] == "VERIFYING"
 
 
-def test_transition_cannot_bypass_resume_for_blocked_recovery(tmp_path):
+@pytest.mark.parametrize("target", ["IMPLEMENTING", "VERIFYING", "REPRODUCING", "ESCALATED"])
+def test_transition_cannot_bypass_resume_for_blocked_recovery(tmp_path, target):
     repo = make_repo(tmp_path)
     set_task_state(repo, "BLOCKED")
 
-    result = run_cli(repo, "transition", "VERIFYING")
+    result = run_cli(repo, "transition", target)
 
     assert result.returncode == 1
     assert "RESUME_REQUIRED" in result.stderr

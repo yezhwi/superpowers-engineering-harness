@@ -2,7 +2,36 @@ from pathlib import Path
 
 import pytest
 
+from harness.task_replacement import publish_replacement
 from harness.transaction import StagedArtifact, publish, stage
+
+
+@pytest.mark.parametrize("relative_path", ["../escape", "/tmp/escape"])
+def test_stage_rejects_artifact_path_outside_staging_root(tmp_path, relative_path):
+    with pytest.raises(ValueError, match="STAGED_ARTIFACT_PATH_INVALID"):
+        stage(tmp_path / ".harness", [StagedArtifact(relative_path, b"bad")])
+
+
+def test_replacement_workspace_restores_original_when_swap_fails(tmp_path, monkeypatch):
+    harness = tmp_path / ".harness"
+    harness.mkdir()
+    (harness / "current-task.yaml").write_text("old")
+    staged = tmp_path / ".harness.replacement"
+    staged.mkdir()
+    (staged / "current-task.yaml").write_text("new")
+    original_replace = Path.replace
+
+    def fail_staged_swap(self, target):
+        if self == staged:
+            raise OSError("injected replacement failure")
+        return original_replace(self, target)
+
+    monkeypatch.setattr(Path, "replace", fail_staged_swap)
+
+    with pytest.raises(OSError, match="injected replacement failure"):
+        publish_replacement(harness, staged)
+
+    assert (harness / "current-task.yaml").read_text() == "old"
 
 
 def test_publish_rolls_back_when_later_target_cannot_publish(tmp_path, monkeypatch):

@@ -55,6 +55,19 @@ def test_diag_cli_lifecycle_uses_passing_review_without_red_green(tmp_path):
         assert cli(tmp_path, "finding", "transition", "FND-001", target, *args).returncode == 0
 
 
+def test_confirmed_rejects_evidence_reference_outside_canonical_directory(tmp_path):
+    h = setup(tmp_path)
+    (h / "history").mkdir(exist_ok=True)
+    (h / "history" / "red.json").write_bytes((h / "evidence" / "red.json").read_bytes())
+    assert cli(tmp_path, "finding", "transition", "FND-001", "REPRODUCING", "--attempt", "red test created").returncode == 0
+
+    result = cli(tmp_path, "finding", "transition", "FND-001", "CONFIRMED", "--test", "tests/test_x.py::test_x", "--evidence", "../history/red.json")
+
+    assert result.returncode == 2
+    assert "EVIDENCE_REFERENCE_INVALID" in result.stderr
+    assert status(h) == "REPRODUCING"
+
+
 def test_confirmed_rejects_unstructured_failed_evidence(tmp_path):
     h = setup(tmp_path)
     red_path = h / "evidence" / "red.json"

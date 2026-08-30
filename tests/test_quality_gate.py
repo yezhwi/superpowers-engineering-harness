@@ -88,6 +88,89 @@ def make_harness(tmp_path: Path) -> Path:
     return h
 
 
+def test_requirement_evidence_reference_cannot_escape_evidence_directory(tmp_path):
+    from harness.quality_gate import run_gate
+
+    h = make_harness(tmp_path)
+    escaped = tmp_path / "escaped.json"
+    escaped.write_bytes((h / "evidence" / "build.json").read_bytes())
+    requirements = yaml.safe_load((h / "requirements.yaml").read_text())
+    requirements["requirements"][0]["evidence"] = [str(escaped)]
+    (h / "requirements.yaml").write_text(yaml.safe_dump(requirements))
+
+    status, blockers = run_gate(h)
+
+    assert status == "BLOCKED"
+    assert any(blocker.code == "EVIDENCE_MISSING" for blocker in blockers)
+
+
+def test_gate_rejects_removed_must_match_head_override(tmp_path):
+    from harness.quality_gate import InvalidHarnessState, run_gate
+
+    h = make_harness(tmp_path)
+    config = yaml.safe_load((h / "gate.yaml").read_text())
+    config["gate"]["evidence"] = {"must_match_head": False}
+    (h / "gate.yaml").write_text(yaml.safe_dump(config))
+
+    with pytest.raises(InvalidHarnessState, match="gate.schema.json"):
+        run_gate(h)
+
+
+def test_gate_rejects_open_finding_allowance_override(tmp_path):
+    from harness.quality_gate import InvalidHarnessState, run_gate
+
+    h = make_harness(tmp_path)
+    config = yaml.safe_load((h / "gate.yaml").read_text())
+    config["gate"]["findings"]["critical_allowed"] = 1
+    (h / "gate.yaml").write_text(yaml.safe_dump(config))
+
+    with pytest.raises(InvalidHarnessState, match="gate.schema.json"):
+        run_gate(h)
+
+
+def test_gate_rejects_invalid_configuration_value(tmp_path):
+    from harness.quality_gate import InvalidHarnessState, run_gate
+
+    h = make_harness(tmp_path)
+    config = yaml.safe_load((h / "gate.yaml").read_text())
+    config["gate"]["findings"]["critical_allowed"] = -1
+    (h / "gate.yaml").write_text(yaml.safe_dump(config))
+
+    with pytest.raises(InvalidHarnessState, match="gate.schema.json"):
+        run_gate(h)
+
+
+def test_task_schema_rejects_incompatible_risk_level_and_profile(tmp_path):
+    from harness.quality_gate import InvalidHarnessState, validate_schema
+
+    h = make_harness(tmp_path)
+    task = yaml.safe_load((h / "current-task.yaml").read_text())
+    task["risk"] = {
+        "level": "Q3", "profile": "FAST",
+        "dimensions": {name: "low" if name == "scope" else "none" for name in ("scope", "contract", "data", "authorization", "security", "concurrency", "deployment")},
+        "escalation_history": [], "user_changes": {"paths": [], "fingerprint": ""},
+    }
+
+    with pytest.raises(InvalidHarnessState, match="risk.profile"):
+        validate_schema(task, "task.schema.json", h / "current-task.yaml")
+
+
+def test_gate_rejects_incompatible_risk_level_and_profile(tmp_path):
+    from harness.quality_gate import InvalidHarnessState, run_gate
+
+    h = make_harness(tmp_path)
+    task = yaml.safe_load((h / "current-task.yaml").read_text())
+    task["risk"] = {
+        "level": "Q3", "profile": "FAST",
+        "dimensions": {name: "low" if name == "scope" else "none" for name in ("scope", "contract", "data", "authorization", "security", "concurrency", "deployment")},
+        "escalation_history": [], "user_changes": {"paths": [], "fingerprint": ""},
+    }
+    (h / "current-task.yaml").write_text(yaml.safe_dump(task))
+
+    with pytest.raises(InvalidHarnessState, match="risk.profile"):
+        run_gate(h)
+
+
 def test_fast_gate_requires_build_by_default(tmp_path):
     from harness.workspace import protected_paths_fingerprint
 
@@ -610,8 +693,7 @@ def test_should_requirement_without_test_plan_blocks_even_if_verified(tmp_path):
 
 
 def test_violated_invariant_blocks_even_if_allowance_configured(tmp_path):
-    # No tolerance knob exists: violated_allowed was removed as a fake
-    # config. Any violated invariant blocks, whatever the yaml says.
+    # No tolerance knob exists: unsupported policy fails closed before Gate.
     h = make_harness(tmp_path)
     gate_cfg = yaml.safe_load((h / "gate.yaml").read_text())
     gate_cfg["gate"]["invariants"]["violated_allowed"] = 5
@@ -620,8 +702,8 @@ def test_violated_invariant_blocks_even_if_allowance_configured(tmp_path):
     inv["invariants"][0]["status"] = "violated"
     (h / "invariants.yaml").write_text(yaml.safe_dump(inv))
     result = _gate(h)
-    assert result.returncode == 1
-    assert "violated" in result.stdout
+    assert result.returncode == 2
+    assert "gate.schema.json" in result.stderr
 
 
 # Schema validation: fail closed (CR-001 P0) ---------------------------------

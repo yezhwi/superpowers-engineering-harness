@@ -109,6 +109,24 @@ def test_confirmed_finding_blocks_until_fixed(tmp_path):
     assert any("Major finding FND-001 is open" in b for b in blockers)
 
 
+def test_confirmed_diagnosability_finding_blocks_without_regression_test(tmp_path):
+    h = make_harness(tmp_path)
+    finding = {
+        "id": "FND-001", "kind": "requirement_violation", "target": "REQ-001",
+        "scenario": "missing diagnostic context", "severity": "major",
+        "status": "CONFIRMED", "category": "diagnosability",
+        "reason_code": "DIAG_MISSING_BUSINESS_ID", "location": {"file": "src/order.py"},
+        "compliance": {"evidence_kind": "static_compliance", "required_checks": ["business_keys"]},
+        "confirmed_at": "2026-01-01T00:00:00+00:00",
+    }
+    (h / "findings" / "fnd-001.yaml").write_text(yaml.safe_dump(finding))
+
+    status, blockers = run_gate(h)
+
+    assert status == "BLOCKED"
+    assert any("Major finding FND-001 is open" in blocker.message for blocker in blockers)
+
+
 def test_confirmed_with_regression_test_still_open_until_fixed(tmp_path):
     # Regression debt cleared, but CONFIRMED is still open -> blocked
     # until the fix lands and status moves to VERIFIED/CLOSED.

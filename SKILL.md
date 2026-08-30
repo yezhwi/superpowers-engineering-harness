@@ -33,7 +33,7 @@ run gate
    working inside the harness repo itself,
    `scripts/state_machine.py` / `scripts/validate_state.py`); never edit
    the state field ad hoc without validating the transition.
-4. **No self-declared done.** Only `quality_gate.py` exit code 0 plus an
+4. **No self-declared done.** Only persisted `DECISION: CONVERGED` plus an
    explicit `CONVERGED -> DONE` transition ends a task.
 
 ## Q0 Decision Table
@@ -121,10 +121,10 @@ Read persisted `state` and `risk.profile` from `.harness/current-task.yaml`, the
 | `CLASSIFIED` | FAST only: transition to IMPLEMENTING and follow RED/fix/GREEN/Light Gate. Q2/Q3 classification must use standard task contract before implementation. |
 | `PLANNED` | Invoke **minimal-implementation** before any implementation. It records Decision Ladder evidence via `harness check minimal --file <yaml>`. Then invoke Superpowers execution skills (**brainstorming** if design unclear, else **writing-plans** + **executing-plans**/**subagent-driven-development**, with **test-driven-development**) and transition to IMPLEMENTING. |
 | `IMPLEMENTING` | Continue execution skill. Before requesting VERIFYING, automatically record impacted files, dependents, contracts, risks, and related tests with `harness impact add-*`; use related tests by default. If impact recommends full suite, request explicit human authorization; never authorize it autonomously. Then transition to VERIFYING and collect evidence via `harness evidence --type <t> --command "<cmd>"`. |
-| `VERIFYING` | Run deterministic Verification Plan commands/tests. Any red -> IMPLEMENTING (TDD), then re-verify. All green -> invoke **complexity-reviewer**. For Q3, and Q2 when `observability.required: true`, invoke **diagnosability-review** and persist `harness review diagnosability` evidence after complexity review, before REVIEWING. `--base <ref>` is explicit override; missing baseline fails closed. Only then transition to REVIEWING. |
-| `REVIEWING` | Invoke Superpowers review (**requesting-code-review** / spec-vs-standards review), then route only with `harness review outcome PASS`, `harness review outcome VERIFICATION_GAP --reason-code <code>`, or `harness review outcome DEFECT --reason-code <code> --finding FND-001`. A defect must enter Finding lifecycle; a verification gap returns to VERIFYING. |
+| `VERIFYING` | Run deterministic Verification Plan commands/tests. Any red -> IMPLEMENTING (TDD), then re-verify. All green -> invoke **complexity-reviewer** and transition to REVIEWING. |
+| `REVIEWING` | For Q3, and Q2 when `observability.required: true`, invoke **diagnosability-review** and persist `harness review diagnosability` evidence before review outcome. `--base <ref>` is explicit override; missing baseline fails closed. Then invoke Superpowers review and route only with review outcome. |
 | `REPRODUCING` | Invoke **reproduce-finding** skill. CONFIRMED finding -> FIXING (fix with TDD) -> VERIFYING. REJECTED finding -> close it, return to REVIEWING. |
-| `GATING` | Run `harness gate`. Exit 0 -> CONVERGED -> DONE (transition, then report). Exit 1 -> BLOCKED; inspect `harness status`, then run `harness resume` so typed blocker selects recovery state. Exit 2 -> fix invalid harness state first (missing files/bad YAML). |
+| `GATING` | Run `harness gate`; inspect `DECISION:` and `harness status`. `CONVERGED` -> `harness transition DONE`; `CONTINUE` -> `harness resume`; `ESCALATED` ends autonomous work. |
 
 Loop REPRODUCING/FIXING/VERIFYING until REVIEWING is clean and gate passes.
 There is no shortcut from any state to DONE.
@@ -161,7 +161,7 @@ harness review complexity --file review.yaml       # task Git baseline
 harness review complexity --base origin/main --file review.yaml  # explicit override
 harness transition VERIFYING                # validate + persist transition
 harness evidence --type unit_test --command "pytest"   # HEAD-bound evidence
-harness gate                                # gate; exit 0=PASS 1=BLOCKED 2=INVALID
+harness gate                                # inspect DECISION: and persisted status
 ```
 
 Script equivalents — ONLY inside the harness repo root:
@@ -175,9 +175,10 @@ python scripts/quality_gate.py              # deterministic gate
 Transition example:
 
 ```bash
-python -c "from scripts.state_machine import require_legal; require_legal('VERIFYING','REVIEWING')"
-# then update .harness/current-task.yaml state field
+harness transition REVIEWING
 ```
+
+Never edit `.harness/current-task.yaml` state directly.
 
 ## Loop Termination
 
@@ -185,7 +186,7 @@ The loop converges only when ALL of:
 
 1. No open findings (`PROPOSED`/`REPRODUCING`/`CONFIRMED`/`FIXING` all closed).
 2. All `priority: must` requirements have evidence.
-3. `quality_gate.py` exits 0.
+3. `harness gate` persists `DECISION: CONVERGED`.
 
 Then and only then: transition CONVERGED -> DONE and report to user with gate
 output attached.
@@ -196,6 +197,6 @@ output attached.
 - Skipping VERIFYING because "tests passed earlier"
 - Marking a finding rejected without running reproduction steps
 - Editing `.harness/current-task.yaml` state without validating the transition
-- Declaring done because "everything looks fine" without gate exit 0
+- Declaring done without `DECISION: CONVERGED`
 
 All of these mean: return to the dispatch table and follow it exactly.

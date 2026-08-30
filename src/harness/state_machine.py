@@ -31,6 +31,8 @@ TRANSITIONS: Set[tuple] = frozenset({
     ("SPECIFYING", "PLANNED"),
     ("PLANNED", "IMPLEMENTING"),
     ("IMPLEMENTING", "VERIFYING"),
+    # FAST escalation restarts Q2/Q3 contract ceremony.
+    ("IMPLEMENTING", "SPECIFYING"),
     ("VERIFYING", "IMPLEMENTING"),
     ("VERIFYING", "GATING"),
     ("VERIFYING", "REVIEWING"),

@@ -79,7 +79,7 @@ Harness controls state, proof, Finding lifecycle, and Gate. Agent judges busines
 ```text
 Requirement
   ↓
-Task Contract (CREATED → PLANNED)
+Risk classification (CREATED → CLASSIFIED) → Task Contract (CLASSIFIED → PLANNED)
   ↓
 Minimal Implementation Check — PREVENT
   ↓
@@ -144,13 +144,15 @@ harness review complexity --file review.yaml
 harness transition REVIEWING
 harness review outcome PASS --reason-code REVIEW_CLEAN
 harness gate
+# inspect DECISION: CONVERGED, then:
 harness transition DONE
 ```
 
-Blocked recovery path (`harness gate` performs `GATING → BLOCKED`; `harness resume` derives target from blocker code):
+Blocked recovery path (`harness gate` emits `DECISION: CONTINUE`; Gate persists blockers and `harness resume` derives target):
 
 ```bash
 harness gate
+# after DECISION: CONTINUE
 harness resume
 ```
 

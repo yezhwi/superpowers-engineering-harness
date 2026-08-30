@@ -147,11 +147,30 @@ def test_readmes_show_legal_normal_and_blocked_recovery_order():
         text = path.read_text()
         assert "harness transition REVIEWING" in text
         assert "harness review outcome PASS --reason-code REVIEW_CLEAN" in text
-        assert "harness gate\nharness transition DONE" in text
-        assert "harness gate\nharness resume" in text
+        assert "DECISION: CONVERGED" in text
+        assert "DECISION: CONTINUE" in text
+        assert "harness transition DONE" in text
+        assert "harness resume" in text
         assert "harness converge" not in text
         assert "Q1" in text and "harness transition GATING" in text
         assert "harness transition BLOCKED" not in text
+
+
+def test_operational_docs_do_not_instruct_manual_state_mutation_or_preclassify_contract():
+    skill = (REPO / "SKILL.md").read_text()
+    example = (REPO / "docs/worked-example.md").read_text()
+
+    assert "# then update .harness/current-task.yaml state field" not in skill
+    assert "CREATED\n  → task-contract" not in example
+    assert "CREATED\n  → classify" in example
+
+
+def test_gate_skills_route_on_persisted_decision_not_exit_code():
+    for path in (REPO / "SKILL.md", REPO / "skills/quality-gate/SKILL.md", REPO / "skills/convergence/SKILL.md"):
+        text = path.read_text().lower()
+        assert "exit 0" not in text
+        assert "exits 0" not in text
+        assert "decision:" in text or "converged" in text
 
 
 def test_skill_and_worked_example_document_v022_controlled_routes():

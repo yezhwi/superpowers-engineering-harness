@@ -16,6 +16,7 @@ import argparse
 import datetime
 import json
 import platform
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -33,6 +34,7 @@ VALID_TYPES = {
 }
 
 TAIL_CHARS = 4000
+COMMAND_TIMEOUT_SECONDS = 300
 
 
 def git_head() -> str:
@@ -72,6 +74,26 @@ def evidence_filename(evidence_type: str, *, finding_id: str | None = None,
     return f"{finding_id}-{phase}-{stem}.json"
 
 
+def pytest_selectors(command: str) -> tuple[str, ...] | None:
+    """Return explicit pytest selectors, or ``None`` for non-pytest commands."""
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        return None
+    if not tokens:
+        return None
+    if Path(tokens[0]).name.startswith("pytest"):
+        start = 1
+    elif len(tokens) >= 3 and Path(tokens[0]).name.startswith("python") and tokens[1] == "-m" and tokens[2] == "pytest":
+        start = 3
+    else:
+        return None
+    return tuple(
+        token for token in tokens[start:]
+        if not token.startswith("-") and (".py" in token or "::" in token)
+    )
+
+
 def _tail(text: str) -> str:
     if not text:
         return ""
@@ -81,11 +103,21 @@ def _tail(text: str) -> str:
 def collect(evidence_type: str, command: str, finding_id: str | None = None,
             test_id: str | None = None, scope: str = "related",
             covered_tests: tuple[str, ...] = (), covered_test_cases: tuple[str, ...] = (),
-            phase: str | None = None) -> dict:
+            phase: str | None = None,
+            timeout_seconds: float = COMMAND_TIMEOUT_SECONDS) -> dict:
     before = workspace_fingerprint()
-    run = subprocess.run(
-        command, shell=True, capture_output=True, text=True
-    )
+    error = None
+    try:
+        run = subprocess.run(
+            command, shell=True, capture_output=True, text=True,
+            timeout=timeout_seconds,
+        )
+        exit_code, stdout, stderr = run.returncode, run.stdout, run.stderr
+    except subprocess.TimeoutExpired as exc:
+        exit_code = 124
+        stdout = exc.stdout or ""
+        stderr = exc.stderr or ""
+        error = "EVIDENCE_COMMAND_TIMEOUT"
     after = workspace_fingerprint()
     evidence = {
         "type": evidence_type,
@@ -93,14 +125,16 @@ def collect(evidence_type: str, command: str, finding_id: str | None = None,
             datetime.timezone.utc
         ).isoformat(),
         "command": command,
-        "exit_code": run.returncode,
+        "exit_code": exit_code,
         "commit": git_head(),
         "workspace_fingerprint": before,
         "workspace_fingerprint_after": after,
         "runtime": runtime_metadata(),
-        "stdout_tail": _tail(run.stdout),
-        "stderr_tail": _tail(run.stderr),
+        "stdout_tail": _tail(stdout),
+        "stderr_tail": _tail(stderr),
     }
+    if error is not None:
+        evidence["error"] = error
     if evidence_type == "unit_test":
         evidence["scope"] = scope
     if covered_tests:
@@ -149,6 +183,15 @@ def main(argv=None):
     if args.type == "unit_test" and args.scope == "related" and not args.covered_test:
         print("RELATED_COVERED_TEST_REQUIRED", file=sys.stderr)
         return 2
+    selectors = pytest_selectors(args.command)
+    if selectors:
+        for covered_test in args.covered_test:
+            if not any(
+                covered_test == selector or covered_test.startswith(f"{selector}::")
+                for selector in selectors
+            ):
+                print("COVERED_TEST_NOT_EXECUTED", file=sys.stderr)
+                return 2
     out_dir = Path(args.harness_dir) / "evidence"
     out_file = out_dir / evidence_filename(args.type, finding_id=args.finding,
                                             phase=args.phase)

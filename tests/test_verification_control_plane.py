@@ -35,6 +35,18 @@ def test_requirement_and_invariant_verify_attach_fresh_evidence(tmp_path):
  assert cli(tmp_path,'invariant','verify','INV-001','--evidence','build.json').returncode==0
  assert yaml.safe_load((h/'requirements.yaml').read_text())['requirements'][0]['status']=='verified'
 
+def test_requirement_verify_rejects_evidence_reference_outside_canonical_directory(tmp_path):
+ h=setup(tmp_path)
+ (h/'requirements.yaml').write_text(yaml.safe_dump({'requirements':[{'id':'REQ-001','statement':'works','priority':'must','status':'pending','evidence':[]}]}))
+ write_evidence(tmp_path,h,'build')
+ (h/'history').mkdir(exist_ok=True)
+ (h/'history'/'build.json').write_bytes((h/'evidence'/'build.json').read_bytes())
+ result=cli(tmp_path,'requirement','verify','REQ-001','--evidence','../history/build.json')
+ assert result.returncode==2
+ assert 'EVIDENCE_REFERENCE_INVALID' in result.stderr
+ assert yaml.safe_load((h/'requirements.yaml').read_text())['requirements'][0]['status']=='pending'
+
+
 def test_verify_rejects_stale_workspace_evidence(tmp_path):
  h=setup(tmp_path)
  (h/'requirements.yaml').write_text(yaml.safe_dump({'requirements':[{'id':'REQ-001','statement':'works','priority':'must','status':'pending','evidence':[]}]}))
