@@ -11,7 +11,6 @@ Deterministic core of the finding lifecycle:
 """
 
 import json
-from importlib import resources
 import subprocess
 import sys
 from pathlib import Path
@@ -19,7 +18,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from evidence_factory import write_complexity_review, write_evidence
+from fixtures.harness import make_complete_harness
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
@@ -35,33 +34,7 @@ HEAD = subprocess.run(
 
 
 def make_harness(tmp_path: Path) -> Path:
-    """Fully passing harness dir at GATING with empty findings."""
-    h = tmp_path / ".harness"
-    task = yaml.safe_load(
-        resources.files("harness").joinpath("templates", "current-task.yaml").read_text())
-    task["state"] = "GATING"
-    h.mkdir(parents=True)
-    (h / "current-task.yaml").write_text(yaml.safe_dump(task))
-    (h / "gate.yaml").write_text(
-        resources.files("harness").joinpath("templates", "gate.yaml").read_text())
-    requirements = {"requirements": [
-        {"id": "REQ-001", "statement": "works", "priority": "must", "status": "verified", "evidence": ["build.json"], "test_plan": {"strategies": ["manual"], "cases": [{"id": "TC-700", "type": "happy_path", "strategy": "manual", "description": "fixture requirement", "tests": []}]}}] }
-    (h / "requirements.yaml").write_text(yaml.safe_dump(requirements))
-    invariants = {"invariants": [
-        {"id": "INV-001", "statement": "safe", "category": "correctness", "severity": "critical", "status": "verified", "verification": ["build.json"], "test_plan": {"strategies": ["manual"], "cases": [{"id": "TC-701", "type": "invariant", "strategy": "manual", "description": "fixture invariant", "tests": []}]}}] }
-    (h / "invariants.yaml").write_text(yaml.safe_dump(invariants))
-
-    evidence_dir = h / "evidence"
-    evidence_dir.mkdir()
-    for etype in ("build", "unit_test"):
-        write_evidence(REPO, h, etype)
-    write_complexity_review(REPO, h)
-    build = json.loads((evidence_dir / "build.json").read_text())
-    build["covered_test_cases"] = ["TC-700", "TC-701"]
-    (evidence_dir / "build.json").write_text(json.dumps(build))
-
-    (h / "findings").mkdir()
-    return h
+    return make_complete_harness(REPO, tmp_path)
 
 
 def write_finding(h: Path, **overrides):

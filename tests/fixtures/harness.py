@@ -14,7 +14,7 @@ def make_harness(tmp_path: Path, *, state: str = "GATING", risk: str = "Q2", tas
     task = yaml.safe_load(resources.files("harness").joinpath("templates", "current-task.yaml").read_text())
     task["state"] = state
     task["task"]["type"] = task_type
-    task["risk"] = {"level": risk}
+    task["risk"] = {"level": risk, "profile": "STRICT" if risk == "Q3" else "STANDARD", "dimensions": {"scope": "low", "contract": "low", "data": "none", "authorization": "none", "security": "none", "concurrency": "none", "deployment": "none"}, "escalation_history": [], "user_changes": {"paths": [], "fingerprint": "sha256:" + "0" * 64}}
     (h / "current-task.yaml").write_text(yaml.safe_dump(task))
     (h / "gate.yaml").write_text(resources.files("harness").joinpath("templates", "gate.yaml").read_text())
     required = observability == "required"
@@ -30,7 +30,7 @@ def make_harness(tmp_path: Path, *, state: str = "GATING", risk: str = "Q2", tas
 
 def make_complete_harness(repo: Path, tmp_path: Path, *, state: str = "GATING") -> Path:
     """Complete Gate-ready fixture for lifecycle tests."""
-    h = make_harness(tmp_path, state=state)
+    h = make_harness(tmp_path, state=state, observability="not_required")
     requirements = {"requirements": [{"id": "REQ-001", "statement": "works", "priority": "must", "status": "verified", "evidence": ["build.json"], "test_plan": {"strategies": ["manual"], "cases": [{"id": "TC-700", "type": "happy_path", "strategy": "manual", "description": "fixture requirement", "tests": []}]}}]}
     invariants = {"invariants": [{"id": "INV-001", "statement": "safe", "category": "correctness", "severity": "critical", "status": "verified", "verification": ["build.json"], "test_plan": {"strategies": ["manual"], "cases": [{"id": "TC-701", "type": "invariant", "strategy": "manual", "description": "fixture invariant", "tests": []}]}}]}
     (h / "requirements.yaml").write_text(yaml.safe_dump(requirements))
