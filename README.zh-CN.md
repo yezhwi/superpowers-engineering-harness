@@ -6,6 +6,8 @@
 
 **Routing：** Q0 直接回答、不创建 task；Q1 / FAST 使用 RED/fix/GREEN/Light Gate；Q2 / STANDARD 与 Q3 / STRICT 使用完整 contract/review/Gate 流程。
 
+[架构全景图](docs/architecture.md)
+
 Engineering Harness 是 [Superpowers](https://github.com/obra/superpowers) 开发工作流外层确定性控制平面。它不替代 Agent 或 worker Skill；它持久化任务状态、要求可验证证据，并阻止 Agent 未经 Gate 批准就宣称任务完成。
 
 ## 生产可诊断性（v0.2.6）
