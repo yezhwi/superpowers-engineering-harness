@@ -1,6 +1,7 @@
 task:
   id: null
   title: ""
+  type: feature
   description: ""
 
 state: CREATED

@@ -5,6 +5,12 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 
 
+def test_root_skill_routes_diagnosability():
+    text = (REPO / "SKILL.md").read_text(encoding="utf-8")
+    assert "Production Diagnosability Routing" in text
+    assert "harness review diagnosability" in text
+
+
 def test_readmes_document_engineering_quality_architecture():
     for name in ("README.md", "README.zh-CN.md"):
         text = (REPO / name).read_text(encoding="utf-8")

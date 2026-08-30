@@ -19,6 +19,12 @@ def test_task_new_resets_observability_contract(tmp_path):
  assert yaml.safe_load((h/'observability.yaml').read_text())['required'] is False
 
 
+def test_task_new_defaults_type_to_feature(tmp_path):
+ h=setup(tmp_path)
+ task=yaml.safe_load((h/'current-task.yaml').read_text())
+ assert task['task']['type'] == 'feature'
+
+
 def test_task_new_refuses_active_task(tmp_path):
  setup(tmp_path,'IMPLEMENTING');assert cli(tmp_path,'task','new','TASK-002').returncode==1
 def test_task_new_rejects_invalid_id(tmp_path):

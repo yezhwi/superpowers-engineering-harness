@@ -1,1 +1,125 @@
-{"$schema":"http://json-schema.org/draft-07/schema#","type":"object","required":["task","contract_required","finding_ids","direct_dependencies","review_scope","checks"],"properties":{"task":{"type":"string","pattern":"^TASK-[0-9]+$"},"contract_required":{"type":"boolean"},"finding_ids":{"type":"array","uniqueItems":true,"items":{"type":"string","pattern":"^FND-[0-9]+$"}},"direct_dependencies":{"type":"array","uniqueItems":true,"items":{"type":"string","minLength":1}},"review_scope":{"type":"object","required":["files"],"properties":{"files":{"type":"array","uniqueItems":true,"items":{"type":"string","minLength":1}}},"additionalProperties":false},"checks":{"type":"object","required":["business_keys","external_failure_context","state_transitions","caller_rejections","sensitive_data","duplicate_exception_logging","low_value_logging"],"properties":{"business_keys":{"enum":["pass","fail","not_applicable"]},"external_failure_context":{"enum":["pass","fail","not_applicable"]},"state_transitions":{"enum":["pass","fail","not_applicable"]},"caller_rejections":{"enum":["pass","fail","not_applicable"]},"sensitive_data":{"enum":["pass","fail","not_applicable"]},"duplicate_exception_logging":{"enum":["pass","fail","not_applicable"]},"low_value_logging":{"enum":["pass","fail","not_applicable"]}},"additionalProperties":false}},"additionalProperties":false}
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": [
+    "task",
+    "contract_required",
+    "finding_ids",
+    "direct_dependencies",
+    "review_scope",
+    "checks"
+  ],
+  "properties": {
+    "task": {
+      "type": "string",
+      "pattern": "^TASK-[0-9]+$"
+    },
+    "contract_required": {
+      "type": "boolean"
+    },
+    "finding_ids": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^FND-[0-9]+$"
+      }
+    },
+    "direct_dependencies": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "review_scope": {
+      "type": "object",
+      "required": [
+        "files"
+      ],
+      "properties": {
+        "files": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "checks": {
+      "type": "object",
+      "required": [
+        "business_keys",
+        "external_failure_context",
+        "state_transitions",
+        "caller_rejections",
+        "sensitive_data",
+        "duplicate_exception_logging",
+        "low_value_logging"
+      ],
+      "properties": {
+        "business_keys": {
+          "enum": [
+            "pass",
+            "fail",
+            "not_applicable"
+          ]
+        },
+        "external_failure_context": {
+          "enum": [
+            "pass",
+            "fail",
+            "not_applicable"
+          ]
+        },
+        "state_transitions": {
+          "enum": [
+            "pass",
+            "fail",
+            "not_applicable"
+          ]
+        },
+        "caller_rejections": {
+          "enum": [
+            "pass",
+            "fail",
+            "not_applicable"
+          ]
+        },
+        "sensitive_data": {
+          "enum": [
+            "pass",
+            "fail",
+            "not_applicable"
+          ]
+        },
+        "duplicate_exception_logging": {
+          "enum": [
+            "pass",
+            "fail",
+            "not_applicable"
+          ]
+        },
+        "low_value_logging": {
+          "enum": [
+            "pass",
+            "fail",
+            "not_applicable"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    }
+  },
+  "additionalProperties": false
+}

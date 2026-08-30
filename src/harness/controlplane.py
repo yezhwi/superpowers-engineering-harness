@@ -235,7 +235,7 @@ def cmd_review_diagnosability(source: Path, base_ref: str | None = None) -> int:
         if not base:
             raise ValueError("TASK_GIT_BASELINE_REQUIRED")
         review = _load("diagnosability").load_review_input(source, task_id=task["task"]["id"])
-        path = _load("diagnosability").write_review(harness_dir, review, base_ref=base)
+        path = _load("diagnosability").write_review(harness_dir, review, base_ref=base, task_type=task.get("task", {}).get("type"))
     except Exception as exc:
         print(f"INVALID DIAGNOSABILITY REVIEW: {exc}", file=sys.stderr)
         return 2

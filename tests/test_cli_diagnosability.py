@@ -80,6 +80,41 @@ def test_review_diagnosability_writes_current_scope_evidence(tmp_path):
     assert record["review_scope"]["files"] == ["src/orders/refund.py"]
 
 
+def test_review_persists_proposed_diag_finding_atomically(tmp_path):
+    repo = make_repo(tmp_path)
+    source = review_source(tmp_path, external_result="fail")
+    document = yaml.safe_load(source.read_text())
+    document["finding_ids"] = ["FND-009"]
+    document["findings"] = [{
+        "id": "FND-009", "kind": "requirement_violation", "target": "REQ-001",
+        "category": "diagnosability", "reason_code": "DIAG_MISSING_EXTERNAL_FAILURE_CONTEXT",
+        "severity": "major", "status": "PROPOSED", "scenario": "timeout lacks context",
+        "location": {"file": "src/orders/refund.py"},
+        "compliance": {"evidence_kind": "static_compliance", "required_checks": ["external_failure_context"]},
+    }]
+    source.write_text(yaml.safe_dump(document))
+
+    result = run_cli(repo, "review", "diagnosability", "--base", "HEAD", "--file", str(source))
+
+    assert result.returncode == 0, result.stderr
+    assert (repo / ".harness/findings/FND-009.yaml").is_file()
+
+
+def test_review_rejects_invalid_proposed_finding_without_partial_artifacts(tmp_path):
+    repo = make_repo(tmp_path)
+    source = review_source(tmp_path, external_result="fail")
+    document = yaml.safe_load(source.read_text())
+    document["finding_ids"] = ["FND-010"]
+    document["findings"] = [{"id": "FND-010"}]
+    source.write_text(yaml.safe_dump(document))
+
+    result = run_cli(repo, "review", "diagnosability", "--base", "HEAD", "--file", str(source))
+
+    assert result.returncode == 2
+    assert not (repo / ".harness/findings/FND-010.yaml").exists()
+    assert not (repo / ".harness/evidence/diagnosability-review.json").exists()
+
+
 def test_review_diagnosability_rejects_missing_finding_for_failed_check(tmp_path):
     repo = make_repo(tmp_path)
 

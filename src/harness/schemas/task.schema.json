@@ -25,6 +25,9 @@
         "title": {
           "type": "string"
         },
+        "type": {
+          "enum": ["feature", "bugfix", "refactor", "nonfunctional"]
+        },
         "description": {
           "type": [
             "string",
