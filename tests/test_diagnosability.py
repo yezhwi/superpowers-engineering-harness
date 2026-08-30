@@ -108,6 +108,12 @@ def test_review_readiness_rejects_contract_mismatch():
         validate_review_readiness({"required": True}, {"contract_required": False, "checks": {}, "finding_ids": []}, [], scope_files=())
 
 
+def test_review_readiness_rejects_not_applicable_required_dimension():
+    from harness.diagnosability import validate_review_readiness
+    with pytest.raises(ValueError, match="DIAG_NOT_APPLICABLE_INVALID"):
+        validate_review_readiness({"required": True, "business_keys": ["order_id"]}, {"contract_required": True, "checks": {"business_keys": "not_applicable"}, "finding_ids": []}, [], scope_files=())
+
+
 def test_review_readiness_rejects_failed_check_without_linked_finding():
     from harness.diagnosability import validate_review_readiness
     with pytest.raises(ValueError, match="DIAG_FINDING_REQUIRED"):

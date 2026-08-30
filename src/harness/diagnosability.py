@@ -122,7 +122,16 @@ def validate_review_readiness(contract: dict, review: dict, findings: list[dict]
     """Fail closed unless review, Contract, Findings, and scope agree."""
     if review.get("contract_required") is not contract.get("required"):
         raise ValueError("DIAG_CONTRACT_REQUIRED_MISMATCH")
-    failed = {name for name, value in (review.get("checks") or {}).items() if value == "fail"}
+    checks = review.get("checks") or {}
+    required_dimensions = {
+        "business_keys": "business_keys",
+        "external_failure_context": "failure_boundaries",
+        "state_transitions": "state_transitions",
+    }
+    for check, field in required_dimensions.items():
+        if checks.get(check) == "not_applicable" and contract.get(field):
+            raise ValueError("DIAG_NOT_APPLICABLE_INVALID")
+    failed = {name for name, value in checks.items() if value == "fail"}
     linked = {finding.get("id"): finding for finding in findings if finding.get("category") == "diagnosability"}
     if failed and not linked:
         raise ValueError("DIAG_FINDING_REQUIRED")
