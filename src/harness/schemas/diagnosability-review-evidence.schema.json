@@ -1,0 +1,135 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": [
+    "type",
+    "timestamp",
+    "command",
+    "exit_code",
+    "commit",
+    "workspace_fingerprint",
+    "workspace_fingerprint_after",
+    "contract_required",
+    "checks",
+    "finding_ids",
+    "review_scope"
+  ],
+  "properties": {
+    "type": {
+      "const": "diagnosability_review"
+    },
+    "timestamp": {
+      "type": "string"
+    },
+    "command": {
+      "const": "harness review diagnosability"
+    },
+    "exit_code": {
+      "const": 0
+    },
+    "commit": {
+      "type": "string",
+      "minLength": 1
+    },
+    "workspace_fingerprint": {
+      "type": "string",
+      "minLength": 1
+    },
+    "workspace_fingerprint_after": {
+      "type": "string",
+      "minLength": 1
+    },
+    "contract_required": {
+      "type": "boolean"
+    },
+    "finding_ids": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^FND-[0-9]+$"
+      }
+    },
+    "checks": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "business_keys",
+        "external_failure_context",
+        "state_transitions",
+        "caller_rejections",
+        "sensitive_data",
+        "duplicate_exception_logging",
+        "low_value_logging"
+      ],
+      "properties": {
+        "business_keys": {
+          "enum": [
+            "pass",
+            "fail",
+            "not_applicable"
+          ]
+        },
+        "external_failure_context": {
+          "enum": [
+            "pass",
+            "fail",
+            "not_applicable"
+          ]
+        },
+        "state_transitions": {
+          "enum": [
+            "pass",
+            "fail",
+            "not_applicable"
+          ]
+        },
+        "caller_rejections": {
+          "enum": [
+            "pass",
+            "fail",
+            "not_applicable"
+          ]
+        },
+        "sensitive_data": {
+          "enum": [
+            "pass",
+            "fail",
+            "not_applicable"
+          ]
+        },
+        "duplicate_exception_logging": {
+          "enum": [
+            "pass",
+            "fail",
+            "not_applicable"
+          ]
+        },
+        "low_value_logging": {
+          "enum": [
+            "pass",
+            "fail",
+            "not_applicable"
+          ]
+        }
+      }
+    },
+    "review_scope": {
+      "type": "object",
+      "required": [
+        "files",
+        "direct_dependencies"
+      ],
+      "properties": {
+        "files": {
+          "type": "array"
+        },
+        "direct_dependencies": {
+          "type": "array"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

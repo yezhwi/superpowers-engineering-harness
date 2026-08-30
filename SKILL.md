@@ -94,6 +94,13 @@ harness task classify --level Q1 --scope low --contract none --data none \
 harness task escalate --level Q2 --reason "contract risk discovered"
 ```
 
+## Production Diagnosability Routing
+
+- Q0: skip diagnosability.
+- Q1 / FAST: optional agent advisory check for business identifier, exception context, and sensitive-data exposure; it is routing-only, not persisted Core/Gate proof. Do not create observability artifact. Escalate explicitly to Q2 when risk exceeds Q1.
+- Q2 / STANDARD: during Task Contract, record observability applicability. When `observability.required: true`, create Contract and run `harness review diagnosability` after verification/complexity review and before final Gate.
+- Q3 / STRICT: require non-sentinel Observability Contract and fresh `harness review diagnosability` evidence before Gate.
+
 ## FAST Investigation Policy
 
 FAST Core budgets enforce test/build/retry only. For agent search/read rounds, follow Skill policy:
@@ -114,7 +121,7 @@ Read persisted `state` and `risk.profile` from `.harness/current-task.yaml`, the
 | `CLASSIFIED` | FAST only: transition to IMPLEMENTING and follow RED/fix/GREEN/Light Gate. Q2/Q3 classification must use standard task contract before implementation. |
 | `PLANNED` | Invoke **minimal-implementation** before any implementation. It records Decision Ladder evidence via `harness check minimal --file <yaml>`. Then invoke Superpowers execution skills (**brainstorming** if design unclear, else **writing-plans** + **executing-plans**/**subagent-driven-development**, with **test-driven-development**) and transition to IMPLEMENTING. |
 | `IMPLEMENTING` | Continue execution skill. Before requesting VERIFYING, automatically record impacted files, dependents, contracts, risks, and related tests with `harness impact add-*`; use related tests by default. If impact recommends full suite, request explicit human authorization; never authorize it autonomously. Then transition to VERIFYING and collect evidence via `harness evidence --type <t> --command "<cmd>"`. |
-| `VERIFYING` | Run deterministic Verification Plan commands/tests. Any red -> IMPLEMENTING (TDD), then re-verify. All green -> invoke **complexity-reviewer** before REVIEWING; it records scope from task Git baseline via `harness review complexity --file <yaml>`. `--base <ref>` is explicit override; missing baseline fails closed. Only then transition to REVIEWING. |
+| `VERIFYING` | Run deterministic Verification Plan commands/tests. Any red -> IMPLEMENTING (TDD), then re-verify. All green -> invoke **complexity-reviewer**. For Q3, and Q2 when `observability.required: true`, invoke **diagnosability-review** and persist `harness review diagnosability` evidence after complexity review, before REVIEWING. `--base <ref>` is explicit override; missing baseline fails closed. Only then transition to REVIEWING. |
 | `REVIEWING` | Invoke Superpowers review (**requesting-code-review** / spec-vs-standards review), then route only with `harness review outcome PASS`, `harness review outcome VERIFICATION_GAP --reason-code <code>`, or `harness review outcome DEFECT --reason-code <code> --finding FND-001`. A defect must enter Finding lifecycle; a verification gap returns to VERIFYING. |
 | `REPRODUCING` | Invoke **reproduce-finding** skill. CONFIRMED finding -> FIXING (fix with TDD) -> VERIFYING. REJECTED finding -> close it, return to REVIEWING. |
 | `GATING` | Run `harness gate`. Exit 0 -> CONVERGED -> DONE (transition, then report). Exit 1 -> BLOCKED; inspect `harness status`, then run `harness resume` so typed blocker selects recovery state. Exit 2 -> fix invalid harness state first (missing files/bad YAML). |

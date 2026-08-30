@@ -4,6 +4,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
 import yaml
 
 
@@ -115,6 +116,24 @@ def test_resume_routes_typed_evidence_blocker_to_verifying(tmp_path):
     assert result.returncode == 0, result.stderr
     assert "BLOCKED -> VERIFYING" in result.stdout
     assert yaml.safe_load(path.read_text())["state"] == "VERIFYING"
+
+
+@pytest.mark.parametrize(("code", "category", "target"), [
+    ("DIAGNOSABILITY_REVIEW_MISSING", "verification", "VERIFYING"),
+    ("OBSERVABILITY_CONTRACT_INVALID", "implementation", "IMPLEMENTING"),
+])
+def test_resume_routes_diagnosability_blocker(code, category, target, tmp_path):
+    repo = make_repo(tmp_path)
+    set_task_state(repo, "BLOCKED")
+    path = repo / ".harness/current-task.yaml"
+    task = yaml.safe_load(path.read_text())
+    task["gate"] = {"status": "BLOCKED", "blocked_by": [{"code": code, "category": category, "message": "diagnosability blocked", "recover_to": "tampered"}]}
+    path.write_text(yaml.safe_dump(task))
+
+    result = run_cli(repo, "resume")
+
+    assert result.returncode == 0, result.stderr
+    assert yaml.safe_load(path.read_text())["state"] == target
 
 
 def test_resume_ignores_tampered_persisted_recovery_target(tmp_path):

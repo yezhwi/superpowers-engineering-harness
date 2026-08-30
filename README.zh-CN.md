@@ -12,7 +12,7 @@ Engineering Harness 是 [Superpowers](https://github.com/obra/superpowers) 开�
 
 ## 生产可诊断性（v0.2.6）
 
-Q0 跳过可诊断性；Q1 仅检查业务 ID、异常上下文、敏感数据。Q2 仅当 Contract 要求时创建 `.harness/observability.yaml` 并执行 `harness review diagnosability`；Q3 始终要求有效 applicability 与 fresh review evidence。Harness 校验 artifact 与 Gate，不提供日志 SDK、OpenTelemetry、自动插日志或通用源码扫描。
+Q0 跳过可诊断性；Q1 可执行业务 ID、异常上下文、敏感数据的 Agent advisory 检查，但仅用于路由，不构成持久化 Core/Gate 证明。Q2 仅当 Contract 要求时创建 `.harness/observability.yaml` 并执行 `harness review diagnosability`；Q3 始终要求有效 applicability 与 fresh review evidence。Harness 校验 artifact 与 Gate，不提供日志 SDK、OpenTelemetry、自动插日志或通用源码扫描。
 
 ## 解决什么问题
 

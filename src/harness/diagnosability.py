@@ -15,6 +15,7 @@ from jsonschema import ValidationError, validate
 
 SCHEMA = resources.files("harness").joinpath("schemas", "observability.schema.json")
 REVIEW_SCHEMA = resources.files("harness").joinpath("schemas", "diagnosability-review.schema.json")
+REVIEW_EVIDENCE_SCHEMA = resources.files("harness").joinpath("schemas", "diagnosability-review-evidence.schema.json")
 CHECK_NAMES = ("business_keys", "external_failure_context", "state_transitions", "caller_rejections", "sensitive_data", "duplicate_exception_logging", "low_value_logging")
 
 _REQUIRED_FIELDS = {
@@ -140,6 +141,19 @@ def validate_review_readiness(contract: dict, review: dict, findings: list[dict]
             raise ValueError("DIAG_FINDING_LINKAGE_INVALID")
 
 
+def validate_review_evidence(record: dict) -> None:
+    """Validate canonical persisted review evidence before Gate admission."""
+    try:
+        validate(record, json.loads(REVIEW_EVIDENCE_SCHEMA.read_text(encoding="utf-8")))
+    except (OSError, json.JSONDecodeError, ValidationError) as exc:
+        raise ValueError("DIAG_REVIEW_EVIDENCE_INVALID") from exc
+    checks = record["checks"]
+    if set(checks) != set(CHECK_NAMES):
+        raise ValueError("DIAG_CHECK_SET_INVALID")
+    if any(value not in {"pass", "fail", "not_applicable"} for value in checks.values()):
+        raise ValueError("DIAG_CHECK_VALUE_INVALID")
+
+
 def gate_blockers(harness_dir: Path, task: dict, *, head: str, workspace: str):
     """Return deterministic Contract/readiness blockers; never inspect source."""
     from .blockers import GateBlocker
@@ -160,6 +174,7 @@ def gate_blockers(harness_dir: Path, task: dict, *, head: str, workspace: str):
         return [GateBlocker("DIAGNOSABILITY_REVIEW_MISSING", "verification", "missing diagnosability review evidence", recover_to="VERIFYING")]
     try:
         record = json.loads(path.read_text())
+        validate_review_evidence(record)
         findings = [yaml.safe_load(item.read_text()) for item in (harness_dir / "findings").glob("*.yaml")]
         validate_review_readiness(contract, record, findings, scope_files=tuple(record.get("review_scope", {}).get("files", [])))
         if any(value == "fail" for value in record.get("checks", {}).values()):

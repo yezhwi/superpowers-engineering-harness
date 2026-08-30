@@ -278,7 +278,7 @@ Open HIGH complexity findings block gate. MEDIUM and LOW findings are advisory. 
 
 ## Production diagnosability (v0.2.6)
 
-Q0 skips diagnosability. Q1 performs a lightweight business-ID, exception-context, and sensitive-data check. Q2 requires `.harness/observability.yaml` and `harness review diagnosability` only when the Contract is required. Q3 always requires valid applicability and fresh review evidence. Harness validates artifacts and Gate state; it does not provide a logging SDK, OpenTelemetry, automatic log insertion, or universal source scanning.
+Q0 skips diagnosability. Q1 may perform an agent advisory business-ID, exception-context, and sensitive-data check; it is routing-only, not persisted Core/Gate proof. Q2 requires `.harness/observability.yaml` and `harness review diagnosability` only when the Contract is required. Q3 always requires valid applicability and fresh review evidence. Harness validates artifacts and Gate state; it does not provide a logging SDK, OpenTelemetry, automatic log insertion, or universal source scanning.
 
 ## Dependencies and token use
 
