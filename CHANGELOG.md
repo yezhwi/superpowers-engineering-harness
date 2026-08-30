@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.2.6
+
+- Harden diagnosability review control-plane integrity: task-type propagation, centralized fail-closed review readiness, and proposed DIAG Finding linkage validation.
+- Stage review evidence and proposed Findings before publish; rollback canonical artifacts on publish failure.
+- Add shared complete-lifecycle test fixtures and cross-layer fail-closed regression scenarios.
+
+### User impact
+
+Diagnosability review artifacts now reject Contract mismatches, unsupported `not_applicable` checks, and out-of-scope or unlinked DIAG Findings before canonical persistence. This release does not add a logger SDK, OpenTelemetry, automatic log insertion, or universal source scanning.
+
+### Install
+
+Pin this release from Git:
+
+```bash
+pi install git:github.com/yezhwi/superpowers-engineering-harness@v0.2.6
+```
+
 ## 0.2.5
 
 - Add Production Diagnosability Observability Contract for Q2/Q3 tasks, including applicability, business keys, failure boundaries, and bugfix observability-gap analysis.

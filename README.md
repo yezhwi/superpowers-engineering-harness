@@ -1,8 +1,8 @@
-# Superpowers Engineering Harness v0.2.5
+# Superpowers Engineering Harness v0.2.6
 
 [简体中文](README.zh-CN.md)
 
-`v0.2.5 current release`; Production Diagnosability Standard, risk-adaptive behavior, and Test Plan Gate are included in this release.
+`v0.2.6 current release`; Production Diagnosability Standard, risk-adaptive behavior, and Test Plan Gate are included in this release.
 
 **Routing:** Q0 answers without task; Q1 / FAST uses RED/fix/GREEN/Light Gate; Q2 / STANDARD and Q3 / STRICT use full contract/review/Gate workflow.
 
@@ -40,7 +40,7 @@ v0.2.3  Q0/Q1/Q2/Q3 risk-adaptive workflow
   ↓
 v0.2.4  Test Plan → executable binding → fresh evidence
   ↓
-v0.2.5  Production Diagnosability Contract + DIAG Finding + Gate
+v0.2.6  Production Diagnosability Contract + DIAG Finding + Gate
 ```
 
 ## Engineering Quality
@@ -274,7 +274,7 @@ harness review complexity --file complexity-review.yaml
 
 Open HIGH complexity findings block gate. MEDIUM and LOW findings are advisory. Necessary security, authorization, audit, compatibility, migration, accessibility, and NFR complexity is not automatically over-engineering. Complexity review defaults to task Git baseline, covering committed, staged, unstaged, and relevant untracked changes; `--base` is an explicit override.
 
-## Production diagnosability (v0.2.5)
+## Production diagnosability (v0.2.6)
 
 Q0 skips diagnosability. Q1 performs a lightweight business-ID, exception-context, and sensitive-data check. Q2 requires `.harness/observability.yaml` and `harness review diagnosability` only when the Contract is required. Q3 always requires valid applicability and fresh review evidence. Harness validates artifacts and Gate state; it does not provide a logging SDK, OpenTelemetry, automatic log insertion, or universal source scanning.
 
