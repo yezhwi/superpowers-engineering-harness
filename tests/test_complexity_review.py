@@ -43,6 +43,14 @@ def test_accepted_complexity_finding_requires_reason():
         validate_complexity_finding(finding(status="accepted"))
 
 
+def test_complexity_validator_rejects_adversarial_finding():
+    with pytest.raises(ValidationError):
+        validate_complexity_finding({
+            "id": "FND-001", "kind": "failure_scenario", "target": "REQ-001",
+            "scenario": "wrong consumer", "severity": "major", "status": "PROPOSED",
+        })
+
+
 def audit_checks(result="pass"):
     return {name: {"result": result, "evidence": "reviewed"} for name in ("delete", "reuse", "stdlib", "native", "yagni", "shrink")}
 

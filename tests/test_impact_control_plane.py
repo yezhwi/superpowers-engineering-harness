@@ -40,3 +40,20 @@ def test_impact_adopted_path_enters_scope_but_protected_path_does_not(tmp_path):
 def test_impact_require_full_suite_records_reason(tmp_path):
  setup(tmp_path);assert cli(tmp_path,'impact','require-full-suite','--reason','state boundary').returncode==0
  assert 'state boundary' in cli(tmp_path,'impact','show').stdout
+
+
+def test_ignore_user_path_revokes_existing_ownership(tmp_path):
+ setup(tmp_path)
+ assert cli(tmp_path, 'impact', 'add-change', 'src/x.py').returncode == 0
+ assert cli(tmp_path, 'impact', 'ignore-user-path', 'src/x.py').returncode == 0
+ scope=yaml.safe_load(cli(tmp_path, 'impact', 'scope', '--format', 'yaml').stdout)
+ assert 'src/x.py' not in scope['owned_paths']
+ assert 'src/x.py' not in scope['effective_scope']
+
+
+def test_project_task_scope_includes_inspected_paths_and_excludes_protected_paths():
+ from harness.workspace import project_task_scope
+ task={'scope': {'owned_paths': ['src/owned.py'], 'protected_user_paths': ['docs/user.md']}}
+ impact={'contracts': ['src/contract.py'], 'direct_dependents': ['src/dependent.py']}
+ assert project_task_scope(task, impact, inspected_paths=['src/inspected.py']) == (
+  'src/contract.py', 'src/dependent.py', 'src/inspected.py', 'src/owned.py')

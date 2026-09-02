@@ -111,6 +111,20 @@ def snapshot(repo_root: Path | None = None) -> WorkspaceSnapshot:
     )
 
 
+def project_task_scope(
+    task: dict, impact: dict, *, inspected_paths: tuple[str, ...] | list[str] = (),
+    direct_dependencies: tuple[str, ...] | list[str] = (),
+) -> tuple[str, ...]:
+    """Project task ownership into review files, excluding protected user paths."""
+    scope = task.get("scope") or {}
+    included = set(scope.get("owned_paths") or ())
+    included.update(impact.get("contracts") or ())
+    included.update(impact.get("direct_dependents") or ())
+    included.update(inspected_paths)
+    included.update(direct_dependencies)
+    return tuple(sorted(included - set(scope.get("protected_user_paths") or ())))
+
+
 def review_scope(base_ref: str, repo_root: Path | None = None) -> ReviewScope:
     """Return effective review files from merge-base through current workspace."""
     root = _root(repo_root)

@@ -120,6 +120,10 @@ def test_fast_profile_uses_lightweight_state_path(tmp_path):
     flags = [item for pair in SAFE.items() for item in (f"--{pair[0]}", pair[1])]
     assert run_cli(tmp_path, "task", "classify", "--level", "Q1", *flags).returncode == 0
     assert run_cli(tmp_path, "transition", "IMPLEMENTING").returncode == 0
+    covered = "tests/test_risk.py::test_fast_profile_uses_lightweight_state_path"
+    assert run_cli(tmp_path, "evidence", "--type", "unit_test", "--phase", "red", "--covered-test", covered, "--command", "false").returncode == 0
+    assert run_cli(tmp_path, "evidence", "--type", "unit_test", "--phase", "green", "--covered-test", covered, "--command", "true").returncode == 0
+    assert run_cli(tmp_path, "evidence", "--type", "build", "--command", "true").returncode == 0
     assert run_cli(tmp_path, "transition", "VERIFYING").returncode == 0
 
     result = run_cli(tmp_path, "transition", "GATING")

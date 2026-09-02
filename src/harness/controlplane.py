@@ -281,9 +281,9 @@ def cmd_review_complexity(source: Path, base_ref: str | None = None) -> int:
         if not base_ref:
             raise ValueError("TASK_GIT_BASELINE_REQUIRED: provide --base or create a task with base_commit")
         scope = _load("workspace").review_scope(base_ref)
-        owned = task.get("scope", {}).get("owned_paths")
-        if owned is not None:
-            scope = replace(scope, files=tuple(sorted(set(owned) | set(_impact()[1]["impact"].get("contracts", [])))))
+        if task.get("scope") is not None:
+            files = _load("workspace").project_task_scope(task, _impact()[1]["impact"])
+            scope = replace(scope, files=files)
         claimed_scope = review.get("review_scope")
         if claimed_scope is not None and claimed_scope.get("files") != list(scope.files):
             raise ValueError("COMPLEXITY_REVIEW_SCOPE_MISMATCH")
@@ -380,9 +380,13 @@ def cmd_telemetry_show() -> int:
 
 
 def cmd_mr_describe() -> int:
-    gate = load_task(Path('.harness')).get('gate', {})
-    quality = gate.get('quality', {}).get('status', gate.get('status', 'BLOCKED'))
-    readiness = gate.get('release_readiness', {}).get('status', 'NOT_READY')
+    try:
+        assessment = _load('quality_gate').assess_gate(Path('.harness'), allow_preflight=True)
+    except Exception as exc:
+        print(f'MR_ASSESSMENT_INVALID: {exc}', file=sys.stderr)
+        return 2
+    quality = assessment.quality['status']
+    readiness = assessment.release_readiness['status']
     print(f'Quality Gate: {quality}')
     print(f"MR Readiness: {'DRAFT ONLY' if readiness == 'DRAFT_ONLY' else readiness}")
     if readiness == 'READY' and quality == 'PASS': print('Ready for MR')
@@ -466,12 +470,13 @@ def _cmd_gate_convergence() -> int:
         return 1
 
     try:
-        status, blockers = quality_gate.run_gate(harness_dir)
+        assessment = quality_gate.assess_gate(harness_dir)
     except quality_gate.InvalidHarnessState as exc:
         print(f"INVALID_HARNESS_STATE: {exc}", file=sys.stderr)
         return 1
 
-    quality_gate.write_back(harness_dir, status, blockers)
+    status, blockers = assessment.status, list(assessment.blockers)
+    quality_gate.write_back(harness_dir, assessment)
     task = load_task(harness_dir)
     blocker_documents = [_load("blockers").blocker_document(blocker) for blocker in blockers]
 
@@ -628,6 +633,8 @@ def cmd_task_classify(level: str, dimensions: dict[str, str]) -> int:
         workspace = _load("workspace")
         user_changes = workspace.snapshot().changed_paths
         task["scope"] = {"owned_paths": [], "protected_user_paths": list(user_changes)}
+        task.setdefault("git", {})["head"] = workspace.git_head()
+        task["git"]["base_commit"] = workspace.git_head()
         task["risk"] = {
             "level": level, "profile": profile, "dimensions": dimensions,
             "escalation_history": [],
@@ -876,13 +883,14 @@ def cmd_impact(action,value=None,reason=None):
   task['scope']={'owned_paths':list(i.get('changed',[])),'protected_user_paths':[]}; save_task(Path('.harness'),task)
  scope=task['scope']
  if action=='scope':
-  effective=sorted(set(scope.get('owned_paths',[]))|set(i.get('direct_dependents',[]))|set(i.get('contracts',[])))
-  print(yaml.safe_dump({'owned_paths':scope.get('owned_paths',[]),'protected_user_paths':scope.get('protected_user_paths',[]),'effective_scope':effective},sort_keys=False));return 0
+  effective=_load('workspace').project_task_scope(task, i)
+  print(yaml.safe_dump({'owned_paths':scope.get('owned_paths',[]),'protected_user_paths':scope.get('protected_user_paths',[]),'effective_scope':list(effective)},sort_keys=False));return 0
  if action=='adopt-path':
   if value not in scope['owned_paths']: scope['owned_paths'].append(value)
   if value in scope['protected_user_paths']: scope['protected_user_paths'].remove(value)
   save_task(Path('.harness'),task);return 0
  if action=='ignore-user-path':
+  if value in scope['owned_paths']: scope['owned_paths'].remove(value)
   if value not in scope['protected_user_paths']: scope['protected_user_paths'].append(value)
   save_task(Path('.harness'),task);return 0
  key={'add-change':'changed','add-test':'required_tests','add-dependent':'direct_dependents','add-contract':'contracts','add-risk':'risks'}.get(action)

@@ -7,7 +7,7 @@ from importlib import resources
 from pathlib import Path
 
 from .transaction import StagedArtifact, publish, stage
-from .workspace import git_head, review_scope, snapshot
+from .workspace import git_head, project_task_scope, review_scope, snapshot
 
 import yaml
 from jsonschema import ValidationError, validate
@@ -213,9 +213,16 @@ def write_review(harness_dir: Path, review: DiagnosabilityReview, *, base_ref: s
     contract = load_contract(harness_dir, task_type=task_type)
     scope = review_scope(base_ref)
     task = yaml.safe_load((harness_dir / "current-task.yaml").read_text())
-    ownership = task.get("scope", {}).get("owned_paths")
-    base_files = set(ownership) if ownership is not None else set(scope.files)
-    files = tuple(sorted(base_files | set(contract["applicability"]["inspected_paths"]) | set(review.direct_dependencies)))
+    if task.get("scope") is None:
+        files = tuple(sorted(set(scope.files) | set(contract["applicability"]["inspected_paths"]) | set(review.direct_dependencies)))
+    else:
+        impact_path = harness_dir / "impact.yaml"
+        impact_doc = yaml.safe_load(impact_path.read_text()) if impact_path.exists() else {"impact": {}}
+        files = project_task_scope(
+            task, impact_doc.get("impact") or {},
+            inspected_paths=contract["applicability"]["inspected_paths"],
+            direct_dependencies=review.direct_dependencies,
+        )
     if review.claimed_files != files:
         raise ValueError("DIAGNOSABILITY_SCOPE_MISMATCH")
     existing = [yaml.safe_load(item.read_text()) for item in (harness_dir / "findings").glob("*.yaml")]

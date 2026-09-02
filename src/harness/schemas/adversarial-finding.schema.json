@@ -10,11 +10,7 @@
     "target",
     "scenario",
     "severity",
-    "status",
-    "category",
-    "reason_code",
-    "location",
-    "compliance"
+    "status"
   ],
   "properties": {
     "id": {
@@ -22,7 +18,11 @@
       "pattern": "^FND-[0-9]+$"
     },
     "kind": {
-      "const": "requirement_violation"
+      "enum": [
+        "failure_scenario",
+        "requirement_violation",
+        "invariant_violation"
+      ]
     },
     "target": {
       "type": "string",
@@ -107,7 +107,9 @@
       "description": "ISO timestamp, set at VERIFIED"
     },
     "category": {
-      "const": "diagnosability"
+      "enum": [
+        "diagnosability"
+      ]
     },
     "reason_code": {
       "enum": [
@@ -516,6 +518,18 @@
           "evidence",
           "verified_at"
         ]
+      }
+    },
+    {
+      "not": {
+        "required": [
+          "category"
+        ],
+        "properties": {
+          "category": {
+            "const": "diagnosability"
+          }
+        }
       }
     }
   ]

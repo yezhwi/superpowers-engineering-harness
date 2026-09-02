@@ -70,7 +70,7 @@ def validate_minimal_decision(document: dict) -> None:
 
 def validate_complexity_finding(document: dict) -> None:
     """Validate one evidence-backed complexity finding."""
-    validate(document, _schema("finding.schema.json"))
+    validate(document, _schema("complexity-finding.schema.json"))
 
 
 def validate_complexity_checks(review: dict) -> None:

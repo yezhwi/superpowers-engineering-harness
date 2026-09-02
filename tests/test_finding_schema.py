@@ -120,3 +120,27 @@ def test_fnd_rejects_complexity_status_and_severity():
         validate({**BASE, "severity": "high", "status": "PROPOSED"})
     with pytest.raises(ValidationError):
         validate({**BASE, "status": "open"})
+
+
+def test_canonical_finding_schema_resolver_selects_one_schema_per_category():
+    from harness.quality_gate import finding_schema_name
+
+    assert finding_schema_name({**BASE, "status": "PROPOSED"}) == "adversarial-finding.schema.json"
+    assert finding_schema_name({**DIAG_BASE, "status": "PROPOSED"}) == "diagnosability-finding.schema.json"
+    assert finding_schema_name({"category": "complexity"}) == "complexity-finding.schema.json"
+
+
+def test_canonical_diagnosability_schema_supports_lifecycle_records():
+    schema = json.loads(resources.files("harness").joinpath(
+        "schemas", "diagnosability-finding.schema.json").read_text())
+
+    jsonschema.validate({
+        **DIAG_BASE,
+        "status": "FIXED",
+        "fix": "add reason code",
+        "regression_test": {
+            "path": "tests/test_diag.py::test_reason_code",
+            "red_evidence": "diag-red.json",
+            "green_evidence": "diag-green.json",
+        },
+    }, schema)

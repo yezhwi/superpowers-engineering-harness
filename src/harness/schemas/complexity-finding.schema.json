@@ -1,0 +1,102 @@
+{
+  "type": "object",
+  "required": [
+    "id",
+    "category",
+    "type",
+    "severity",
+    "status",
+    "location",
+    "summary",
+    "reason",
+    "evidence",
+    "recommendation"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^CPLX-[0-9]+$"
+    },
+    "category": {
+      "const": "complexity"
+    },
+    "type": {
+      "enum": [
+        "delete",
+        "reuse",
+        "stdlib",
+        "native",
+        "yagni",
+        "shrink"
+      ]
+    },
+    "severity": {
+      "enum": [
+        "high",
+        "medium",
+        "low"
+      ]
+    },
+    "status": {
+      "enum": [
+        "open",
+        "resolved",
+        "accepted"
+      ]
+    },
+    "location": {
+      "type": "object",
+      "required": [
+        "file"
+      ],
+      "properties": {
+        "file": {
+          "type": "string",
+          "minLength": 1
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1
+    },
+    "evidence": {
+      "type": "object",
+      "minProperties": 1
+    },
+    "recommendation": {
+      "type": "string",
+      "minLength": 1
+    },
+    "acceptance_reason": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "accepted"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "acceptance_reason"
+        ]
+      }
+    }
+  ]
+}

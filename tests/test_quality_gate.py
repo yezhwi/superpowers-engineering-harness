@@ -451,6 +451,31 @@ def test_critical_finding_blocked(tmp_path):
     assert "Critical finding FND-0002" in result.stdout
 
 
+def test_assess_gate_is_side_effect_free_and_matches_run_gate(tmp_path):
+    from harness.quality_gate import assess_gate, run_gate
+
+    h = make_harness(tmp_path)
+    before = (h / "current-task.yaml").read_bytes()
+    assessment = assess_gate(h, allow_preflight=True)
+
+    assert (assessment.status, list(assessment.blockers)) == run_gate(h, allow_preflight=True)
+    assert (h / "current-task.yaml").read_bytes() == before
+    assert assessment.quality["status"] == assessment.status
+    assert assessment.release_readiness["status"] in {"READY", "DRAFT_ONLY", "NOT_READY"}
+
+
+def test_write_back_persists_assessment_without_recomputing_readiness(tmp_path):
+    from harness.quality_gate import assess_gate, write_back
+
+    h = make_harness(tmp_path)
+    assessment = assess_gate(h, allow_preflight=True)
+    write_back(h, assessment)
+    task = yaml.safe_load((h / "current-task.yaml").read_text())
+
+    assert task["gate"]["quality"] == assessment.quality
+    assert task["gate"]["release_readiness"] == assessment.release_readiness
+
+
 def test_closed_findings_do_not_block(tmp_path):
     h = make_harness(tmp_path)
     finding = finding_doc("FND-0003", "major", "REJECTED", attempts=["x"], rejection_reason="impossible")
@@ -740,7 +765,7 @@ def test_finding_missing_lifecycle_fields_is_invalid_harness_state(tmp_path):
         "id": "FND-001", "severity": "major", "status": "PROPOSED"}))
     result = _gate(h)
     assert result.returncode == 2
-    assert "fails finding.schema.json" in result.stderr
+    assert "FINDING_SCHEMA_UNKNOWN" in result.stderr
 
 
 def test_evidence_missing_commit_is_invalid_harness_state(tmp_path):

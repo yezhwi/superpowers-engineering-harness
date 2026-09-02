@@ -12,6 +12,7 @@ Exit codes:
 """
 
 import argparse
+from dataclasses import dataclass
 import json
 import sys
 from pathlib import Path
@@ -97,13 +98,29 @@ def load_evidence(evidence_dir: Path) -> list[dict]:
     return evidence
 
 
+def finding_schema_name(finding: dict) -> str:
+    """Return canonical schema for one persisted finding discriminator."""
+    category = finding.get("category")
+    if category == "diagnosability":
+        return "diagnosability-finding.schema.json"
+    if category == "complexity":
+        return "complexity-finding.schema.json"
+    if category is None and finding.get("kind") in {
+        "failure_scenario", "requirement_violation", "invariant_violation",
+    }:
+        return "adversarial-finding.schema.json"
+    raise InvalidHarnessState("FINDING_SCHEMA_UNKNOWN")
+
+
 def load_findings(findings_dir: Path) -> list:
     findings = []
     if not findings_dir.is_dir():
         return findings
     for path in sorted(findings_dir.glob("*.yaml")):
         data = yaml.safe_load(path.read_text())
-        validate_schema(data, "finding.schema.json", path)
+        if not isinstance(data, dict):
+            raise InvalidHarnessState(f"{path} is not a mapping")
+        validate_schema(data, finding_schema_name(data), path)
         findings.append(data)
     return findings
 
@@ -182,8 +199,8 @@ def run_fast_gate(task: dict, harness_dir: Path, head: str,
     return ("PASS" if not blockers else "BLOCKED"), blockers
 
 
-def run_gate(harness_dir: Path, head: str | None = None,
-             allow_converged: bool = False, allow_preflight: bool = False) -> tuple[str, list]:
+def _evaluate_gate(harness_dir: Path, head: str | None = None,
+                   allow_converged: bool = False, allow_preflight: bool = False) -> tuple[str, list]:
     """Returns (status, blockers). status in {'PASS','BLOCKED'}.
     Raises InvalidHarnessState."""
     task = _load_yaml(harness_dir / "current-task.yaml")
@@ -464,18 +481,53 @@ def run_gate(harness_dir: Path, head: str | None = None,
     return status, blockers
 
 
-def write_back(harness_dir: Path, status: str, blockers: list):
+@dataclass(frozen=True)
+class GateAssessment:
+    status: str
+    blockers: tuple[GateBlocker, ...]
+    quality: dict[str, str]
+    release_readiness: dict[str, list[str] | str]
+
+
+def assess_gate(harness_dir: Path, head: str | None = None,
+                allow_converged: bool = False, allow_preflight: bool = False) -> GateAssessment:
+    """Evaluate current Harness state without persisting a Gate result."""
+    status, blockers = _evaluate_gate(
+        harness_dir, head=head, allow_converged=allow_converged,
+        allow_preflight=allow_preflight,
+    )
+    release = _load_yaml(harness_dir / "gate.yaml").get("gate", {}).get("release", {})
+    authorized = bool(((_load_yaml(harness_dir / "current-task.yaml").get("authorizations") or {})
+                       .get("full_suite", {}).get("granted")))
+    readiness = (
+        {"status": "NOT_READY", "reasons": ["quality_gate_blocked"]}
+        if status != "PASS" else
+        {"status": "DRAFT_ONLY", "reasons": ["full_suite_required_but_not_authorized"]}
+        if release.get("full_suite_required") and not authorized else
+        {"status": "READY", "reasons": []}
+    )
+    return GateAssessment(status, tuple(blockers),
+                          {"status": "PASS" if status == "PASS" else "BLOCKED"}, readiness)
+
+
+def run_gate(harness_dir: Path, head: str | None = None,
+             allow_converged: bool = False, allow_preflight: bool = False) -> tuple[str, list]:
+    assessment = assess_gate(
+        harness_dir, head=head, allow_converged=allow_converged,
+        allow_preflight=allow_preflight,
+    )
+    return assessment.status, list(assessment.blockers)
+
+
+def write_back(harness_dir: Path, assessment: GateAssessment):
+    """Persist already-computed assessment; never evaluate Gate a second time."""
     path = harness_dir / "current-task.yaml"
     task = yaml.safe_load(path.read_text())
     task.setdefault("gate", {})
-    task["gate"]["status"] = status
-    task["gate"]["blocked_by"] = [blocker_document(blocker) for blocker in blockers]
-    task["gate"]["quality"] = {"status": "PASS" if status == "PASS" else "BLOCKED"}
-    release = _load_yaml(harness_dir / "gate.yaml").get("gate", {}).get("release", {})
-    authorized = bool((task.get("authorizations") or {}).get("full_suite", {}).get("granted"))
-    task["gate"]["release_readiness"] = ({"status": "NOT_READY", "reasons": ["quality_gate_blocked"]} if status != "PASS" else
-        {"status": "DRAFT_ONLY", "reasons": ["full_suite_required_but_not_authorized"]} if release.get("full_suite_required") and not authorized else
-        {"status": "READY", "reasons": []})
+    task["gate"]["status"] = assessment.status
+    task["gate"]["blocked_by"] = [blocker_document(blocker) for blocker in assessment.blockers]
+    task["gate"]["quality"] = assessment.quality
+    task["gate"]["release_readiness"] = assessment.release_readiness
     task.setdefault("git", {})["head"] = git_head()
     path.write_text(yaml.safe_dump(task, sort_keys=False))
 
@@ -487,8 +539,9 @@ def main(argv=None):
 
     harness_dir = Path(args.harness_dir)
     try:
-        status, blockers = run_gate(harness_dir)
-        write_back(harness_dir, status, blockers)
+        assessment = assess_gate(harness_dir)
+        status, blockers = assessment.status, list(assessment.blockers)
+        write_back(harness_dir, assessment)
     except InvalidHarnessState as exc:
         print(f"INVALID_HARNESS_STATE: {exc}", file=sys.stderr)
         return 2
