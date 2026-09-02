@@ -10,8 +10,8 @@ import tomllib
 REPO = Path(__file__).resolve().parent.parent
 
 
-def test_v026_release_metadata_is_publishable():
-    expected = "0.2.6"
+def test_v027_release_metadata_is_publishable():
+    expected = "0.2.7"
     assert tomllib.loads((REPO / "pyproject.toml").read_text())["project"]["version"] == expected
     assert json.loads((REPO / "package.json").read_text())["version"] == expected
     assert f"# Superpowers Engineering Harness v{expected}" in (REPO / "README.md").read_text()
@@ -20,17 +20,17 @@ def test_v026_release_metadata_is_publishable():
     assert f"## {expected} (unreleased)" not in changelog
 
 
-def test_v026_release_notes_document_diagnosability():
+def test_v027_release_notes_document_diagnosability():
     changelog = (REPO / "CHANGELOG.md").read_text()
     release = changelog.split("## 0.2.4", 1)[0]
     for phrase in ("Observability Contract", "DIAG Finding", "Q2/Q3", "non-goals"):
         assert phrase in release
 
 
-def test_v026_release_notes_include_installation_and_boundaries():
+def test_v027_release_notes_include_installation_and_boundaries():
     changelog = (REPO / "CHANGELOG.md").read_text()
     release = changelog.split("## 0.2.5", 1)[0]
-    assert "git:github.com/yezhwi/superpowers-engineering-harness@v0.2.6" in release
+    assert "git:github.com/yezhwi/superpowers-engineering-harness@v0.2.7" in release
     assert "diagnosability" in release.lower()
     for phrase in ("logger SDK", "OpenTelemetry", "automatic log insertion", "universal source scanning"):
         assert phrase in release

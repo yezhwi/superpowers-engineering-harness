@@ -183,7 +183,7 @@ def run_fast_gate(task: dict, harness_dir: Path, head: str,
 
 
 def run_gate(harness_dir: Path, head: str | None = None,
-             allow_converged: bool = False) -> tuple[str, list]:
+             allow_converged: bool = False, allow_preflight: bool = False) -> tuple[str, list]:
     """Returns (status, blockers). status in {'PASS','BLOCKED'}.
     Raises InvalidHarnessState."""
     task = _load_yaml(harness_dir / "current-task.yaml")
@@ -194,7 +194,7 @@ def run_gate(harness_dir: Path, head: str | None = None,
         raise InvalidHarnessState(f"unknown task state {state!r}")
 
     # Single legal path: REVIEWING -> GATING -> quality gate.
-    if state != "GATING" and not (allow_converged and state == "CONVERGED"):
+    if state != "GATING" and not (allow_converged and state == "CONVERGED") and not allow_preflight:
         raise InvalidHarnessState(
             f"state {state} does not allow gate execution (must be GATING)"
         )
@@ -470,6 +470,12 @@ def write_back(harness_dir: Path, status: str, blockers: list):
     task.setdefault("gate", {})
     task["gate"]["status"] = status
     task["gate"]["blocked_by"] = [blocker_document(blocker) for blocker in blockers]
+    task["gate"]["quality"] = {"status": "PASS" if status == "PASS" else "BLOCKED"}
+    release = _load_yaml(harness_dir / "gate.yaml").get("gate", {}).get("release", {})
+    authorized = bool((task.get("authorizations") or {}).get("full_suite", {}).get("granted"))
+    task["gate"]["release_readiness"] = ({"status": "NOT_READY", "reasons": ["quality_gate_blocked"]} if status != "PASS" else
+        {"status": "DRAFT_ONLY", "reasons": ["full_suite_required_but_not_authorized"]} if release.get("full_suite_required") and not authorized else
+        {"status": "READY", "reasons": []})
     task.setdefault("git", {})["head"] = git_head()
     path.write_text(yaml.safe_dump(task, sort_keys=False))
 

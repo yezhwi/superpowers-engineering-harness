@@ -1,8 +1,8 @@
-# Superpowers Engineering Harness v0.2.6
+# Superpowers Engineering Harness v0.2.7
 
 [English](README.md)
 
-`v0.2.6 current release`；本 release 已包含 Production Diagnosability Standard、risk-adaptive behavior 与 Test Plan Gate。
+`v0.2.7 current release`；本 release 已包含 risk-adaptive behavior、Task Ownership、Finding review recovery、evidence run/attach、Gate preflight、双轴 readiness 与 complexity audit。
 
 **Routing：** Q0 直接回答、不创建 task；Q1 / FAST 使用 RED/fix/GREEN/Light Gate；Q2 / STANDARD 与 Q3 / STRICT 使用完整 contract/review/Gate 流程。
 
@@ -47,6 +47,8 @@ v0.2.3  Q0/Q1/Q2/Q3 风险自适应工作流
 v0.2.4  Test Plan → 可执行绑定 → fresh evidence
   ↓
 v0.2.6  Production Diagnosability Contract + DIAG Finding + Gate
+  ↓
+v0.2.7  Task Ownership + Review Convergence + Gate Readiness
 ```
 
 ## Engineering Quality

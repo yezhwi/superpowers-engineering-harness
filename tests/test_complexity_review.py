@@ -43,6 +43,25 @@ def test_accepted_complexity_finding_requires_reason():
         validate_complexity_finding(finding(status="accepted"))
 
 
+def audit_checks(result="pass"):
+    return {name: {"result": result, "evidence": "reviewed"} for name in ("delete", "reuse", "stdlib", "native", "yagni", "shrink")}
+
+
+def test_complexity_audit_requires_all_dimension_decisions(tmp_path):
+    harness_dir = tmp_path / ".harness"
+    review = {"task": "TASK-004", "checks": audit_checks(), "findings": []}
+    write_complexity_review(harness_dir, review)
+    metadata = json.loads((harness_dir / "evidence/complexity-review.json").read_text())
+    assert metadata["checks"]["reuse"]["result"] == "pass"
+
+
+def test_complexity_failed_check_requires_finding(tmp_path):
+    harness_dir = tmp_path / ".harness"
+    checks = audit_checks(); checks["yagni"]["result"] = "fail"
+    with pytest.raises(ValidationError):
+        write_complexity_review(harness_dir, {"task": "TASK-004", "checks": checks, "findings": []})
+
+
 def test_write_complexity_review_persists_findings_and_metadata(tmp_path):
     """Break caught: review output does not become gate-readable records."""
     harness_dir = tmp_path / ".harness"

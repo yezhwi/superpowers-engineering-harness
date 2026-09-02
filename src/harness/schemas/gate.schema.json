@@ -12,6 +12,8 @@
         "invariants": {"type": "object", "additionalProperties": false, "properties": {"minor_verified": {"type": "boolean"}}},
         "fast": {"type": "object", "additionalProperties": false, "properties": {"verification": {"$ref": "#/definitions/verificationPolicy"}}},
         "verification": {"$ref": "#/definitions/verificationPolicy"},
+        "verification_commands": {"type": "object", "additionalProperties": {"type": "string", "minLength": 1}},
+        "release": {"type": "object", "additionalProperties": false, "properties": {"full_suite_required": {"type": "boolean"}}},
         "complexity": {"type": "object", "additionalProperties": false, "properties": {"required": {"type": "boolean"}, "blocking": {"type": "array", "items": {"enum": ["critical", "major", "minor", "high"]}}}},
         "diagnosability": {"type": "object", "additionalProperties": false, "properties": {"standard": {"enum": ["required_when_contract_required"]}, "strict": {"enum": ["required"]}, "blocking": {"type": "array", "items": {"enum": ["critical", "major", "minor"]}}}},
         "findings": {"$ref": "#/definitions/findingPolicy"},

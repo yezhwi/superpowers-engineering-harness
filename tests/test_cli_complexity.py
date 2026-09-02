@@ -115,7 +115,22 @@ def test_review_complexity_writes_findings_and_metadata(tmp_path):
     assert (repo / ".harness/evidence/complexity-review.json").is_file()
 
 
-def test_complexity_scope_rejects_artifact_omitting_dirty_file(tmp_path):
+def test_complexity_scope_excludes_protected_dirty_path(tmp_path):
+    repo = make_repo(tmp_path)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, check=True)
+    (repo / "owned.py").write_text("base\n"); (repo / "protected.py").write_text("base\n")
+    subprocess.run(["git", "add", "."], cwd=repo, check=True); subprocess.run(["git", "commit", "-qm", "base"], cwd=repo, check=True)
+    set_task_state(repo, "VERIFYING")
+    task_path = repo / ".harness/current-task.yaml"; task = yaml.safe_load(task_path.read_text())
+    task["scope"] = {"owned_paths": ["owned.py"], "protected_user_paths": ["protected.py"]}; task_path.write_text(yaml.safe_dump(task))
+    (repo / "protected.py").write_text("user edit\n")
+    source = tmp_path / "review.yaml"; source.write_text(yaml.safe_dump({"task": "TASK-004", "findings": [], "review_scope": {"files": ["owned.py"]}}))
+    result = run_cli(repo, "review", "complexity", "--base", "HEAD", "--file", str(source))
+    assert result.returncode == 0, result.stderr
+
+
+def test_complexity_scope_excludes_unadopted_dirty_file(tmp_path):
     repo = make_repo(tmp_path)
     subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo, check=True)
     subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, check=True)
@@ -132,8 +147,21 @@ def test_complexity_scope_rejects_artifact_omitting_dirty_file(tmp_path):
 
     result = run_cli(repo, "review", "complexity", "--base", "HEAD", "--file", str(source))
 
-    assert result.returncode == 2
-    assert "COMPLEXITY_REVIEW_SCOPE_MISMATCH" in result.stderr
+    assert result.returncode == 0, result.stderr
+
+
+def test_legacy_complexity_input_warns_before_v04_rejection(tmp_path):
+    repo = make_repo(tmp_path)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, check=True)
+    (repo / "tracked.py").write_text("base\n")
+    subprocess.run(["git", "add", "tracked.py"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-qm", "base"], cwd=repo, check=True)
+    set_task_state(repo, "VERIFYING")
+    source = tmp_path / "review.yaml"; source.write_text(yaml.safe_dump({"task": "TASK-004", "findings": []}))
+    result = run_cli(repo, "review", "complexity", "--base", "HEAD", "--file", str(source))
+    assert result.returncode == 0, result.stderr
+    assert "COMPLEXITY_CHECKS_DEPRECATED" in result.stderr
 
 
 def test_complexity_defaults_to_task_baseline_for_clean_committed_change(tmp_path):
@@ -159,7 +187,7 @@ def test_complexity_defaults_to_task_baseline_for_clean_committed_change(tmp_pat
 
     assert result.returncode == 0, result.stderr
     metadata = json.loads((repo / ".harness/evidence/complexity-review.json").read_text())
-    assert "service.py" in metadata["review_scope"]["files"]
+    assert "service.py" not in metadata["review_scope"]["files"]
 
 
 def test_check_minimal_rejects_task_mismatch(tmp_path):

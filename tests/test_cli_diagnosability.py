@@ -80,24 +80,63 @@ def test_review_diagnosability_writes_current_scope_evidence(tmp_path):
     assert record["review_scope"]["files"] == ["src/orders/refund.py"]
 
 
-def test_review_persists_proposed_diag_finding_atomically(tmp_path):
+def diag_proposal(local_id="missing-external-context"):
+    return {
+        "local_id": local_id,
+        "target": "REQ-001",
+        "severity": "major",
+        "reason_code": "DIAG_MISSING_EXTERNAL_FAILURE_CONTEXT",
+        "location": {"file": "src/orders/refund.py"},
+        "required_checks": ["external_failure_context"],
+    }
+
+
+def test_review_publishes_diag_proposal_as_allocated_finding(tmp_path):
     repo = make_repo(tmp_path)
     source = review_source(tmp_path, external_result="fail")
     document = yaml.safe_load(source.read_text())
-    document["finding_ids"] = ["FND-009"]
-    document["findings"] = [{
-        "id": "FND-009", "kind": "requirement_violation", "target": "REQ-001",
-        "category": "diagnosability", "reason_code": "DIAG_MISSING_EXTERNAL_FAILURE_CONTEXT",
-        "severity": "major", "status": "PROPOSED", "scenario": "timeout lacks context",
-        "location": {"file": "src/orders/refund.py"},
-        "compliance": {"evidence_kind": "static_compliance", "required_checks": ["external_failure_context"]},
-    }]
+    document["proposals"] = [diag_proposal()]
     source.write_text(yaml.safe_dump(document))
 
     result = run_cli(repo, "review", "diagnosability", "--base", "HEAD", "--file", str(source))
 
     assert result.returncode == 0, result.stderr
-    assert (repo / ".harness/findings/FND-009.yaml").is_file()
+    finding = yaml.safe_load((repo / ".harness/findings/FND-001.yaml").read_text())
+    assert finding["category"] == "diagnosability"
+    record = yaml.safe_load((repo / ".harness/evidence/diagnosability-review.json").read_text())
+    assert record["finding_mapping"] == {"missing-external-context": "FND-001"}
+
+
+def test_review_rejects_duplicate_diag_proposal_with_stable_code(tmp_path):
+    repo = make_repo(tmp_path)
+    source = review_source(tmp_path, external_result="fail")
+    document = yaml.safe_load(source.read_text())
+    document["proposals"] = [diag_proposal()]
+    source.write_text(yaml.safe_dump(document))
+    assert run_cli(repo, "review", "diagnosability", "--base", "HEAD", "--file", str(source)).returncode == 0
+    (repo / ".harness/evidence/diagnosability-review.json").unlink()
+    document["proposals"] = [diag_proposal("same-problem-again")]
+    source.write_text(yaml.safe_dump(document))
+
+    result = run_cli(repo, "review", "diagnosability", "--base", "HEAD", "--file", str(source))
+
+    assert result.returncode == 2
+    assert "DIAG_PROPOSAL_DUPLICATE" in result.stderr
+
+
+def test_review_rejects_invalid_diag_proposal_with_stable_code(tmp_path):
+    repo = make_repo(tmp_path,)
+    source = review_source(tmp_path, external_result="fail")
+    document = yaml.safe_load(source.read_text())
+    proposal = diag_proposal()
+    del proposal["target"]
+    document["proposals"] = [proposal]
+    source.write_text(yaml.safe_dump(document))
+
+    result = run_cli(repo, "review", "diagnosability", "--base", "HEAD", "--file", str(source))
+
+    assert result.returncode == 2
+    assert "DIAG_PROPOSAL_FIELD_REQUIRED" in result.stderr
 
 
 def test_review_rejects_invalid_proposed_finding_without_partial_artifacts(tmp_path):

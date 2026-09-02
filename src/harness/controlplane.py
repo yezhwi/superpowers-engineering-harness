@@ -6,6 +6,7 @@ Harness modules. Compatibility wrappers in ``scripts/`` re-export this source.
 
 import datetime
 import importlib
+from dataclasses import replace
 import json
 import sys
 from pathlib import Path
@@ -58,6 +59,15 @@ def cmd_transition(target: str) -> int:
     task = load_task(harness_dir)
     current = task.get("state")
     profile = (task.get("risk") or {}).get("profile")
+    if target == "GATING" and current != "REVIEWING":
+        try:
+            status, blockers = _load("quality_gate").run_gate(harness_dir, allow_preflight=True)
+        except Exception as exc:
+            print(f"GATE_PREFLIGHT_INVALID: {exc}", file=sys.stderr); return 2
+        if status != "PASS":
+            print("GATE_PREFLIGHT_MISSING_EVIDENCE", file=sys.stderr)
+            for blocker in blockers: print(f"- {blocker.code}: {blocker.message}", file=sys.stderr)
+            return 1
     if current == "CLASSIFIED" and ((profile == "FAST" and target != "IMPLEMENTING") or (profile in {"STANDARD", "STRICT"} and target != "SPECIFYING")):
         print("PROFILE_ENTRY_STATE_REQUIRED", file=sys.stderr)
         return 1
@@ -67,6 +77,12 @@ def cmd_transition(target: str) -> int:
     if current == "IMPLEMENTING" and target == "SPECIFYING":
         print("RISK_ESCALATION_REQUIRED: use harness task escalate", file=sys.stderr)
         return 1
+    if current == "REPRODUCING" and target == "REVIEWING":
+        import yaml
+        fixed = [yaml.safe_load(path.read_text()) for path in (harness_dir / "findings").glob("*.yaml") if yaml.safe_load(path.read_text()).get("status") == "FIXED"]
+        if fixed:
+            print(f"FINDING_REVIEW_RESUME_REQUIRED: use harness finding resume-review {fixed[0]['id']}", file=sys.stderr)
+            return 1
     if current == "REVIEWING" and target in {"GATING", "VERIFYING", "REPRODUCING"}:
         print("REVIEW_OUTCOME_REQUIRED: use harness review outcome", file=sys.stderr)
         return 1
@@ -221,6 +237,12 @@ def cmd_review_outcome(outcome: str, reason_code: str, finding_ids: list[str]) -
         print("FINDING_NOT_ALLOWED_FOR_REVIEW_OUTCOME", file=sys.stderr)
         return 2
     target = routes[outcome]
+    if target == "GATING":
+        status, blockers = _load("quality_gate").run_gate(harness_dir, allow_preflight=True)
+        if status != "PASS":
+            print("GATE_PREFLIGHT_MISSING_EVIDENCE", file=sys.stderr)
+            for blocker in blockers: print(f"- {blocker.code}: {blocker.message}", file=sys.stderr)
+            return 1
     task["review"] = {"outcome": outcome, "reason_code": reason_code,
                       "message": "", "finding_ids": finding_ids}
     task["state"] = target
@@ -259,6 +281,9 @@ def cmd_review_complexity(source: Path, base_ref: str | None = None) -> int:
         if not base_ref:
             raise ValueError("TASK_GIT_BASELINE_REQUIRED: provide --base or create a task with base_commit")
         scope = _load("workspace").review_scope(base_ref)
+        owned = task.get("scope", {}).get("owned_paths")
+        if owned is not None:
+            scope = replace(scope, files=tuple(sorted(set(owned) | set(_impact()[1]["impact"].get("contracts", [])))))
         claimed_scope = review.get("review_scope")
         if claimed_scope is not None and claimed_scope.get("files") != list(scope.files):
             raise ValueError("COMPLEXITY_REVIEW_SCOPE_MISMATCH")
@@ -266,9 +291,24 @@ def cmd_review_complexity(source: Path, base_ref: str | None = None) -> int:
     except Exception as exc:
         print(f"INVALID COMPLEXITY REVIEW: {exc}", file=sys.stderr)
         return 2
+    if "checks" not in review:
+        print("COMPLEXITY_CHECKS_DEPRECATED", file=sys.stderr)
     print(f"complexity review written: {len(paths)} findings")
     return 0
 
+
+def cmd_evidence_attach(evidence_type, command, scope, result_file):
+ if result_file is None: print('EVIDENCE_ATTACH_INCOMPLETE', file=sys.stderr); return 2
+ try:
+  record=json.loads(result_file.read_text())
+  required={'command','exit_code','started_at','finished_at','git_head','workspace_fingerprint','stdout_digest','stderr_digest'}
+  if required-set(record): raise ValueError
+  if record['command'] != command: raise ValueError
+  record.update({'type':evidence_type,'timestamp':record['finished_at'],'commit':record['git_head'],'workspace_fingerprint_after':record['workspace_fingerprint'],'stdout_tail':record['stdout_digest'],'stderr_tail':record['stderr_digest'],'scope':scope})
+  from harness.collect_evidence import evidence_filename
+  (Path('.harness')/'evidence'/evidence_filename(evidence_type)).write_text(json.dumps(record))
+ except (OSError,json.JSONDecodeError,ValueError): print('EVIDENCE_ATTACH_INCOMPLETE', file=sys.stderr); return 2
+ print('evidence attached'); return 0
 
 def cmd_evidence(evidence_type: str, command: str, finding_id=None, test_id=None,
                  scope="related", covered_tests=(), covered_test_cases=(), phase=None,
@@ -337,6 +377,30 @@ def cmd_telemetry_show() -> int:
         return 1
     print(path.read_text(), end="")
     return 0
+
+
+def cmd_mr_describe() -> int:
+    gate = load_task(Path('.harness')).get('gate', {})
+    quality = gate.get('quality', {}).get('status', gate.get('status', 'BLOCKED'))
+    readiness = gate.get('release_readiness', {}).get('status', 'NOT_READY')
+    print(f'Quality Gate: {quality}')
+    print(f"MR Readiness: {'DRAFT ONLY' if readiness == 'DRAFT_ONLY' else readiness}")
+    if readiness == 'READY' and quality == 'PASS': print('Ready for MR')
+    return 0
+
+
+def cmd_gate_preflight() -> int:
+    """Run Gate assessment without changing task state."""
+    try:
+        status, blockers = _load('quality_gate').run_gate(Path('.harness'), allow_preflight=True)
+    except Exception as exc:
+        print(f'GATE_PREFLIGHT_INVALID: {exc}', file=sys.stderr); return 2
+    print('READY: yes' if status == 'PASS' else 'READY: no')
+    commands = __import__('yaml').safe_load((Path('.harness') / 'gate.yaml').read_text()).get('gate', {}).get('verification_commands', {})
+    for blocker in blockers:
+        print(f'- {blocker.code}: {blocker.message}')
+        if blocker.source in commands: print(f'  command: {commands[blocker.source]}')
+    return 0 if status == 'PASS' else 1
 
 
 def cmd_gate() -> int:
@@ -414,7 +478,7 @@ def _cmd_gate_convergence() -> int:
     if status == "PASS":
         state_machine.require_legal("GATING", "CONVERGED")
         task["state"] = "CONVERGED"
-        task["gate"] = {"status": "PASS", "blocked_by": []}
+        task.setdefault("gate", {}).update({"status": "PASS", "blocked_by": []})
         save_task(harness_dir, task)
         print("DECISION: CONVERGED (gate PASS)")
         return 0
@@ -488,6 +552,17 @@ def gate_pass(harness_dir: Path) -> bool:
     return status == "PASS"
 
 _FINDING_TRANSITIONS={"PROPOSED":{"REPRODUCING"},"REPRODUCING":{"CONFIRMED","REJECTED"},"CONFIRMED":{"FIXING"},"FIXING":{"FIXED"},"FIXED":{"VERIFIED"},"VERIFIED":{"CLOSED"}}
+def cmd_finding_resume_review(fid):
+ import yaml
+ h=Path('.harness'); task=load_task(h)
+ if task.get('state') != 'REPRODUCING': print('FINDING_REVIEW_RESUME_STATE_INVALID', file=sys.stderr); return 1
+ findings=[yaml.safe_load(path.read_text()) for path in (h/'findings').glob('*.yaml')]
+ target=next((f for f in findings if f.get('id') == fid), None)
+ if not target or target.get('status') != 'FIXED': print('FINDING_REVIEW_RESUME_INVALID', file=sys.stderr); return 1
+ blocking=[f.get('id') for f in findings if f.get('status') in {'PROPOSED','REPRODUCING','CONFIRMED','FIXING'}]
+ if blocking: print('FINDING_REVIEW_RESUME_BLOCKED: blocking_findings: ' + ', '.join(blocking), file=sys.stderr); return 1
+ _load('state_machine').require_legal('REPRODUCING','REVIEWING'); task['state']='REVIEWING'; save_task(h,task); print(f'OK: {fid} resume-review -> REVIEWING'); return 0
+
 def cmd_finding_transition(fid,target,evidence=None,test=None,attempt=None,reason=None,critical_related_approved=False):
  import yaml,datetime,json
  path=None; finding=None
@@ -552,6 +627,7 @@ def cmd_task_classify(level: str, dimensions: dict[str, str]) -> int:
         _load("state_machine").require_legal("CREATED", "CLASSIFIED")
         workspace = _load("workspace")
         user_changes = workspace.snapshot().changed_paths
+        task["scope"] = {"owned_paths": [], "protected_user_paths": list(user_changes)}
         task["risk"] = {
             "level": level, "profile": profile, "dimensions": dimensions,
             "escalation_history": [],
@@ -795,8 +871,24 @@ def cmd_impact(action,value=None,reason=None):
  import yaml
  p,d=_impact(); i=d['impact']
  if action=='show': print(yaml.safe_dump(d,sort_keys=False));return 0
+ task=load_task(Path('.harness'))
+ if 'scope' not in task:
+  task['scope']={'owned_paths':list(i.get('changed',[])),'protected_user_paths':[]}; save_task(Path('.harness'),task)
+ scope=task['scope']
+ if action=='scope':
+  effective=sorted(set(scope.get('owned_paths',[]))|set(i.get('direct_dependents',[]))|set(i.get('contracts',[])))
+  print(yaml.safe_dump({'owned_paths':scope.get('owned_paths',[]),'protected_user_paths':scope.get('protected_user_paths',[]),'effective_scope':effective},sort_keys=False));return 0
+ if action=='adopt-path':
+  if value not in scope['owned_paths']: scope['owned_paths'].append(value)
+  if value in scope['protected_user_paths']: scope['protected_user_paths'].remove(value)
+  save_task(Path('.harness'),task);return 0
+ if action=='ignore-user-path':
+  if value not in scope['protected_user_paths']: scope['protected_user_paths'].append(value)
+  save_task(Path('.harness'),task);return 0
  key={'add-change':'changed','add-test':'required_tests','add-dependent':'direct_dependents','add-contract':'contracts','add-risk':'risks'}.get(action)
  if key:
   if value not in i[key]: i[key].append(value)
+  if action=='add-change' and value not in scope['owned_paths']:
+   scope['owned_paths'].append(value); save_task(Path('.harness'),task)
  elif action=='require-full-suite': i['full_suite']={'recommended':True,'reason':reason}
  p.write_text(yaml.safe_dump(d,sort_keys=False));return 0

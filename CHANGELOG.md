@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.7
+
+- Add explicit task-owned and protected-user scopes, preventing unrelated dirty paths from entering review.
+- Add DIAG proposal publication, Finding-aware `resume-review`, unified evidence references, and evidence run/attach modes.
+- Add Gate preflight, independent quality/release-readiness results, MR draft-only output, and complexity audit decisions.
+
+### Install
+
+```bash
+pi install git:github.com/yezhwi/superpowers-engineering-harness@v0.2.7
+```
+
 ## 0.2.6
 
 - Harden diagnosability review control-plane integrity: task-type propagation, centralized fail-closed review readiness, and proposed DIAG Finding linkage validation.

@@ -18,6 +18,10 @@ gate:
     unit_test: required
     integration_test: optional
 
+  verification_commands:
+    build: "python -m pip wheel --no-deps --no-build-isolation ."
+    unit_test: "pytest"
+
   complexity:
     required: true
     blocking:
@@ -34,6 +38,9 @@ gate:
 
   regression:
     confirmed_finding_without_test: 0
+
+  release:
+    full_suite_required: false
 
   convergence:
     max_iterations: 5

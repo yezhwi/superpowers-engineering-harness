@@ -1,6 +1,7 @@
 """M3: harness init CLI (guide sections 6, 14-16, 27)."""
 
 import subprocess
+import yaml
 import sys
 from pathlib import Path
 
@@ -50,6 +51,20 @@ def test_outside_repo_returns_one(tmp_path):
     assert "git repository" in result.stdout + result.stderr
     # must not auto git-init
     assert not (tmp_path / ".git").exists()
+
+
+def test_mr_describe_marks_draft_only_not_ready(tmp_path):
+    repo = make_repo(tmp_path)
+    run_cli(repo, "init")
+    path = repo / ".harness/current-task.yaml"
+    task = yaml.safe_load(path.read_text())
+    task["gate"] = {"status": "PASS", "blocked_by": [], "quality": {"status": "PASS"}, "release_readiness": {"status": "DRAFT_ONLY", "reasons": ["full_suite_required_but_not_authorized"]}}
+    path.write_text(yaml.safe_dump(task))
+    result = run_cli(repo, "mr", "describe")
+    assert result.returncode == 0
+    assert "Quality Gate: PASS" in result.stdout
+    assert "MR Readiness: DRAFT ONLY" in result.stdout
+    assert "Ready for MR" not in result.stdout
 
 
 def test_unknown_command_is_invalid_usage(tmp_path):

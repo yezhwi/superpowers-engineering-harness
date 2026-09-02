@@ -8,15 +8,18 @@ class EvidenceReferenceError(ValueError):
 
 
 def evidence_path(harness_dir: Path, reference: str) -> Path:
-    """Resolve one evidence filename without allowing directory escape."""
+    """Resolve ID, filename, project-relative, or absolute canonical evidence path."""
+    evidence_dir = (harness_dir / "evidence").resolve()
+    def invalid():
+        candidates = ", ".join(path.stem for path in sorted(evidence_dir.glob("*.json")))
+        raise EvidenceReferenceError(f"EVIDENCE_REFERENCE_INVALID; candidates: {candidates}")
+    if not isinstance(reference, str) or not reference:
+        invalid()
     candidate = Path(reference)
-    if (
-        not isinstance(reference, str)
-        or not reference
-        or candidate.is_absolute()
-        or len(candidate.parts) != 1
-        or candidate.name in {"", ".", ".."}
-    ):
-        raise EvidenceReferenceError("EVIDENCE_REFERENCE_INVALID")
-    name = candidate.name if candidate.suffix == ".json" else f"{candidate.name}.json"
-    return harness_dir / "evidence" / name
+    if len(candidate.parts) == 1 and not candidate.is_absolute():
+        resolved = evidence_dir / (candidate.name if candidate.suffix == ".json" else f"{candidate.name}.json")
+    else:
+        resolved = candidate.resolve() if candidate.is_absolute() else (harness_dir.parent / candidate).resolve()
+    if resolved.parent != evidence_dir or resolved.suffix != ".json":
+        invalid()
+    return resolved

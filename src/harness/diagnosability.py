@@ -15,6 +15,8 @@ from jsonschema import ValidationError, validate
 
 SCHEMA = resources.files("harness").joinpath("schemas", "observability.schema.json")
 REVIEW_SCHEMA = resources.files("harness").joinpath("schemas", "diagnosability-review.schema.json")
+PROPOSAL_SCHEMA = resources.files("harness").joinpath("schemas", "diagnosability-proposal.schema.json")
+FINDING_SCHEMA = resources.files("harness").joinpath("schemas", "diagnosability-finding.schema.json")
 REVIEW_EVIDENCE_SCHEMA = resources.files("harness").joinpath("schemas", "diagnosability-review-evidence.schema.json")
 CHECK_NAMES = ("business_keys", "external_failure_context", "state_transitions", "caller_rejections", "sensitive_data", "duplicate_exception_logging", "low_value_logging")
 
@@ -92,7 +94,7 @@ class DiagnosabilityReview:
     finding_ids: tuple[str, ...]
     direct_dependencies: tuple[str, ...]
     claimed_files: tuple[str, ...]
-    findings: tuple[dict, ...]
+    proposals: tuple[dict, ...]
 
 
 def validate_review_input(document: dict, *, task_id: str) -> DiagnosabilityReview:
@@ -103,12 +105,16 @@ def validate_review_input(document: dict, *, task_id: str) -> DiagnosabilityRevi
     if document["task"] != task_id:
         _invalid("review task mismatch")
     failed = {name for name, result in document["checks"].items() if result == "fail"}
-    if failed and not document["finding_ids"]:
+    proposals = tuple(document.get("proposals", []))
+    for proposal in proposals:
+        try:
+            validate(proposal, json.loads(PROPOSAL_SCHEMA.read_text(encoding="utf-8")))
+        except ValidationError as exc:
+            code = "DIAG_PROPOSAL_FIELD_REQUIRED" if exc.validator == "required" else "DIAG_FINDING_INVALID"
+            raise ValueError(code) from exc
+    if failed and not proposals:
         raise ValueError("DIAG_FINDING_REQUIRED")
-    findings = tuple(document.get("findings", []))
-    if {item.get("id") for item in findings} != set(document["finding_ids"]):
-        raise ValueError("DIAG_FINDING_IDS_MISMATCH")
-    return DiagnosabilityReview(document["task"], document["contract_required"], document["checks"], tuple(document["finding_ids"]), tuple(document["direct_dependencies"]), tuple(document["review_scope"]["files"]), findings)
+    return DiagnosabilityReview(document["task"], document["contract_required"], document["checks"], tuple(document["finding_ids"]), tuple(document["direct_dependencies"]), tuple(document["review_scope"]["files"]), proposals)
 
 
 def load_review_input(path: Path, *, task_id: str) -> DiagnosabilityReview:
@@ -206,21 +212,36 @@ def validate_compliance_closure(finding: dict, record: dict, *, current_head: st
 def write_review(harness_dir: Path, review: DiagnosabilityReview, *, base_ref: str, task_type: str | None = None) -> Path:
     contract = load_contract(harness_dir, task_type=task_type)
     scope = review_scope(base_ref)
-    files = tuple(sorted(set(scope.files) | set(contract["applicability"]["inspected_paths"]) | set(review.direct_dependencies)))
+    task = yaml.safe_load((harness_dir / "current-task.yaml").read_text())
+    ownership = task.get("scope", {}).get("owned_paths")
+    base_files = set(ownership) if ownership is not None else set(scope.files)
+    files = tuple(sorted(base_files | set(contract["applicability"]["inspected_paths"]) | set(review.direct_dependencies)))
     if review.claimed_files != files:
         raise ValueError("DIAGNOSABILITY_SCOPE_MISMATCH")
-    findings = [yaml.safe_load(item.read_text()) for item in (harness_dir / "findings").glob("*.yaml")] + list(review.findings)
-    for finding in review.findings:
-        validate(finding, json.loads(resources.files("harness").joinpath("schemas", "finding.schema.json").read_text()))
-    review_data = {"contract_required": review.contract_required, "checks": review.checks, "finding_ids": list(review.finding_ids)}
+    existing = [yaml.safe_load(item.read_text()) for item in (harness_dir / "findings").glob("*.yaml")]
+    def equivalent(finding, proposal):
+        return finding.get("category") == "diagnosability" and all((finding.get(key) if key != "required_checks" else finding.get("compliance", {}).get("required_checks")) == proposal[key] for key in ("target", "reason_code", "location", "required_checks"))
+    for proposal in review.proposals:
+        match = next((finding for finding in existing if equivalent(finding, proposal)), None)
+        if match:
+            raise ValueError(f"DIAG_PROPOSAL_DUPLICATE: {proposal['local_id']} matches {match['id']}")
+    next_id = max([int(finding["id"].split("-")[1]) for finding in existing if str(finding.get("id", "")).startswith("FND-")] or [0]) + 1
+    generated = []
+    mapping = {}
+    for proposal in review.proposals:
+        fid = f"FND-{next_id:03d}"; next_id += 1; mapping[proposal["local_id"]] = fid
+        generated.append({"id": fid, "kind": "requirement_violation", "category": "diagnosability", "target": proposal["target"], "scenario": proposal["local_id"], "severity": proposal["severity"], "status": "PROPOSED", "reason_code": proposal["reason_code"], "location": proposal["location"], "compliance": {"evidence_kind": "static_compliance", "required_checks": proposal["required_checks"]}})
+    for finding in generated:
+        try:
+            validate(finding, json.loads(FINDING_SCHEMA.read_text(encoding="utf-8")))
+        except ValidationError as exc:
+            raise ValueError("DIAG_FINDING_INVALID") from exc
+    findings = existing + generated
+    review_data = {"contract_required": review.contract_required, "checks": review.checks, "finding_ids": list(mapping.values())}
     validate_review_readiness(contract, review_data, findings, scope_files=files)
     current = snapshot()
-    for finding in review.findings:
-        path = harness_dir / "findings" / f"{finding['id']}.yaml"
-        if path.exists():
-            raise ValueError("DIAG_FINDING_EXISTS")
-    record = {"type": "diagnosability_review", "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(), "command": "harness review diagnosability", "exit_code": 0, "commit": git_head(), "workspace_fingerprint": current.fingerprint, "workspace_fingerprint_after": current.fingerprint, "review_scope": {"files": list(files), "direct_dependencies": list(review.direct_dependencies)}, "contract_required": review.contract_required, "checks": review.checks, "finding_ids": list(review.finding_ids)}
-    artifacts = [StagedArtifact(f"findings/{finding['id']}.yaml", yaml.safe_dump(finding, sort_keys=False).encode()) for finding in review.findings]
+    record = {"type": "diagnosability_review", "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(), "command": "harness review diagnosability", "exit_code": 0, "commit": git_head(), "workspace_fingerprint": current.fingerprint, "workspace_fingerprint_after": current.fingerprint, "review_scope": {"files": list(files), "direct_dependencies": list(review.direct_dependencies)}, "contract_required": review.contract_required, "checks": review.checks, "finding_ids": list(mapping.values()), "finding_mapping": mapping}
+    artifacts = [StagedArtifact(f"findings/{finding['id']}.yaml", yaml.safe_dump(finding, sort_keys=False).encode()) for finding in generated]
     artifacts.append(StagedArtifact("evidence/diagnosability-review.json", json.dumps(record, indent=2).encode(), replace=True))
     publish(harness_dir, stage(harness_dir, artifacts), replace_paths=frozenset({"evidence/diagnosability-review.json"}))
     return harness_dir / "evidence" / "diagnosability-review.json"

@@ -69,6 +69,15 @@
       },
       "additionalProperties": false
     },
+    "scope": {
+      "type": "object",
+      "required": ["owned_paths", "protected_user_paths"],
+      "properties": {
+        "owned_paths": {"type": "array", "uniqueItems": true, "items": {"type": "string"}},
+        "protected_user_paths": {"type": "array", "uniqueItems": true, "items": {"type": "string"}}
+      },
+      "additionalProperties": false
+    },
     "budget": {
       "type": "object",
       "required": ["test_runs", "build_runs", "retry_runs", "overrides"],

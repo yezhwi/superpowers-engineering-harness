@@ -8,6 +8,10 @@ state: CREATED
 
 risk: null
 
+scope:
+  owned_paths: []
+  protected_user_paths: []
+
 budget:
   test_runs: 0
   build_runs: 0

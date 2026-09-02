@@ -55,6 +55,32 @@ def test_diag_cli_lifecycle_uses_passing_review_without_red_green(tmp_path):
         assert cli(tmp_path, "finding", "transition", "FND-001", target, *args).returncode == 0
 
 
+def test_resume_review_routes_fixed_finding_to_reviewing(tmp_path):
+    h = setup(tmp_path)
+    finding = yaml.safe_load((h / "findings" / "fnd-001.yaml").read_text())
+    finding.update({"status": "FIXED", "category": "diagnosability", "reason_code": "DIAG_MISSING_BUSINESS_ID", "location": {"file": "x.py"}, "compliance": {"evidence_kind": "static_compliance", "required_checks": ["business_keys"]}})
+    (h / "findings" / "fnd-001.yaml").write_text(yaml.safe_dump(finding))
+    task = yaml.safe_load((h / "current-task.yaml").read_text()); task["state"] = "REPRODUCING"; (h / "current-task.yaml").write_text(yaml.safe_dump(task))
+
+    result = cli(tmp_path, "finding", "resume-review", "FND-001")
+
+    assert result.returncode == 0, result.stderr
+    assert yaml.safe_load((h / "current-task.yaml").read_text())["state"] == "REVIEWING"
+
+
+def test_generic_transition_requires_finding_resume_review(tmp_path):
+    h = setup(tmp_path)
+    finding = yaml.safe_load((h / "findings" / "fnd-001.yaml").read_text())
+    finding.update({"status": "FIXED", "category": "diagnosability", "reason_code": "DIAG_MISSING_BUSINESS_ID", "location": {"file": "x.py"}, "compliance": {"evidence_kind": "static_compliance", "required_checks": ["business_keys"]}})
+    (h / "findings" / "fnd-001.yaml").write_text(yaml.safe_dump(finding))
+    task = yaml.safe_load((h / "current-task.yaml").read_text()); task["state"] = "REPRODUCING"; (h / "current-task.yaml").write_text(yaml.safe_dump(task))
+
+    result = cli(tmp_path, "transition", "REVIEWING")
+
+    assert result.returncode == 1
+    assert "FINDING_REVIEW_RESUME_REQUIRED" in result.stderr
+
+
 def test_confirmed_rejects_evidence_reference_outside_canonical_directory(tmp_path):
     h = setup(tmp_path)
     (h / "history").mkdir(exist_ok=True)

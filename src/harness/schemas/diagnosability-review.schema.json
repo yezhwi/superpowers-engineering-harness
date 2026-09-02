@@ -119,6 +119,12 @@
       "items": {
         "type": "object"
       }
+    },
+    "proposals": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
     }
   },
   "additionalProperties": false

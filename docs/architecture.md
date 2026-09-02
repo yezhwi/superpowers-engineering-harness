@@ -58,6 +58,16 @@ Harness does not replace code review, business judgment, logging framework choic
 
 Artifacts are source of truth. Status is projection, not separate truth.
 
+## v0.2.7 ownership and convergence
+
+`scope.owned_paths` defines review/verification ownership. `scope.protected_user_paths` remains part of workspace freshness, but never enters task review scope without explicit adoption.
+
+Diagnosability reviewers publish proposals, not persistent findings. Harness validates, deduplicates, allocates `FND-NNN`, and atomically writes finding plus review evidence mapping. A FIXED finding returns to REVIEWING only through `harness finding resume-review`.
+
+Evidence references resolve ID, filename, canonical relative path, or canonical absolute path. `evidence run` executes commands; `evidence attach` imports complete external provenance without command execution.
+
+Gate assessment separates `quality` from `release_readiness`. A quality PASS is MR-ready only when readiness is READY; DRAFT_ONLY never emits Ready MR output.
+
 ## Core proof loops
 
 ```text

@@ -29,6 +29,11 @@ def _render(result: InitResult) -> str:
 
 
 def _main(argv=None) -> int:
+    argv = list(sys.argv[1:] if argv is None else argv)
+    legacy_evidence = bool(argv and argv[0] == "evidence" and (len(argv) == 1 or argv[1] not in {"run", "attach"}))
+    if len(argv) > 1 and argv[0] == "evidence" and argv[1] in {"run", "attach"}:
+        mode = argv.pop(1)
+        if mode == "attach": argv.insert(1, "--attach")
     parser = argparse.ArgumentParser(
         prog="harness",
         description="Engineering Harness deterministic control plane",
@@ -69,12 +74,15 @@ def _main(argv=None) -> int:
     p_ev.add_argument("--covered-test-case", action="append", default=[])
     p_ev.add_argument("--phase", choices=["red", "green", "full"])
     p_ev.add_argument("--reuse-if-valid", action="store_true")
+    p_ev.add_argument("--attach", action="store_true")
+    p_ev.add_argument("--result-file")
     p_ev.add_argument("--budget-override-reason")
     p_ev.add_argument("--budget-override-evidence")
     p_ev.add_argument("--budget-override-hypothesis")
-    p_imp=sub.add_parser("impact"); ims=p_imp.add_subparsers(dest="impact_action"); ims.add_parser("show"); ic=ims.add_parser("add-change"); ic.add_argument("value"); it=ims.add_parser("add-test"); it.add_argument("value"); idp=ims.add_parser("add-dependent"); idp.add_argument("value"); ict=ims.add_parser("add-contract"); ict.add_argument("value"); irk=ims.add_parser("add-risk"); irk.add_argument("value"); ir=ims.add_parser("require-full-suite"); ir.add_argument("--reason",required=True)
+    p_imp=sub.add_parser("impact"); ims=p_imp.add_subparsers(dest="impact_action"); ims.add_parser("show"); scope=ims.add_parser("scope"); scope.add_argument("--format", choices=["yaml"], default="yaml"); adopt=ims.add_parser("adopt-path"); adopt.add_argument("value"); ignore=ims.add_parser("ignore-user-path"); ignore.add_argument("value"); ic=ims.add_parser("add-change"); ic.add_argument("value"); it=ims.add_parser("add-test"); it.add_argument("value"); idp=ims.add_parser("add-dependent"); idp.add_argument("value"); ict=ims.add_parser("add-contract"); ict.add_argument("value"); irk=ims.add_parser("add-risk"); irk.add_argument("value"); ir=ims.add_parser("require-full-suite"); ir.add_argument("--reason",required=True)
+    p_mr=sub.add_parser("mr"); mr_sub=p_mr.add_subparsers(dest="mr_command"); mr_sub.add_parser("describe")
     p_auth=sub.add_parser("authorize"); p_auth.add_argument("action", choices=["commit", "full-suite", "push", "create-mr", "ready-mr", "merge", "deploy", "revoke-commit", "revoke-full-suite", "revoke-push", "revoke-create-mr", "revoke-ready-mr", "revoke-merge", "revoke-deploy"])
-    sub.add_parser("gate", help="run the deterministic quality gate")
+    p_gate=sub.add_parser("gate", help="run the deterministic quality gate"); gate_sub=p_gate.add_subparsers(dest="gate_command"); gate_sub.add_parser("preflight")
     p_telemetry=sub.add_parser("telemetry"); telemetry_sub=p_telemetry.add_subparsers(dest="telemetry_command"); telemetry_sub.add_parser("show")
     p_benchmark=sub.add_parser("benchmark"); benchmark_sub=p_benchmark.add_subparsers(dest="benchmark_command"); p_benchmark_run=benchmark_sub.add_parser("run"); p_benchmark_run.add_argument("--fixtures", required=True); p_benchmark_compare=benchmark_sub.add_parser("compare"); p_benchmark_compare.add_argument("--fixtures", required=True); p_benchmark_compare.add_argument("--baseline", required=True); p_benchmark_compare.add_argument("--adaptive", required=True); p_corpus=benchmark_sub.add_parser("corpus"); corpus_sub=p_corpus.add_subparsers(dest="corpus_command"); p_corpus_validate=corpus_sub.add_parser("validate"); p_corpus_validate.add_argument("--corpus", required=True)
     sub.add_parser("resume", help="recover BLOCKED task from typed blocker")
@@ -84,6 +92,7 @@ def _main(argv=None) -> int:
     p_show = f_sub.add_parser("show", help="show one finding record")
     p_show.add_argument("id")
     p_ft=f_sub.add_parser("transition"); p_ft.add_argument("id"); p_ft.add_argument("target"); p_ft.add_argument("--evidence"); p_ft.add_argument("--test"); p_ft.add_argument("--attempt"); p_ft.add_argument("--reason"); p_ft.add_argument("--critical-related-approved", action="store_true")
+    p_fr=f_sub.add_parser("resume-review"); p_fr.add_argument("id")
     p_req=sub.add_parser("requirement"); rs=p_req.add_subparsers(dest="requirement_command"); rv=rs.add_parser("verify"); rv.add_argument("id"); rv.add_argument("--evidence",required=True)
     p_inv=sub.add_parser("invariant"); ivs=p_inv.add_subparsers(dest="invariant_command"); iv=ivs.add_parser("verify"); iv.add_argument("id"); iv.add_argument("--evidence",required=True)
     p_task=sub.add_parser("task"); ts=p_task.add_subparsers(dest="task_command"); p_mid=ts.add_parser("migrate-id"); p_mid.add_argument("id")
@@ -129,9 +138,11 @@ def _main(argv=None) -> int:
     if args.subcommand == "review" and args.review_command == "outcome":
         return controlplane.cmd_review_outcome(args.outcome, args.reason_code, args.finding)
     if args.subcommand == "evidence":
-        
+        if args.attach:
+            return controlplane.cmd_evidence_attach(args.type, args.evidence_command, args.scope, Path(args.result_file) if args.result_file else None)
         if args.scope == "full_suite" and not controlplane.authorization_granted(controlplane.load_task(Path(".harness")), "full_suite"):
             print("FULL_SUITE_AUTHORIZATION_REQUIRED", file=sys.stderr); return 2
+        if legacy_evidence: print("DEPRECATED: Use `harness evidence run`.", file=sys.stderr)
         return controlplane.cmd_evidence(args.type, args.evidence_command,
                                          args.finding, args.test, args.scope,
                                          args.covered_test, args.covered_test_case, args.phase,
@@ -143,11 +154,12 @@ def _main(argv=None) -> int:
             parser.print_usage(sys.stderr)
             return 2
         return controlplane.cmd_impact(args.impact_action, getattr(args, "value", None), getattr(args, "reason", None))
+    if args.subcommand == "mr" and args.mr_command == "describe": return controlplane.cmd_mr_describe()
     if args.subcommand == "authorize":
         granted = not args.action.startswith("revoke-")
         return controlplane.cmd_authorize(args.action.removeprefix("revoke-").replace("-", "_"), granted)
     if args.subcommand == "gate":
-        return controlplane.cmd_gate()
+        return controlplane.cmd_gate_preflight() if args.gate_command == "preflight" else controlplane.cmd_gate()
     if args.subcommand == "telemetry" and args.telemetry_command == "show":
         return controlplane.cmd_telemetry_show()
     if args.subcommand == "benchmark" and args.benchmark_command == "run":
@@ -165,6 +177,7 @@ def _main(argv=None) -> int:
             return controlplane.cmd_finding_show(args.id)
         if args.finding_command == "transition":
             return controlplane.cmd_finding_transition(args.id,args.target,args.evidence,args.test,args.attempt,args.reason,args.critical_related_approved)
+        if args.finding_command == "resume-review": return controlplane.cmd_finding_resume_review(args.id)
         parser.print_usage(sys.stderr)
         return 2
     if args.subcommand == "requirement" and args.requirement_command == "verify": return controlplane.cmd_requirement_verify(args.id,args.evidence)

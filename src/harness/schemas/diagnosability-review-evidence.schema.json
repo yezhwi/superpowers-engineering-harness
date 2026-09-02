@@ -129,6 +129,13 @@
         }
       },
       "additionalProperties": false
+    },
+    "finding_mapping": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^FND-[0-9]+$"
+      }
     }
   },
   "additionalProperties": false
