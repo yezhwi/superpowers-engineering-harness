@@ -1,0 +1,19 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "interface-contract.schema.json",
+  "type": "object",
+  "required": ["id", "task_id", "status", "name", "kind", "visibility", "consumers", "inputs", "outputs", "errors", "compatibility", "versioning", "observability", "decision_refs", "verification", "breaking_change_approved", "breaking_change_reason", "created_at"],
+  "properties": {
+    "id": {"type": "string", "pattern": "^INT-[0-9]+$"}, "task_id": {"type": "string", "pattern": "^TASK-[0-9]+$"}, "status": {"const": "DECLARED"},
+    "name": {"type": "string", "minLength": 1}, "kind": {"enum": ["http", "rpc", "event", "sdk", "plugin", "cli", "service"]}, "visibility": {"const": "external"},
+    "consumers": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+    "inputs": {"$ref": "#/definitions/description"}, "outputs": {"$ref": "#/definitions/description"}, "errors": {"$ref": "#/definitions/description"},
+    "compatibility": {"type": "object", "required": ["classification", "rationale", "migration"], "properties": {"classification": {"enum": ["compatible", "breaking"]}, "rationale": {"type": "string", "minLength": 1}, "migration": {"type": ["string", "null"]}}, "additionalProperties": false},
+    "versioning": {"type": "object", "required": ["required", "strategy"], "properties": {"required": {"type": "boolean"}, "strategy": {"type": ["string", "null"]}}, "additionalProperties": false},
+    "observability": {"type": "object", "required": ["contract"], "properties": {"contract": {"type": "string", "minLength": 1}}, "additionalProperties": false},
+    "decision_refs": {"type": "array", "items": {"type": "string", "pattern": "^DEC-[0-9]+$"}}, "verification": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "breaking_change_approved": {"type": "boolean"}, "breaking_change_reason": {"type": ["string", "null"]}, "created_at": {"type": "string", "minLength": 1}, "approved_at": {"type": ["string", "null"]}
+  },
+  "definitions": {"description": {"type": "object", "required": ["description"], "properties": {"description": {"type": "string", "minLength": 1}}, "additionalProperties": false}},
+  "additionalProperties": false
+}

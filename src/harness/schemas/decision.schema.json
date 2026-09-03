@@ -1,0 +1,28 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "decision.schema.json",
+  "title": "Engineering Harness Decision Record",
+  "type": "object",
+  "required": ["id", "task_id", "status", "topic", "question", "context", "options", "recommendation", "selected", "scope", "constraints", "created_at", "accepted_at", "supersedes", "superseded_by"],
+  "properties": {
+    "id": {"type": "string", "pattern": "^DEC-[0-9]+$"},
+    "task_id": {"type": "string", "pattern": "^TASK-[0-9]+$"},
+    "status": {"enum": ["PROPOSED", "ACCEPTED", "REJECTED", "SUPERSEDED"]},
+    "topic": {"type": "string", "minLength": 1},
+    "question": {"type": "string", "minLength": 1},
+    "context": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+    "options": {"type": "array", "minItems": 1, "items": {"type": "object", "required": ["id", "description"], "properties": {"id": {"type": "string", "minLength": 1}, "description": {"type": "string", "minLength": 1}}, "additionalProperties": false}},
+    "recommendation": {"type": "object", "required": ["option", "reasons", "tradeoffs"], "properties": {"option": {"type": "string", "minLength": 1}, "reasons": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}, "tradeoffs": {"type": "array", "items": {"type": "string", "minLength": 1}}}, "additionalProperties": false},
+    "selected": {"type": ["null", "object"], "properties": {"option": {"type": "string", "minLength": 1}, "source": {"enum": ["accepted_recommendation", "user_override"]}, "decided_by": {"const": "user"}}, "required": ["option", "source", "decided_by"], "additionalProperties": false},
+    "decision_reason": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "rejection_reason": {"type": ["string", "null"]},
+    "scope": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "constraints": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "created_at": {"type": "string", "minLength": 1},
+    "accepted_at": {"type": ["string", "null"]},
+    "rejected_at": {"type": ["string", "null"]},
+    "supersedes": {"type": ["string", "null"], "pattern": "^DEC-[0-9]+$"},
+    "superseded_by": {"type": ["string", "null"], "pattern": "^DEC-[0-9]+$"}
+  },
+  "additionalProperties": false
+}

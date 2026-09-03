@@ -53,6 +53,89 @@ def cmd_status(harness_dir: Path = Path(".harness")) -> int:
     return _load("harness_status").main(["--harness-dir", str(harness_dir)])
 
 
+def _decision_document(args) -> dict:
+    options = []
+    for value in args.option:
+        option_id, separator, description = value.partition("=")
+        if not separator or not option_id or not description:
+            raise ValueError("DECISION_OPTION_INVALID")
+        options.append({"id": option_id, "description": description})
+    return {
+        "topic": args.topic,
+        "question": args.question,
+        "context": args.context,
+        "options": options,
+        "recommendation": {"option": args.recommend, "reasons": args.reason, "tradeoffs": args.tradeoff},
+        "scope": args.scope,
+        "constraints": args.constraint,
+    }
+
+
+def cmd_decision(args) -> int:
+    """Route decision commands without leaking schema errors through CLI."""
+    import yaml
+
+    decision = _load("decision")
+    harness_dir = Path(".harness")
+    try:
+        if args.decision_command == "propose":
+            record = decision.propose(harness_dir, _decision_document(args))
+        elif args.decision_command == "accept":
+            record = decision.load_decision(harness_dir, args.id)
+            source = args.source or ("accepted_recommendation" if args.option == record["recommendation"]["option"] else "user_override")
+            record = decision.accept(harness_dir, args.id, args.option, source)
+        elif args.decision_command == "reject":
+            record = decision.reject(harness_dir, args.id, args.reason)
+        elif args.decision_command == "supersede":
+            _, record = decision.supersede(harness_dir, args.id, _decision_document(args))
+        elif args.decision_command == "list":
+            print(yaml.safe_dump(decision.load_decisions(harness_dir), sort_keys=False))
+            return 0
+        elif args.decision_command == "show":
+            print(yaml.safe_dump(decision.load_decision(harness_dir, args.id), sort_keys=False))
+            return 0
+        else:
+            print("DECISION_COMMAND_INVALID", file=sys.stderr)
+            return 2
+    except (decision.DecisionError, ValueError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    print(f"OK: {record['id']} {record['status']}")
+    return 0
+
+
+def cmd_interface(args) -> int:
+    """Route external interface contract commands."""
+    import yaml
+
+    domain = _load("interface_contract")
+    harness_dir = Path(".harness")
+    try:
+        if args.interface_command == "declare":
+            record = domain.declare(harness_dir, {
+                "name": args.name, "kind": args.kind, "visibility": "external", "consumers": args.consumer,
+                "inputs": {"description": args.input}, "outputs": {"description": args.output},
+                "errors": {"description": args.error},
+                "compatibility": {"classification": args.compatibility, "rationale": args.rationale, "migration": args.migration},
+                "versioning": {"required": False, "strategy": None}, "observability": {"contract": "observability.yaml"},
+                "decision_refs": args.decision_ref, "verification": [],
+            })
+        elif args.interface_command == "verify":
+            record = domain.verify(harness_dir, args.id, args.evidence)
+        elif args.interface_command == "approve-breaking":
+            record = domain.approve_breaking(harness_dir, args.id, args.reason)
+        elif args.interface_command == "list":
+            print(yaml.safe_dump(domain.load_interface_contracts(harness_dir), sort_keys=False)); return 0
+        elif args.interface_command == "show":
+            print(yaml.safe_dump(domain.load_interface_contract(harness_dir, args.id), sort_keys=False)); return 0
+        else:
+            print("INTERFACE_COMMAND_INVALID", file=sys.stderr); return 2
+    except domain.InterfaceContractError as exc:
+        print(str(exc), file=sys.stderr); return 2
+    print(f"OK: {record['id']} {record['status']}")
+    return 0
+
+
 def cmd_transition(target: str) -> int:
     state_machine = _load("state_machine")
     harness_dir = Path(".harness")
@@ -248,6 +331,20 @@ def cmd_review_outcome(outcome: str, reason_code: str, finding_ids: list[str]) -
     task["state"] = target
     save_task(harness_dir, task)
     print(f"OK: REVIEWING -> {target}")
+    return 0
+
+
+def cmd_review_interface(source: Path, base_ref: str | None = None) -> int:
+    harness_dir = Path(".harness")
+    try:
+        task = load_task(harness_dir)
+        if task.get("state") != "REVIEWING":
+            raise ValueError("review requires state REVIEWING")
+        path = _load("interface_review").write_review(harness_dir, source, task_id=task["task"]["id"])
+    except Exception as exc:
+        print(f"INVALID INTERFACE REVIEW: {exc}", file=sys.stderr)
+        return 2
+    print(f"interface review written: {path}")
     return 0
 
 
@@ -872,9 +969,9 @@ def cmd_authorize_full_suite(granted: bool) -> int:
 def _impact():
  import yaml
  p=Path('.harness/impact.yaml')
- d=yaml.safe_load(p.read_text()) if p.exists() else {'impact':{'changed':[],'direct_dependents':[],'contracts':[],'risks':[],'required_tests':[],'full_suite':{'recommended':False,'reason':None}}}
+ d=yaml.safe_load(p.read_text()) if p.exists() else {'impact':{'changed':[],'direct_dependents':[],'contracts':[],'interfaces':[],'risks':[],'required_tests':[],'full_suite':{'recommended':False,'reason':None}}}
  return p,d
-def cmd_impact(action,value=None,reason=None):
+def cmd_impact(action,value=None,reason=None,args=None):
  import yaml
  p,d=_impact(); i=d['impact']
  if action=='show': print(yaml.safe_dump(d,sort_keys=False));return 0
@@ -893,6 +990,11 @@ def cmd_impact(action,value=None,reason=None):
   if value in scope['owned_paths']: scope['owned_paths'].remove(value)
   if value not in scope['protected_user_paths']: scope['protected_user_paths'].append(value)
   save_task(Path('.harness'),task);return 0
+ if action=='add-interface':
+  if task.get('risk',{}).get('profile')=='FAST' and args.visibility=='external':
+   print('PUBLIC_INTERFACE_RISK_ESCALATION_REQUIRED',file=sys.stderr);return 1
+  i.setdefault('interfaces',[]).append({'id':value,'kind':args.kind,'visibility':args.visibility,'consumers':args.consumer,'compatibility':args.compatibility,'affected_contracts':[],'contract_id':args.contract_id})
+  p.write_text(yaml.safe_dump(d,sort_keys=False));return 0
  key={'add-change':'changed','add-test':'required_tests','add-dependent':'direct_dependents','add-contract':'contracts','add-risk':'risks'}.get(action)
  if key:
   if value not in i[key]: i[key].append(value)

@@ -4,6 +4,8 @@ import json
 import subprocess
 from pathlib import Path
 
+import yaml
+
 from test_cli_task_recovery import make_repo, run_cli
 
 
@@ -17,6 +19,49 @@ def fresh_record() -> dict:
         "workspace_fingerprint": "sha256:" + "b" * 64,
         "workspace_fingerprint_after": "sha256:" + "b" * 64,
     }
+
+
+def test_status_renders_active_decision_summary(tmp_path: Path):
+    """Break caught: resumed session cannot see accepted user constraint."""
+    from harness.decision import accept, propose
+    from harness.init import init_harness
+
+    repo = tmp_path
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, check=True)
+    assert init_harness(repo).harness_dir == repo / ".harness"
+    subprocess.run(["git", "add", "."], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-qm", "base"], cwd=repo, check=True)
+    task_path = repo / ".harness" / "current-task.yaml"
+    task = yaml.safe_load(task_path.read_text())
+    task["task"]["id"] = "TASK-042"
+    task_path.write_text(yaml.safe_dump(task))
+    proposed = propose(repo / ".harness", {"topic": "pagination", "question": "Which pagination?", "context": ["clients exist"], "options": [{"id": "cursor", "description": "cursor"}], "recommendation": {"option": "cursor", "reasons": ["stable"], "tradeoffs": []}, "scope": [], "constraints": []})
+    accept(repo / ".harness", proposed["id"], "cursor", "accepted_recommendation")
+
+    result = run_cli(repo, "status")
+
+    assert result.returncode == 0, result.stderr
+    assert "DEC-001 pagination = cursor" in result.stdout
+
+
+def test_status_renders_public_interface_summary(tmp_path: Path):
+    """Break caught: resumed session hides declared public compatibility impact."""
+    from harness.init import init_harness
+
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=tmp_path, check=True)
+    init_harness(tmp_path)
+    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True); subprocess.run(["git", "commit", "-qm", "base"], cwd=tmp_path, check=True)
+    (tmp_path / ".harness" / "impact.yaml").write_text(yaml.safe_dump({"impact": {"changed": [], "direct_dependents": [], "contracts": [], "interfaces": [{"id": "INT-001", "kind": "cli", "visibility": "external", "consumers": ["agent"], "compatibility": "compatible", "affected_contracts": [], "contract_id": "INT-001"}], "risks": [], "required_tests": [], "full_suite": {"recommended": False, "reason": None}}}))
+
+    result = run_cli(tmp_path, "status")
+
+    assert "Interfaces" in result.stdout
+    assert "public changes: 1" in result.stdout
+    assert "compatibility: compatible" in result.stdout
 
 
 def test_projection_marks_current_successful_evidence_fresh(tmp_path: Path):

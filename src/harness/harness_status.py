@@ -137,6 +137,24 @@ def _render(data, harness_dir: Path) -> str:
         "",
         f"Gate         {gate.get('status', 'unknown')}",
     ])
+    try:
+        from .decision import active_decisions, load_decisions
+        decisions = load_decisions(harness_dir)
+        active = active_decisions(harness_dir)
+    except Exception:
+        decisions = []
+        active = []
+    if decisions:
+        lines.extend(["", "Decisions", f"  accepted: {len(active)}", f"  proposed: {sum(record['status'] == 'PROPOSED' for record in decisions)}"])
+        lines.extend(f"  {record['id']} {record['topic']} = {record['selected']['option']}" for record in active)
+    try:
+        impact = yaml.safe_load((harness_dir / "impact.yaml").read_text()) or {}
+        interfaces = [item for item in impact.get("impact", {}).get("interfaces", []) if item.get("visibility") == "external"]
+    except (OSError, yaml.YAMLError):
+        interfaces = []
+    if interfaces:
+        compatibility = ", ".join(sorted({item.get("compatibility", "undeclared") for item in interfaces}))
+        lines.extend(["", "Interfaces", f"  public changes: {len(interfaces)}", f"  compatibility: {compatibility}"])
     blocked_by = gate.get("blocked_by") or []
     if blocked_by:
         lines.append("")

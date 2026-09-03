@@ -105,6 +105,8 @@ def finding_schema_name(finding: dict) -> str:
         return "diagnosability-finding.schema.json"
     if category == "complexity":
         return "complexity-finding.schema.json"
+    if category == "interface":
+        return "interface-finding.schema.json"
     if category is None and finding.get("kind") in {
         "failure_scenario", "requirement_violation", "invariant_violation",
     }:
@@ -300,6 +302,71 @@ def _evaluate_gate(harness_dir: Path, head: str | None = None,
 
     from .diagnosability import gate_blockers
     blockers.extend(gate_blockers(harness_dir, task, head=head, workspace=current_workspace))
+
+    # Persisted decision facts are task constraints, not advisory chat context.
+    from .decision import DecisionError, load_decisions
+    try:
+        decisions = load_decisions(harness_dir)
+    except DecisionError:
+        block("DECISION_REFERENCE_INVALID", "harness", "decision record is invalid")
+        decisions = []
+    by_id = {record["id"]: record for record in decisions}
+    active_topics: set[str] = set()
+    for decision in decisions:
+        if decision["status"] == "PROPOSED":
+            block("DECISION_UNRESOLVED", "harness", f"{decision['id']} is still PROPOSED")
+        supersedes = decision["supersedes"]
+        superseded_by = decision["superseded_by"]
+        if supersedes and by_id.get(supersedes, {}).get("superseded_by") != decision["id"]:
+            block("DECISION_SUPERSEDE_INVALID", "harness", f"{decision['id']} has invalid supersedes link")
+        if superseded_by and by_id.get(superseded_by, {}).get("supersedes") != decision["id"]:
+            block("DECISION_SUPERSEDE_INVALID", "harness", f"{decision['id']} has invalid superseded_by link")
+        if decision["status"] == "ACCEPTED" and not superseded_by:
+            if decision["topic"] in active_topics:
+                block("DECISION_CONFLICT", "harness", f"multiple active decisions for {decision['topic']}")
+            active_topics.add(decision["topic"])
+
+    # Declared external boundaries require a persisted contract and explicit release facts.
+    from .interface_contract import InterfaceContractError, load_interface_contracts
+    try:
+        interface_contracts = {record["id"]: record for record in load_interface_contracts(harness_dir)}
+    except InterfaceContractError:
+        interface_contracts = {}
+        block("INTERFACE_CONTRACT_MISSING", "harness", "interface contract record is invalid")
+    external_interfaces = [item for item in impact.get("impact", {}).get("interfaces", []) if item.get("visibility") == "external"]
+    for declared in external_interfaces:
+        if declared.get("visibility") != "external":
+            continue
+        contract = interface_contracts.get(declared.get("contract_id"))
+        if contract is None:
+            block("INTERFACE_CONTRACT_MISSING", "harness", f"{declared.get('id')} has no interface contract")
+            continue
+        compatibility = contract.get("compatibility", {}).get("classification")
+        if compatibility not in {"compatible", "breaking"}:
+            block("INTERFACE_COMPATIBILITY_UNDECLARED", "harness", f"{contract['id']} lacks compatibility classification")
+        elif compatibility == "breaking" and not contract.get("breaking_change_approved"):
+            block("INTERFACE_BREAKING_CHANGE_UNAPPROVED", "harness", f"{contract['id']} is unapproved breaking change")
+        verification_refs = contract.get("verification") or []
+        if not verification_refs:
+            block("INTERFACE_VERIFICATION_MISSING", "verification", f"{contract['id']} has no interface verification")
+            continue
+        for reference in verification_refs:
+            try:
+                evidence_record = json.loads(evidence_path(harness_dir, reference).read_text())
+                validate_evidence(evidence_record, current_head=head, current_workspace=current_workspace, expected_success=True)
+            except (OSError, json.JSONDecodeError, EvidenceReferenceError, EvidenceValidationError):
+                block("INTERFACE_VERIFICATION_MISSING", "verification", f"{contract['id']} interface verification is missing or stale")
+                break
+
+    if external_interfaces:
+        review_path = harness_dir / "evidence" / "interface-review.json"
+        try:
+            review_record = json.loads(review_path.read_text())
+            validate_evidence(review_record, current_head=head, current_workspace=current_workspace, expected_success=True)
+            if review_record.get("type") != "review" or any(value == "fail" for value in review_record.get("checks", {}).values()):
+                raise ValueError("invalid interface review")
+        except (OSError, json.JSONDecodeError, EvidenceValidationError, ValueError):
+            block("INTERFACE_VERIFICATION_MISSING", "verification", "missing or stale interface review")
 
     # 1. Requirements: priority=must must be verified WITH fresh evidence.
     # A self-declared status=verified carries no weight on its own: each

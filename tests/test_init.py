@@ -42,6 +42,13 @@ def test_creates_findings_and_evidence_dirs(repo):
     assert (repo / ".harness" / "evidence").is_dir()
 
 
+def test_creates_decision_and_interface_contract_dirs(repo):
+    """Break caught: fresh harness cannot persist new task artifacts."""
+    init_harness(repo)
+    assert (repo / ".harness" / "decisions").is_dir()
+    assert (repo / ".harness" / "interface-contracts").is_dir()
+
+
 def test_creates_observability_contract(repo):
     init_harness(repo)
     assert (repo / ".harness" / "observability.yaml").read_text(encoding="utf-8") == \

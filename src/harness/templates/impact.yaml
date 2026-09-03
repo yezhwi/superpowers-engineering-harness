@@ -2,6 +2,7 @@ impact:
   changed: []
   direct_dependents: []
   contracts: []
+  interfaces: []
   risks: []
   required_tests: []
   full_suite:

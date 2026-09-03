@@ -5,6 +5,8 @@
 - Add explicit task-owned and protected-user scopes, preventing unrelated dirty paths from entering review.
 - Add DIAG proposal publication, Finding-aware `resume-review`, unified evidence references, and evidence run/attach modes.
 - Add Gate preflight, independent quality/release-readiness results, MR draft-only output, and complexity audit decisions.
+- Add persisted Decision Records, Decision CLI, active-decision status summaries, and Gate blockers for unresolved or inconsistent decision state.
+- Add external Interface Contracts, public-interface impact classification, Q1 escalation guard, fresh interface verification, and deterministic interface Gate blockers.
 
 ### Install
 

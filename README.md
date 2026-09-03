@@ -211,6 +211,25 @@ fast:
 
 Missing, failed, or stale required evidence blocks with `FAST_REPOSITORY_VERIFICATION_MISSING` and returns to verification. Authorization grants control Harness actions only; Harness cannot detect actions executed outside Harness.
 
+### Decision records and Interface-first contracts
+
+Consequential user choices persist outside chat history. Agent proposes facts, options, recommendation, reasons, trade-offs, and impact; user confirmation becomes an immutable Decision Record. Review active decisions at session startup:
+
+```bash
+harness decision propose --topic cache --question "Which cache?" --context "Redis exists" --option local="in-process" --option redis="shared" --recommend redis --reason "existing infrastructure"
+harness decision accept DEC-001 --option redis
+harness decision list
+```
+
+External/public API, SDK, plugin, event, CLI, and cross-module service boundaries need Interface Contract before implementation. Declare consumers, input/output/error semantics, compatibility, and verification. Known breaking change needs explicit approval; private helpers need no contract.
+
+```bash
+harness interface declare --name orders-api --kind http --consumer web-client --input "request schema" --output "response schema" --error "stable codes" --compatibility compatible --rationale "additive field"
+harness impact add-interface INT-001 --kind http --consumer web-client --compatibility compatible --contract-id INT-001
+```
+
+Q1 external-interface impact fails with `PUBLIC_INTERFACE_RISK_ESCALATION_REQUIRED`; escalate explicitly. Gate blocks unresolved decisions, missing interface contract/compatibility/verification, and unapproved known breaking change.
+
 ### FAST risk boundaries
 
 FAST never infers API/security risk from keywords. Declare changed-risk paths in `.harness/risk-boundaries.yaml`:

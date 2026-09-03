@@ -215,6 +215,24 @@ fast:
 
 缺失、失败、过期的 required evidence 以 `FAST_REPOSITORY_VERIFICATION_MISSING` 阻塞并返回验证。授权只控制 Harness 动作；Harness 无法检测 outside Harness 执行的动作。
 
+### Decision Record 与 Interface-first Contract
+
+重要工程选择不能只留在聊天上下文。Agent 必须基于已知事实给出选项、推荐、理由、权衡和影响；用户确认后持久化为 Decision Record：
+
+```bash
+harness decision propose --topic cache --question "选择何种缓存？" --context "已有 Redis" --option local=进程内缓存 --option redis=共享缓存 --recommend redis --reason "复用现有基础设施"
+harness decision accept DEC-001 --option redis
+```
+
+外部/public API、SDK、Plugin、Event、CLI 与跨模块 Service 边界，必须先声明 consumer、input/output/error semantics、compatibility 和 verification：
+
+```bash
+harness interface declare --name orders-api --kind http --consumer web-client --input "request schema" --output "response schema" --error "stable code" --compatibility compatible --rationale "additive field"
+harness impact add-interface INT-001 --kind http --consumer web-client --compatibility compatible --contract-id INT-001
+```
+
+Q1 声明 external interface 会返回 `PUBLIC_INTERFACE_RISK_ESCALATION_REQUIRED`；必须显式升级 Q2/Q3。私有 helper 不需要 Interface Contract。Gate 会阻止未解决 Decision、缺 Contract/compatibility/verification，以及未授权 breaking change。
+
 ### FAST 风险边界
 
 FAST 不通过关键词猜测 API/安全风险。在 `.harness/risk-boundaries.yaml` 声明变更风险路径：

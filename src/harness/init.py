@@ -22,6 +22,8 @@ REQUIRED_FILES = (
 REQUIRED_DIRS = (
     "findings",
     "evidence",
+    "decisions",
+    "interface-contracts",
 )
 
 

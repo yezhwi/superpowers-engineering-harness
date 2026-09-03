@@ -52,7 +52,7 @@ Repository presence, `.harness` presence, and a prior task state never change a 
 
 ```text
 1. Detect whether .harness/ exists.
-2. Load .harness/current-task.yaml.
+2. Load .harness/current-task.yaml and active accepted decisions from `.harness/decisions/` when present.
 3. Run `harness status`.
 
 > Path rule: `harness ...` CLI works in ANY project (requires once:
@@ -93,6 +93,12 @@ harness task classify --level Q1 --scope low --contract none --data none \
 ```bash
 harness task escalate --level Q2 --reason "contract risk discovered"
 ```
+
+## Decision and Interface-first Routing
+
+Before requesting consequential engineering choice, inspect repository/task/contract/accepted-decision facts. Present meaningful options, recommendation, reasons, trade-offs, and impact. User confirmation persists through `harness decision`; never continue with confirmation held only in chat. Accepted Decision conflict requires revision/supersede, never silent override.
+
+Declared external/public interface requires Interface Contract before implementation: consumer, input, output, error semantics, compatibility, versioning when applicable, observability linkage, and contract verification. Q1 public-interface impact requires explicit Q2/Q3 escalation. Private helpers require no interface ceremony.
 
 ## Production Diagnosability Routing
 

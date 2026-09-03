@@ -58,6 +58,9 @@ def _main(argv=None) -> int:
     p_diagnosability = review_sub.add_parser("diagnosability", help="persist diagnosability review")
     p_diagnosability.add_argument("--file", required=True, dest="source_file")
     p_diagnosability.add_argument("--base")
+    p_interface_review = review_sub.add_parser("interface", help="persist interface review")
+    p_interface_review.add_argument("--file", required=True, dest="source_file")
+    p_interface_review.add_argument("--base")
     p_outcome = review_sub.add_parser("outcome", help="persist and route review outcome")
     p_outcome.add_argument("outcome", choices=["PASS", "VERIFICATION_GAP", "DEFECT"])
     p_outcome.add_argument("--reason-code", required=True)
@@ -80,12 +83,31 @@ def _main(argv=None) -> int:
     p_ev.add_argument("--budget-override-evidence")
     p_ev.add_argument("--budget-override-hypothesis")
     p_imp=sub.add_parser("impact"); ims=p_imp.add_subparsers(dest="impact_action"); ims.add_parser("show"); scope=ims.add_parser("scope"); scope.add_argument("--format", choices=["yaml"], default="yaml"); adopt=ims.add_parser("adopt-path"); adopt.add_argument("value"); ignore=ims.add_parser("ignore-user-path"); ignore.add_argument("value"); ic=ims.add_parser("add-change"); ic.add_argument("value"); it=ims.add_parser("add-test"); it.add_argument("value"); idp=ims.add_parser("add-dependent"); idp.add_argument("value"); ict=ims.add_parser("add-contract"); ict.add_argument("value"); irk=ims.add_parser("add-risk"); irk.add_argument("value"); ir=ims.add_parser("require-full-suite"); ir.add_argument("--reason",required=True)
+    iinterface=ims.add_parser("add-interface"); iinterface.add_argument("value"); iinterface.add_argument("--kind", choices=["http", "rpc", "event", "sdk", "plugin", "cli", "service"], required=True); iinterface.add_argument("--visibility", choices=["external"], default="external"); iinterface.add_argument("--consumer", action="append", required=True); iinterface.add_argument("--compatibility", choices=["compatible", "breaking"], required=True); iinterface.add_argument("--contract-id")
     p_mr=sub.add_parser("mr"); mr_sub=p_mr.add_subparsers(dest="mr_command"); mr_sub.add_parser("describe")
     p_auth=sub.add_parser("authorize"); p_auth.add_argument("action", choices=["commit", "full-suite", "push", "create-mr", "ready-mr", "merge", "deploy", "revoke-commit", "revoke-full-suite", "revoke-push", "revoke-create-mr", "revoke-ready-mr", "revoke-merge", "revoke-deploy"])
     p_gate=sub.add_parser("gate", help="run the deterministic quality gate"); gate_sub=p_gate.add_subparsers(dest="gate_command"); gate_sub.add_parser("preflight")
     p_telemetry=sub.add_parser("telemetry"); telemetry_sub=p_telemetry.add_subparsers(dest="telemetry_command"); telemetry_sub.add_parser("show")
     p_benchmark=sub.add_parser("benchmark"); benchmark_sub=p_benchmark.add_subparsers(dest="benchmark_command"); p_benchmark_run=benchmark_sub.add_parser("run"); p_benchmark_run.add_argument("--fixtures", required=True); p_benchmark_compare=benchmark_sub.add_parser("compare"); p_benchmark_compare.add_argument("--fixtures", required=True); p_benchmark_compare.add_argument("--baseline", required=True); p_benchmark_compare.add_argument("--adaptive", required=True); p_corpus=benchmark_sub.add_parser("corpus"); corpus_sub=p_corpus.add_subparsers(dest="corpus_command"); p_corpus_validate=corpus_sub.add_parser("validate"); p_corpus_validate.add_argument("--corpus", required=True)
     sub.add_parser("resume", help="recover BLOCKED task from typed blocker")
+    p_decision = sub.add_parser("decision", help="manage persisted user decisions")
+    decision_sub = p_decision.add_subparsers(dest="decision_command")
+    dp = decision_sub.add_parser("propose")
+    dp.add_argument("--topic", required=True); dp.add_argument("--question", required=True)
+    dp.add_argument("--context", action="append", required=True); dp.add_argument("--option", action="append", required=True)
+    dp.add_argument("--recommend", required=True); dp.add_argument("--reason", action="append", required=True)
+    dp.add_argument("--tradeoff", action="append", default=[]); dp.add_argument("--scope", action="append", default=[]); dp.add_argument("--constraint", action="append", default=[])
+    da = decision_sub.add_parser("accept"); da.add_argument("id"); da.add_argument("--option", required=True); da.add_argument("--source", choices=["accepted_recommendation", "user_override"])
+    dr = decision_sub.add_parser("reject"); dr.add_argument("id"); dr.add_argument("--reason", required=True)
+    ds = decision_sub.add_parser("supersede"); ds.add_argument("id"); ds.add_argument("--topic", required=True); ds.add_argument("--question", required=True); ds.add_argument("--context", action="append", required=True); ds.add_argument("--option", action="append", required=True); ds.add_argument("--recommend", required=True); ds.add_argument("--reason", action="append", required=True); ds.add_argument("--tradeoff", action="append", default=[]); ds.add_argument("--scope", action="append", default=[]); ds.add_argument("--constraint", action="append", default=[])
+    dl = decision_sub.add_parser("list")
+    dshow = decision_sub.add_parser("show"); dshow.add_argument("id")
+    p_interface = sub.add_parser("interface", help="manage external interface contracts")
+    interface_sub = p_interface.add_subparsers(dest="interface_command")
+    ideclare = interface_sub.add_parser("declare"); ideclare.add_argument("--name", required=True); ideclare.add_argument("--kind", choices=["http", "rpc", "event", "sdk", "plugin", "cli", "service"], required=True); ideclare.add_argument("--consumer", action="append", required=True); ideclare.add_argument("--input", required=True); ideclare.add_argument("--output", required=True); ideclare.add_argument("--error", required=True); ideclare.add_argument("--compatibility", choices=["compatible", "breaking"], required=True); ideclare.add_argument("--rationale", required=True); ideclare.add_argument("--migration"); ideclare.add_argument("--decision-ref", action="append", default=[])
+    iverify = interface_sub.add_parser("verify"); iverify.add_argument("id"); iverify.add_argument("--evidence", required=True)
+    iapprove = interface_sub.add_parser("approve-breaking"); iapprove.add_argument("id"); iapprove.add_argument("--reason", required=True)
+    interface_sub.add_parser("list"); ishow = interface_sub.add_parser("show"); ishow.add_argument("id")
     p_finding = sub.add_parser("finding", help="inspect findings")
     f_sub = p_finding.add_subparsers(dest="finding_command")
     f_sub.add_parser("list", help="list all findings")
@@ -135,6 +157,8 @@ def _main(argv=None) -> int:
         return controlplane.cmd_review_complexity(Path(args.source_file), args.base)
     if args.subcommand == "review" and args.review_command == "diagnosability":
         return controlplane.cmd_review_diagnosability(Path(args.source_file), args.base)
+    if args.subcommand == "review" and args.review_command == "interface":
+        return controlplane.cmd_review_interface(Path(args.source_file), args.base)
     if args.subcommand == "review" and args.review_command == "outcome":
         return controlplane.cmd_review_outcome(args.outcome, args.reason_code, args.finding)
     if args.subcommand == "evidence":
@@ -153,7 +177,7 @@ def _main(argv=None) -> int:
         if args.impact_action is None:
             parser.print_usage(sys.stderr)
             return 2
-        return controlplane.cmd_impact(args.impact_action, getattr(args, "value", None), getattr(args, "reason", None))
+        return controlplane.cmd_impact(args.impact_action, getattr(args, "value", None), getattr(args, "reason", None), args)
     if args.subcommand == "mr" and args.mr_command == "describe": return controlplane.cmd_mr_describe()
     if args.subcommand == "authorize":
         granted = not args.action.startswith("revoke-")
@@ -170,6 +194,10 @@ def _main(argv=None) -> int:
         return controlplane.cmd_benchmark_corpus_validate(Path(args.corpus))
     if args.subcommand == "resume":
         return controlplane.cmd_resume()
+    if args.subcommand == "decision":
+        return controlplane.cmd_decision(args)
+    if args.subcommand == "interface":
+        return controlplane.cmd_interface(args)
     if args.subcommand == "finding":
         if args.finding_command == "list":
             return controlplane.cmd_finding_list()

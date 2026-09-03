@@ -42,6 +42,16 @@ def test_impact_require_full_suite_records_reason(tmp_path):
  assert 'state boundary' in cli(tmp_path,'impact','show').stdout
 
 
+def test_q1_external_interface_requires_explicit_escalation(tmp_path):
+ setup(tmp_path)
+ subprocess.run(['git','config','user.email','test@example.com'],cwd=tmp_path,check=True); subprocess.run(['git','config','user.name','Test'],cwd=tmp_path,check=True); subprocess.run(['git','add','.'],cwd=tmp_path,check=True); subprocess.run(['git','commit','-qm','base'],cwd=tmp_path,check=True)
+ flags=[item for pair in {'scope':'low','contract':'none','data':'none','authorization':'none','security':'none','concurrency':'none','deployment':'none'}.items() for item in (f'--{pair[0]}',pair[1])]
+ assert cli(tmp_path,'task','classify','--level','Q1',*flags).returncode==0
+ result=cli(tmp_path,'impact','add-interface','INT-001','--kind','cli','--consumer','agent','--compatibility','compatible')
+ assert result.returncode==1
+ assert 'PUBLIC_INTERFACE_RISK_ESCALATION_REQUIRED' in result.stderr
+
+
 def test_ignore_user_path_revokes_existing_ownership(tmp_path):
  setup(tmp_path)
  assert cli(tmp_path, 'impact', 'add-change', 'src/x.py').returncode == 0
