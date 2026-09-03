@@ -154,6 +154,13 @@ def cmd_transition(target: str) -> int:
     if target not in state_machine.STATES:
         print(f"unknown target state: {target!r}", file=sys.stderr)
         return 2
+    # Reject malformed task identity/state before any business logic fires.
+    try:
+        _load("quality_gate").validate_schema(
+            task, "task.schema.json", harness_dir / "current-task.yaml")
+    except Exception as exc:
+        print(f"INVALID_HARNESS_STATE: {exc}", file=sys.stderr)
+        return 2
     if current == "CREATED" and target != "CLASSIFIED":
         print("TASK_CLASSIFICATION_REQUIRED", file=sys.stderr)
         return 1
@@ -178,13 +185,6 @@ def cmd_transition(target: str) -> int:
     if current == "REVIEWING" and target in {"GATING", "VERIFYING", "REPRODUCING"}:
         print("REVIEW_OUTCOME_REQUIRED: use harness review outcome", file=sys.stderr)
         return 1
-    # Reject malformed task identity/state before it can advance toward Gate.
-    try:
-        _load("quality_gate").validate_schema(
-            task, "task.schema.json", harness_dir / "current-task.yaml")
-    except Exception as exc:
-        print(f"INVALID_HARNESS_STATE: {exc}", file=sys.stderr)
-        return 2
     if current == "CONVERGED" and target == "DONE":
         quality_gate = _load("quality_gate")
         try:
