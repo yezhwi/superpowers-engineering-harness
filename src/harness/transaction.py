@@ -14,6 +14,17 @@ class StagedArtifact:
     replace: bool = False
 
 
+def atomic_write(path: Path, content: bytes) -> None:
+    """Atomically replace one standalone Harness artifact."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
+    try:
+        temporary.write_bytes(content)
+        temporary.replace(path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
 def stage(harness_dir: Path, artifacts: list[StagedArtifact], *, operation_id: str | None = None) -> Path:
     """Write complete artifact set outside canonical Harness paths."""
     stage_dir = harness_dir / ".staging" / (operation_id or uuid4().hex)

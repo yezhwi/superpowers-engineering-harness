@@ -95,7 +95,7 @@ def test_fast_implementation_escalation_restarts_standard_contract(tmp_path):
     assert run_cli(tmp_path, "transition", "IMPLEMENTING").returncode == 1
 
 
-def test_fast_escalation_after_implementation_is_rejected(tmp_path):
+def test_fast_escalation_from_verifying_restarts_standard_contract(tmp_path):
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
     assert run_cli(tmp_path, "init").returncode == 0
     subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
@@ -107,9 +107,10 @@ def test_fast_escalation_after_implementation_is_rejected(tmp_path):
 
     result = run_cli(tmp_path, "task", "escalate", "--level", "Q3", "--reason", "security risk discovered")
 
-    assert result.returncode == 1
-    assert "RISK_ESCALATION_REQUIRES_RESTART" in result.stderr
-    assert yaml.safe_load((tmp_path / ".harness/current-task.yaml").read_text())["risk"]["profile"] == "FAST"
+    assert result.returncode == 0, result.stderr
+    task = yaml.safe_load((tmp_path / ".harness/current-task.yaml").read_text())
+    assert task["state"] == "SPECIFYING"
+    assert task["risk"]["profile"] == "STRICT"
 
 
 def test_fast_profile_uses_lightweight_state_path(tmp_path):

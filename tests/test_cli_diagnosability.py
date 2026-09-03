@@ -68,6 +68,18 @@ def review_source(tmp_path: Path, *, external_result: str = "pass") -> Path:
     return source
 
 
+def test_verifying_task_can_persist_required_diagnosability_review(tmp_path):
+    repo = make_repo(tmp_path)
+    task_path = repo / ".harness" / "current-task.yaml"
+    task = yaml.safe_load(task_path.read_text())
+    task["state"] = "VERIFYING"
+    task_path.write_text(yaml.safe_dump(task, sort_keys=False))
+
+    result = run_cli(repo, "review", "diagnosability", "--base", "HEAD", "--file", str(review_source(tmp_path)))
+
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
 def test_review_diagnosability_writes_current_scope_evidence(tmp_path):
     repo = make_repo(tmp_path)
 

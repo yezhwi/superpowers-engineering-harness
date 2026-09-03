@@ -82,6 +82,27 @@ def test_supersede_preserves_accepted_record_and_links_replacement(tmp_path):
     assert load_decision(harness_dir, original["id"])["selected"]["option"] == "redis"
 
 
+def test_supersede_publish_failure_preserves_accepted_original(tmp_path, monkeypatch):
+    """Break caught: partial supersede leaves accepted decision chain broken."""
+    from harness.decision import accept, load_decision, propose, supersede
+    from harness.transaction import publish
+
+    harness_dir = setup_harness(tmp_path)
+    original = propose(harness_dir, proposal())
+    accept(harness_dir, original["id"], "redis", "accepted_recommendation")
+
+    def fail_publish(*args, **kwargs):
+        raise OSError("injected publication failure")
+
+    monkeypatch.setattr("harness.decision.publish", fail_publish, raising=False)
+    with pytest.raises(OSError, match="injected publication failure"):
+        supersede(harness_dir, original["id"], proposal(topic="replacement"))
+
+    persisted = load_decision(harness_dir, original["id"])
+    assert persisted["status"] == "ACCEPTED"
+    assert persisted["superseded_by"] is None
+
+
 def test_accept_rejects_wrong_selection_source(tmp_path):
     """Break caught: recommended choice can be falsely recorded as user override."""
     from harness.decision import DecisionError, accept, propose

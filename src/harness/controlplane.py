@@ -151,6 +151,12 @@ def cmd_transition(target: str) -> int:
             print("GATE_PREFLIGHT_MISSING_EVIDENCE", file=sys.stderr)
             for blocker in blockers: print(f"- {blocker.code}: {blocker.message}", file=sys.stderr)
             return 1
+    if target not in state_machine.STATES:
+        print(f"unknown target state: {target!r}", file=sys.stderr)
+        return 2
+    if current == "CREATED" and target != "CLASSIFIED":
+        print("TASK_CLASSIFICATION_REQUIRED", file=sys.stderr)
+        return 1
     if current == "CLASSIFIED" and ((profile == "FAST" and target != "IMPLEMENTING") or (profile in {"STANDARD", "STRICT"} and target != "SPECIFYING")):
         print("PROFILE_ENTRY_STATE_REQUIRED", file=sys.stderr)
         return 1
@@ -161,8 +167,11 @@ def cmd_transition(target: str) -> int:
         print("RISK_ESCALATION_REQUIRED: use harness task escalate", file=sys.stderr)
         return 1
     if current == "REPRODUCING" and target == "REVIEWING":
-        import yaml
-        fixed = [yaml.safe_load(path.read_text()) for path in (harness_dir / "findings").glob("*.yaml") if yaml.safe_load(path.read_text()).get("status") == "FIXED"]
+        try:
+            fixed = [finding for finding in _findings(harness_dir) if finding.get("status") == "FIXED"]
+        except Exception:
+            print("FINDING_STATE_INVALID", file=sys.stderr)
+            return 2
         if fixed:
             print(f"FINDING_REVIEW_RESUME_REQUIRED: use harness finding resume-review {fixed[0]['id']}", file=sys.stderr)
             return 1
@@ -352,8 +361,8 @@ def cmd_review_diagnosability(source: Path, base_ref: str | None = None) -> int:
     harness_dir = Path(".harness")
     try:
         task = load_task(harness_dir)
-        if task.get("state") != "REVIEWING":
-            raise ValueError("review requires state REVIEWING")
+        if task.get("state") not in {"VERIFYING", "REVIEWING"}:
+            raise ValueError("review requires state VERIFYING or REVIEWING")
         base = base_ref or task.get("git", {}).get("base_commit")
         if not base:
             raise ValueError("TASK_GIT_BASELINE_REQUIRED")
@@ -403,7 +412,7 @@ def cmd_evidence_attach(evidence_type, command, scope, result_file):
   if record['command'] != command: raise ValueError
   record.update({'type':evidence_type,'timestamp':record['finished_at'],'commit':record['git_head'],'workspace_fingerprint_after':record['workspace_fingerprint'],'stdout_tail':record['stdout_digest'],'stderr_tail':record['stderr_digest'],'scope':scope})
   from harness.collect_evidence import evidence_filename
-  (Path('.harness')/'evidence'/evidence_filename(evidence_type)).write_text(json.dumps(record))
+  _load('transaction').atomic_write(Path('.harness')/'evidence'/evidence_filename(evidence_type), json.dumps(record).encode())
  except (OSError,json.JSONDecodeError,ValueError): print('EVIDENCE_ATTACH_INCOMPLETE', file=sys.stderr); return 2
  print('evidence attached'); return 0
 
@@ -517,9 +526,13 @@ def _findings(harness_dir: Path) -> list:
         return []
     out = []
     for path in sorted(fdir.glob("*.yaml")):
-        data = yaml.safe_load(path.read_text(encoding="utf-8"))
-        if isinstance(data, dict):
-            out.append(data)
+        try:
+            data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        except (OSError, yaml.YAMLError) as exc:
+            raise HarnessStateError("FINDING_STATE_INVALID") from exc
+        if not isinstance(data, dict):
+            raise HarnessStateError("FINDING_STATE_INVALID")
+        out.append(data)
     return out
 
 
@@ -765,14 +778,14 @@ def cmd_task_escalate(level: str, reason: str) -> int:
         print(f"RISK_ESCALATION_INVALID: {exc}", file=sys.stderr)
         return 2
     fast_task = risk_record.get("profile") == "FAST"
-    if fast_task and task.get("state") not in {"CLASSIFIED", "IMPLEMENTING"}:
+    if fast_task and task.get("state") not in {"CLASSIFIED", "IMPLEMENTING", "VERIFYING"}:
         print("RISK_ESCALATION_REQUIRES_RESTART", file=sys.stderr)
         return 1
     try:
         staged = replacement_workspace(harness_dir)
         staged_task = load_task(staged)
         staged_risk = staged_task["risk"]
-        restarting_contract = fast_task and staged_task["state"] == "IMPLEMENTING"
+        restarting_contract = fast_task and staged_task["state"] in {"IMPLEMENTING", "VERIFYING"}
         if restarting_contract:
             _load("state_machine").require_legal("IMPLEMENTING", "SPECIFYING")
             for name in ("requirements.yaml", "invariants.yaml", "observability.yaml"):
@@ -994,11 +1007,11 @@ def cmd_impact(action,value=None,reason=None,args=None):
   if task.get('risk',{}).get('profile')=='FAST' and args.visibility=='external':
    print('PUBLIC_INTERFACE_RISK_ESCALATION_REQUIRED',file=sys.stderr);return 1
   i.setdefault('interfaces',[]).append({'id':value,'kind':args.kind,'visibility':args.visibility,'consumers':args.consumer,'compatibility':args.compatibility,'affected_contracts':[],'contract_id':args.contract_id})
-  p.write_text(yaml.safe_dump(d,sort_keys=False));return 0
+  _load('transaction').atomic_write(p, yaml.safe_dump(d,sort_keys=False).encode());return 0
  key={'add-change':'changed','add-test':'required_tests','add-dependent':'direct_dependents','add-contract':'contracts','add-risk':'risks'}.get(action)
  if key:
   if value not in i[key]: i[key].append(value)
   if action=='add-change' and value not in scope['owned_paths']:
    scope['owned_paths'].append(value); save_task(Path('.harness'),task)
  elif action=='require-full-suite': i['full_suite']={'recommended':True,'reason':reason}
- p.write_text(yaml.safe_dump(d,sort_keys=False));return 0
+ _load('transaction').atomic_write(p, yaml.safe_dump(d,sort_keys=False).encode());return 0

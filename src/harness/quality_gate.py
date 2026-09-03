@@ -596,7 +596,8 @@ def write_back(harness_dir: Path, assessment: GateAssessment):
     task["gate"]["quality"] = assessment.quality
     task["gate"]["release_readiness"] = assessment.release_readiness
     task.setdefault("git", {})["head"] = git_head()
-    path.write_text(yaml.safe_dump(task, sort_keys=False))
+    from .transaction import atomic_write
+    atomic_write(path, yaml.safe_dump(task, sort_keys=False).encode())
 
 
 def main(argv=None):

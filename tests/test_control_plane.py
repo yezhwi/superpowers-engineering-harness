@@ -80,6 +80,28 @@ def test_status_invalid_state_exit_2(tmp_path):
 
 # -- transition ------------------------------------------------------------
 
+def test_created_task_cannot_bypass_risk_classification_into_specifying(tmp_path):
+    """Break caught: unclassified task skips protected-workspace baseline."""
+    make_repo(tmp_path, state="CREATED")
+
+    result = run_cli(tmp_path, "transition", "SPECIFYING")
+
+    assert result.returncode == 1
+    assert "TASK_CLASSIFICATION_REQUIRED" in result.stderr
+
+
+def test_resume_guard_rejects_malformed_finding_without_traceback(tmp_path):
+    """Break caught: malformed Finding crashes specialized transition guard."""
+    h = make_repo(tmp_path, state="REPRODUCING")
+    (h / "findings" / "FND-001.yaml").write_text("[not-a-mapping")
+
+    result = run_cli(tmp_path, "transition", "REVIEWING")
+
+    assert result.returncode == 2
+    assert "FINDING_STATE_INVALID" in result.stderr
+    assert "Traceback" not in result.stderr
+
+
 def test_transition_cannot_reenter_specifying_without_risk_escalation(tmp_path):
     make_repo(tmp_path, state="IMPLEMENTING")
 

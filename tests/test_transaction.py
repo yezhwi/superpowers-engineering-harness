@@ -34,6 +34,18 @@ def test_replacement_workspace_restores_original_when_swap_fails(tmp_path, monke
     assert (harness / "current-task.yaml").read_text() == "old"
 
 
+def test_atomic_write_replaces_complete_single_artifact(tmp_path):
+    """Break caught: standalone artifact writes can expose partial content."""
+    from harness.transaction import atomic_write
+
+    target = tmp_path / "artifact.json"
+    target.write_text("old")
+    atomic_write(target, b"new")
+
+    assert target.read_bytes() == b"new"
+    assert not list(tmp_path.glob("*.tmp"))
+
+
 def test_publish_rolls_back_when_later_target_cannot_publish(tmp_path, monkeypatch):
     harness = tmp_path / ".harness"
     staged = stage(harness, [
