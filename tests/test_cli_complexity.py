@@ -12,8 +12,10 @@ REPO = Path(__file__).resolve().parent.parent
 
 def run_cli(cwd: Path, *args: str):
     return subprocess.run(
-        [sys.executable, "-m", "harness.cli", *args], cwd=cwd,
-        capture_output=True, text=True,
+        [sys.executable, "-m", "harness.cli", *args],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
         env={"PYTHONPATH": str(REPO / "src"), "PATH": "/usr/bin:/bin"},
     )
 
@@ -88,27 +90,45 @@ def test_verifying_to_reviewing_requires_complexity_review(tmp_path):
 
 def test_review_complexity_writes_findings_and_metadata(tmp_path):
     repo = make_repo(tmp_path)
-    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"], cwd=repo, check=True
+    )
     subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, check=True)
     (repo / "tracked.txt").write_text("base")
     subprocess.run(["git", "add", "tracked.txt"], cwd=repo, check=True)
     subprocess.run(["git", "commit", "-m", "base", "-q"], cwd=repo, check=True)
     set_task_state(repo, "VERIFYING")
     review = {
-        "task": "TASK-004", "base": "HEAD~1", "head": subprocess.run(
-            ["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True, text=True
+        "task": "TASK-004",
+        "base": "HEAD~1",
+        "head": subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=repo,
+            check=True,
+            capture_output=True,
+            text=True,
         ).stdout.strip(),
-        "findings": [{
-            "id": "CPLX-001", "category": "complexity", "type": "reuse",
-            "severity": "high", "status": "open", "location": {"file": "x.py"},
-            "summary": "duplicate", "reason": "existing x", "evidence": {"candidate": "x"},
-            "recommendation": "reuse x",
-        }],
+        "findings": [
+            {
+                "id": "CPLX-001",
+                "category": "complexity",
+                "type": "reuse",
+                "severity": "high",
+                "status": "open",
+                "location": {"file": "x.py"},
+                "summary": "duplicate",
+                "reason": "existing x",
+                "evidence": {"candidate": "x"},
+                "recommendation": "reuse x",
+            }
+        ],
     }
     source = tmp_path / "review.yaml"
     source.write_text(yaml.safe_dump(review, sort_keys=False))
 
-    result = run_cli(repo, "review", "complexity", "--base", "HEAD", "--file", str(source))
+    result = run_cli(
+        repo, "review", "complexity", "--base", "HEAD", "--file", str(source)
+    )
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert (repo / ".harness/findings/CPLX-001.yaml").is_file()
@@ -117,22 +137,44 @@ def test_review_complexity_writes_findings_and_metadata(tmp_path):
 
 def test_complexity_scope_excludes_protected_dirty_path(tmp_path):
     repo = make_repo(tmp_path)
-    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"], cwd=repo, check=True
+    )
     subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, check=True)
-    (repo / "owned.py").write_text("base\n"); (repo / "protected.py").write_text("base\n")
-    subprocess.run(["git", "add", "."], cwd=repo, check=True); subprocess.run(["git", "commit", "-qm", "base"], cwd=repo, check=True)
+    (repo / "owned.py").write_text("base\n")
+    (repo / "protected.py").write_text("base\n")
+    subprocess.run(["git", "add", "."], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-qm", "base"], cwd=repo, check=True)
     set_task_state(repo, "VERIFYING")
-    task_path = repo / ".harness/current-task.yaml"; task = yaml.safe_load(task_path.read_text())
-    task["scope"] = {"owned_paths": ["owned.py"], "protected_user_paths": ["protected.py"]}; task_path.write_text(yaml.safe_dump(task))
+    task_path = repo / ".harness/current-task.yaml"
+    task = yaml.safe_load(task_path.read_text())
+    task["scope"] = {
+        "owned_paths": ["owned.py"],
+        "protected_user_paths": ["protected.py"],
+    }
+    task_path.write_text(yaml.safe_dump(task))
     (repo / "protected.py").write_text("user edit\n")
-    source = tmp_path / "review.yaml"; source.write_text(yaml.safe_dump({"task": "TASK-004", "findings": [], "review_scope": {"files": ["owned.py"]}}))
-    result = run_cli(repo, "review", "complexity", "--base", "HEAD", "--file", str(source))
+    source = tmp_path / "review.yaml"
+    source.write_text(
+        yaml.safe_dump(
+            {
+                "task": "TASK-004",
+                "findings": [],
+                "review_scope": {"files": ["owned.py"]},
+            }
+        )
+    )
+    result = run_cli(
+        repo, "review", "complexity", "--base", "HEAD", "--file", str(source)
+    )
     assert result.returncode == 0, result.stderr
 
 
 def test_complexity_scope_excludes_unadopted_dirty_file(tmp_path):
     repo = make_repo(tmp_path)
-    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"], cwd=repo, check=True
+    )
     subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, check=True)
     (repo / "tracked.py").write_text("base\n")
     subprocess.run(["git", "add", "tracked.py"], cwd=repo, check=True)
@@ -140,33 +182,47 @@ def test_complexity_scope_excludes_unadopted_dirty_file(tmp_path):
     set_task_state(repo, "VERIFYING")
     (repo / "dirty.py").write_text("changed\n")
     source = tmp_path / "review.yaml"
-    source.write_text(yaml.safe_dump({
-        "task": "TASK-004", "findings": [],
-        "review_scope": {"files": []},
-    }))
+    source.write_text(
+        yaml.safe_dump(
+            {
+                "task": "TASK-004",
+                "findings": [],
+                "review_scope": {"files": []},
+            }
+        )
+    )
 
-    result = run_cli(repo, "review", "complexity", "--base", "HEAD", "--file", str(source))
+    result = run_cli(
+        repo, "review", "complexity", "--base", "HEAD", "--file", str(source)
+    )
 
     assert result.returncode == 0, result.stderr
 
 
 def test_legacy_complexity_input_warns_before_v04_rejection(tmp_path):
     repo = make_repo(tmp_path)
-    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"], cwd=repo, check=True
+    )
     subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, check=True)
     (repo / "tracked.py").write_text("base\n")
     subprocess.run(["git", "add", "tracked.py"], cwd=repo, check=True)
     subprocess.run(["git", "commit", "-qm", "base"], cwd=repo, check=True)
     set_task_state(repo, "VERIFYING")
-    source = tmp_path / "review.yaml"; source.write_text(yaml.safe_dump({"task": "TASK-004", "findings": []}))
-    result = run_cli(repo, "review", "complexity", "--base", "HEAD", "--file", str(source))
+    source = tmp_path / "review.yaml"
+    source.write_text(yaml.safe_dump({"task": "TASK-004", "findings": []}))
+    result = run_cli(
+        repo, "review", "complexity", "--base", "HEAD", "--file", str(source)
+    )
     assert result.returncode == 0, result.stderr
     assert "COMPLEXITY_CHECKS_DEPRECATED" in result.stderr
 
 
 def test_complexity_defaults_to_task_baseline_for_clean_committed_change(tmp_path):
     repo = make_repo(tmp_path)
-    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"], cwd=repo, check=True
+    )
     subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, check=True)
     subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
     subprocess.run(["git", "commit", "-qm", "baseline"], cwd=repo, check=True)
@@ -186,7 +242,9 @@ def test_complexity_defaults_to_task_baseline_for_clean_committed_change(tmp_pat
     result = run_cli(repo, "review", "complexity", "--file", str(source))
 
     assert result.returncode == 0, result.stderr
-    metadata = json.loads((repo / ".harness/evidence/complexity-review.json").read_text())
+    metadata = json.loads(
+        (repo / ".harness/evidence/complexity-review.json").read_text()
+    )
     assert "service.py" not in metadata["review_scope"]["files"]
 
 

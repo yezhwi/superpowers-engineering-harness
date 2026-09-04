@@ -12,8 +12,10 @@ REPO = Path(__file__).resolve().parent.parent
 
 def cli(cwd, *args):
     return subprocess.run(
-        [sys.executable, "-m", "harness.cli", *args], cwd=cwd,
-        capture_output=True, text=True,
+        [sys.executable, "-m", "harness.cli", *args],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
         env={"PYTHONPATH": str(REPO / "src"), "PATH": "/usr/bin:/bin"},
     )
 
@@ -41,7 +43,16 @@ def test_recommended_full_suite_does_not_block_verifying(tmp_path):
 def test_full_suite_execution_still_requires_authorization(tmp_path):
     setup(tmp_path)
 
-    result = cli(tmp_path, "evidence", "--type", "unit_test", "--scope", "full_suite", "--command", "true")
+    result = cli(
+        tmp_path,
+        "evidence",
+        "--type",
+        "unit_test",
+        "--scope",
+        "full_suite",
+        "--command",
+        "true",
+    )
 
     assert result.returncode == 2
     assert "FULL_SUITE_AUTHORIZATION_REQUIRED" in result.stderr

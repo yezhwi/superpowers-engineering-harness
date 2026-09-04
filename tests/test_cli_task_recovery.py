@@ -13,8 +13,10 @@ REPO = Path(__file__).resolve().parent.parent
 
 def run_cli(cwd: Path, *args: str):
     return subprocess.run(
-        [sys.executable, "-m", "harness.cli", *args], cwd=cwd,
-        capture_output=True, text=True,
+        [sys.executable, "-m", "harness.cli", *args],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
         env={"PYTHONPATH": str(REPO / "src"), "PATH": "/usr/bin:/bin"},
     )
 
@@ -68,7 +70,9 @@ def test_task_recover_rejects_terminal_task_without_mutation(tmp_path):
 
 def test_task_recover_archives_artifacts_and_creates_fresh_task(tmp_path):
     repo = make_repo(tmp_path)
-    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"], cwd=repo, check=True
+    )
     subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, check=True)
     subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
     subprocess.run(["git", "commit", "-qm", "base"], cwd=repo, check=True)
@@ -79,8 +83,14 @@ def test_task_recover_archives_artifacts_and_creates_fresh_task(tmp_path):
     (evidence / "unit.json").write_text("{}")
 
     result = run_cli(
-        repo, "task", "recover", "TASK-005", "--title", "Wheel isolation",
-        "--reason", "stale task",
+        repo,
+        "task",
+        "recover",
+        "TASK-005",
+        "--title",
+        "Wheel isolation",
+        "--reason",
+        "stale task",
     )
 
     assert result.returncode == 0, result.stderr
@@ -104,11 +114,19 @@ def test_resume_routes_typed_evidence_blocker_to_verifying(tmp_path):
     set_task_state(repo, "BLOCKED")
     path = repo / ".harness/current-task.yaml"
     task = yaml.safe_load(path.read_text())
-    task["gate"] = {"status": "BLOCKED", "blocked_by": [{
-        "code": "EVIDENCE_WORKSPACE_STALE", "category": "verification",
-        "message": "unit-test evidence stale", "source": "unit_test",
-        "finding_id": None, "recover_to": "VERIFYING",
-    }]}
+    task["gate"] = {
+        "status": "BLOCKED",
+        "blocked_by": [
+            {
+                "code": "EVIDENCE_WORKSPACE_STALE",
+                "category": "verification",
+                "message": "unit-test evidence stale",
+                "source": "unit_test",
+                "finding_id": None,
+                "recover_to": "VERIFYING",
+            }
+        ],
+    }
     path.write_text(yaml.safe_dump(task))
 
     result = run_cli(repo, "resume")
@@ -118,16 +136,29 @@ def test_resume_routes_typed_evidence_blocker_to_verifying(tmp_path):
     assert yaml.safe_load(path.read_text())["state"] == "VERIFYING"
 
 
-@pytest.mark.parametrize(("code", "category", "target"), [
-    ("DIAGNOSABILITY_REVIEW_MISSING", "verification", "VERIFYING"),
-    ("OBSERVABILITY_CONTRACT_INVALID", "implementation", "IMPLEMENTING"),
-])
+@pytest.mark.parametrize(
+    ("code", "category", "target"),
+    [
+        ("DIAGNOSABILITY_REVIEW_MISSING", "verification", "VERIFYING"),
+        ("OBSERVABILITY_CONTRACT_INVALID", "implementation", "IMPLEMENTING"),
+    ],
+)
 def test_resume_routes_diagnosability_blocker(code, category, target, tmp_path):
     repo = make_repo(tmp_path)
     set_task_state(repo, "BLOCKED")
     path = repo / ".harness/current-task.yaml"
     task = yaml.safe_load(path.read_text())
-    task["gate"] = {"status": "BLOCKED", "blocked_by": [{"code": code, "category": category, "message": "diagnosability blocked", "recover_to": "tampered"}]}
+    task["gate"] = {
+        "status": "BLOCKED",
+        "blocked_by": [
+            {
+                "code": code,
+                "category": category,
+                "message": "diagnosability blocked",
+                "recover_to": "tampered",
+            }
+        ],
+    }
     path.write_text(yaml.safe_dump(task))
 
     result = run_cli(repo, "resume")
@@ -141,12 +172,21 @@ def test_resume_ignores_tampered_persisted_recovery_target(tmp_path):
     set_task_state(repo, "BLOCKED")
     path = repo / ".harness/current-task.yaml"
     task = yaml.safe_load(path.read_text())
-    task["gate"] = {"status": "BLOCKED", "blocked_by": [{
-        "code": "EVIDENCE_MISSING", "category": "verification",
-        "message": "missing build evidence", "source": "build",
-        "requirement_id": None, "invariant_id": None, "finding_id": None,
-        "recover_to": "IMPLEMENTING",
-    }]}
+    task["gate"] = {
+        "status": "BLOCKED",
+        "blocked_by": [
+            {
+                "code": "EVIDENCE_MISSING",
+                "category": "verification",
+                "message": "missing build evidence",
+                "source": "build",
+                "requirement_id": None,
+                "invariant_id": None,
+                "finding_id": None,
+                "recover_to": "IMPLEMENTING",
+            }
+        ],
+    }
     path.write_text(yaml.safe_dump(task))
 
     result = run_cli(repo, "resume")
@@ -155,7 +195,9 @@ def test_resume_ignores_tampered_persisted_recovery_target(tmp_path):
     assert yaml.safe_load(path.read_text())["state"] == "VERIFYING"
 
 
-@pytest.mark.parametrize("target", ["IMPLEMENTING", "VERIFYING", "REPRODUCING", "ESCALATED"])
+@pytest.mark.parametrize(
+    "target", ["IMPLEMENTING", "VERIFYING", "REPRODUCING", "ESCALATED"]
+)
 def test_transition_cannot_bypass_resume_for_blocked_recovery(tmp_path, target):
     repo = make_repo(tmp_path)
     set_task_state(repo, "BLOCKED")
@@ -168,12 +210,20 @@ def test_transition_cannot_bypass_resume_for_blocked_recovery(tmp_path, target):
 
 def test_task_recover_records_current_git_head_as_complexity_baseline(tmp_path):
     repo = make_repo(tmp_path)
-    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"], cwd=repo, check=True
+    )
     subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, check=True)
     subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
     subprocess.run(["git", "commit", "-qm", "base"], cwd=repo, check=True)
     set_task_state(repo, "IMPLEMENTING")
-    head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True, text=True).stdout.strip()
+    head = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
 
     result = run_cli(repo, "task", "recover", "TASK-005", "--reason", "restart")
 
@@ -202,12 +252,23 @@ def test_task_new_records_current_git_head_as_complexity_baseline(tmp_path):
     subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
     subprocess.run(["git", "commit", "-qm", "base"], cwd=repo, check=True)
     set_task_state(repo, "DONE")
-    head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True, text=True).stdout.strip()
+    head = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
 
     result = run_cli(repo, "task", "new", "TASK-005")
 
     assert result.returncode == 0, result.stderr
-    assert yaml.safe_load((repo / ".harness/current-task.yaml").read_text())["git"]["base_commit"] == head
+    assert (
+        yaml.safe_load((repo / ".harness/current-task.yaml").read_text())["git"][
+            "base_commit"
+        ]
+        == head
+    )
 
 
 def test_task_new_still_rejects_active_task(tmp_path):

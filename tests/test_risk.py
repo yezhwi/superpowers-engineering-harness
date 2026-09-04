@@ -9,8 +9,12 @@ from harness.risk import RiskClassificationError, classify, validate_escalation
 
 
 SAFE = {
-    "scope": "low", "contract": "none", "data": "none",
-    "authorization": "none", "security": "none", "concurrency": "none",
+    "scope": "low",
+    "contract": "none",
+    "data": "none",
+    "authorization": "none",
+    "security": "none",
+    "concurrency": "none",
     "deployment": "none",
 }
 
@@ -24,7 +28,9 @@ def test_q1_with_contract_risk_fails_closed():
         classify("Q1", {**SAFE, "contract": "low"})
 
 
-@pytest.mark.parametrize("dimension", ["data", "authorization", "security", "concurrency", "deployment"])
+@pytest.mark.parametrize(
+    "dimension", ["data", "authorization", "security", "concurrency", "deployment"]
+)
 def test_q1_with_high_risk_fails_closed(dimension):
     with pytest.raises(RiskClassificationError, match="RISK_LEVEL_UNDERSPECIFIED"):
         classify("Q1", {**SAFE, dimension: "high"})
@@ -40,14 +46,20 @@ REPO = Path(__file__).resolve().parent.parent
 
 def run_cli(cwd: Path, *args: str):
     return subprocess.run(
-        [sys.executable, "-m", "harness.cli", *args], cwd=cwd,
-        capture_output=True, text=True,
+        [sys.executable, "-m", "harness.cli", *args],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
         env={"PYTHONPATH": str(REPO / "src"), "PATH": "/usr/bin:/bin"},
     )
 
 
 def test_classified_profile_routes_to_its_required_entry_state(tmp_path):
-    for level, target in (("Q1", "IMPLEMENTING"), ("Q2", "SPECIFYING"), ("Q3", "SPECIFYING")):
+    for level, target in (
+        ("Q1", "IMPLEMENTING"),
+        ("Q2", "SPECIFYING"),
+        ("Q3", "SPECIFYING"),
+    ):
         repo = tmp_path / level
         repo.mkdir()
         subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
@@ -55,7 +67,9 @@ def test_classified_profile_routes_to_its_required_entry_state(tmp_path):
         subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
         subprocess.run(["git", "commit", "-qm", "base"], cwd=repo, check=True)
         flags = [item for pair in SAFE.items() for item in (f"--{pair[0]}", pair[1])]
-        assert run_cli(repo, "task", "classify", "--level", level, *flags).returncode == 0
+        assert (
+            run_cli(repo, "task", "classify", "--level", level, *flags).returncode == 0
+        )
         assert run_cli(repo, "transition", target).returncode == 0
 
 
@@ -65,7 +79,9 @@ def test_standard_profile_retains_complexity_requirement(tmp_path):
     subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
     subprocess.run(["git", "commit", "-qm", "base"], cwd=tmp_path, check=True)
     flags = [item for pair in SAFE.items() for item in (f"--{pair[0]}", pair[1])]
-    assert run_cli(tmp_path, "task", "classify", "--level", "Q2", *flags).returncode == 0
+    assert (
+        run_cli(tmp_path, "task", "classify", "--level", "Q2", *flags).returncode == 0
+    )
     current = tmp_path / ".harness/current-task.yaml"
     task = yaml.safe_load(current.read_text())
     task["state"] = "VERIFYING"
@@ -83,10 +99,20 @@ def test_fast_implementation_escalation_restarts_standard_contract(tmp_path):
     subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
     subprocess.run(["git", "commit", "-qm", "base"], cwd=tmp_path, check=True)
     flags = [item for pair in SAFE.items() for item in (f"--{pair[0]}", pair[1])]
-    assert run_cli(tmp_path, "task", "classify", "--level", "Q1", *flags).returncode == 0
+    assert (
+        run_cli(tmp_path, "task", "classify", "--level", "Q1", *flags).returncode == 0
+    )
     assert run_cli(tmp_path, "transition", "IMPLEMENTING").returncode == 0
 
-    result = run_cli(tmp_path, "task", "escalate", "--level", "Q3", "--reason", "security risk discovered")
+    result = run_cli(
+        tmp_path,
+        "task",
+        "escalate",
+        "--level",
+        "Q3",
+        "--reason",
+        "security risk discovered",
+    )
 
     assert result.returncode == 0, result.stderr
     task = yaml.safe_load((tmp_path / ".harness/current-task.yaml").read_text())
@@ -101,11 +127,21 @@ def test_fast_escalation_from_verifying_restarts_standard_contract(tmp_path):
     subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
     subprocess.run(["git", "commit", "-qm", "base"], cwd=tmp_path, check=True)
     flags = [item for pair in SAFE.items() for item in (f"--{pair[0]}", pair[1])]
-    assert run_cli(tmp_path, "task", "classify", "--level", "Q1", *flags).returncode == 0
+    assert (
+        run_cli(tmp_path, "task", "classify", "--level", "Q1", *flags).returncode == 0
+    )
     assert run_cli(tmp_path, "transition", "IMPLEMENTING").returncode == 0
     assert run_cli(tmp_path, "transition", "VERIFYING").returncode == 0
 
-    result = run_cli(tmp_path, "task", "escalate", "--level", "Q3", "--reason", "security risk discovered")
+    result = run_cli(
+        tmp_path,
+        "task",
+        "escalate",
+        "--level",
+        "Q3",
+        "--reason",
+        "security risk discovered",
+    )
 
     assert result.returncode == 0, result.stderr
     task = yaml.safe_load((tmp_path / ".harness/current-task.yaml").read_text())
@@ -119,12 +155,45 @@ def test_fast_profile_uses_lightweight_state_path(tmp_path):
     subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
     subprocess.run(["git", "commit", "-qm", "base"], cwd=tmp_path, check=True)
     flags = [item for pair in SAFE.items() for item in (f"--{pair[0]}", pair[1])]
-    assert run_cli(tmp_path, "task", "classify", "--level", "Q1", *flags).returncode == 0
+    assert (
+        run_cli(tmp_path, "task", "classify", "--level", "Q1", *flags).returncode == 0
+    )
     assert run_cli(tmp_path, "transition", "IMPLEMENTING").returncode == 0
     covered = "tests/test_risk.py::test_fast_profile_uses_lightweight_state_path"
-    assert run_cli(tmp_path, "evidence", "--type", "unit_test", "--phase", "red", "--covered-test", covered, "--command", "false").returncode == 0
-    assert run_cli(tmp_path, "evidence", "--type", "unit_test", "--phase", "green", "--covered-test", covered, "--command", "true").returncode == 0
-    assert run_cli(tmp_path, "evidence", "--type", "build", "--command", "true").returncode == 0
+    assert (
+        run_cli(
+            tmp_path,
+            "evidence",
+            "--type",
+            "unit_test",
+            "--phase",
+            "red",
+            "--covered-test",
+            covered,
+            "--command",
+            "false",
+        ).returncode
+        == 0
+    )
+    assert (
+        run_cli(
+            tmp_path,
+            "evidence",
+            "--type",
+            "unit_test",
+            "--phase",
+            "green",
+            "--covered-test",
+            covered,
+            "--command",
+            "true",
+        ).returncode
+        == 0
+    )
+    assert (
+        run_cli(tmp_path, "evidence", "--type", "build", "--command", "true").returncode
+        == 0
+    )
     assert run_cli(tmp_path, "transition", "VERIFYING").returncode == 0
 
     result = run_cli(tmp_path, "transition", "GATING")
@@ -145,4 +214,7 @@ def test_task_classify_persists_fast_profile_and_enters_classified(tmp_path):
     assert result.returncode == 0, result.stderr
     assert task["state"] == "CLASSIFIED"
     assert task["risk"]["profile"] == "FAST"
-    assert task["risk"]["user_changes"] == {"paths": [], "fingerprint": task["risk"]["user_changes"]["fingerprint"]}
+    assert task["risk"]["user_changes"] == {
+        "paths": [],
+        "fingerprint": task["risk"]["user_changes"]["fingerprint"],
+    }

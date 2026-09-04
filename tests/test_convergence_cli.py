@@ -16,39 +16,78 @@ REPO = Path(__file__).resolve().parent.parent
 def run_cli(cwd: Path, *args: str):
     return subprocess.run(
         [sys.executable, "-m", "harness.cli", *args],
-        cwd=cwd, capture_output=True, text=True,
+        cwd=cwd,
+        capture_output=True,
+        text=True,
         env={"PYTHONPATH": str(REPO / "src"), "PATH": "/usr/bin:/bin"},
     )
 
 
-def make_repo(tmp_path: Path, state="GATING", iteration=0,
-              max_iterations=5) -> Path:
-    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True,
-                   capture_output=True)
+def make_repo(tmp_path: Path, state="GATING", iteration=0, max_iterations=5) -> Path:
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True, capture_output=True)
     run_cli(tmp_path, "init")
-    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True,
-                   capture_output=True)
-    subprocess.run(["git", "commit", "-qm", "init"], cwd=tmp_path,
-                   check=True, capture_output=True)
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-qm", "init"], cwd=tmp_path, check=True, capture_output=True
+    )
     h = tmp_path / ".harness"
     task = yaml.safe_load((h / "current-task.yaml").read_text())
-    task.update({"state": state, "iteration": iteration,
-                 "max_iterations": max_iterations})
+    task.update(
+        {"state": state, "iteration": iteration, "max_iterations": max_iterations}
+    )
     (h / "current-task.yaml").write_text(yaml.safe_dump(task))
-    reqs = {"requirements": [
-        {"id": "REQ-001", "statement": "works", "priority": "must",
-         "status": "verified", "evidence": ["build.json"], "test_plan": {
-             "strategies": ["manual"], "cases": [{"id": "TC-900", "type": "happy_path", "strategy": "manual", "description": "fixture baseline", "tests": []}],
-         }}]}
+    reqs = {
+        "requirements": [
+            {
+                "id": "REQ-001",
+                "statement": "works",
+                "priority": "must",
+                "status": "verified",
+                "evidence": ["build.json"],
+                "test_plan": {
+                    "strategies": ["manual"],
+                    "cases": [
+                        {
+                            "id": "TC-900",
+                            "type": "happy_path",
+                            "strategy": "manual",
+                            "description": "fixture baseline",
+                            "tests": [],
+                        }
+                    ],
+                },
+            }
+        ]
+    }
     (h / "requirements.yaml").write_text(yaml.safe_dump(reqs))
-    invs = {"invariants": [
-        {"id": "INV-001", "statement": "safe", "category": "correctness",
-         "severity": "critical", "status": "verified", "verification": ["build.json"], "test_plan": {
-             "strategies": ["manual"], "cases": [{"id": "TC-901", "type": "invariant", "strategy": "manual", "description": "fixture invariant", "tests": []}],
-         }}]}
+    invs = {
+        "invariants": [
+            {
+                "id": "INV-001",
+                "statement": "safe",
+                "category": "correctness",
+                "severity": "critical",
+                "status": "verified",
+                "verification": ["build.json"],
+                "test_plan": {
+                    "strategies": ["manual"],
+                    "cases": [
+                        {
+                            "id": "TC-901",
+                            "type": "invariant",
+                            "strategy": "manual",
+                            "description": "fixture invariant",
+                            "tests": [],
+                        }
+                    ],
+                },
+            }
+        ]
+    }
     (h / "invariants.yaml").write_text(yaml.safe_dump(invs))
-    head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=tmp_path,
-                          capture_output=True, text=True).stdout.strip()
+    head = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=tmp_path, capture_output=True, text=True
+    ).stdout.strip()
     edir = h / "evidence"
     for etype in ("build", "unit_test"):
         write_evidence(tmp_path, h, etype)
@@ -60,12 +99,22 @@ def make_repo(tmp_path: Path, state="GATING", iteration=0,
 
 
 def add_finding(h: Path, fid: str, status="PROPOSED", severity="major"):
-    (h / "findings" / f"{fid.lower()}.yaml").write_text(yaml.safe_dump({
-        "id": fid, "kind": "failure_scenario", "target": "REQ-001",
-        "scenario": "attack", "severity": severity, "status": status}))
+    (h / "findings" / f"{fid.lower()}.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "id": fid,
+                "kind": "failure_scenario",
+                "target": "REQ-001",
+                "scenario": "attack",
+                "severity": severity,
+                "status": status,
+            }
+        )
+    )
 
 
 # -- finding list -------------------------------------------------------------
+
 
 def test_finding_list_prints_records(tmp_path):
     h = make_repo(tmp_path)
@@ -83,6 +132,7 @@ def test_finding_list_empty_ok(tmp_path):
 
 
 # -- finding show -------------------------------------------------------------
+
 
 def test_finding_show_full_record(tmp_path):
     h = make_repo(tmp_path)
@@ -104,12 +154,12 @@ def test_finding_show_missing_id_exit_2(tmp_path):
 
 # -- converge ------------------------------------------------------------------
 
+
 def test_converge_pass_transitions_to_converged(tmp_path):
     make_repo(tmp_path, state="GATING")
     result = run_cli(tmp_path, "gate")
     assert result.returncode == 0, result.stdout + result.stderr
-    task = yaml.safe_load((tmp_path / ".harness" /
-                           "current-task.yaml").read_text())
+    task = yaml.safe_load((tmp_path / ".harness" / "current-task.yaml").read_text())
     assert task["state"] == "CONVERGED"
     assert "CONVERGED" in result.stdout or "PASS" in result.stdout
 
@@ -137,8 +187,13 @@ def test_blocked_recovery_preserves_baseline_across_second_complexity_review(tmp
     h = make_repo(tmp_path, state="GATING")
     task_path = h / "current-task.yaml"
     task = yaml.safe_load(task_path.read_text())
-    base = subprocess.run(["git", "rev-parse", "HEAD"], cwd=tmp_path,
-                          check=True, capture_output=True, text=True).stdout.strip()
+    base = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
     task["git"] = {"base_commit": base, "head": base}
     task_path.write_text(yaml.safe_dump(task))
     (h / "evidence" / "unit-test.json").unlink()
@@ -197,19 +252,24 @@ def test_converge_is_deprecated_without_evaluating_gate(tmp_path):
 
     assert result.returncode == 2
     assert "DEPRECATED: use harness gate" in result.stderr
-    assert yaml.safe_load((tmp_path / ".harness/current-task.yaml").read_text())["state"] == "GATING"
+    assert (
+        yaml.safe_load((tmp_path / ".harness/current-task.yaml").read_text())["state"]
+        == "GATING"
+    )
 
 
 # -- deterministic REPEATED_REGRESSION ----------------------------------------
+
 
 def test_converge_reopened_verified_finding_escalates(tmp_path):
     h = make_repo(tmp_path, state="GATING", iteration=1, max_iterations=5)
     add_finding(h, "FND-0009")
     import yaml as _y
+
     p = h / "findings" / "fnd-0009.yaml"
     rec = _y.safe_load(p.read_text())
-    rec["status"] = "REPRODUCING"      # open again...
-    rec["verified_at"] = "2026-01-01T00:00:00+00:00"   # ...after being VERIFIED
+    rec["status"] = "REPRODUCING"  # open again...
+    rec["verified_at"] = "2026-01-01T00:00:00+00:00"  # ...after being VERIFIED
     p.write_text(_y.safe_dump(rec))
     result = run_cli(tmp_path, "gate")
     assert result.returncode == 0, result.stdout + result.stderr
@@ -222,6 +282,7 @@ def test_converge_rejected_finding_does_not_escalate(tmp_path):
     h = make_repo(tmp_path, state="GATING", iteration=1, max_iterations=5)
     add_finding(h, "FND-0010")
     import yaml as _y
+
     p = h / "findings" / "fnd-0010.yaml"
     rec = _y.safe_load(p.read_text())
     rec["status"] = "REJECTED"

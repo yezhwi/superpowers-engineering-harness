@@ -30,9 +30,15 @@ HEAD = subprocess.run(
 
 def _gate(harness_dir: Path):
     return subprocess.run(
-        [sys.executable, str(REPO / "scripts" / "quality_gate.py"),
-         "--harness-dir", str(harness_dir)],
-        capture_output=True, text=True, cwd=REPO,
+        [
+            sys.executable,
+            str(REPO / "scripts" / "quality_gate.py"),
+            "--harness-dir",
+            str(harness_dir),
+        ],
+        capture_output=True,
+        text=True,
+        cwd=REPO,
     )
 
 
@@ -40,35 +46,69 @@ def make_harness(tmp_path: Path) -> Path:
     """Build a fully passing harness dir; individual tests break one thing."""
     h = tmp_path / ".harness"
 
-    task = yaml.safe_load(resources.files("harness").joinpath("templates", "current-task.yaml").read_text())
+    task = yaml.safe_load(
+        resources.files("harness")
+        .joinpath("templates", "current-task.yaml")
+        .read_text()
+    )
     task["state"] = "GATING"
     h.mkdir(parents=True)
     (h / "current-task.yaml").write_text(yaml.safe_dump(task))
 
-    gate_cfg = yaml.safe_load(resources.files("harness").joinpath("templates", "gate.yaml").read_text())
+    gate_cfg = yaml.safe_load(
+        resources.files("harness").joinpath("templates", "gate.yaml").read_text()
+    )
     (h / "gate.yaml").write_text(yaml.safe_dump(gate_cfg))
 
-    requirements = {"requirements": [
-        {"id": "REQ-001", "statement": "works", "priority": "must",
-         "status": "verified", "evidence": ["build.json"], "test_plan": {
-             "strategies": ["manual"], "cases": [{
-                 "id": "TC-002", "type": "regression", "strategy": "manual",
-                 "description": "verify works", "tests": [],
-             }],
-         }},
-    ]}
+    requirements = {
+        "requirements": [
+            {
+                "id": "REQ-001",
+                "statement": "works",
+                "priority": "must",
+                "status": "verified",
+                "evidence": ["build.json"],
+                "test_plan": {
+                    "strategies": ["manual"],
+                    "cases": [
+                        {
+                            "id": "TC-002",
+                            "type": "regression",
+                            "strategy": "manual",
+                            "description": "verify works",
+                            "tests": [],
+                        }
+                    ],
+                },
+            },
+        ]
+    }
     (h / "requirements.yaml").write_text(yaml.safe_dump(requirements))
 
-    invariants = {"invariants": [
-        {"id": "INV-001", "statement": "safe", "category": "correctness",
-         "severity": "critical", "status": "verified",
-         "verification": ["build.json"], "test_plan": {
-             "strategies": ["manual"], "cases": [{
-                 "id": "TC-101", "type": "invariant", "strategy": "manual",
-                 "description": "verify safe", "tests": [],
-             }],
-         }},
-    ]}
+    invariants = {
+        "invariants": [
+            {
+                "id": "INV-001",
+                "statement": "safe",
+                "category": "correctness",
+                "severity": "critical",
+                "status": "verified",
+                "verification": ["build.json"],
+                "test_plan": {
+                    "strategies": ["manual"],
+                    "cases": [
+                        {
+                            "id": "TC-101",
+                            "type": "invariant",
+                            "strategy": "manual",
+                            "description": "verify safe",
+                            "tests": [],
+                        }
+                    ],
+                },
+            },
+        ]
+    }
     (h / "invariants.yaml").write_text(yaml.safe_dump(invariants))
 
     evidence_dir = h / "evidence"
@@ -146,9 +186,22 @@ def test_task_schema_rejects_incompatible_risk_level_and_profile(tmp_path):
     h = make_harness(tmp_path)
     task = yaml.safe_load((h / "current-task.yaml").read_text())
     task["risk"] = {
-        "level": "Q3", "profile": "FAST",
-        "dimensions": {name: "low" if name == "scope" else "none" for name in ("scope", "contract", "data", "authorization", "security", "concurrency", "deployment")},
-        "escalation_history": [], "user_changes": {"paths": [], "fingerprint": ""},
+        "level": "Q3",
+        "profile": "FAST",
+        "dimensions": {
+            name: "low" if name == "scope" else "none"
+            for name in (
+                "scope",
+                "contract",
+                "data",
+                "authorization",
+                "security",
+                "concurrency",
+                "deployment",
+            )
+        },
+        "escalation_history": [],
+        "user_changes": {"paths": [], "fingerprint": ""},
     }
 
     with pytest.raises(InvalidHarnessState, match="risk.profile"):
@@ -161,9 +214,22 @@ def test_gate_rejects_incompatible_risk_level_and_profile(tmp_path):
     h = make_harness(tmp_path)
     task = yaml.safe_load((h / "current-task.yaml").read_text())
     task["risk"] = {
-        "level": "Q3", "profile": "FAST",
-        "dimensions": {name: "low" if name == "scope" else "none" for name in ("scope", "contract", "data", "authorization", "security", "concurrency", "deployment")},
-        "escalation_history": [], "user_changes": {"paths": [], "fingerprint": ""},
+        "level": "Q3",
+        "profile": "FAST",
+        "dimensions": {
+            name: "low" if name == "scope" else "none"
+            for name in (
+                "scope",
+                "contract",
+                "data",
+                "authorization",
+                "security",
+                "concurrency",
+                "deployment",
+            )
+        },
+        "escalation_history": [],
+        "user_changes": {"paths": [], "fingerprint": ""},
     }
     (h / "current-task.yaml").write_text(yaml.safe_dump(task))
 
@@ -177,20 +243,34 @@ def test_fast_gate_requires_build_by_default(tmp_path):
     h = make_harness(tmp_path)
     task = yaml.safe_load((h / "current-task.yaml").read_text())
     task["git"]["base_commit"] = HEAD
-    (h / "risk-boundaries.yaml").write_text("boundaries:\n  q2: [never/**]\n  q3: [never/**]\n")
+    (h / "risk-boundaries.yaml").write_text(
+        "boundaries:\n  q2: [never/**]\n  q3: [never/**]\n"
+    )
     task["risk"] = {
-        "level": "Q1", "profile": "FAST",
-        "dimensions": {"scope": "low", "contract": "none", "data": "none", "authorization": "none", "security": "none", "concurrency": "none", "deployment": "none"},
+        "level": "Q1",
+        "profile": "FAST",
+        "dimensions": {
+            "scope": "low",
+            "contract": "none",
+            "data": "none",
+            "authorization": "none",
+            "security": "none",
+            "concurrency": "none",
+            "deployment": "none",
+        },
         "escalation_history": [],
         "user_changes": {"paths": [], "fingerprint": protected_paths_fingerprint(())},
     }
     (h / "current-task.yaml").write_text(yaml.safe_dump(task))
-    (h / "requirements.yaml").unlink(); (h / "invariants.yaml").unlink()
+    (h / "requirements.yaml").unlink()
+    (h / "invariants.yaml").unlink()
     write_evidence(REPO, h, "unit_test", exit_code=1, name="fast-red-unit-test.json")
     write_evidence(REPO, h, "unit_test", name="fast-green-unit-test.json")
     (h / "evidence" / "build.json").unlink()
 
-    status, blockers = __import__("harness.quality_gate", fromlist=["run_gate"]).run_gate(h)
+    status, blockers = __import__(
+        "harness.quality_gate", fromlist=["run_gate"]
+    ).run_gate(h)
 
     assert status == "BLOCKED"
     assert any(item.code == "FAST_REPOSITORY_VERIFICATION_MISSING" for item in blockers)
@@ -202,10 +282,21 @@ def test_fast_gate_requires_only_task_phase_proof(tmp_path):
     h = make_harness(tmp_path)
     task = yaml.safe_load((h / "current-task.yaml").read_text())
     task["git"]["base_commit"] = HEAD
-    (h / "risk-boundaries.yaml").write_text("boundaries:\n  q2: [never/**]\n  q3: [never/**]\n")
+    (h / "risk-boundaries.yaml").write_text(
+        "boundaries:\n  q2: [never/**]\n  q3: [never/**]\n"
+    )
     task["risk"] = {
-        "level": "Q1", "profile": "FAST",
-        "dimensions": {"scope": "low", "contract": "none", "data": "none", "authorization": "none", "security": "none", "concurrency": "none", "deployment": "none"},
+        "level": "Q1",
+        "profile": "FAST",
+        "dimensions": {
+            "scope": "low",
+            "contract": "none",
+            "data": "none",
+            "authorization": "none",
+            "security": "none",
+            "concurrency": "none",
+            "deployment": "none",
+        },
         "escalation_history": [],
         "user_changes": {"paths": [], "fingerprint": protected_paths_fingerprint(())},
     }
@@ -215,7 +306,9 @@ def test_fast_gate_requires_only_task_phase_proof(tmp_path):
     write_evidence(REPO, h, "unit_test", exit_code=1, name="fast-red-unit-test.json")
     write_evidence(REPO, h, "unit_test", name="fast-green-unit-test.json")
 
-    status, blockers = __import__("harness.quality_gate", fromlist=["run_gate"]).run_gate(h)
+    status, blockers = __import__(
+        "harness.quality_gate", fromlist=["run_gate"]
+    ).run_gate(h)
 
     assert status == "PASS"
     assert blockers == []
@@ -230,10 +323,21 @@ def test_fast_gate_blocks_business_change_without_risk_policy(tmp_path, monkeypa
     subprocess.run(["git", "add", "base.txt"], cwd=tmp_path, check=True)
     subprocess.run(["git", "commit", "-qm", "base"], cwd=tmp_path, check=True)
     base = git_head(tmp_path)
-    (tmp_path / "src").mkdir(); (tmp_path / "src/api.py").write_text("changed\n")
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src/api.py").write_text("changed\n")
     monkeypatch.chdir(tmp_path)
-    h = tmp_path / ".harness"; (h / "evidence").mkdir(parents=True)
-    task = {"git": {"base_commit": base}, "risk": {"level": "Q1", "user_changes": {"paths": [], "fingerprint": protected_paths_fingerprint(())}}}
+    h = tmp_path / ".harness"
+    (h / "evidence").mkdir(parents=True)
+    task = {
+        "git": {"base_commit": base},
+        "risk": {
+            "level": "Q1",
+            "user_changes": {
+                "paths": [],
+                "fingerprint": protected_paths_fingerprint(()),
+            },
+        },
+    }
 
     status, blockers = run_fast_gate(task, h, git_head(), snapshot().fingerprint)
 
@@ -254,9 +358,22 @@ def test_fast_gate_blocks_modified_preexisting_user_change(tmp_path, monkeypatch
     h = tmp_path / ".harness"
     (h / "evidence").mkdir(parents=True)
     paths = ("user.txt",)
-    (h / "risk-boundaries.yaml").write_text("boundaries:\n  q2: [never/**]\n  q3: [never/**]\n")
-    task = {"git": {"base_commit": git_head()}, "risk": {"level": "Q1", "user_changes": {"paths": list(paths), "fingerprint": protected_paths_fingerprint(paths)}}}
-    write_evidence(tmp_path, h, "unit_test", exit_code=1, name="fast-red-unit-test.json")
+    (h / "risk-boundaries.yaml").write_text(
+        "boundaries:\n  q2: [never/**]\n  q3: [never/**]\n"
+    )
+    task = {
+        "git": {"base_commit": git_head()},
+        "risk": {
+            "level": "Q1",
+            "user_changes": {
+                "paths": list(paths),
+                "fingerprint": protected_paths_fingerprint(paths),
+            },
+        },
+    }
+    write_evidence(
+        tmp_path, h, "unit_test", exit_code=1, name="fast-red-unit-test.json"
+    )
     write_evidence(tmp_path, h, "unit_test", name="fast-green-unit-test.json")
     (tmp_path / "user.txt").write_text("overwritten\n")
 
@@ -290,9 +407,15 @@ def test_required_complexity_review_missing_blocks(tmp_path):
 def test_open_nonblocking_complexity_finding_does_not_block(tmp_path, severity):
     h = make_harness(tmp_path)
     finding = {
-        "id": "CPLX-001", "category": "complexity", "type": "shrink",
-        "severity": severity, "status": "open", "location": {"file": "x.py"},
-        "summary": "simplify", "reason": "primitive exists", "evidence": {"primitive": "x"},
+        "id": "CPLX-001",
+        "category": "complexity",
+        "type": "shrink",
+        "severity": severity,
+        "status": "open",
+        "location": {"file": "x.py"},
+        "summary": "simplify",
+        "reason": "primitive exists",
+        "evidence": {"primitive": "x"},
         "recommendation": "use primitive",
     }
     (h / "findings" / "CPLX-001.yaml").write_text(yaml.safe_dump(finding))
@@ -303,10 +426,17 @@ def test_open_nonblocking_complexity_finding_does_not_block(tmp_path, severity):
 def test_accepted_high_complexity_finding_does_not_block(tmp_path):
     h = make_harness(tmp_path)
     finding = {
-        "id": "CPLX-001", "category": "complexity", "type": "yagni",
-        "severity": "high", "status": "accepted", "location": {"file": "x.py"},
-        "summary": "compatibility layer", "reason": "v1 API", "evidence": {"requirement": "REQ-017"},
-        "recommendation": "keep layer", "acceptance_reason": "REQ-017 compatibility",
+        "id": "CPLX-001",
+        "category": "complexity",
+        "type": "yagni",
+        "severity": "high",
+        "status": "accepted",
+        "location": {"file": "x.py"},
+        "summary": "compatibility layer",
+        "reason": "v1 API",
+        "evidence": {"requirement": "REQ-017"},
+        "recommendation": "keep layer",
+        "acceptance_reason": "REQ-017 compatibility",
     }
     (h / "findings" / "CPLX-001.yaml").write_text(yaml.safe_dump(finding))
 
@@ -316,9 +446,15 @@ def test_accepted_high_complexity_finding_does_not_block(tmp_path):
 def test_open_high_complexity_finding_blocks(tmp_path):
     h = make_harness(tmp_path)
     finding = {
-        "id": "CPLX-001", "category": "complexity", "type": "reuse",
-        "severity": "high", "status": "open", "location": {"file": "x.py"},
-        "summary": "duplicate", "reason": "x exists", "evidence": {"candidate": "x"},
+        "id": "CPLX-001",
+        "category": "complexity",
+        "type": "reuse",
+        "severity": "high",
+        "status": "open",
+        "location": {"file": "x.py"},
+        "summary": "duplicate",
+        "reason": "x exists",
+        "evidence": {"candidate": "x"},
         "recommendation": "reuse x",
     }
     (h / "findings" / "CPLX-001.yaml").write_text(yaml.safe_dump(finding))
@@ -337,6 +473,7 @@ def test_gate_writes_back_status(tmp_path):
 
 
 # 1. missing evidence -------------------------------------------------------
+
 
 def test_gate_write_back_preserves_task_git_baseline(tmp_path):
     """Break caught: a Gate observation overwrites immutable task review baseline."""
@@ -396,6 +533,7 @@ def test_optional_verification_not_required(tmp_path):
 
 # 2. stale evidence ---------------------------------------------------------
 
+
 def test_stale_evidence_blocked(tmp_path):
     h = make_harness(tmp_path)
     ev = json.loads((h / "evidence" / "unit-test.json").read_text())
@@ -410,15 +548,24 @@ def test_stale_evidence_via_real_collection(tmp_path):
     """End-to-end: fresh evidence collected, then HEAD moves -> stale."""
     h = make_harness(tmp_path)
     # overwrite build evidence with commit from an older fake sha
-    (h / "evidence" / "build.json").write_text(json.dumps({
-        "type": "build", "timestamp": "2026-01-01T00:00:00+00:00",
-        "command": "true", "exit_code": 0, "commit": "deadbeef"}))
+    (h / "evidence" / "build.json").write_text(
+        json.dumps(
+            {
+                "type": "build",
+                "timestamp": "2026-01-01T00:00:00+00:00",
+                "command": "true",
+                "exit_code": 0,
+                "commit": "deadbeef",
+            }
+        )
+    )
     result = _gate(h)
     assert result.returncode == 1
     assert "EVIDENCE_HEAD_MISMATCH" in result.stdout
 
 
 # 3. major finding ----------------------------------------------------------
+
 
 def finding_doc(fid, severity, status, **extra):
     finding = {
@@ -458,10 +605,16 @@ def test_assess_gate_is_side_effect_free_and_matches_run_gate(tmp_path):
     before = (h / "current-task.yaml").read_bytes()
     assessment = assess_gate(h, allow_preflight=True)
 
-    assert (assessment.status, list(assessment.blockers)) == run_gate(h, allow_preflight=True)
+    assert (assessment.status, list(assessment.blockers)) == run_gate(
+        h, allow_preflight=True
+    )
     assert (h / "current-task.yaml").read_bytes() == before
     assert assessment.quality["status"] == assessment.status
-    assert assessment.release_readiness["status"] in {"READY", "DRAFT_ONLY", "NOT_READY"}
+    assert assessment.release_readiness["status"] in {
+        "READY",
+        "DRAFT_ONLY",
+        "NOT_READY",
+    }
 
 
 def test_write_back_persists_assessment_without_recomputing_readiness(tmp_path):
@@ -478,7 +631,9 @@ def test_write_back_persists_assessment_without_recomputing_readiness(tmp_path):
 
 def test_closed_findings_do_not_block(tmp_path):
     h = make_harness(tmp_path)
-    finding = finding_doc("FND-0003", "major", "REJECTED", attempts=["x"], rejection_reason="impossible")
+    finding = finding_doc(
+        "FND-0003", "major", "REJECTED", attempts=["x"], rejection_reason="impossible"
+    )
     (h / "findings" / "FND-0003.yaml").write_text(yaml.safe_dump(finding))
     assert _gate(h).returncode == 0
 
@@ -495,7 +650,9 @@ def test_confirmed_finding_without_regression_test_blocked(tmp_path):
 def test_confirmed_finding_with_regression_test_ok(tmp_path):
     h = make_harness(tmp_path)
     finding = finding_doc(
-        "FND-0005", "minor", "CONFIRMED",
+        "FND-0005",
+        "minor",
+        "CONFIRMED",
         regression_test={"path": "tests/test_fix.py"},
     )
     (h / "findings" / "FND-0005.yaml").write_text(yaml.safe_dump(finding))
@@ -504,6 +661,7 @@ def test_confirmed_finding_with_regression_test_ok(tmp_path):
 
 
 # 4. unverified requirement -------------------------------------------------
+
 
 def test_unverified_requirement_blocked(tmp_path):
     h = make_harness(tmp_path)
@@ -519,13 +677,20 @@ def test_should_requirement_without_test_plan_blocks(tmp_path):
     h = make_harness(tmp_path)
     reqs = yaml.safe_load((h / "requirements.yaml").read_text())
     reqs["requirements"].append(
-        {"id": "REQ-002", "statement": "nice", "priority": "should",
-         "status": "pending", "evidence": []})
+        {
+            "id": "REQ-002",
+            "statement": "nice",
+            "priority": "should",
+            "status": "pending",
+            "evidence": [],
+        }
+    )
     (h / "requirements.yaml").write_text(yaml.safe_dump(reqs))
     assert _gate(h).returncode == 1
 
 
 # 5. violated invariant -----------------------------------------------------
+
 
 def test_violated_invariant_blocked(tmp_path):
     h = make_harness(tmp_path)
@@ -610,6 +775,7 @@ def test_pending_minor_invariant_blocks_when_policy_requires(tmp_path):
 
 # INVALID_HARNESS_STATE (exit 2) ---------------------------------------------
 
+
 def test_missing_current_task_invalid(tmp_path):
     h = tmp_path / ".harness"
     h.mkdir()
@@ -664,11 +830,20 @@ def test_multiple_blockers_listed(tmp_path):
 
 # Requirement evidence validation (review fix #5) -----------------------------
 
+
 def test_verified_requirement_without_evidence_blocked(tmp_path):
     h = make_harness(tmp_path)
-    reqs = {"requirements": [
-        {"id": "REQ-001", "statement": "works", "priority": "must",
-         "status": "verified", "evidence": []}]}
+    reqs = {
+        "requirements": [
+            {
+                "id": "REQ-001",
+                "statement": "works",
+                "priority": "must",
+                "status": "verified",
+                "evidence": [],
+            }
+        ]
+    }
     (h / "requirements.yaml").write_text(yaml.safe_dump(reqs))
     result = _gate(h)
     assert result.returncode == 1
@@ -677,18 +852,34 @@ def test_verified_requirement_without_evidence_blocked(tmp_path):
 
 def test_verified_requirement_missing_evidence_file_blocked(tmp_path):
     h = make_harness(tmp_path)
-    reqs = {"requirements": [
-        {"id": "REQ-001", "statement": "works", "priority": "must",
-         "status": "verified", "evidence": ["nope.json"]}]}
+    reqs = {
+        "requirements": [
+            {
+                "id": "REQ-001",
+                "statement": "works",
+                "priority": "must",
+                "status": "verified",
+                "evidence": ["nope.json"],
+            }
+        ]
+    }
     (h / "requirements.yaml").write_text(yaml.safe_dump(reqs))
     assert "evidence missing" in _gate(h).stdout
 
 
 def test_verified_requirement_stale_evidence_blocked(tmp_path):
     h = make_harness(tmp_path)
-    reqs = {"requirements": [
-        {"id": "REQ-001", "statement": "works", "priority": "must",
-         "status": "verified", "evidence": ["build.json"]}]}
+    reqs = {
+        "requirements": [
+            {
+                "id": "REQ-001",
+                "statement": "works",
+                "priority": "must",
+                "status": "verified",
+                "evidence": ["build.json"],
+            }
+        ]
+    }
     (h / "requirements.yaml").write_text(yaml.safe_dump(reqs))
     ev = json.loads((h / "evidence" / "build.json").read_text())
     ev["commit"] = "0" * 40
@@ -698,9 +889,17 @@ def test_verified_requirement_stale_evidence_blocked(tmp_path):
 
 def test_verified_requirement_failed_evidence_blocked(tmp_path):
     h = make_harness(tmp_path)
-    reqs = {"requirements": [
-        {"id": "REQ-001", "statement": "works", "priority": "must",
-         "status": "verified", "evidence": ["build.json"]}]}
+    reqs = {
+        "requirements": [
+            {
+                "id": "REQ-001",
+                "statement": "works",
+                "priority": "must",
+                "status": "verified",
+                "evidence": ["build.json"],
+            }
+        ]
+    }
     (h / "requirements.yaml").write_text(yaml.safe_dump(reqs))
     ev = json.loads((h / "evidence" / "build.json").read_text())
     ev["exit_code"] = 3
@@ -710,9 +909,17 @@ def test_verified_requirement_failed_evidence_blocked(tmp_path):
 
 def test_should_requirement_without_test_plan_blocks_even_if_verified(tmp_path):
     h = make_harness(tmp_path)
-    reqs = {"requirements": [
-        {"id": "REQ-001", "statement": "works", "priority": "should",
-         "status": "verified", "evidence": []}]}
+    reqs = {
+        "requirements": [
+            {
+                "id": "REQ-001",
+                "statement": "works",
+                "priority": "should",
+                "status": "verified",
+                "evidence": [],
+            }
+        ]
+    }
     (h / "requirements.yaml").write_text(yaml.safe_dump(reqs))
     assert _gate(h).returncode == 1
 
@@ -733,11 +940,19 @@ def test_violated_invariant_blocks_even_if_allowance_configured(tmp_path):
 
 # Schema validation: fail closed (CR-001 P0) ---------------------------------
 
+
 def test_requirement_missing_priority_is_invalid_harness_state(tmp_path):
     h = make_harness(tmp_path)
-    reqs = {"requirements": [
-        {"id": "REQ-001", "statement": "must not duplicate side effects",
-         "status": "pending", "evidence": []}]}
+    reqs = {
+        "requirements": [
+            {
+                "id": "REQ-001",
+                "statement": "must not duplicate side effects",
+                "status": "pending",
+                "evidence": [],
+            }
+        ]
+    }
     (h / "requirements.yaml").write_text(yaml.safe_dump(reqs))
     result = _gate(h)
     assert result.returncode == 2
@@ -747,10 +962,17 @@ def test_requirement_missing_priority_is_invalid_harness_state(tmp_path):
 
 def test_invariant_missing_severity_is_invalid_harness_state(tmp_path):
     h = make_harness(tmp_path)
-    invs = {"invariants": [
-        {"id": "INV-001", "statement": "at most one side effect",
-         "category": "idempotency", "status": "pending",
-         "verification": ["build.json"]}]}
+    invs = {
+        "invariants": [
+            {
+                "id": "INV-001",
+                "statement": "at most one side effect",
+                "category": "idempotency",
+                "status": "pending",
+                "verification": ["build.json"],
+            }
+        ]
+    }
     (h / "invariants.yaml").write_text(yaml.safe_dump(invs))
     result = _gate(h)
     assert result.returncode == 2
@@ -761,8 +983,9 @@ def test_invariant_missing_severity_is_invalid_harness_state(tmp_path):
 def test_finding_missing_lifecycle_fields_is_invalid_harness_state(tmp_path):
     h = make_harness(tmp_path)
     # Gate must reject this malformed record before deciding its severity.
-    (h / "findings" / "fnd-001.yaml").write_text(yaml.safe_dump({
-        "id": "FND-001", "severity": "major", "status": "PROPOSED"}))
+    (h / "findings" / "fnd-001.yaml").write_text(
+        yaml.safe_dump({"id": "FND-001", "severity": "major", "status": "PROPOSED"})
+    )
     result = _gate(h)
     assert result.returncode == 2
     assert "FINDING_SCHEMA_UNKNOWN" in result.stderr
@@ -787,6 +1010,7 @@ def test_direct_verified_status_edit_without_proof_is_invalid(tmp_path):
     assert result.returncode == 2
     assert "finding.schema.json" in result.stderr
 
+
 def test_verified_critical_invariant_without_evidence_blocked(tmp_path):
     h = make_harness(tmp_path)
     inv = yaml.safe_load((h / "invariants.yaml").read_text())
@@ -808,9 +1032,13 @@ def test_gate_returns_typed_evidence_blocker(tmp_path):
 
     assert status == "BLOCKED"
     assert any(
-        blocker == GateBlocker(
-            "EVIDENCE_MISSING", "verification", "missing build evidence",
-            source="build", recover_to="VERIFYING",
+        blocker
+        == GateBlocker(
+            "EVIDENCE_MISSING",
+            "verification",
+            "missing build evidence",
+            source="build",
+            recover_to="VERIFYING",
         )
         for blocker in blockers
     )

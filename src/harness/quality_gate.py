@@ -25,17 +25,29 @@ from .evidence_validator import EvidenceValidationError, validate_evidence
 from .paths import EvidenceReferenceError, evidence_path
 from .state_machine import STATES
 from .test_plan import validate_test_coverage, validate_test_plan
-from .risk_boundaries import RiskBoundaryPolicyError, business_paths, load_boundaries, required_level
+from .risk_boundaries import (
+    RiskBoundaryPolicyError,
+    business_paths,
+    load_boundaries,
+    required_level,
+)
 from .workspace import (
-    WorkspaceError, changed_paths_since, git_head as workspace_head,
-    protected_paths_fingerprint, snapshot,
+    WorkspaceError,
+    changed_paths_since,
+    git_head as workspace_head,
+    protected_paths_fingerprint,
+    snapshot,
 )
 
 # Finding statuses that must block the gate. Terminal/healthy:
 # VERIFIED, CLOSED, REJECTED. FIXED (test green, regression pending)
 # still blocks - full regression evidence does not exist yet.
 OPEN_FINDING_STATUSES = {
-    "PROPOSED", "REPRODUCING", "CONFIRMED", "FIXING", "FIXED",
+    "PROPOSED",
+    "REPRODUCING",
+    "CONFIRMED",
+    "FIXING",
+    "FIXED",
 }
 
 
@@ -108,7 +120,9 @@ def finding_schema_name(finding: dict) -> str:
     if category == "interface":
         return "interface-finding.schema.json"
     if category is None and finding.get("kind") in {
-        "failure_scenario", "requirement_violation", "invariant_violation",
+        "failure_scenario",
+        "requirement_violation",
+        "invariant_violation",
     }:
         return "adversarial-finding.schema.json"
     raise InvalidHarnessState("FINDING_SCHEMA_UNKNOWN")
@@ -129,18 +143,26 @@ def load_findings(findings_dir: Path) -> list:
 
 def fast_verification_policy(harness_dir: Path) -> dict[str, str]:
     try:
-        policy = _load_yaml(harness_dir / "gate.yaml").get("gate", {}).get("fast", {}).get("verification")
+        policy = (
+            _load_yaml(harness_dir / "gate.yaml")
+            .get("gate", {})
+            .get("fast", {})
+            .get("verification")
+        )
     except InvalidHarnessState:
         policy = None
     if policy is None:
         return {"build": "required"}
-    if not isinstance(policy, dict) or any(value not in {"required", "optional"} for value in policy.values()):
+    if not isinstance(policy, dict) or any(
+        value not in {"required", "optional"} for value in policy.values()
+    ):
         raise InvalidHarnessState("FAST verification policy invalid")
     return policy
 
 
-def run_fast_gate(task: dict, harness_dir: Path, head: str,
-                  current_workspace: str) -> tuple[str, list[GateBlocker]]:
+def run_fast_gate(
+    task: dict, harness_dir: Path, head: str, current_workspace: str
+) -> tuple[str, list[GateBlocker]]:
     """Run Q1 Light Gate without STANDARD/STRICT ceremony artifacts."""
     risk = task.get("risk") or {}
     user_changes = risk.get("user_changes") or {}
@@ -148,9 +170,11 @@ def run_fast_gate(task: dict, harness_dir: Path, head: str,
     blockers: list[GateBlocker] = []
 
     def block(code: str, message: str) -> None:
-        blockers.append(GateBlocker(
-            code, "verification", message, recover_to=RECOVERY_POLICY.get(code)
-        ))
+        blockers.append(
+            GateBlocker(
+                code, "verification", message, recover_to=RECOVERY_POLICY.get(code)
+            )
+        )
 
     try:
         protected = protected_paths_fingerprint(paths)
@@ -165,44 +189,71 @@ def run_fast_gate(task: dict, harness_dir: Path, head: str,
         raise InvalidHarnessState(f"cannot revalidate FAST risk: {exc}") from exc
     if paths:
         try:
-            level = required_level(paths, load_boundaries(harness_dir / "risk-boundaries.yaml"))
+            level = required_level(
+                paths, load_boundaries(harness_dir / "risk-boundaries.yaml")
+            )
         except RiskBoundaryPolicyError:
-            block("RISK_REVALIDATION_POLICY_MISSING", "FAST business changes require risk-boundaries policy")
+            block(
+                "RISK_REVALIDATION_POLICY_MISSING",
+                "FAST business changes require risk-boundaries policy",
+            )
         else:
             current_level = risk.get("level")
-            if level and ("Q1", "Q2", "Q3").index(current_level) < ("Q1", "Q2", "Q3").index(level):
-                block("RISK_ESCALATION_REQUIRED", f"FAST changes require escalation to {level}")
+            if level and ("Q1", "Q2", "Q3").index(current_level) < (
+                "Q1",
+                "Q2",
+                "Q3",
+            ).index(level):
+                block(
+                    "RISK_ESCALATION_REQUIRED",
+                    f"FAST changes require escalation to {level}",
+                )
 
     for evidence_type, policy in fast_verification_policy(harness_dir).items():
         if policy != "required":
             continue
         path = harness_dir / "evidence" / f"{evidence_type.replace('_', '-')}.json"
         try:
-            validate_evidence(json.loads(path.read_text()), current_head=head,
-                              current_workspace=current_workspace, expected_success=True)
+            validate_evidence(
+                json.loads(path.read_text()),
+                current_head=head,
+                current_workspace=current_workspace,
+                expected_success=True,
+            )
         except (OSError, json.JSONDecodeError, EvidenceValidationError) as exc:
-            block("FAST_REPOSITORY_VERIFICATION_MISSING",
-                  f"FAST {evidence_type.replace('_', '-')} evidence invalid: {exc}")
+            block(
+                "FAST_REPOSITORY_VERIFICATION_MISSING",
+                f"FAST {evidence_type.replace('_', '-')} evidence invalid: {exc}",
+            )
 
     for phase, expected_success, require_current in (
-        ("red", False, False), ("green", True, True),
+        ("red", False, False),
+        ("green", True, True),
     ):
         path = harness_dir / "evidence" / f"fast-{phase}-unit-test.json"
         try:
             record = json.loads(path.read_text())
             validate_evidence(
-                record, current_head=head, current_workspace=current_workspace,
+                record,
+                current_head=head,
+                current_workspace=current_workspace,
                 expected_success=expected_success,
                 require_current_workspace=require_current,
             )
         except (OSError, json.JSONDecodeError, EvidenceValidationError) as exc:
-            block("FAST_REGRESSION_EVIDENCE_MISSING",
-                  f"FAST {phase} regression evidence invalid: {exc}")
+            block(
+                "FAST_REGRESSION_EVIDENCE_MISSING",
+                f"FAST {phase} regression evidence invalid: {exc}",
+            )
     return ("PASS" if not blockers else "BLOCKED"), blockers
 
 
-def _evaluate_gate(harness_dir: Path, head: str | None = None,
-                   allow_converged: bool = False, allow_preflight: bool = False) -> tuple[str, list]:
+def _evaluate_gate(
+    harness_dir: Path,
+    head: str | None = None,
+    allow_converged: bool = False,
+    allow_preflight: bool = False,
+) -> tuple[str, list]:
     """Returns (status, blockers). status in {'PASS','BLOCKED'}.
     Raises InvalidHarnessState."""
     task = _load_yaml(harness_dir / "current-task.yaml")
@@ -213,7 +264,11 @@ def _evaluate_gate(harness_dir: Path, head: str | None = None,
         raise InvalidHarnessState(f"unknown task state {state!r}")
 
     # Single legal path: REVIEWING -> GATING -> quality gate.
-    if state != "GATING" and not (allow_converged and state == "CONVERGED") and not allow_preflight:
+    if (
+        state != "GATING"
+        and not (allow_converged and state == "CONVERGED")
+        and not allow_preflight
+    ):
         raise InvalidHarnessState(
             f"state {state} does not allow gate execution (must be GATING)"
         )
@@ -238,13 +293,18 @@ def _evaluate_gate(harness_dir: Path, head: str | None = None,
 
     requirements_doc = _load_yaml(harness_dir / "requirements.yaml")
     invariants_doc = _load_yaml(harness_dir / "invariants.yaml")
-    validate_schema(requirements_doc, "requirement.schema.json", harness_dir / "requirements.yaml")
-    validate_schema(invariants_doc, "invariant.schema.json", harness_dir / "invariants.yaml")
+    validate_schema(
+        requirements_doc, "requirement.schema.json", harness_dir / "requirements.yaml"
+    )
+    validate_schema(
+        invariants_doc, "invariant.schema.json", harness_dir / "invariants.yaml"
+    )
     gate_cfg = gate_doc["gate"]
     evidence = load_evidence(harness_dir / "evidence")
     findings = load_findings(harness_dir / "findings")
     impact_path = harness_dir / "impact.yaml"
     impact = _load_yaml(impact_path) if impact_path.exists() else {}
+
     # HEAD alone misses uncommitted edits. Shared snapshot excludes harness
     # runtime files, so evidence writes do not invalidate business proof.
     # Terminal/near-terminal findings require real proof records, not only
@@ -253,42 +313,87 @@ def _evaluate_gate(harness_dir: Path, head: str | None = None,
         try:
             path = evidence_path(harness_dir, ref)
             record = json.loads(path.read_text())
-            validate_evidence(record, current_head=head, current_workspace=current_workspace,
-                              expected_success=expected_success,
-                              require_current_workspace=expected_success,
-                              finding_id=finding["id"] if test_id else None,
-                              test_id=test_id)
-        except (OSError, json.JSONDecodeError, EvidenceValidationError, EvidenceReferenceError) as exc:
-            raise InvalidHarnessState(f"{finding['id']} {label} evidence invalid: {exc}") from exc
+            validate_evidence(
+                record,
+                current_head=head,
+                current_workspace=current_workspace,
+                expected_success=expected_success,
+                require_current_workspace=expected_success,
+                finding_id=finding["id"] if test_id else None,
+                test_id=test_id,
+            )
+        except (
+            OSError,
+            json.JSONDecodeError,
+            EvidenceValidationError,
+            EvidenceReferenceError,
+        ) as exc:
+            raise InvalidHarnessState(
+                f"{finding['id']} {label} evidence invalid: {exc}"
+            ) from exc
+
     for finding in findings:
         state = finding["status"]
         if finding.get("category") == "diagnosability":
             if state in {"VERIFIED", "CLOSED"}:
                 try:
-                    record = json.loads(evidence_path(harness_dir, finding["evidence"]).read_text())
+                    record = json.loads(
+                        evidence_path(harness_dir, finding["evidence"]).read_text()
+                    )
                     from .diagnosability import validate_compliance_closure
+
                     validate_compliance_closure(
-                        finding, record, current_head=head,
+                        finding,
+                        record,
+                        current_head=head,
                         current_workspace=current_workspace,
                     )
-                except (OSError, json.JSONDecodeError, ValueError, EvidenceReferenceError) as exc:
+                except (
+                    OSError,
+                    json.JSONDecodeError,
+                    ValueError,
+                    EvidenceReferenceError,
+                ) as exc:
                     raise InvalidHarnessState(
                         f"{finding['id']} compliance evidence invalid: {exc}"
                     ) from exc
             continue
         if state in {"CONFIRMED", "FIXING", "FIXED", "VERIFIED", "CLOSED"}:
-            finding_proof(finding, finding["regression_test"]["red_evidence"], False, "red", finding["regression_test"]["path"])
+            finding_proof(
+                finding,
+                finding["regression_test"]["red_evidence"],
+                False,
+                "red",
+                finding["regression_test"]["path"],
+            )
         if state in {"FIXED", "VERIFIED", "CLOSED"}:
-            finding_proof(finding, finding["regression_test"]["green_evidence"], True, "green", finding["regression_test"]["path"])
+            finding_proof(
+                finding,
+                finding["regression_test"]["green_evidence"],
+                True,
+                "green",
+                finding["regression_test"]["path"],
+            )
         if state in {"VERIFIED", "CLOSED"}:
             try:
-                record = json.loads(evidence_path(harness_dir, finding["evidence"]).read_text())
+                record = json.loads(
+                    evidence_path(harness_dir, finding["evidence"]).read_text()
+                )
                 from .evidence_validator import validate_finding_closure_evidence
+
                 validate_finding_closure_evidence(
-                    finding, record, impact, current_head=head,
+                    finding,
+                    record,
+                    impact,
+                    current_head=head,
                     current_workspace=current_workspace,
                 )
-            except (OSError, json.JSONDecodeError, EvidenceValidationError, EvidenceReferenceError) as exc:
+            except (
+                OSError,
+                json.JSONDecodeError,
+                EvidenceValidationError,
+                EvidenceReferenceError,
+            ) as exc:
                 raise InvalidHarnessState(
                     f"{finding['id']} full regression evidence invalid: {exc}"
                 ) from exc
@@ -296,15 +401,25 @@ def _evaluate_gate(harness_dir: Path, head: str | None = None,
     blockers: list[GateBlocker] = []
 
     def block(code: str, category: str, message: str, **identity) -> None:
-        blockers.append(GateBlocker(
-            code, category, message, recover_to=RECOVERY_POLICY.get(code), **identity
-        ))
+        blockers.append(
+            GateBlocker(
+                code,
+                category,
+                message,
+                recover_to=RECOVERY_POLICY.get(code),
+                **identity,
+            )
+        )
 
     from .diagnosability import gate_blockers
-    blockers.extend(gate_blockers(harness_dir, task, head=head, workspace=current_workspace))
+
+    blockers.extend(
+        gate_blockers(harness_dir, task, head=head, workspace=current_workspace)
+    )
 
     # Persisted decision facts are task constraints, not advisory chat context.
     from .decision import DecisionError, load_decisions
+
     try:
         decisions = load_decisions(harness_dir)
     except DecisionError:
@@ -314,59 +429,135 @@ def _evaluate_gate(harness_dir: Path, head: str | None = None,
     active_topics: set[str] = set()
     for decision in decisions:
         if decision["status"] == "PROPOSED":
-            block("DECISION_UNRESOLVED", "harness", f"{decision['id']} is still PROPOSED")
+            block(
+                "DECISION_UNRESOLVED", "harness", f"{decision['id']} is still PROPOSED"
+            )
         supersedes = decision["supersedes"]
         superseded_by = decision["superseded_by"]
-        if supersedes and by_id.get(supersedes, {}).get("superseded_by") != decision["id"]:
-            block("DECISION_SUPERSEDE_INVALID", "harness", f"{decision['id']} has invalid supersedes link")
-        if superseded_by and by_id.get(superseded_by, {}).get("supersedes") != decision["id"]:
-            block("DECISION_SUPERSEDE_INVALID", "harness", f"{decision['id']} has invalid superseded_by link")
+        if (
+            supersedes
+            and by_id.get(supersedes, {}).get("superseded_by") != decision["id"]
+        ):
+            block(
+                "DECISION_SUPERSEDE_INVALID",
+                "harness",
+                f"{decision['id']} has invalid supersedes link",
+            )
+        if (
+            superseded_by
+            and by_id.get(superseded_by, {}).get("supersedes") != decision["id"]
+        ):
+            block(
+                "DECISION_SUPERSEDE_INVALID",
+                "harness",
+                f"{decision['id']} has invalid superseded_by link",
+            )
         if decision["status"] == "ACCEPTED" and not superseded_by:
             if decision["topic"] in active_topics:
-                block("DECISION_CONFLICT", "harness", f"multiple active decisions for {decision['topic']}")
+                block(
+                    "DECISION_CONFLICT",
+                    "harness",
+                    f"multiple active decisions for {decision['topic']}",
+                )
             active_topics.add(decision["topic"])
 
     # Declared external boundaries require a persisted contract and explicit release facts.
     from .interface_contract import InterfaceContractError, load_interface_contracts
+
     try:
-        interface_contracts = {record["id"]: record for record in load_interface_contracts(harness_dir)}
+        interface_contracts = {
+            record["id"]: record for record in load_interface_contracts(harness_dir)
+        }
     except InterfaceContractError:
         interface_contracts = {}
-        block("INTERFACE_CONTRACT_MISSING", "harness", "interface contract record is invalid")
-    external_interfaces = [item for item in impact.get("impact", {}).get("interfaces", []) if item.get("visibility") == "external"]
+        block(
+            "INTERFACE_CONTRACT_MISSING",
+            "harness",
+            "interface contract record is invalid",
+        )
+    external_interfaces = [
+        item
+        for item in impact.get("impact", {}).get("interfaces", [])
+        if item.get("visibility") == "external"
+    ]
     for declared in external_interfaces:
         if declared.get("visibility") != "external":
             continue
         contract = interface_contracts.get(declared.get("contract_id"))
         if contract is None:
-            block("INTERFACE_CONTRACT_MISSING", "harness", f"{declared.get('id')} has no interface contract")
+            block(
+                "INTERFACE_CONTRACT_MISSING",
+                "harness",
+                f"{declared.get('id')} has no interface contract",
+            )
             continue
         compatibility = contract.get("compatibility", {}).get("classification")
         if compatibility not in {"compatible", "breaking"}:
-            block("INTERFACE_COMPATIBILITY_UNDECLARED", "harness", f"{contract['id']} lacks compatibility classification")
-        elif compatibility == "breaking" and not contract.get("breaking_change_approved"):
-            block("INTERFACE_BREAKING_CHANGE_UNAPPROVED", "harness", f"{contract['id']} is unapproved breaking change")
+            block(
+                "INTERFACE_COMPATIBILITY_UNDECLARED",
+                "harness",
+                f"{contract['id']} lacks compatibility classification",
+            )
+        elif compatibility == "breaking" and not contract.get(
+            "breaking_change_approved"
+        ):
+            block(
+                "INTERFACE_BREAKING_CHANGE_UNAPPROVED",
+                "harness",
+                f"{contract['id']} is unapproved breaking change",
+            )
         verification_refs = contract.get("verification") or []
         if not verification_refs:
-            block("INTERFACE_VERIFICATION_MISSING", "verification", f"{contract['id']} has no interface verification")
+            block(
+                "INTERFACE_VERIFICATION_MISSING",
+                "verification",
+                f"{contract['id']} has no interface verification",
+            )
             continue
         for reference in verification_refs:
             try:
-                evidence_record = json.loads(evidence_path(harness_dir, reference).read_text())
-                validate_evidence(evidence_record, current_head=head, current_workspace=current_workspace, expected_success=True)
-            except (OSError, json.JSONDecodeError, EvidenceReferenceError, EvidenceValidationError):
-                block("INTERFACE_VERIFICATION_MISSING", "verification", f"{contract['id']} interface verification is missing or stale")
+                evidence_record = json.loads(
+                    evidence_path(harness_dir, reference).read_text()
+                )
+                validate_evidence(
+                    evidence_record,
+                    current_head=head,
+                    current_workspace=current_workspace,
+                    expected_success=True,
+                )
+            except (
+                OSError,
+                json.JSONDecodeError,
+                EvidenceReferenceError,
+                EvidenceValidationError,
+            ):
+                block(
+                    "INTERFACE_VERIFICATION_MISSING",
+                    "verification",
+                    f"{contract['id']} interface verification is missing or stale",
+                )
                 break
 
     if external_interfaces:
         review_path = harness_dir / "evidence" / "interface-review.json"
         try:
             review_record = json.loads(review_path.read_text())
-            validate_evidence(review_record, current_head=head, current_workspace=current_workspace, expected_success=True)
-            if review_record.get("type") != "review" or any(value == "fail" for value in review_record.get("checks", {}).values()):
+            validate_evidence(
+                review_record,
+                current_head=head,
+                current_workspace=current_workspace,
+                expected_success=True,
+            )
+            if review_record.get("type") != "review" or any(
+                value == "fail" for value in review_record.get("checks", {}).values()
+            ):
                 raise ValueError("invalid interface review")
         except (OSError, json.JSONDecodeError, EvidenceValidationError, ValueError):
-            block("INTERFACE_VERIFICATION_MISSING", "verification", "missing or stale interface review")
+            block(
+                "INTERFACE_VERIFICATION_MISSING",
+                "verification",
+                "missing or stale interface review",
+            )
 
     # 1. Requirements: priority=must must be verified WITH fresh evidence.
     # A self-declared status=verified carries no weight on its own: each
@@ -379,35 +570,70 @@ def _evaluate_gate(harness_dir: Path, head: str | None = None,
             if req.get("priority") != "must":
                 continue
             if req.get("status") != "verified":
-                block("REQUIREMENT_UNVERIFIED", "verification", f"{req.get('id')} not verified", requirement_id=req.get("id"))
+                block(
+                    "REQUIREMENT_UNVERIFIED",
+                    "verification",
+                    f"{req.get('id')} not verified",
+                    requirement_id=req.get("id"),
+                )
                 continue
             refs = req.get("evidence") or []
             if not refs:
-                block("EVIDENCE_MISSING", "verification", f"{req.get('id')} verified without evidence", requirement_id=req.get("id"))
+                block(
+                    "EVIDENCE_MISSING",
+                    "verification",
+                    f"{req.get('id')} verified without evidence",
+                    requirement_id=req.get("id"),
+                )
                 continue
             for ref in refs:
-                name = ref if isinstance(ref, str) else                     (ref or {}).get("ref", "")
+                name = ref if isinstance(ref, str) else (ref or {}).get("ref", "")
                 if not name:
-                    block("EVIDENCE_MISSING", "verification", f"{req.get('id')} has an empty evidence ref", requirement_id=req.get("id"))
+                    block(
+                        "EVIDENCE_MISSING",
+                        "verification",
+                        f"{req.get('id')} has an empty evidence ref",
+                        requirement_id=req.get("id"),
+                    )
                     continue
                 try:
                     path = evidence_path(harness_dir, name)
                 except EvidenceReferenceError:
-                    block("EVIDENCE_MISSING", "verification", f"{req.get('id')} evidence reference invalid", requirement_id=req.get("id"))
+                    block(
+                        "EVIDENCE_MISSING",
+                        "verification",
+                        f"{req.get('id')} evidence reference invalid",
+                        requirement_id=req.get("id"),
+                    )
                     continue
                 if not path.is_file():
-                    block("EVIDENCE_MISSING", "verification", f"{req.get('id')} evidence missing: {path.name}", source=path.name, requirement_id=req.get("id"))
+                    block(
+                        "EVIDENCE_MISSING",
+                        "verification",
+                        f"{req.get('id')} evidence missing: {path.name}",
+                        source=path.name,
+                        requirement_id=req.get("id"),
+                    )
                     continue
                 try:
                     ev = json.loads(path.read_text())
                 except json.JSONDecodeError as exc:
-                    raise InvalidHarnessState(
-                        f"bad JSON in {path}: {exc}")
+                    raise InvalidHarnessState(f"bad JSON in {path}: {exc}")
                 try:
-                    validate_evidence(ev, current_head=head, current_workspace=current_workspace,
-                                      expected_success=True)
+                    validate_evidence(
+                        ev,
+                        current_head=head,
+                        current_workspace=current_workspace,
+                        expected_success=True,
+                    )
                 except EvidenceValidationError as exc:
-                    block(str(exc).split(":", 1)[0], "verification", f"{req.get('id')} evidence {path.name} invalid: {exc}", source=path.name, requirement_id=req.get("id"))
+                    block(
+                        str(exc).split(":", 1)[0],
+                        "verification",
+                        f"{req.get('id')} evidence {path.name} invalid: {exc}",
+                        source=path.name,
+                        requirement_id=req.get("id"),
+                    )
 
     # 2. Invariants: violated blocks; unproven blocks for critical/major.
     # pending == not proven == BLOCKED. Only proven-safe (verified)
@@ -420,33 +646,74 @@ def _evaluate_gate(harness_dir: Path, head: str | None = None,
         severity = inv.get("severity")
         iid = inv.get("id")
         if status == "violated":
-            block("INVARIANT_VIOLATED", "implementation", f"{iid} violated", invariant_id=iid)
+            block(
+                "INVARIANT_VIOLATED",
+                "implementation",
+                f"{iid} violated",
+                invariant_id=iid,
+            )
         elif status != "verified":
             if severity in ("critical", "major"):
-                block("INVARIANT_UNVERIFIED", "verification", f"{iid} not verified (pending {severity} invariant is not proven)", invariant_id=iid)
+                block(
+                    "INVARIANT_UNVERIFIED",
+                    "verification",
+                    f"{iid} not verified (pending {severity} invariant is not proven)",
+                    invariant_id=iid,
+                )
             elif severity == "minor" and minor_verified:
-                block("INVARIANT_UNVERIFIED", "verification", f"{iid} not verified", invariant_id=iid)
+                block(
+                    "INVARIANT_UNVERIFIED",
+                    "verification",
+                    f"{iid} not verified",
+                    invariant_id=iid,
+                )
         elif severity in ("critical", "major") or minor_verified:
             refs = inv.get("verification") or []
             if not refs:
-                block("EVIDENCE_MISSING", "verification", f"{iid} verified without verification evidence", invariant_id=iid)
+                block(
+                    "EVIDENCE_MISSING",
+                    "verification",
+                    f"{iid} verified without verification evidence",
+                    invariant_id=iid,
+                )
             for ref in refs:
                 name = ref if isinstance(ref, str) else (ref or {}).get("ref", "")
                 try:
                     path = evidence_path(harness_dir, name)
                 except EvidenceReferenceError:
-                    block("EVIDENCE_MISSING", "verification", f"{iid} verification evidence reference invalid", invariant_id=iid)
+                    block(
+                        "EVIDENCE_MISSING",
+                        "verification",
+                        f"{iid} verification evidence reference invalid",
+                        invariant_id=iid,
+                    )
                     continue
                 try:
                     ev = json.loads(path.read_text())
                 except (OSError, json.JSONDecodeError):
-                    block("EVIDENCE_MISSING", "verification", f"{iid} verification evidence missing: {name}", source=name, invariant_id=iid)
+                    block(
+                        "EVIDENCE_MISSING",
+                        "verification",
+                        f"{iid} verification evidence missing: {name}",
+                        source=name,
+                        invariant_id=iid,
+                    )
                     continue
                 try:
-                    validate_evidence(ev, current_head=head, current_workspace=current_workspace,
-                                      expected_success=True)
+                    validate_evidence(
+                        ev,
+                        current_head=head,
+                        current_workspace=current_workspace,
+                        expected_success=True,
+                    )
                 except EvidenceValidationError as exc:
-                    block(str(exc).split(":", 1)[0], "verification", f"{iid} verification evidence {name} invalid: {exc}", source=name, invariant_id=iid)
+                    block(
+                        str(exc).split(":", 1)[0],
+                        "verification",
+                        f"{iid} verification evidence {name} invalid: {exc}",
+                        source=name,
+                        invariant_id=iid,
+                    )
 
     # 3. Required verification evidence exists, exit_code==0, fresh HEAD.
     ver_cfg = gate_cfg.get("verification", {})
@@ -456,40 +723,74 @@ def _evaluate_gate(harness_dir: Path, head: str | None = None,
         matching = [record for record in evidence if record.get("type") == vtype]
         label = vtype.replace("_", "-")
         if not matching:
-            block("EVIDENCE_MISSING", "verification", f"missing {label} evidence", source=vtype)
+            block(
+                "EVIDENCE_MISSING",
+                "verification",
+                f"missing {label} evidence",
+                source=vtype,
+            )
             continue
         for ev in matching:
             try:
-                validate_evidence(ev, current_head=head, current_workspace=current_workspace,
-                                  expected_success=True)
+                validate_evidence(
+                    ev,
+                    current_head=head,
+                    current_workspace=current_workspace,
+                    expected_success=True,
+                )
                 break
             except EvidenceValidationError as exc:
                 last_error = exc
         else:
-            block(str(last_error).split(":", 1)[0], "verification", f"{label} evidence invalid: {last_error}", source=vtype)
+            block(
+                str(last_error).split(":", 1)[0],
+                "verification",
+                f"{label} evidence invalid: {last_error}",
+                source=vtype,
+            )
 
     # 3b. Test Plan: all non-FAST tasks must remain complete at Final Gate.
     for issue in validate_test_plan(requirements_doc, invariants_doc):
-        block("TEST_PLAN_INCOMPLETE", "implementation", issue.message,
-              requirement_id=issue.requirement_id, invariant_id=issue.invariant_id)
+        block(
+            "TEST_PLAN_INCOMPLETE",
+            "implementation",
+            issue.message,
+            requirement_id=issue.requirement_id,
+            invariant_id=issue.invariant_id,
+        )
 
     # 3c. Test Plan: every automated binding needs fresh successful evidence.
     def evidence_is_fresh(record):
         try:
-            validate_evidence(record, current_head=head, current_workspace=current_workspace,
-                              expected_success=True)
+            validate_evidence(
+                record,
+                current_head=head,
+                current_workspace=current_workspace,
+                expected_success=True,
+            )
             return True
         except EvidenceValidationError:
             return False
 
     for issue in validate_test_coverage(
-            requirements_doc, invariants_doc, evidence, evidence_is_fresh):
+        requirements_doc, invariants_doc, evidence, evidence_is_fresh
+    ):
         if issue.code == "TEST_BINDING_MISSING":
-            block(issue.code, "implementation", issue.message,
-                  requirement_id=issue.requirement_id, invariant_id=issue.invariant_id)
+            block(
+                issue.code,
+                "implementation",
+                issue.message,
+                requirement_id=issue.requirement_id,
+                invariant_id=issue.invariant_id,
+            )
         else:
-            block(issue.code, "verification", issue.message,
-                  requirement_id=issue.requirement_id, invariant_id=issue.invariant_id)
+            block(
+                issue.code,
+                "verification",
+                issue.message,
+                requirement_id=issue.requirement_id,
+                invariant_id=issue.invariant_id,
+            )
 
     # 4. Complexity: required review evidence and configured open severities.
     complexity_cfg = gate_cfg.get("complexity", {})
@@ -499,19 +800,40 @@ def _evaluate_gate(harness_dir: Path, head: str | None = None,
             review = json.loads(review_path.read_text())
             validate_schema(review, "evidence.schema.json", review_path)
         except (OSError, json.JSONDecodeError, InvalidHarnessState):
-            block("COMPLEXITY_REVIEW_MISSING", "verification", "missing complexity-review evidence", source="complexity-review")
+            block(
+                "COMPLEXITY_REVIEW_MISSING",
+                "verification",
+                "missing complexity-review evidence",
+                source="complexity-review",
+            )
         else:
             try:
-                validate_evidence(review, current_head=head, current_workspace=current_workspace,
-                                  expected_success=True)
+                validate_evidence(
+                    review,
+                    current_head=head,
+                    current_workspace=current_workspace,
+                    expected_success=True,
+                )
             except EvidenceValidationError as exc:
-                block(str(exc).split(":", 1)[0], "verification", f"complexity-review evidence invalid: {exc}", source="complexity-review")
+                block(
+                    str(exc).split(":", 1)[0],
+                    "verification",
+                    f"complexity-review evidence invalid: {exc}",
+                    source="complexity-review",
+                )
         blocking = set(complexity_cfg.get("blocking", ["high"]))
         for finding in findings:
-            if (finding.get("id", "").startswith("CPLX-")
-                    and finding.get("status") == "open"
-                    and finding.get("severity") in blocking):
-                block("IMPLEMENTATION_INCOMPLETE", "implementation", f"{finding['severity'].title()} complexity finding {finding['id']} is open", finding_id=finding["id"])
+            if (
+                finding.get("id", "").startswith("CPLX-")
+                and finding.get("status") == "open"
+                and finding.get("severity") in blocking
+            ):
+                block(
+                    "IMPLEMENTATION_INCOMPLETE",
+                    "implementation",
+                    f"{finding['severity'].title()} complexity finding {finding['id']} is open",
+                    finding_id=finding["id"],
+                )
 
     # 5. Findings: open critical/major counts, regression debt.
     find_cfg = gate_cfg.get("findings", {})
@@ -521,28 +843,42 @@ def _evaluate_gate(harness_dir: Path, head: str | None = None,
     def is_open(f):
         return f.get("status") in OPEN_FINDING_STATUSES
 
-    open_critical = [f for f in findings
-                     if is_open(f) and f.get("severity") == "critical"]
-    open_major = [f for f in findings
-                  if is_open(f) and f.get("severity") == "major"]
+    open_critical = [
+        f for f in findings if is_open(f) and f.get("severity") == "critical"
+    ]
+    open_major = [f for f in findings if is_open(f) and f.get("severity") == "major"]
     for f in open_critical[critical_allowed:]:
-        block("FINDING_OPEN", "defect", f"Critical finding {f['id']} is open", finding_id=f["id"])
+        block(
+            "FINDING_OPEN",
+            "defect",
+            f"Critical finding {f['id']} is open",
+            finding_id=f["id"],
+        )
     for f in open_major[major_allowed:]:
-        block("FINDING_OPEN", "defect", f"Major finding {f['id']} is open", finding_id=f["id"])
+        block(
+            "FINDING_OPEN",
+            "defect",
+            f"Major finding {f['id']} is open",
+            finding_id=f["id"],
+        )
 
     # Confirmed findings must carry a regression test (LAW 4).
     confirmed = [
-        finding for finding in findings
+        finding
+        for finding in findings
         if finding.get("status") == "CONFIRMED"
         and finding.get("category") != "diagnosability"
     ]
     regression_cfg = gate_cfg.get("regression", {})
-    without_test_allowed = int(
-        regression_cfg.get("confirmed_finding_without_test", 0))
-    no_test = [f for f in confirmed
-               if not (f.get("regression_test") or {}).get("path")]
+    without_test_allowed = int(regression_cfg.get("confirmed_finding_without_test", 0))
+    no_test = [f for f in confirmed if not (f.get("regression_test") or {}).get("path")]
     for f in no_test[without_test_allowed:]:
-        block("IMPLEMENTATION_INCOMPLETE", "implementation", f"Confirmed finding {f['id']} has no regression test", finding_id=f["id"])
+        block(
+            "IMPLEMENTATION_INCOMPLETE",
+            "implementation",
+            f"Confirmed finding {f['id']} has no regression test",
+            finding_id=f["id"],
+        )
 
     status = "PASS" if not blockers else "BLOCKED"
     return status, blockers
@@ -556,31 +892,55 @@ class GateAssessment:
     release_readiness: dict[str, list[str] | str]
 
 
-def assess_gate(harness_dir: Path, head: str | None = None,
-                allow_converged: bool = False, allow_preflight: bool = False) -> GateAssessment:
+def assess_gate(
+    harness_dir: Path,
+    head: str | None = None,
+    allow_converged: bool = False,
+    allow_preflight: bool = False,
+) -> GateAssessment:
     """Evaluate current Harness state without persisting a Gate result."""
     status, blockers = _evaluate_gate(
-        harness_dir, head=head, allow_converged=allow_converged,
+        harness_dir,
+        head=head,
+        allow_converged=allow_converged,
         allow_preflight=allow_preflight,
     )
     release = _load_yaml(harness_dir / "gate.yaml").get("gate", {}).get("release", {})
-    authorized = bool(((_load_yaml(harness_dir / "current-task.yaml").get("authorizations") or {})
-                       .get("full_suite", {}).get("granted")))
+    authorized = bool(
+        (
+            (_load_yaml(harness_dir / "current-task.yaml").get("authorizations") or {})
+            .get("full_suite", {})
+            .get("granted")
+        )
+    )
     readiness = (
         {"status": "NOT_READY", "reasons": ["quality_gate_blocked"]}
-        if status != "PASS" else
-        {"status": "DRAFT_ONLY", "reasons": ["full_suite_required_but_not_authorized"]}
-        if release.get("full_suite_required") and not authorized else
-        {"status": "READY", "reasons": []}
+        if status != "PASS"
+        else {
+            "status": "DRAFT_ONLY",
+            "reasons": ["full_suite_required_but_not_authorized"],
+        }
+        if release.get("full_suite_required") and not authorized
+        else {"status": "READY", "reasons": []}
     )
-    return GateAssessment(status, tuple(blockers),
-                          {"status": "PASS" if status == "PASS" else "BLOCKED"}, readiness)
+    return GateAssessment(
+        status,
+        tuple(blockers),
+        {"status": "PASS" if status == "PASS" else "BLOCKED"},
+        readiness,
+    )
 
 
-def run_gate(harness_dir: Path, head: str | None = None,
-             allow_converged: bool = False, allow_preflight: bool = False) -> tuple[str, list]:
+def run_gate(
+    harness_dir: Path,
+    head: str | None = None,
+    allow_converged: bool = False,
+    allow_preflight: bool = False,
+) -> tuple[str, list]:
     assessment = assess_gate(
-        harness_dir, head=head, allow_converged=allow_converged,
+        harness_dir,
+        head=head,
+        allow_converged=allow_converged,
         allow_preflight=allow_preflight,
     )
     return assessment.status, list(assessment.blockers)
@@ -592,11 +952,14 @@ def write_back(harness_dir: Path, assessment: GateAssessment):
     task = yaml.safe_load(path.read_text())
     task.setdefault("gate", {})
     task["gate"]["status"] = assessment.status
-    task["gate"]["blocked_by"] = [blocker_document(blocker) for blocker in assessment.blockers]
+    task["gate"]["blocked_by"] = [
+        blocker_document(blocker) for blocker in assessment.blockers
+    ]
     task["gate"]["quality"] = assessment.quality
     task["gate"]["release_readiness"] = assessment.release_readiness
     task.setdefault("git", {})["head"] = git_head()
     from .transaction import atomic_write
+
     atomic_write(path, yaml.safe_dump(task, sort_keys=False).encode())
 
 

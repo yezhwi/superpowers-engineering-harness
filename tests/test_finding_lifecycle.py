@@ -55,22 +55,71 @@ def write_finding(h: Path, **overrides):
         finding.setdefault("test", "tests/test_regress.py::test_bug")
         finding.setdefault("confirmed_at", "2026-01-01T00:00:00+00:00")
         rt = finding.setdefault("regression_test", {})
-        rt.setdefault("path", finding["test"]); rt.setdefault("red_evidence", f"{finding['id']}-red.json")
+        rt.setdefault("path", finding["test"])
+        rt.setdefault("red_evidence", f"{finding['id']}-red.json")
         finding["test"] = rt["path"]
         fingerprint = workspace_fingerprint()
-        (h / "evidence" / rt["red_evidence"]).write_text(json.dumps({"type":"custom","timestamp":"t","command":"false","exit_code":1,"commit":HEAD,"workspace_fingerprint":fingerprint,"workspace_fingerprint_after":fingerprint,"subject":{"kind":"finding","id":finding["id"]},"test":{"node_id":finding["test"]}}))
+        (h / "evidence" / rt["red_evidence"]).write_text(
+            json.dumps(
+                {
+                    "type": "custom",
+                    "timestamp": "t",
+                    "command": "false",
+                    "exit_code": 1,
+                    "commit": HEAD,
+                    "workspace_fingerprint": fingerprint,
+                    "workspace_fingerprint_after": fingerprint,
+                    "subject": {"kind": "finding", "id": finding["id"]},
+                    "test": {"node_id": finding["test"]},
+                }
+            )
+        )
     if status in {"FIXED", "VERIFIED", "CLOSED"}:
-        finding["regression_test"].setdefault("green_evidence", f"{finding['id']}-green.json")
+        finding["regression_test"].setdefault(
+            "green_evidence", f"{finding['id']}-green.json"
+        )
         fingerprint = workspace_fingerprint()
-        (h / "evidence" / finding["regression_test"]["green_evidence"]).write_text(json.dumps({"type":"custom","timestamp":"t","command":"true","exit_code":0,"commit":HEAD,"workspace_fingerprint":fingerprint,"workspace_fingerprint_after":fingerprint,"subject":{"kind":"finding","id":finding["id"]},"test":{"node_id":finding["test"]}}))
+        (h / "evidence" / finding["regression_test"]["green_evidence"]).write_text(
+            json.dumps(
+                {
+                    "type": "custom",
+                    "timestamp": "t",
+                    "command": "true",
+                    "exit_code": 0,
+                    "commit": HEAD,
+                    "workspace_fingerprint": fingerprint,
+                    "workspace_fingerprint_after": fingerprint,
+                    "subject": {"kind": "finding", "id": finding["id"]},
+                    "test": {"node_id": finding["test"]},
+                }
+            )
+        )
     if status in {"VERIFIED", "CLOSED"}:
-        finding.setdefault("evidence", f"{finding['id']}-full.json"); finding.setdefault("verified_at", "2026-01-02T00:00:00+00:00")
+        finding.setdefault("evidence", f"{finding['id']}-full.json")
+        finding.setdefault("verified_at", "2026-01-02T00:00:00+00:00")
         fingerprint = workspace_fingerprint()
-        (h / "evidence" / finding["evidence"]).write_text(json.dumps({"type":"custom","timestamp":"t","command":"true","exit_code":0,"commit":HEAD,"workspace_fingerprint":fingerprint,"workspace_fingerprint_after":fingerprint,"scope":"full_suite","covered_tests":[]}))
-    (h / "findings" / f"{finding['id'].lower()}.yaml").write_text(yaml.safe_dump(finding))
+        (h / "evidence" / finding["evidence"]).write_text(
+            json.dumps(
+                {
+                    "type": "custom",
+                    "timestamp": "t",
+                    "command": "true",
+                    "exit_code": 0,
+                    "commit": HEAD,
+                    "workspace_fingerprint": fingerprint,
+                    "workspace_fingerprint_after": fingerprint,
+                    "scope": "full_suite",
+                    "covered_tests": [],
+                }
+            )
+        )
+    (h / "findings" / f"{finding['id'].lower()}.yaml").write_text(
+        yaml.safe_dump(finding)
+    )
 
 
 # 1. Lifecycle transitions ---------------------------------------------------
+
 
 def test_reviewing_to_reproducing_legal():
     assert is_legal("REVIEWING", "REPRODUCING")
@@ -92,6 +141,7 @@ def test_finding_direct_to_done_illegal():
 
 # 2. PROPOSED vs CONFIRMED semantics -----------------------------------------
 
+
 def test_proposed_major_finding_blocks(tmp_path):
     # PROPOSED is an unconfirmed attack attempt but still open -> blocked.
     h = make_harness(tmp_path)
@@ -112,11 +162,19 @@ def test_confirmed_finding_blocks_until_fixed(tmp_path):
 def test_confirmed_diagnosability_finding_blocks_without_regression_test(tmp_path):
     h = make_harness(tmp_path)
     finding = {
-        "id": "FND-001", "kind": "requirement_violation", "target": "REQ-001",
-        "scenario": "missing diagnostic context", "severity": "major",
-        "status": "CONFIRMED", "category": "diagnosability",
-        "reason_code": "DIAG_MISSING_BUSINESS_ID", "location": {"file": "src/order.py"},
-        "compliance": {"evidence_kind": "static_compliance", "required_checks": ["business_keys"]},
+        "id": "FND-001",
+        "kind": "requirement_violation",
+        "target": "REQ-001",
+        "scenario": "missing diagnostic context",
+        "severity": "major",
+        "status": "CONFIRMED",
+        "category": "diagnosability",
+        "reason_code": "DIAG_MISSING_BUSINESS_ID",
+        "location": {"file": "src/order.py"},
+        "compliance": {
+            "evidence_kind": "static_compliance",
+            "required_checks": ["business_keys"],
+        },
         "confirmed_at": "2026-01-01T00:00:00+00:00",
     }
     (h / "findings" / "fnd-001.yaml").write_text(yaml.safe_dump(finding))
@@ -124,7 +182,9 @@ def test_confirmed_diagnosability_finding_blocks_without_regression_test(tmp_pat
     status, blockers = run_gate(h)
 
     assert status == "BLOCKED"
-    assert any("Major finding FND-001 is open" in blocker.message for blocker in blockers)
+    assert any(
+        "Major finding FND-001 is open" in blocker.message for blocker in blockers
+    )
 
 
 def test_confirmed_with_regression_test_still_open_until_fixed(tmp_path):
@@ -132,8 +192,8 @@ def test_confirmed_with_regression_test_still_open_until_fixed(tmp_path):
     # until the fix lands and status moves to VERIFIED/CLOSED.
     h = make_harness(tmp_path)
     write_finding(
-        h, status="CONFIRMED",
-        regression_test={"path": "tests/test_regress_fnd_001.py"})
+        h, status="CONFIRMED", regression_test={"path": "tests/test_regress_fnd_001.py"}
+    )
     status, blockers = run_gate(h)
     assert status == "BLOCKED"
     assert any("Major finding FND-001 is open" in b for b in blockers)
@@ -168,16 +228,19 @@ def test_verified_after_fix_passes(tmp_path):
     # Fix landed, full suite green, finding closed as VERIFIED.
     h = make_harness(tmp_path)
     write_finding(
-        h, status="VERIFIED",
-        regression_test={"path": "tests/test_regress_fnd_001.py"})
+        h, status="VERIFIED", regression_test={"path": "tests/test_regress_fnd_001.py"}
+    )
     status, blockers = run_gate(h)
     assert status == "PASS", blockers
 
 
-@pytest.mark.parametrize("severity,label", [
-    ("critical", "Critical finding"),
-    ("major", "Major finding"),
-])
+@pytest.mark.parametrize(
+    "severity,label",
+    [
+        ("critical", "Critical finding"),
+        ("major", "Major finding"),
+    ],
+)
 def test_open_severity_blocks(tmp_path, severity, label):
     h = make_harness(tmp_path)
     write_finding(h, severity=severity, status="REPRODUCING")
@@ -188,11 +251,11 @@ def test_open_severity_blocks(tmp_path, severity, label):
 
 # 3. Rejected / closed findings never block -----------------------------------
 
+
 def test_fixed_still_blocks_until_verified(tmp_path):
     # FIXED = reproduction test green but full regression not yet run.
     h = make_harness(tmp_path)
-    write_finding(h, status="FIXED",
-                  regression_test={"path": "tests/test_regress.py"})
+    write_finding(h, status="FIXED", regression_test={"path": "tests/test_regress.py"})
     status, blockers = run_gate(h)
     assert status == "BLOCKED"
     assert any("FND-001 is open" in b for b in blockers)
@@ -209,8 +272,9 @@ def test_terminal_finding_does_not_block(tmp_path, status):
 def test_mixed_findings_only_open_ones_block(tmp_path):
     h = make_harness(tmp_path)
     write_finding(h, id="FND-001", status="REJECTED")
-    write_finding(h, id="FND-002", status="VERIFIED",
-                  regression_test={"path": "tests/test_x.py"})
+    write_finding(
+        h, id="FND-002", status="VERIFIED", regression_test={"path": "tests/test_x.py"}
+    )
     write_finding(h, id="FND-003", status="FIXING")
     status, blockers = run_gate(h)
     assert status == "BLOCKED"

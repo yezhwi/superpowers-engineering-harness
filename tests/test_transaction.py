@@ -48,10 +48,14 @@ def test_atomic_write_replaces_complete_single_artifact(tmp_path):
 
 def test_publish_rolls_back_when_later_target_cannot_publish(tmp_path, monkeypatch):
     harness = tmp_path / ".harness"
-    staged = stage(harness, [
-        StagedArtifact("findings/FND-001.yaml", b"finding"),
-        StagedArtifact("evidence/review.json", b"evidence"),
-    ], operation_id="test")
+    staged = stage(
+        harness,
+        [
+            StagedArtifact("findings/FND-001.yaml", b"finding"),
+            StagedArtifact("evidence/review.json", b"evidence"),
+        ],
+        operation_id="test",
+    )
     original_replace = Path.replace
 
     def fail_evidence(self, target):

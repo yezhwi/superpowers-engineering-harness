@@ -12,8 +12,7 @@ from harness.repository import RepositoryNotFoundError, find_git_root
 
 
 def _git(tmp_path: Path, *args: str) -> None:
-    subprocess.run(["git", *args], cwd=tmp_path, check=True,
-                   capture_output=True)
+    subprocess.run(["git", *args], cwd=tmp_path, check=True, capture_output=True)
 
 
 def make_repo(tmp_path: Path) -> Path:

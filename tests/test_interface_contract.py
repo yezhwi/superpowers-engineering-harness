@@ -24,7 +24,11 @@ def contract(**overrides) -> dict:
         "inputs": {"description": "command arguments"},
         "outputs": {"description": "machine-readable result"},
         "errors": {"description": "stable error code; not retryable"},
-        "compatibility": {"classification": "compatible", "rationale": "additive commands", "migration": None},
+        "compatibility": {
+            "classification": "compatible",
+            "rationale": "additive commands",
+            "migration": None,
+        },
         "versioning": {"required": False, "strategy": None},
         "observability": {"contract": "observability.yaml"},
         "decision_refs": [],
@@ -42,7 +46,9 @@ def test_declare_persists_schema_valid_external_contract(tmp_path):
 
     assert declared["id"] == "INT-001"
     assert declared["task_id"] == "TASK-042"
-    assert load_interface_contract(harness_dir, "INT-001")["consumers"] == ["agent-worker"]
+    assert load_interface_contract(harness_dir, "INT-001")["consumers"] == [
+        "agent-worker"
+    ]
 
 
 def test_breaking_contract_requires_explicit_approval(tmp_path):
@@ -50,7 +56,16 @@ def test_breaking_contract_requires_explicit_approval(tmp_path):
     from harness.interface_contract import approve_breaking, declare
 
     harness_dir = setup_harness(tmp_path)
-    declared = declare(harness_dir, contract(compatibility={"classification": "breaking", "rationale": "rename command", "migration": "clients migrate"}))
+    declared = declare(
+        harness_dir,
+        contract(
+            compatibility={
+                "classification": "breaking",
+                "rationale": "rename command",
+                "migration": "clients migrate",
+            }
+        ),
+    )
 
     assert declared["breaking_change_approved"] is False
     approved = approve_breaking(harness_dir, declared["id"], "user approved migration")

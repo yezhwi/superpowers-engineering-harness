@@ -19,7 +19,5 @@ def find_git_root(start: Path) -> Path:
         if (current / ".git").exists():
             return current
         if current.parent == current:
-            raise RepositoryNotFoundError(
-                f"no git repository found above {start}"
-            )
+            raise RepositoryNotFoundError(f"no git repository found above {start}")
         current = current.parent

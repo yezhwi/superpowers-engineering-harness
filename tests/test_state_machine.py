@@ -33,9 +33,20 @@ from harness.state_machine import (
 # ---------------------------------------------------------------------------
 
 EXPECTED_STATES = {
-    "CREATED", "CLASSIFIED", "SPECIFYING", "PLANNED", "IMPLEMENTING", "VERIFYING",
-    "REVIEWING", "REPRODUCING", "FIXING", "GATING", "BLOCKED",
-    "CONVERGED", "DONE", "ESCALATED",
+    "CREATED",
+    "CLASSIFIED",
+    "SPECIFYING",
+    "PLANNED",
+    "IMPLEMENTING",
+    "VERIFYING",
+    "REVIEWING",
+    "REPRODUCING",
+    "FIXING",
+    "GATING",
+    "BLOCKED",
+    "CONVERGED",
+    "DONE",
+    "ESCALATED",
 }
 
 
@@ -92,7 +103,8 @@ def test_all_legal_transitions_allowed(current, target):
 def test_validate_state_cli_accepts_legal(current, target):
     result = subprocess.run(
         [sys.executable, str(REPO / "scripts" / "validate_state.py"), current, target],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     assert result.returncode == 0, result.stderr
 
@@ -119,7 +131,8 @@ def test_direct_to_done_rejected(current, target):
 def test_validate_state_cli_rejects_done_shortcut(current, target):
     result = subprocess.run(
         [sys.executable, str(REPO / "scripts" / "validate_state.py"), current, target],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     assert result.returncode == 1
     assert "INVALID" in result.stdout + result.stderr
@@ -133,6 +146,7 @@ def test_converged_to_done_is_the_only_path_to_done():
 # ---------------------------------------------------------------------------
 # 4. Unknown states and self-transitions rejected
 # ---------------------------------------------------------------------------
+
 
 def test_unknown_state_rejected():
     with pytest.raises(InvalidTransition):
@@ -152,7 +166,8 @@ def test_self_transition_rejected():
 def test_validate_state_cli_invalid_state_name():
     result = subprocess.run(
         [sys.executable, str(REPO / "scripts" / "validate_state.py"), "BOGUS", "DONE"],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     assert result.returncode == 1
 
@@ -166,8 +181,11 @@ def test_legal_targets_helper():
 # 5. Persistence: schema + template + harness_status
 # ---------------------------------------------------------------------------
 
+
 def test_task_schema_declares_fixed_state_enum():
-    schema = json.loads(resources.files("harness").joinpath("schemas", "task.schema.json").read_text())
+    schema = json.loads(
+        resources.files("harness").joinpath("schemas", "task.schema.json").read_text()
+    )
     enum_values = set(schema["properties"]["state"]["enum"])
     assert enum_values == EXPECTED_STATES
 
@@ -175,7 +193,11 @@ def test_task_schema_declares_fixed_state_enum():
 def test_template_state_in_enum():
     import yaml
 
-    tpl = yaml.safe_load(resources.files("harness").joinpath("templates", "current-task.yaml").read_text())
+    tpl = yaml.safe_load(
+        resources.files("harness")
+        .joinpath("templates", "current-task.yaml")
+        .read_text()
+    )
     # guide HARNESS_INIT section 10: init must not pre-create a concrete task
     assert tpl["task"]["id"] is None
     assert tpl["state"] in EXPECTED_STATES
@@ -183,16 +205,25 @@ def test_template_state_in_enum():
 
 def _run_status(harness_dir: Path):
     return subprocess.run(
-        [sys.executable, str(REPO / "scripts" / "harness_status.py"),
-         "--harness-dir", str(harness_dir)],
-        capture_output=True, text=True,
+        [
+            sys.executable,
+            str(REPO / "scripts" / "harness_status.py"),
+            "--harness-dir",
+            str(harness_dir),
+        ],
+        capture_output=True,
+        text=True,
     )
 
 
 def test_harness_status_reads_persisted_state(tmp_path):
     import yaml
 
-    task = yaml.safe_load(resources.files("harness").joinpath("templates", "current-task.yaml").read_text())
+    task = yaml.safe_load(
+        resources.files("harness")
+        .joinpath("templates", "current-task.yaml")
+        .read_text()
+    )
     task["task"]["id"] = "TASK-009"
     task["task"]["title"] = "Persisted recovery check"
     task["state"] = "VERIFYING"
@@ -214,7 +245,11 @@ def test_harness_status_fails_on_missing_task_file(tmp_path):
 def test_harness_status_rejects_illegal_persisted_state(tmp_path):
     import yaml
 
-    task = yaml.safe_load(resources.files("harness").joinpath("templates", "current-task.yaml").read_text())
+    task = yaml.safe_load(
+        resources.files("harness")
+        .joinpath("templates", "current-task.yaml")
+        .read_text()
+    )
     task["state"] = "NOT_A_STATE"
     (tmp_path / "current-task.yaml").write_text(yaml.safe_dump(task))
 
@@ -227,7 +262,11 @@ def test_harness_status_rejects_done_without_converged(tmp_path):
     written directly as DONE without gate pass must be flagged invalid."""
     import yaml
 
-    task = yaml.safe_load(resources.files("harness").joinpath("templates", "current-task.yaml").read_text())
+    task = yaml.safe_load(
+        resources.files("harness")
+        .joinpath("templates", "current-task.yaml")
+        .read_text()
+    )
     task["state"] = "DONE"
     task["gate"]["status"] = "unknown"  # no gate PASS recorded
     (tmp_path / "current-task.yaml").write_text(yaml.safe_dump(task))
@@ -239,7 +278,11 @@ def test_harness_status_rejects_done_without_converged(tmp_path):
 def test_harness_status_accepts_done_after_gate_pass(tmp_path):
     import yaml
 
-    task = yaml.safe_load(resources.files("harness").joinpath("templates", "current-task.yaml").read_text())
+    task = yaml.safe_load(
+        resources.files("harness")
+        .joinpath("templates", "current-task.yaml")
+        .read_text()
+    )
     task["state"] = "DONE"
     task["gate"]["status"] = "PASS"
     (tmp_path / "current-task.yaml").write_text(yaml.safe_dump(task))

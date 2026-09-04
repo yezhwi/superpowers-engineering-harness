@@ -23,9 +23,16 @@ def required_level(dimensions: dict[str, str]) -> str:
     for name, allowed in DIMENSION_VALUES.items():
         if dimensions[name] not in allowed:
             raise RiskClassificationError("RISK_DIMENSIONS_INVALID")
-    if any(dimensions[name] == "high" for name in (
-        "data", "authorization", "security", "concurrency", "deployment",
-    )):
+    if any(
+        dimensions[name] == "high"
+        for name in (
+            "data",
+            "authorization",
+            "security",
+            "concurrency",
+            "deployment",
+        )
+    ):
         return "Q3"
     if dimensions["contract"] != "none" or dimensions["scope"] == "high":
         return "Q2"

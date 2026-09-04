@@ -9,15 +9,19 @@ REPO = Path(__file__).resolve().parent.parent
 
 def cli(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        [sys.executable, "-m", "harness.cli", *args], cwd=cwd,
-        capture_output=True, text=True,
+        [sys.executable, "-m", "harness.cli", *args],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
         env={"PYTHONPATH": str(REPO / "src"), "PATH": "/usr/bin:/bin"},
     )
 
 
 def setup(repo: Path) -> None:
     subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
-    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"], cwd=repo, check=True
+    )
     subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, check=True)
     assert cli(repo, "init").returncode == 0
     subprocess.run(["git", "add", "."], cwd=repo, check=True)
@@ -30,11 +34,26 @@ def setup(repo: Path) -> None:
 
 def proposal_args() -> tuple[str, ...]:
     return (
-        "--topic", "cache", "--question", "Which cache?",
-        "--context", "Redis exists", "--option", "local=local cache",
-        "--option", "redis=shared cache", "--recommend", "redis",
-        "--reason", "existing infrastructure", "--tradeoff", "network dependency",
-        "--scope", "src/service/**", "--constraint", "no new cache",
+        "--topic",
+        "cache",
+        "--question",
+        "Which cache?",
+        "--context",
+        "Redis exists",
+        "--option",
+        "local=local cache",
+        "--option",
+        "redis=shared cache",
+        "--recommend",
+        "redis",
+        "--reason",
+        "existing infrastructure",
+        "--tradeoff",
+        "network dependency",
+        "--scope",
+        "src/service/**",
+        "--constraint",
+        "no new cache",
     )
 
 
@@ -47,6 +66,8 @@ def test_decision_propose_and_accept_persist_user_choice(tmp_path):
 
     assert proposed.returncode == 0, proposed.stderr
     assert accepted.returncode == 0, accepted.stderr
-    record = yaml.safe_load((tmp_path / ".harness" / "decisions" / "DEC-001.yaml").read_text())
+    record = yaml.safe_load(
+        (tmp_path / ".harness" / "decisions" / "DEC-001.yaml").read_text()
+    )
     assert record["selected"]["option"] == "redis"
     assert record["selected"]["source"] == "accepted_recommendation"

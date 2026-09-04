@@ -1,4 +1,5 @@
 """Declared FAST risk boundaries; no semantic inference."""
+
 from fnmatch import fnmatchcase
 from functools import lru_cache
 from pathlib import Path
@@ -18,7 +19,8 @@ def load_boundaries(path: Path) -> dict[str, tuple[str, ...]]:
             raise ValueError
         result = {level: tuple(boundaries[level]) for level in ("q2", "q3")}
         if any(
-            not values or any(
+            not values
+            or any(
                 not isinstance(item, str)
                 or not item
                 or item.startswith("/")
@@ -34,10 +36,16 @@ def load_boundaries(path: Path) -> dict[str, tuple[str, ...]]:
 
 
 def business_paths(paths) -> tuple[str, ...]:
-    return tuple(sorted(path for path in paths if not (
-        path.startswith((".harness/", "docs/", "tests/", "test/"))
-        or ("/" not in path and path.endswith(".md"))
-    )))
+    return tuple(
+        sorted(
+            path
+            for path in paths
+            if not (
+                path.startswith((".harness/", "docs/", "tests/", "test/"))
+                or ("/" not in path and path.endswith(".md"))
+            )
+        )
+    )
 
 
 def matches_boundary(path: str, pattern: str) -> bool:
@@ -53,8 +61,10 @@ def matches_boundary(path: str, pattern: str) -> bool:
             return path_index == len(path_parts)
         token = pattern_parts[pattern_index]
         if token == "**":
-            return any(matches(next_index, pattern_index + 1)
-                       for next_index in range(path_index, len(path_parts) + 1))
+            return any(
+                matches(next_index, pattern_index + 1)
+                for next_index in range(path_index, len(path_parts) + 1)
+            )
         return (
             path_index < len(path_parts)
             and fnmatchcase(path_parts[path_index], token)

@@ -14,7 +14,9 @@ def test_make_complete_harness_is_gate_ready_baseline(tmp_path):
 
 
 def test_make_harness_persists_requested_task_and_contract(tmp_path):
-    harness = make_harness(tmp_path, risk="Q3", task_type="bugfix", observability="required")
+    harness = make_harness(
+        tmp_path, risk="Q3", task_type="bugfix", observability="required"
+    )
 
     task = yaml.safe_load((harness / "current-task.yaml").read_text())
     assert task["risk"]["level"] == "Q3"

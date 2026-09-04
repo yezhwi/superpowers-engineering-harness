@@ -6,50 +6,54 @@ table (spec docs/engineering-harness-v0.1.md sections 6.1-6.3).
 
 from typing import Dict, Set
 
-STATES = frozenset({
-    "CREATED",
-    "CLASSIFIED",
-    "SPECIFYING",
-    "PLANNED",
-    "IMPLEMENTING",
-    "VERIFYING",
-    "REVIEWING",
-    "REPRODUCING",
-    "FIXING",
-    "GATING",
-    "BLOCKED",
-    "CONVERGED",
-    "DONE",
-    "ESCALATED",
-})
+STATES = frozenset(
+    {
+        "CREATED",
+        "CLASSIFIED",
+        "SPECIFYING",
+        "PLANNED",
+        "IMPLEMENTING",
+        "VERIFYING",
+        "REVIEWING",
+        "REPRODUCING",
+        "FIXING",
+        "GATING",
+        "BLOCKED",
+        "CONVERGED",
+        "DONE",
+        "ESCALATED",
+    }
+)
 
-TRANSITIONS: Set[tuple] = frozenset({
-    ("CREATED", "CLASSIFIED"),
-    ("CREATED", "SPECIFYING"),
-    ("CLASSIFIED", "IMPLEMENTING"),
-    ("CLASSIFIED", "SPECIFYING"),
-    ("SPECIFYING", "PLANNED"),
-    ("PLANNED", "IMPLEMENTING"),
-    ("IMPLEMENTING", "VERIFYING"),
-    # FAST escalation restarts Q2/Q3 contract ceremony.
-    ("IMPLEMENTING", "SPECIFYING"),
-    ("VERIFYING", "IMPLEMENTING"),
-    ("VERIFYING", "GATING"),
-    ("VERIFYING", "REVIEWING"),
-    ("REVIEWING", "REPRODUCING"),
-    ("REVIEWING", "VERIFYING"),
-    ("REVIEWING", "GATING"),
-    ("REPRODUCING", "REVIEWING"),
-    ("REPRODUCING", "FIXING"),
-    ("FIXING", "VERIFYING"),
-    ("GATING", "BLOCKED"),
-    ("GATING", "CONVERGED"),
-    ("BLOCKED", "IMPLEMENTING"),
-    ("BLOCKED", "VERIFYING"),
-    ("BLOCKED", "REPRODUCING"),
-    ("BLOCKED", "ESCALATED"),
-    ("CONVERGED", "DONE"),
-})
+TRANSITIONS: Set[tuple] = frozenset(
+    {
+        ("CREATED", "CLASSIFIED"),
+        ("CREATED", "SPECIFYING"),
+        ("CLASSIFIED", "IMPLEMENTING"),
+        ("CLASSIFIED", "SPECIFYING"),
+        ("SPECIFYING", "PLANNED"),
+        ("PLANNED", "IMPLEMENTING"),
+        ("IMPLEMENTING", "VERIFYING"),
+        # FAST escalation restarts Q2/Q3 contract ceremony.
+        ("IMPLEMENTING", "SPECIFYING"),
+        ("VERIFYING", "IMPLEMENTING"),
+        ("VERIFYING", "GATING"),
+        ("VERIFYING", "REVIEWING"),
+        ("REVIEWING", "REPRODUCING"),
+        ("REVIEWING", "VERIFYING"),
+        ("REVIEWING", "GATING"),
+        ("REPRODUCING", "REVIEWING"),
+        ("REPRODUCING", "FIXING"),
+        ("FIXING", "VERIFYING"),
+        ("GATING", "BLOCKED"),
+        ("GATING", "CONVERGED"),
+        ("BLOCKED", "IMPLEMENTING"),
+        ("BLOCKED", "VERIFYING"),
+        ("BLOCKED", "REPRODUCING"),
+        ("BLOCKED", "ESCALATED"),
+        ("CONVERGED", "DONE"),
+    }
+)
 
 
 class InvalidTransition(Exception):
@@ -72,9 +76,7 @@ def require_legal(current: str, target: str) -> None:
     """Raise InvalidTransition with a readable message if illegal."""
     if is_legal(current, target):
         return
-    raise InvalidTransition(
-        f"INVALID TRANSITION:\n{current} -> {target}"
-    )
+    raise InvalidTransition(f"INVALID TRANSITION:\n{current} -> {target}")
 
 
 def legal_targets(current: str) -> Set[str]:
@@ -84,6 +86,4 @@ def legal_targets(current: str) -> Set[str]:
     return {t for (c, t) in TRANSITIONS if c == current}
 
 
-_TRANSITION_MAP: Dict[str, Set[str]] = {
-    s: legal_targets(s) for s in STATES
-}
+_TRANSITION_MAP: Dict[str, Set[str]] = {s: legal_targets(s) for s in STATES}

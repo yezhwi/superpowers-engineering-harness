@@ -17,10 +17,15 @@ def configure_requirement_case(harness_dir, *, tests):
     document = yaml.safe_load(path.read_text())
     document["requirements"][0]["test_plan"] = {
         "strategies": ["integration"],
-        "cases": [{
-            "id": "TC-001", "type": "happy_path", "strategy": "integration",
-            "description": "order cancellation works", "tests": tests,
-        }],
+        "cases": [
+            {
+                "id": "TC-001",
+                "type": "happy_path",
+                "strategy": "integration",
+                "description": "order cancellation works",
+                "tests": tests,
+            }
+        ],
     }
     path.write_text(yaml.safe_dump(document))
 
@@ -45,7 +50,15 @@ def test_gate_blocks_deleted_critical_invariant_test_plan(tmp_path):
     invariants = yaml.safe_load(invariant_path.read_text())
     invariants["invariants"][0]["test_plan"] = {
         "strategies": ["integration"],
-        "cases": [{"id": "TC-099", "type": "invariant", "strategy": "integration", "description": "holds", "tests": [NODE_A]}],
+        "cases": [
+            {
+                "id": "TC-099",
+                "type": "invariant",
+                "strategy": "integration",
+                "description": "holds",
+                "tests": [NODE_A],
+            }
+        ],
     }
     del invariants["invariants"][0]["test_plan"]
     invariant_path.write_text(yaml.safe_dump(invariants))
@@ -56,13 +69,20 @@ def test_gate_blocks_deleted_critical_invariant_test_plan(tmp_path):
     assert blocker_codes(blockers) == {"TEST_PLAN_INCOMPLETE"}
 
 
-@pytest.mark.parametrize("priority,status", [
-    ("must", "pending"), ("must", "verified"),
-    ("should", "pending"), ("should", "verified"),
-    ("could", "pending"), ("could", "verified"),
-])
+@pytest.mark.parametrize(
+    "priority,status",
+    [
+        ("must", "pending"),
+        ("must", "verified"),
+        ("should", "pending"),
+        ("should", "verified"),
+        ("could", "pending"),
+        ("could", "verified"),
+    ],
+)
 def test_gate_blocks_deleted_requirement_test_plan_for_all_priority_statuses(
-        tmp_path, priority, status):
+    tmp_path, priority, status
+):
     """Break caught: mutable Requirement metadata bypasses Plan validation."""
     from harness.quality_gate import run_gate
 

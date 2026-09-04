@@ -21,8 +21,20 @@ def _harness(venv_dir: Path) -> Path:
 def test_wheel_runs_outside_checkout(tmp_path):
     dist = tmp_path / "dist"
     subprocess.run(
-        [sys.executable, "-m", "pip", "wheel", ".", "--no-deps", "--wheel-dir", str(dist)],
-        cwd=REPO, check=True, capture_output=True, text=True,
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "wheel",
+            ".",
+            "--no-deps",
+            "--wheel-dir",
+            str(dist),
+        ],
+        cwd=REPO,
+        check=True,
+        capture_output=True,
+        text=True,
     )
     venv_dir = tmp_path / "venv"
     venv.EnvBuilder(with_pip=True, system_site_packages=False).create(venv_dir)
@@ -31,15 +43,19 @@ def test_wheel_runs_outside_checkout(tmp_path):
     wheel = next(dist.glob("*.whl"))
     subprocess.run(
         [python, "-m", "pip", "install", str(wheel)],
-        check=True, capture_output=True, text=True,
+        check=True,
+        capture_output=True,
+        text=True,
     )
     outside = tmp_path / "outside"
     outside.mkdir()
     subprocess.run(["git", "init", "-q"], cwd=outside, check=True)
     for args in (["--help"], ["evidence", "--help"], ["init"], ["status"]):
         result = subprocess.run(
-            [harness, *args], cwd=outside,
-            capture_output=True, text=True,
+            [harness, *args],
+            cwd=outside,
+            capture_output=True,
+            text=True,
         )
         assert result.returncode == 0, result.stderr
         if args == ["evidence", "--help"]:
@@ -48,7 +64,9 @@ def test_wheel_runs_outside_checkout(tmp_path):
 
     result = subprocess.run(
         [harness, "task", "recover", "TASK-005", "--reason", "stale"],
-        cwd=outside, capture_output=True, text=True,
+        cwd=outside,
+        capture_output=True,
+        text=True,
     )
     assert result.returncode == 2
     assert "TASK_GIT_BASELINE_REQUIRED" in result.stderr

@@ -54,7 +54,9 @@ def issue_codes(requirements=None, invariants=None):
 def test_requirement_without_test_plan_strategy_is_rejected():
     """Break caught: implementation begins with no declared verification method."""
     assert issue_codes(
-        requirements=[requirement(test_plan=plan([], case("TC-001", "happy_path", "unit")))]
+        requirements=[
+            requirement(test_plan=plan([], case("TC-001", "happy_path", "unit")))
+        ]
     ) == {"TEST_PLAN_REQUIREMENT_STRATEGY_MISSING", "TEST_PLAN_CASE_STRATEGY_MISMATCH"}
 
 
@@ -89,30 +91,55 @@ def test_bugfix_without_regression_case_is_rejected():
 def test_case_id_is_unique_across_requirement_and_invariant_documents():
     """Break caught: one TC identifier ambiguously links two proof obligations."""
     assert issue_codes(
-        requirements=[requirement(test_plan=plan(["unit"], case("TC-001", "happy_path", "unit")))],
-        invariants=[invariant(test_plan=plan(["integration"], case("TC-001", "invariant", "integration")))],
+        requirements=[
+            requirement(test_plan=plan(["unit"], case("TC-001", "happy_path", "unit")))
+        ],
+        invariants=[
+            invariant(
+                test_plan=plan(
+                    ["integration"], case("TC-001", "invariant", "integration")
+                )
+            )
+        ],
     ) == {"TEST_PLAN_CASE_DUPLICATE"}
 
 
 def test_case_strategy_must_be_declared_by_its_parent_plan():
     """Break caught: case claims integration proof outside parent unit strategy."""
     assert issue_codes(
-        requirements=[requirement(test_plan=plan(["unit"], case("TC-001", "happy_path", "integration")))]
+        requirements=[
+            requirement(
+                test_plan=plan(["unit"], case("TC-001", "happy_path", "integration"))
+            )
+        ]
     ) == {"TEST_PLAN_CASE_STRATEGY_MISMATCH"}
 
 
 def test_valid_feature_bugfix_and_critical_invariant_plan_passes():
     """Break caught: validator rejects complete plan needed to enter implementation."""
-    assert issue_codes(
-        requirements=[
-            requirement(test_plan=plan(["unit"], case("TC-001", "happy_path", "unit"))),
-            {
-                **requirement(
-                    requirement_type="bugfix",
-                    test_plan=plan(["regression"], case("TC-002", "regression", "regression")),
+    assert (
+        issue_codes(
+            requirements=[
+                requirement(
+                    test_plan=plan(["unit"], case("TC-001", "happy_path", "unit"))
                 ),
-                "id": "REQ-002",
-            },
-        ],
-        invariants=[invariant(test_plan=plan(["integration"], case("TC-003", "invariant", "integration")))],
-    ) == set()
+                {
+                    **requirement(
+                        requirement_type="bugfix",
+                        test_plan=plan(
+                            ["regression"], case("TC-002", "regression", "regression")
+                        ),
+                    ),
+                    "id": "REQ-002",
+                },
+            ],
+            invariants=[
+                invariant(
+                    test_plan=plan(
+                        ["integration"], case("TC-003", "invariant", "integration")
+                    )
+                )
+            ],
+        )
+        == set()
+    )

@@ -73,7 +73,9 @@ def test_supersede_preserves_accepted_record_and_links_replacement(tmp_path):
     original = propose(harness_dir, proposal())
     accept(harness_dir, original["id"], "redis", "accepted_recommendation")
 
-    old, replacement = supersede(harness_dir, original["id"], proposal(topic="cache-v2", recommendation="local"))
+    old, replacement = supersede(
+        harness_dir, original["id"], proposal(topic="cache-v2", recommendation="local")
+    )
 
     assert old["status"] == "SUPERSEDED"
     assert old["selected"]["option"] == "redis"

@@ -9,15 +9,22 @@ import yaml
 
 REPO = Path(__file__).resolve().parent.parent
 SAFE = {
-    "scope": "low", "contract": "none", "data": "none", "authorization": "none",
-    "security": "none", "concurrency": "none", "deployment": "none",
+    "scope": "low",
+    "contract": "none",
+    "data": "none",
+    "authorization": "none",
+    "security": "none",
+    "concurrency": "none",
+    "deployment": "none",
 }
 
 
 def cli(cwd: Path, *args: str):
     return subprocess.run(
-        [sys.executable, "-m", "harness.cli", *args], cwd=cwd,
-        capture_output=True, text=True,
+        [sys.executable, "-m", "harness.cli", *args],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
         env={"PYTHONPATH": str(REPO / "src"), "PATH": "/usr/bin:/bin"},
     )
 
@@ -28,7 +35,11 @@ def standard_repo_in_state(tmp_path: Path) -> Path:
     subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
     subprocess.run(["git", "commit", "-qm", "base"], cwd=tmp_path, check=True)
     dimensions = {**SAFE, "scope": "high", "contract": "high"}
-    flags = [value for name, setting in dimensions.items() for value in (f"--{name}", setting)]
+    flags = [
+        value
+        for name, setting in dimensions.items()
+        for value in (f"--{name}", setting)
+    ]
     assert cli(tmp_path, "task", "classify", "--level", "Q2", *flags).returncode == 0
     task_path = tmp_path / ".harness/current-task.yaml"
     task = yaml.safe_load(task_path.read_text())
@@ -59,19 +70,47 @@ def write_minimal_decision(repo: Path):
 def write_documents(repo: Path, *, valid: bool):
     strategies = ["unit"] if valid else []
     requirement = {
-        "id": "REQ-001", "statement": "feature works", "priority": "must", "status": "pending",
-        "test_plan": {"strategies": strategies, "cases": [{
-            "id": "TC-001", "type": "happy_path", "strategy": "unit", "description": "works",
-        }]},
+        "id": "REQ-001",
+        "statement": "feature works",
+        "priority": "must",
+        "status": "pending",
+        "test_plan": {
+            "strategies": strategies,
+            "cases": [
+                {
+                    "id": "TC-001",
+                    "type": "happy_path",
+                    "strategy": "unit",
+                    "description": "works",
+                }
+            ],
+        },
     }
     invariant = {
-        "id": "INV-001", "statement": "safe", "category": "correctness", "severity": "critical",
-        "status": "pending", "verification": [], "test_plan": {"strategies": ["integration"], "cases": [{
-            "id": "TC-002", "type": "invariant", "strategy": "integration", "description": "holds",
-        }]},
+        "id": "INV-001",
+        "statement": "safe",
+        "category": "correctness",
+        "severity": "critical",
+        "status": "pending",
+        "verification": [],
+        "test_plan": {
+            "strategies": ["integration"],
+            "cases": [
+                {
+                    "id": "TC-002",
+                    "type": "invariant",
+                    "strategy": "integration",
+                    "description": "holds",
+                }
+            ],
+        },
     }
-    (repo / ".harness/requirements.yaml").write_text(yaml.safe_dump({"requirements": [requirement]}))
-    (repo / ".harness/invariants.yaml").write_text(yaml.safe_dump({"invariants": [invariant]}))
+    (repo / ".harness/requirements.yaml").write_text(
+        yaml.safe_dump({"requirements": [requirement]})
+    )
+    (repo / ".harness/invariants.yaml").write_text(
+        yaml.safe_dump({"invariants": [invariant]})
+    )
 
 
 def test_standard_planned_to_implementing_rejects_invalid_test_plan(tmp_path):
@@ -84,7 +123,10 @@ def test_standard_planned_to_implementing_rejects_invalid_test_plan(tmp_path):
 
     assert result.returncode == 1
     assert "TEST_PLAN_BLOCKED" in result.stderr
-    assert yaml.safe_load((repo / ".harness/current-task.yaml").read_text())["state"] == "PLANNED"
+    assert (
+        yaml.safe_load((repo / ".harness/current-task.yaml").read_text())["state"]
+        == "PLANNED"
+    )
 
 
 def test_standard_planned_to_implementing_accepts_valid_test_plan(tmp_path):
@@ -104,7 +146,9 @@ def test_fast_classified_to_implementing_does_not_load_test_plan(tmp_path):
     assert cli(tmp_path, "init").returncode == 0
     subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
     subprocess.run(["git", "commit", "-qm", "base"], cwd=tmp_path, check=True)
-    flags = [value for name, setting in SAFE.items() for value in (f"--{name}", setting)]
+    flags = [
+        value for name, setting in SAFE.items() for value in (f"--{name}", setting)
+    ]
     assert cli(tmp_path, "task", "classify", "--level", "Q1", *flags).returncode == 0
 
     result = cli(tmp_path, "transition", "IMPLEMENTING")

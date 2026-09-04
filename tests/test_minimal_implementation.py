@@ -44,7 +44,10 @@ def test_reuse_short_circuits_ladder():
     decision = _local_decision()
     decision["checks"]["reuse"] = _check("found", candidate="src/date.py")
     for name in (
-        "stdlib", "native", "existing_dependency", "minimum_local_implementation",
+        "stdlib",
+        "native",
+        "existing_dependency",
+        "minimum_local_implementation",
     ):
         decision["checks"][name] = _skipped()
     decision["decision"] = {

@@ -28,7 +28,9 @@ def test_status_renders_active_decision_summary(tmp_path: Path):
 
     repo = tmp_path
     subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
-    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"], cwd=repo, check=True
+    )
     subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, check=True)
     assert init_harness(repo).harness_dir == repo / ".harness"
     subprocess.run(["git", "add", "."], cwd=repo, check=True)
@@ -37,7 +39,22 @@ def test_status_renders_active_decision_summary(tmp_path: Path):
     task = yaml.safe_load(task_path.read_text())
     task["task"]["id"] = "TASK-042"
     task_path.write_text(yaml.safe_dump(task))
-    proposed = propose(repo / ".harness", {"topic": "pagination", "question": "Which pagination?", "context": ["clients exist"], "options": [{"id": "cursor", "description": "cursor"}], "recommendation": {"option": "cursor", "reasons": ["stable"], "tradeoffs": []}, "scope": [], "constraints": []})
+    proposed = propose(
+        repo / ".harness",
+        {
+            "topic": "pagination",
+            "question": "Which pagination?",
+            "context": ["clients exist"],
+            "options": [{"id": "cursor", "description": "cursor"}],
+            "recommendation": {
+                "option": "cursor",
+                "reasons": ["stable"],
+                "tradeoffs": [],
+            },
+            "scope": [],
+            "constraints": [],
+        },
+    )
     accept(repo / ".harness", proposed["id"], "cursor", "accepted_recommendation")
 
     result = run_cli(repo, "status")
@@ -51,11 +68,38 @@ def test_status_renders_public_interface_summary(tmp_path: Path):
     from harness.init import init_harness
 
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
-    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=tmp_path, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"], cwd=tmp_path, check=True
+    )
     subprocess.run(["git", "config", "user.name", "Test"], cwd=tmp_path, check=True)
     init_harness(tmp_path)
-    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True); subprocess.run(["git", "commit", "-qm", "base"], cwd=tmp_path, check=True)
-    (tmp_path / ".harness" / "impact.yaml").write_text(yaml.safe_dump({"impact": {"changed": [], "direct_dependents": [], "contracts": [], "interfaces": [{"id": "INT-001", "kind": "cli", "visibility": "external", "consumers": ["agent"], "compatibility": "compatible", "affected_contracts": [], "contract_id": "INT-001"}], "risks": [], "required_tests": [], "full_suite": {"recommended": False, "reason": None}}}))
+    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-qm", "base"], cwd=tmp_path, check=True)
+    (tmp_path / ".harness" / "impact.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "impact": {
+                    "changed": [],
+                    "direct_dependents": [],
+                    "contracts": [],
+                    "interfaces": [
+                        {
+                            "id": "INT-001",
+                            "kind": "cli",
+                            "visibility": "external",
+                            "consumers": ["agent"],
+                            "compatibility": "compatible",
+                            "affected_contracts": [],
+                            "contract_id": "INT-001",
+                        }
+                    ],
+                    "risks": [],
+                    "required_tests": [],
+                    "full_suite": {"recommended": False, "reason": None},
+                }
+            }
+        )
+    )
 
     result = run_cli(tmp_path, "status")
 
@@ -72,7 +116,9 @@ def test_projection_marks_current_successful_evidence_fresh(tmp_path: Path):
     path.write_text(json.dumps(fresh_record()))
 
     projection = project_evidence(
-        path, current_head="a" * 40, current_workspace="sha256:" + "b" * 64,
+        path,
+        current_head="a" * 40,
+        current_workspace="sha256:" + "b" * 64,
         expected_success=True,
     )
 
@@ -91,7 +137,9 @@ def test_projection_marks_current_failed_command_failed(tmp_path: Path):
     path.write_text(json.dumps(record))
 
     projection = project_evidence(
-        path, current_head="a" * 40, current_workspace="sha256:" + "b" * 64,
+        path,
+        current_head="a" * 40,
+        current_workspace="sha256:" + "b" * 64,
         expected_success=True,
     )
 
@@ -107,7 +155,9 @@ def test_projection_marks_head_mismatch_stale(tmp_path: Path):
     path.write_text(json.dumps(fresh_record()))
 
     projection = project_evidence(
-        path, current_head="c" * 40, current_workspace="sha256:" + "b" * 64,
+        path,
+        current_head="c" * 40,
+        current_workspace="sha256:" + "b" * 64,
         expected_success=True,
     )
 
@@ -118,12 +168,20 @@ def test_projection_marks_head_mismatch_stale(tmp_path: Path):
 def test_status_projects_stale_evidence_without_mutating_task(tmp_path: Path):
     """Break caught: status trusts persisted verification flags or writes a new truth."""
     repo = make_repo(tmp_path)
-    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"], cwd=repo, check=True
+    )
     subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, check=True)
     (repo / "app.py").write_text("base\n")
     subprocess.run(["git", "add", "app.py"], cwd=repo, check=True)
     subprocess.run(["git", "commit", "-qm", "base"], cwd=repo, check=True)
-    head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True).stdout.strip()
+    head = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
     record = fresh_record()
     record["commit"] = head
     (repo / ".harness/evidence/build.json").write_text(json.dumps(record))
@@ -144,8 +202,10 @@ def test_projection_marks_missing_evidence_missing(tmp_path: Path):
     from harness.evidence_validator import EvidenceStatus, project_evidence
 
     projection = project_evidence(
-        tmp_path / "missing.json", current_head="a" * 40,
-        current_workspace="sha256:" + "b" * 64, expected_success=True,
+        tmp_path / "missing.json",
+        current_head="a" * 40,
+        current_workspace="sha256:" + "b" * 64,
+        expected_success=True,
     )
 
     assert projection.status is EvidenceStatus.MISSING

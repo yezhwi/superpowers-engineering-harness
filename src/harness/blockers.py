@@ -67,18 +67,34 @@ def blocker_from_message(message: str) -> GateBlocker:
     missing = re.fullmatch(r"missing ([a-z-]+) evidence", message)
     if missing:
         source = missing.group(1).replace("-", "_")
-        return GateBlocker("EVIDENCE_MISSING", "verification", message,
-                           source=source, recover_to="VERIFYING")
+        return GateBlocker(
+            "EVIDENCE_MISSING",
+            "verification",
+            message,
+            source=source,
+            recover_to="VERIFYING",
+        )
     finding = re.fullmatch(r"(?:Critical|Major) finding (FND-[0-9]+) is open", message)
     if finding:
-        return GateBlocker("FINDING_OPEN", "defect", message,
-                           finding_id=finding.group(1), recover_to="REPRODUCING")
+        return GateBlocker(
+            "FINDING_OPEN",
+            "defect",
+            message,
+            finding_id=finding.group(1),
+            recover_to="REPRODUCING",
+        )
     if "EVIDENCE_" in message or "complexity-review" in message:
-        code = next((part for part in message.split() if part.startswith("EVIDENCE_")),
-                    "COMPLEXITY_REVIEW_STALE")
+        code = next(
+            (part for part in message.split() if part.startswith("EVIDENCE_")),
+            "COMPLEXITY_REVIEW_STALE",
+        )
         return GateBlocker(code, "verification", message, recover_to="VERIFYING")
-    return GateBlocker("REQUIRED_VERIFICATION_MISSING", "implementation", message,
-                       recover_to="IMPLEMENTING")
+    return GateBlocker(
+        "REQUIRED_VERIFICATION_MISSING",
+        "implementation",
+        message,
+        recover_to="IMPLEMENTING",
+    )
 
 
 def blocker_document(blocker: GateBlocker) -> dict:

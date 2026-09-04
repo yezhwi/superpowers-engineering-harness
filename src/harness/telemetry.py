@@ -1,4 +1,5 @@
 """Local deterministic Harness telemetry."""
+
 import datetime
 import json
 from pathlib import Path
@@ -8,7 +9,15 @@ def _elapsed_seconds(created_at: str | None, now: str) -> int | None:
     if not created_at:
         return None
     try:
-        return max(0, int((datetime.datetime.fromisoformat(now) - datetime.datetime.fromisoformat(created_at)).total_seconds()))
+        return max(
+            0,
+            int(
+                (
+                    datetime.datetime.fromisoformat(now)
+                    - datetime.datetime.fromisoformat(created_at)
+                ).total_seconds()
+            ),
+        )
     except ValueError:
         return None
 
@@ -26,8 +35,12 @@ def update_telemetry(harness_dir: Path, task: dict, *, now: str | None = None) -
         "task_id": (task.get("task") or {}).get("id"),
         "risk_level": risk.get("level"),
         "workflow_profile": risk.get("profile"),
-        "evidence": {key: budget.get(key, 0) for key in ("test_runs", "build_runs", "retry_runs")},
-        "elapsed_seconds": _elapsed_seconds((task.get("timestamps") or {}).get("created_at"), now),
+        "evidence": {
+            key: budget.get(key, 0) for key in ("test_runs", "build_runs", "retry_runs")
+        },
+        "elapsed_seconds": _elapsed_seconds(
+            (task.get("timestamps") or {}).get("created_at"), now
+        ),
         "harness_command_calls": int(previous.get("harness_command_calls", 0)) + 1,
         "gate_result": (task.get("gate") or {}).get("status"),
         "rework_count": task.get("iteration"),

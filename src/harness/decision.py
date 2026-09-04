@@ -26,7 +26,9 @@ def _directory(harness_dir: Path) -> Path:
 
 
 def _schema() -> dict:
-    return json.loads(resources.files("harness").joinpath("schemas/decision.schema.json").read_text())
+    return json.loads(
+        resources.files("harness").joinpath("schemas/decision.schema.json").read_text()
+    )
 
 
 def _validate(record: dict) -> None:
@@ -35,7 +37,10 @@ def _validate(record: dict) -> None:
     except ValidationError as exc:
         raise DecisionError("DECISION_RECORD_INVALID") from exc
     option_ids = [option["id"] for option in record["options"]]
-    if len(option_ids) != len(set(option_ids)) or record["recommendation"]["option"] not in option_ids:
+    if (
+        len(option_ids) != len(set(option_ids))
+        or record["recommendation"]["option"] not in option_ids
+    ):
         raise DecisionError("DECISION_RECORD_INVALID")
     selected = record["selected"]
     if selected and selected["option"] not in option_ids:
@@ -107,10 +112,19 @@ def load_decision(harness_dir: Path, decision_id: str) -> dict:
 def _proposal_record(harness_dir: Path, document: dict) -> dict:
     if not isinstance(document, dict):
         raise DecisionError("DECISION_PROPOSAL_INVALID")
-    record = {**document, "id": _next_id(harness_dir), "task_id": _task_id(harness_dir),
-              "status": "PROPOSED", "selected": None, "created_at": _now(),
-              "accepted_at": None, "rejected_at": None, "rejection_reason": None,
-              "supersedes": None, "superseded_by": None}
+    record = {
+        **document,
+        "id": _next_id(harness_dir),
+        "task_id": _task_id(harness_dir),
+        "status": "PROPOSED",
+        "selected": None,
+        "created_at": _now(),
+        "accepted_at": None,
+        "rejected_at": None,
+        "rejection_reason": None,
+        "supersedes": None,
+        "superseded_by": None,
+    }
     _validate(record)
     return record
 
@@ -123,15 +137,23 @@ def propose(harness_dir: Path, document: dict) -> dict:
 
 def accept(harness_dir: Path, decision_id: str, option: str, source: str) -> dict:
     record = load_decision(harness_dir, decision_id)
-    if record["status"] != "PROPOSED" or option not in {item["id"] for item in record["options"]}:
+    if record["status"] != "PROPOSED" or option not in {
+        item["id"] for item in record["options"]
+    }:
         raise DecisionError("DECISION_ACCEPT_INVALID")
     recommended = option == record["recommendation"]["option"]
-    if (recommended and source != "accepted_recommendation") or (not recommended and source != "user_override"):
+    if (recommended and source != "accepted_recommendation") or (
+        not recommended and source != "user_override"
+    ):
         raise DecisionError("DECISION_SELECTION_SOURCE_INVALID")
     record["status"] = "ACCEPTED"
     record["selected"] = {"option": option, "source": source, "decided_by": "user"}
     record["accepted_at"] = _now()
-    record["decision_reason"] = ["user accepted current recommendation" if recommended else "user selected an alternative option"]
+    record["decision_reason"] = [
+        "user accepted current recommendation"
+        if recommended
+        else "user selected an alternative option"
+    ]
     _validate(record)
     _write(_path(harness_dir, decision_id), record)
     return record
@@ -160,12 +182,26 @@ def supersede(harness_dir: Path, decision_id: str, document: dict) -> tuple[dict
     _validate(original)
     _validate(replacement)
     artifacts = [
-        StagedArtifact(f"decisions/{original['id']}.yaml", yaml.safe_dump(original, sort_keys=False).encode()),
-        StagedArtifact(f"decisions/{replacement['id']}.yaml", yaml.safe_dump(replacement, sort_keys=False).encode()),
+        StagedArtifact(
+            f"decisions/{original['id']}.yaml",
+            yaml.safe_dump(original, sort_keys=False).encode(),
+        ),
+        StagedArtifact(
+            f"decisions/{replacement['id']}.yaml",
+            yaml.safe_dump(replacement, sort_keys=False).encode(),
+        ),
     ]
-    publish(harness_dir, stage(harness_dir, artifacts), replace_paths=frozenset({f"decisions/{original['id']}.yaml"}))
+    publish(
+        harness_dir,
+        stage(harness_dir, artifacts),
+        replace_paths=frozenset({f"decisions/{original['id']}.yaml"}),
+    )
     return original, replacement
 
 
 def active_decisions(harness_dir: Path) -> list[dict]:
-    return [record for record in load_decisions(harness_dir) if record["status"] == "ACCEPTED" and record["superseded_by"] is None]
+    return [
+        record
+        for record in load_decisions(harness_dir)
+        if record["status"] == "ACCEPTED" and record["superseded_by"] is None
+    ]

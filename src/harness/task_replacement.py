@@ -10,7 +10,9 @@ from pathlib import Path
 def replacement_workspace(harness_dir: Path) -> Path:
     """Return sibling copy of Harness state for all-or-nothing mutation."""
     parent = harness_dir.parent
-    staged = Path(tempfile.mkdtemp(prefix=f".{harness_dir.name}.replacement-", dir=parent))
+    staged = Path(
+        tempfile.mkdtemp(prefix=f".{harness_dir.name}.replacement-", dir=parent)
+    )
     try:
         shutil.rmtree(staged)
         shutil.copytree(harness_dir, staged, ignore=shutil.ignore_patterns(".staging"))

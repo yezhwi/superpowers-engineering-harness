@@ -51,8 +51,9 @@ def test_creates_decision_and_interface_contract_dirs(repo):
 
 def test_creates_observability_contract(repo):
     init_harness(repo)
-    assert (repo / ".harness" / "observability.yaml").read_text(encoding="utf-8") == \
-        (templates_dir() / "observability.yaml").read_text(encoding="utf-8")
+    assert (repo / ".harness" / "observability.yaml").read_text(encoding="utf-8") == (
+        templates_dir() / "observability.yaml"
+    ).read_text(encoding="utf-8")
 
 
 def test_does_not_overwrite_existing_observability_contract(repo):
@@ -83,8 +84,7 @@ def test_does_not_overwrite_modified_current_task(repo):
     target = repo / ".harness" / "current-task.yaml"
     target.write_text("state: VERIFYING\n# human edit\n", encoding="utf-8")
     init_harness(repo)
-    assert target.read_text(encoding="utf-8") == \
-        "state: VERIFYING\n# human edit\n"
+    assert target.read_text(encoding="utf-8") == "state: VERIFYING\n# human edit\n"
 
 
 def test_does_not_overwrite_existing_gate_yaml(repo):
@@ -99,11 +99,11 @@ def test_completes_partially_initialized_harness(repo):
     h = repo / ".harness"
     h.mkdir()
     (h / "findings").mkdir()
-    (h / "current-task.yaml").write_text("state: CREATED\n",
-                                         encoding="utf-8")
+    (h / "current-task.yaml").write_text("state: CREATED\n", encoding="utf-8")
     result = init_harness(repo)
     assert Path(".harness/current-task.yaml") not in [
-        p.relative_to(repo) for p in result.created]
+        p.relative_to(repo) for p in result.created
+    ]
     # missing files filled in, existing content preserved
     assert (h / "current-task.yaml").read_text() == "state: CREATED\n"
     assert (h / "gate.yaml").exists()
@@ -115,15 +115,16 @@ def test_fails_if_template_missing(repo, monkeypatch):
         d = REPO / "templates"
         monkeypatch.delattr  # noqa: F841
         return d
+
     import harness.templates as tmod
+
     fake = REPO / "templates-does-not-exist"
     monkeypatch.setattr(tmod, "templates_dir", lambda: fake)
     with pytest.raises(TemplateNotFoundError):
         init_harness(repo)
     # must NOT have created empty files
     if (repo / ".harness").exists():
-        assert not any(
-            (repo / ".harness" / n).exists() for n in REQUIRED_FILES)
+        assert not any((repo / ".harness" / n).exists() for n in REQUIRED_FILES)
 
 
 def test_result_reports_created_and_skipped(repo):
@@ -135,8 +136,7 @@ def test_result_reports_created_and_skipped(repo):
 def test_service_layer_inits_repo_root(tmp_path):
     from harness.init import init_current_repository
 
-    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True,
-                   capture_output=True)
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True, capture_output=True)
     nested = tmp_path / "a" / "b"
     nested.mkdir(parents=True)
     result = init_current_repository(cwd=nested)

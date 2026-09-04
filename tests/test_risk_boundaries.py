@@ -1,19 +1,26 @@
 import pytest
 
 from harness.risk_boundaries import (
-    RiskBoundaryPolicyError, business_paths, load_boundaries, matches_boundary,
+    RiskBoundaryPolicyError,
+    business_paths,
+    load_boundaries,
+    matches_boundary,
     required_level,
 )
 
 
 def test_business_paths_excludes_docs_and_tests_only():
-    assert business_paths(["docs/a.md", "tests/test_a.py", "README.md", "src/api/x.py"]) == ("src/api/x.py",)
+    assert business_paths(
+        ["docs/a.md", "tests/test_a.py", "README.md", "src/api/x.py"]
+    ) == ("src/api/x.py",)
 
 
 def test_q3_boundary_wins_over_q2(tmp_path):
     policy = tmp_path / "risk-boundaries.yaml"
     policy.write_text("boundaries:\n  q2: [src/**]\n  q3: [auth/**]\n")
-    assert required_level(["src/api.py", "auth/login.py"], load_boundaries(policy)) == "Q3"
+    assert (
+        required_level(["src/api.py", "auth/login.py"], load_boundaries(policy)) == "Q3"
+    )
 
 
 @pytest.mark.parametrize("path", ["src/api.py", "src/a/b.py", "src/a/b/c.py"])

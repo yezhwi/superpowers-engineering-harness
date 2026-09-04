@@ -59,8 +59,7 @@ def _load(harness_dir: Path):
 def _validate(data) -> bool:
     state = data.get("state")
     if state not in STATES:
-        print(f"INVALID_HARNESS_STATE: unknown state {state!r}",
-              file=sys.stderr)
+        print(f"INVALID_HARNESS_STATE: unknown state {state!r}", file=sys.stderr)
         return False
     # LAW 1: no DONE without quality gate PASS. Only legal entry to DONE
     # is CONVERGED -> DONE; a persisted DONE must show gate PASS.
@@ -74,12 +73,15 @@ def _validate(data) -> bool:
     prev = data.get("previous_state")
     if prev is not None:
         if prev not in STATES:
-            print(f"INVALID_HARNESS_STATE: unknown previous_state {prev!r}",
-                  file=sys.stderr)
+            print(
+                f"INVALID_HARNESS_STATE: unknown previous_state {prev!r}",
+                file=sys.stderr,
+            )
             return False
         if not is_legal(prev, state):
-            print(f"INVALID_HARNESS_STATE: {prev} -> {state} is illegal",
-                  file=sys.stderr)
+            print(
+                f"INVALID_HARNESS_STATE: {prev} -> {state} is illegal", file=sys.stderr
+            )
             return False
     return True
 
@@ -96,8 +98,10 @@ def _evidence_rows(harness_dir: Path):
     rows = []
     for path in sorted(evidence_dir.glob("*.json")):
         projection = project_evidence(
-            path, current_head=workspace.head,
-            current_workspace=workspace.fingerprint, expected_success=True,
+            path,
+            current_head=workspace.head,
+            current_workspace=workspace.fingerprint,
+            expected_success=True,
         )
         record = projection.record or {}
         rows.append((record.get("type", path.stem), projection, record))
@@ -128,33 +132,59 @@ def _render(data, harness_dir: Path) -> str:
             )
             if projection.code:
                 lines.append(f"    {projection.code}")
-    lines.extend([
-        "",
-        "Findings",
-        f"  Critical   {find.get('critical', 0)}",
-        f"  Major      {find.get('major', 0)}",
-        f"  Minor      {find.get('minor', 0)}",
-        "",
-        f"Gate         {gate.get('status', 'unknown')}",
-    ])
+    lines.extend(
+        [
+            "",
+            "Findings",
+            f"  Critical   {find.get('critical', 0)}",
+            f"  Major      {find.get('major', 0)}",
+            f"  Minor      {find.get('minor', 0)}",
+            "",
+            f"Gate         {gate.get('status', 'unknown')}",
+        ]
+    )
     try:
         from .decision import active_decisions, load_decisions
+
         decisions = load_decisions(harness_dir)
         active = active_decisions(harness_dir)
     except Exception:
         decisions = []
         active = []
     if decisions:
-        lines.extend(["", "Decisions", f"  accepted: {len(active)}", f"  proposed: {sum(record['status'] == 'PROPOSED' for record in decisions)}"])
-        lines.extend(f"  {record['id']} {record['topic']} = {record['selected']['option']}" for record in active)
+        lines.extend(
+            [
+                "",
+                "Decisions",
+                f"  accepted: {len(active)}",
+                f"  proposed: {sum(record['status'] == 'PROPOSED' for record in decisions)}",
+            ]
+        )
+        lines.extend(
+            f"  {record['id']} {record['topic']} = {record['selected']['option']}"
+            for record in active
+        )
     try:
         impact = yaml.safe_load((harness_dir / "impact.yaml").read_text()) or {}
-        interfaces = [item for item in impact.get("impact", {}).get("interfaces", []) if item.get("visibility") == "external"]
+        interfaces = [
+            item
+            for item in impact.get("impact", {}).get("interfaces", [])
+            if item.get("visibility") == "external"
+        ]
     except (OSError, yaml.YAMLError):
         interfaces = []
     if interfaces:
-        compatibility = ", ".join(sorted({item.get("compatibility", "undeclared") for item in interfaces}))
-        lines.extend(["", "Interfaces", f"  public changes: {len(interfaces)}", f"  compatibility: {compatibility}"])
+        compatibility = ", ".join(
+            sorted({item.get("compatibility", "undeclared") for item in interfaces})
+        )
+        lines.extend(
+            [
+                "",
+                "Interfaces",
+                f"  public changes: {len(interfaces)}",
+                f"  compatibility: {compatibility}",
+            ]
+        )
     blocked_by = gate.get("blocked_by") or []
     if blocked_by:
         lines.append("")
@@ -165,8 +195,11 @@ def _render(data, harness_dir: Path) -> str:
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Engineering Harness status")
-    parser.add_argument("--harness-dir", default=".harness",
-                        help="directory containing current-task.yaml")
+    parser.add_argument(
+        "--harness-dir",
+        default=".harness",
+        help="directory containing current-task.yaml",
+    )
     args = parser.parse_args(argv)
 
     data = _load(Path(args.harness_dir))

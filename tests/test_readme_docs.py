@@ -109,7 +109,18 @@ def test_skill_q0_bypasses_harness_before_session_startup():
 
 def test_skill_routes_risk_adaptive_workflow_before_task_contract():
     skill = (REPO / "SKILL.md").read_text()
-    for term in ("Q0", "Q1", "Q2", "Q3", "FAST", "STANDARD", "STRICT", "CLASSIFIED", "harness task classify", "harness task escalate"):
+    for term in (
+        "Q0",
+        "Q1",
+        "Q2",
+        "Q3",
+        "FAST",
+        "STANDARD",
+        "STRICT",
+        "CLASSIFIED",
+        "harness task classify",
+        "harness task escalate",
+    ):
         assert term in skill
     assert skill.index("harness task classify") < skill.index("## Phase Dispatch Table")
 
@@ -166,7 +177,11 @@ def test_operational_docs_do_not_instruct_manual_state_mutation_or_preclassify_c
 
 
 def test_gate_skills_route_on_persisted_decision_not_exit_code():
-    for path in (REPO / "SKILL.md", REPO / "skills/quality-gate/SKILL.md", REPO / "skills/convergence/SKILL.md"):
+    for path in (
+        REPO / "SKILL.md",
+        REPO / "skills/quality-gate/SKILL.md",
+        REPO / "skills/convergence/SKILL.md",
+    ):
         text = path.read_text().lower()
         assert "exit 0" not in text
         assert "exits 0" not in text
@@ -197,4 +212,7 @@ def test_workflow_makes_full_suite_advisory_after_focused_tests():
     workflow = (REPO / "SKILL.md").read_text()
     assert "exact regression + impact-related tests" in workflow
     assert "only when user wants final broad regression confidence" in workflow
-    assert "Critical findings may use the same related proof only with explicit per-finding user approval" in workflow
+    assert (
+        "Critical findings may use the same related proof only with explicit per-finding user approval"
+        in workflow
+    )

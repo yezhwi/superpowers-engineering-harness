@@ -17,10 +17,15 @@ def test_missing_case_evidence_recovers_only_through_verifying(tmp_path):
     requirements = yaml.safe_load(requirement_path.read_text())
     requirements["requirements"][0]["test_plan"] = {
         "strategies": ["integration"],
-        "cases": [{
-            "id": "TC-010", "type": "happy_path", "strategy": "integration",
-            "description": "bound test requires evidence", "tests": [NODE],
-        }],
+        "cases": [
+            {
+                "id": "TC-010",
+                "type": "happy_path",
+                "strategy": "integration",
+                "description": "bound test requires evidence",
+                "tests": [NODE],
+            }
+        ],
     }
     requirement_path.write_text(yaml.safe_dump(requirements))
 
@@ -29,7 +34,10 @@ def test_missing_case_evidence_recovers_only_through_verifying(tmp_path):
 
     assert blocked.returncode == 0, blocked.stdout + blocked.stderr
     assert resumed.returncode == 0, resumed.stdout + resumed.stderr
-    assert yaml.safe_load((harness_dir / "current-task.yaml").read_text())["state"] == "VERIFYING"
+    assert (
+        yaml.safe_load((harness_dir / "current-task.yaml").read_text())["state"]
+        == "VERIFYING"
+    )
 
     evidence = json.loads((harness_dir / "evidence" / "build.json").read_text())
     evidence["type"] = "integration_test"
@@ -37,7 +45,12 @@ def test_missing_case_evidence_recovers_only_through_verifying(tmp_path):
     (harness_dir / "evidence" / "recovered-case.json").write_text(json.dumps(evidence))
 
     assert run_cli(tmp_path, "transition", "REVIEWING").returncode == 0
-    assert run_cli(tmp_path, "review", "outcome", "PASS", "--reason-code", "REVIEW_CLEAN").returncode == 0
+    assert (
+        run_cli(
+            tmp_path, "review", "outcome", "PASS", "--reason-code", "REVIEW_CLEAN"
+        ).returncode
+        == 0
+    )
     assert run_cli(tmp_path, "gate").returncode == 0
     assert run_cli(tmp_path, "transition", "DONE").returncode == 0
 
@@ -49,10 +62,15 @@ def test_bound_case_with_fresh_evidence_reaches_done(tmp_path):
     requirements = yaml.safe_load(requirement_path.read_text())
     requirements["requirements"][0]["test_plan"] = {
         "strategies": ["integration"],
-        "cases": [{
-            "id": "TC-001", "type": "happy_path", "strategy": "integration",
-            "description": "bound test passes", "tests": [NODE],
-        }],
+        "cases": [
+            {
+                "id": "TC-001",
+                "type": "happy_path",
+                "strategy": "integration",
+                "description": "bound test passes",
+                "tests": [NODE],
+            }
+        ],
     }
     requirement_path.write_text(yaml.safe_dump(requirements))
 
@@ -66,4 +84,7 @@ def test_bound_case_with_fresh_evidence_reaches_done(tmp_path):
 
     assert gate.returncode == 0, gate.stdout + gate.stderr
     assert done.returncode == 0, done.stdout + done.stderr
-    assert yaml.safe_load((harness_dir / "current-task.yaml").read_text())["state"] == "DONE"
+    assert (
+        yaml.safe_load((harness_dir / "current-task.yaml").read_text())["state"]
+        == "DONE"
+    )

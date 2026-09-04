@@ -46,7 +46,13 @@ def test_changed_paths_since_includes_committed_and_working_paths(tmp_path):
     from harness.workspace import changed_paths_since
 
     repo = committed_repo(tmp_path)
-    base = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True).stdout.strip()
+    base = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
     (repo / "committed.py").write_text("value = 1\n")
     subprocess.run(["git", "add", "committed.py"], cwd=repo, check=True)
     subprocess.run(["git", "commit", "-qm", "change"], cwd=repo, check=True)
@@ -55,7 +61,9 @@ def test_changed_paths_since_includes_committed_and_working_paths(tmp_path):
     assert changed_paths_since(base, repo) == ("committed.py", "working.py")
 
 
-def test_protected_paths_fingerprint_changes_when_preexisting_dirty_file_changes(tmp_path):
+def test_protected_paths_fingerprint_changes_when_preexisting_dirty_file_changes(
+    tmp_path,
+):
     from harness.workspace import protected_paths_fingerprint
 
     repo = committed_repo(tmp_path)

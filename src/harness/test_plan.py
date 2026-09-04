@@ -3,10 +3,18 @@
 from dataclasses import dataclass
 
 
-VALID_STRATEGIES = frozenset({
-    "unit", "integration", "e2e", "regression", "concurrency", "security",
-    "contract", "manual",
-})
+VALID_STRATEGIES = frozenset(
+    {
+        "unit",
+        "integration",
+        "e2e",
+        "regression",
+        "concurrency",
+        "security",
+        "contract",
+        "manual",
+    }
+)
 AUTOMATED_STRATEGIES = VALID_STRATEGIES - {"manual"}
 
 
@@ -24,23 +32,37 @@ def validate_test_plan(requirements: dict, invariants: dict) -> list[TestPlanIss
     issues: list[TestPlanIssue] = []
     seen_case_ids: set[str] = set()
 
-    def issue(code: str, message: str, *, requirement_id=None, invariant_id=None,
-              test_case_id=None) -> None:
-        issues.append(TestPlanIssue(
-            code, message, requirement_id=requirement_id,
-            invariant_id=invariant_id, test_case_id=test_case_id,
-        ))
+    def issue(
+        code: str,
+        message: str,
+        *,
+        requirement_id=None,
+        invariant_id=None,
+        test_case_id=None,
+    ) -> None:
+        issues.append(
+            TestPlanIssue(
+                code,
+                message,
+                requirement_id=requirement_id,
+                invariant_id=invariant_id,
+                test_case_id=test_case_id,
+            )
+        )
 
-    def inspect_cases(record: dict, plan: dict, *, requirement_id=None,
-                      invariant_id=None) -> list[dict]:
+    def inspect_cases(
+        record: dict, plan: dict, *, requirement_id=None, invariant_id=None
+    ) -> list[dict]:
         strategies = plan.get("strategies") or []
         cases = plan.get("cases") or []
         for test_case in cases:
             case_id = test_case.get("id")
             if case_id in seen_case_ids:
                 issue(
-                    "TEST_PLAN_CASE_DUPLICATE", f"duplicate test case {case_id}",
-                    requirement_id=requirement_id, invariant_id=invariant_id,
+                    "TEST_PLAN_CASE_DUPLICATE",
+                    f"duplicate test case {case_id}",
+                    requirement_id=requirement_id,
+                    invariant_id=invariant_id,
                     test_case_id=case_id,
                 )
             else:
@@ -49,7 +71,8 @@ def validate_test_plan(requirements: dict, invariants: dict) -> list[TestPlanIss
                 issue(
                     "TEST_PLAN_CASE_STRATEGY_MISMATCH",
                     f"{case_id} strategy is not declared by its parent test plan",
-                    requirement_id=requirement_id, invariant_id=invariant_id,
+                    requirement_id=requirement_id,
+                    invariant_id=invariant_id,
                     test_case_id=case_id,
                 )
         return cases
@@ -95,17 +118,29 @@ def validate_test_plan(requirements: dict, invariants: dict) -> list[TestPlanIss
     return issues
 
 
-def validate_test_coverage(requirements: dict, invariants: dict, evidence_records,
-                           evidence_is_fresh) -> list[TestPlanIssue]:
+def validate_test_coverage(
+    requirements: dict, invariants: dict, evidence_records, evidence_is_fresh
+) -> list[TestPlanIssue]:
     """Return final-Gate defects for bindings missing fresh successful proof."""
     issues: list[TestPlanIssue] = []
 
-    def issue(code: str, message: str, *, requirement_id=None, invariant_id=None,
-              test_case_id=None) -> None:
-        issues.append(TestPlanIssue(
-            code, message, requirement_id=requirement_id,
-            invariant_id=invariant_id, test_case_id=test_case_id,
-        ))
+    def issue(
+        code: str,
+        message: str,
+        *,
+        requirement_id=None,
+        invariant_id=None,
+        test_case_id=None,
+    ) -> None:
+        issues.append(
+            TestPlanIssue(
+                code,
+                message,
+                requirement_id=requirement_id,
+                invariant_id=invariant_id,
+                test_case_id=test_case_id,
+            )
+        )
 
     def covered(node_id: str) -> bool:
         return any(
@@ -115,7 +150,8 @@ def validate_test_coverage(requirements: dict, invariants: dict, evidence_record
 
     def has_manual_evidence(case_id: str) -> bool:
         return any(
-            case_id in record.get("covered_test_cases", []) and evidence_is_fresh(record)
+            case_id in record.get("covered_test_cases", [])
+            and evidence_is_fresh(record)
             for record in evidence_records
         )
 
@@ -123,18 +159,36 @@ def validate_test_coverage(requirements: dict, invariants: dict, evidence_record
         for record in document.get(key, []):
             record_id = record.get("id")
             for test_case in (record.get("test_plan") or {}).get("cases", []):
-                identity = ({"requirement_id": record_id} if key == "requirements"
-                            else {"invariant_id": record_id})
+                identity = (
+                    {"requirement_id": record_id}
+                    if key == "requirements"
+                    else {"invariant_id": record_id}
+                )
                 case_id = test_case.get("id")
                 strategy = test_case.get("strategy")
                 tests = test_case.get("tests") or []
                 if strategy == "manual":
                     if not has_manual_evidence(case_id):
-                        issue("TEST_EVIDENCE_MISSING", f"{case_id} manual case has no fresh evidence", test_case_id=case_id, **identity)
+                        issue(
+                            "TEST_EVIDENCE_MISSING",
+                            f"{case_id} manual case has no fresh evidence",
+                            test_case_id=case_id,
+                            **identity,
+                        )
                 elif not tests:
-                    issue("TEST_BINDING_MISSING", f"{case_id} has no executable test binding", test_case_id=case_id, **identity)
+                    issue(
+                        "TEST_BINDING_MISSING",
+                        f"{case_id} has no executable test binding",
+                        test_case_id=case_id,
+                        **identity,
+                    )
                 elif any(not covered(node_id) for node_id in tests):
-                    issue("TEST_EVIDENCE_MISSING", f"{case_id} binding has no fresh covering evidence", test_case_id=case_id, **identity)
+                    issue(
+                        "TEST_EVIDENCE_MISSING",
+                        f"{case_id} binding has no fresh covering evidence",
+                        test_case_id=case_id,
+                        **identity,
+                    )
 
     inspect(requirements, "requirements")
     inspect(invariants, "invariants")

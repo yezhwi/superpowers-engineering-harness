@@ -6,10 +6,25 @@ def test_interface_declare_persists_external_contract(tmp_path):
     setup(tmp_path)
 
     result = cli(
-        tmp_path, "interface", "declare", "--name", "decision-api", "--kind", "cli",
-        "--consumer", "agent-worker", "--input", "command arguments",
-        "--output", "machine-readable result", "--error", "stable error code",
-        "--compatibility", "compatible", "--rationale", "additive command",
+        tmp_path,
+        "interface",
+        "declare",
+        "--name",
+        "decision-api",
+        "--kind",
+        "cli",
+        "--consumer",
+        "agent-worker",
+        "--input",
+        "command arguments",
+        "--output",
+        "machine-readable result",
+        "--error",
+        "stable error code",
+        "--compatibility",
+        "compatible",
+        "--rationale",
+        "additive command",
     )
 
     assert result.returncode == 0, result.stderr

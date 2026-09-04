@@ -48,12 +48,9 @@ def init_harness(repo_root: Path, templates: Path | None = None) -> InitResult:
     missing.
     """
     repo_root = Path(repo_root)
-    templates = (
-        Path(templates) if templates else templates_mod.templates_dir()
-    )
+    templates = Path(templates) if templates else templates_mod.templates_dir()
 
-    missing = [name for name in REQUIRED_FILES
-               if not (templates / name).is_file()]
+    missing = [name for name in REQUIRED_FILES if not (templates / name).is_file()]
     if missing:
         raise TemplateNotFoundError(
             f"missing required templates in {templates}: {missing}"

@@ -12,14 +12,15 @@ sys.path.insert(0, str(REPO / "src"))
 def run_cli(cwd: Path, *args: str):
     return subprocess.run(
         [sys.executable, "-m", "harness.cli", *args],
-        cwd=cwd, capture_output=True, text=True,
+        cwd=cwd,
+        capture_output=True,
+        text=True,
         env={"PYTHONPATH": str(REPO / "src"), "PATH": "/usr/bin:/bin"},
     )
 
 
 def make_repo(tmp_path: Path) -> Path:
-    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True,
-                   capture_output=True)
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True, capture_output=True)
     return tmp_path
 
 
@@ -60,7 +61,12 @@ def test_mr_describe_assesses_current_state_not_stale_gate(tmp_path):
     subprocess.run(["git", "commit", "-qm", "init"], cwd=repo, check=True)
     path = repo / ".harness/current-task.yaml"
     task = yaml.safe_load(path.read_text())
-    task["gate"] = {"status": "PASS", "blocked_by": [], "quality": {"status": "PASS"}, "release_readiness": {"status": "READY", "reasons": []}}
+    task["gate"] = {
+        "status": "PASS",
+        "blocked_by": [],
+        "quality": {"status": "PASS"},
+        "release_readiness": {"status": "READY", "reasons": []},
+    }
     path.write_text(yaml.safe_dump(task))
     result = run_cli(repo, "mr", "describe")
     assert result.returncode == 0

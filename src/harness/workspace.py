@@ -48,7 +48,11 @@ def git_head(repo_root: Path | None = None) -> str:
 
 def _untracked_paths(repo_root: Path) -> set[str]:
     paths = set()
-    for name in _run(repo_root, "ls-files", "--others", "--exclude-standard").decode().splitlines():
+    for name in (
+        _run(repo_root, "ls-files", "--others", "--exclude-standard")
+        .decode()
+        .splitlines()
+    ):
         if not name.startswith(".harness/") and (repo_root / name).is_file():
             paths.add(name)
     return paths
@@ -61,7 +65,9 @@ def _working_paths(repo_root: Path) -> set[str]:
         ("diff", "--name-only", "HEAD", "--", ".", exclude),
         ("diff", "--cached", "--name-only", "HEAD", "--", ".", exclude),
     ):
-        paths.update(name for name in _run(repo_root, *args).decode().splitlines() if name)
+        paths.update(
+            name for name in _run(repo_root, *args).decode().splitlines() if name
+        )
     return paths | _untracked_paths(repo_root)
 
 
@@ -74,21 +80,29 @@ def _fingerprint(repo_root: Path) -> str:
         _run(repo_root, "diff", "--cached", "--binary", "HEAD", "--", ".", exclude),
     ]
     for name in sorted(_untracked_paths(repo_root)):
-        parts.extend([name.encode(), hashlib.sha256((repo_root / name).read_bytes()).digest()])
+        parts.extend(
+            [name.encode(), hashlib.sha256((repo_root / name).read_bytes()).digest()]
+        )
     return "sha256:" + hashlib.sha256(b"\0".join(parts)).hexdigest()
 
 
-def changed_paths_since(base_commit: str, repo_root: Path | None = None) -> tuple[str, ...]:
+def changed_paths_since(
+    base_commit: str, repo_root: Path | None = None
+) -> tuple[str, ...]:
     """Changed business paths from immutable baseline through current workspace."""
     root = _root(repo_root)
     exclude = ":(exclude).harness/**"
-    committed = _run(root, "diff", "--name-only", f"{base_commit}..HEAD", "--", ".", exclude)
+    committed = _run(
+        root, "diff", "--name-only", f"{base_commit}..HEAD", "--", ".", exclude
+    )
     paths = set(name for name in committed.decode().splitlines() if name)
     paths.update(snapshot(root).changed_paths)
     return tuple(sorted(paths))
 
 
-def protected_paths_fingerprint(paths: tuple[str, ...], repo_root: Path | None = None) -> str:
+def protected_paths_fingerprint(
+    paths: tuple[str, ...], repo_root: Path | None = None
+) -> str:
     """Fingerprint only declared pre-existing user changes."""
     root = _root(repo_root)
     parts: list[bytes] = []
@@ -112,7 +126,10 @@ def snapshot(repo_root: Path | None = None) -> WorkspaceSnapshot:
 
 
 def project_task_scope(
-    task: dict, impact: dict, *, inspected_paths: tuple[str, ...] | list[str] = (),
+    task: dict,
+    impact: dict,
+    *,
+    inspected_paths: tuple[str, ...] | list[str] = (),
     direct_dependencies: tuple[str, ...] | list[str] = (),
 ) -> tuple[str, ...]:
     """Project task ownership into review files, excluding protected user paths."""
@@ -131,10 +148,22 @@ def review_scope(base_ref: str, repo_root: Path | None = None) -> ReviewScope:
     base_commit = _run(root, "merge-base", base_ref, "HEAD").decode().strip()
     current = snapshot(root)
     exclude = ":(exclude).harness/**"
-    committed = _run(
-        root, "diff", "--name-only", f"{base_commit}..{current.head}", "--", ".", exclude
-    ).decode().splitlines()
-    files = tuple(sorted(set(name for name in committed if name) | set(current.changed_paths)))
+    committed = (
+        _run(
+            root,
+            "diff",
+            "--name-only",
+            f"{base_commit}..{current.head}",
+            "--",
+            ".",
+            exclude,
+        )
+        .decode()
+        .splitlines()
+    )
+    files = tuple(
+        sorted(set(name for name in committed if name) | set(current.changed_paths))
+    )
     return ReviewScope(
         base_ref=base_ref,
         base_commit=base_commit,

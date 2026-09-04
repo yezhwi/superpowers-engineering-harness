@@ -30,18 +30,28 @@ def _path(harness_dir: Path, contract_id: str) -> Path:
 
 
 def _validate(record: dict) -> None:
-    schema = json.loads(resources.files("harness").joinpath("schemas/interface-contract.schema.json").read_text())
+    schema = json.loads(
+        resources.files("harness")
+        .joinpath("schemas/interface-contract.schema.json")
+        .read_text()
+    )
     try:
         validate(record, schema)
     except ValidationError as exc:
         raise InterfaceContractError("INTERFACE_CONTRACT_INVALID") from exc
-    if record["compatibility"]["classification"] == "breaking" and record["breaking_change_approved"] and not record["breaking_change_reason"]:
+    if (
+        record["compatibility"]["classification"] == "breaking"
+        and record["breaking_change_approved"]
+        and not record["breaking_change_reason"]
+    ):
         raise InterfaceContractError("INTERFACE_CONTRACT_INVALID")
 
 
 def _task_id(harness_dir: Path) -> str:
     try:
-        value = yaml.safe_load((harness_dir / "current-task.yaml").read_text())["task"]["id"]
+        value = yaml.safe_load((harness_dir / "current-task.yaml").read_text())["task"][
+            "id"
+        ]
     except (OSError, KeyError, TypeError, yaml.YAMLError) as exc:
         raise InterfaceContractError("INTERFACE_CONTRACT_TASK_INVALID") from exc
     if not isinstance(value, str):
@@ -92,7 +102,16 @@ def _next_id(harness_dir: Path) -> str:
 
 
 def declare(harness_dir: Path, document: dict) -> dict:
-    record = {**document, "id": _next_id(harness_dir), "task_id": _task_id(harness_dir), "status": "DECLARED", "breaking_change_approved": False, "breaking_change_reason": None, "approved_at": None, "created_at": _now()}
+    record = {
+        **document,
+        "id": _next_id(harness_dir),
+        "task_id": _task_id(harness_dir),
+        "status": "DECLARED",
+        "breaking_change_approved": False,
+        "breaking_change_reason": None,
+        "approved_at": None,
+        "created_at": _now(),
+    }
     _validate(record)
     _write(_path(harness_dir, record["id"]), record)
     return record

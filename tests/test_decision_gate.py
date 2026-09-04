@@ -15,12 +15,22 @@ def test_proposed_decision_blocks_gate_preflight(tmp_path: Path):
     task = yaml.safe_load(task_path.read_text())
     task["task"]["id"] = "TASK-042"
     task_path.write_text(yaml.safe_dump(task))
-    propose(harness_dir, {
-        "topic": "cache", "question": "Which cache?", "context": ["Redis exists"],
-        "options": [{"id": "redis", "description": "shared cache"}],
-        "recommendation": {"option": "redis", "reasons": ["existing"], "tradeoffs": []},
-        "scope": [], "constraints": [],
-    })
+    propose(
+        harness_dir,
+        {
+            "topic": "cache",
+            "question": "Which cache?",
+            "context": ["Redis exists"],
+            "options": [{"id": "redis", "description": "shared cache"}],
+            "recommendation": {
+                "option": "redis",
+                "reasons": ["existing"],
+                "tradeoffs": [],
+            },
+            "scope": [],
+            "constraints": [],
+        },
+    )
 
     status, blockers = run_gate(harness_dir, allow_preflight=True)
 
