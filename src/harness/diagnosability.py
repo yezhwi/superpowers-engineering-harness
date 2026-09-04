@@ -264,11 +264,23 @@ def gate_blockers(harness_dir: Path, task: dict, *, head: str, workspace: str):
             yaml.safe_load(item.read_text())
             for item in (harness_dir / "findings").glob("*.yaml")
         ]
+        review_scope_record = record.get("review_scope", {})
+        impact_path = harness_dir / "impact.yaml"
+        impact = (
+            yaml.safe_load(impact_path.read_text()).get("impact") or {}
+            if impact_path.exists()
+            else {}
+        )
+        expected_scope = project_task_scope(
+            task,
+            impact,
+            inspected_paths=contract["applicability"]["inspected_paths"],
+            direct_dependencies=tuple(review_scope_record.get("direct_dependencies", [])),
+        )
+        if tuple(review_scope_record.get("files", [])) != expected_scope:
+            raise ValueError("DIAGNOSABILITY_SCOPE_STALE")
         validate_review_readiness(
-            contract,
-            record,
-            findings,
-            scope_files=tuple(record.get("review_scope", {}).get("files", [])),
+            contract, record, findings, scope_files=expected_scope
         )
         if any(value == "fail" for value in record.get("checks", {}).values()):
             raise ValueError("DIAG_REVIEW_HAS_FAILED_CHECKS")
@@ -287,7 +299,7 @@ def gate_blockers(harness_dir: Path, task: dict, *, head: str, workspace: str):
             current_head=head,
             current_workspace=workspace,
         )
-    except (OSError, json.JSONDecodeError, ValueError):
+    except (OSError, json.JSONDecodeError, yaml.YAMLError, ValueError):
         return [
             GateBlocker(
                 "DIAGNOSABILITY_REVIEW_STALE",

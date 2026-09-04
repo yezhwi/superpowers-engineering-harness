@@ -8,6 +8,8 @@ import json
 from pathlib import Path
 
 import yaml
+
+from .paths import EvidenceReferenceError, evidence_path
 from jsonschema import ValidationError, validate
 
 
@@ -119,10 +121,13 @@ def declare(harness_dir: Path, document: dict) -> dict:
 
 def verify(harness_dir: Path, contract_id: str, evidence: str) -> dict:
     record = load_interface_contract(harness_dir, contract_id)
-    if not evidence.strip():
-        raise InterfaceContractError("INTERFACE_VERIFICATION_INVALID")
-    if evidence not in record["verification"]:
-        record["verification"].append(evidence)
+    try:
+        resolved = evidence_path(harness_dir, evidence)
+    except EvidenceReferenceError as exc:
+        raise InterfaceContractError(str(exc)) from exc
+    canonical = resolved.name
+    if canonical not in record["verification"]:
+        record["verification"].append(canonical)
     _validate(record)
     _write(_path(harness_dir, contract_id), record)
     return record

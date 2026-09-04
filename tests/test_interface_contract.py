@@ -73,6 +73,17 @@ def test_breaking_contract_requires_explicit_approval(tmp_path):
     assert approved["breaking_change_reason"] == "user approved migration"
 
 
+def test_interface_verification_rejects_noncanonical_evidence_reference(tmp_path):
+    """Break caught: Interface contract stores unvalidated evidence path strings."""
+    from harness.interface_contract import InterfaceContractError, declare, verify
+
+    harness_dir = setup_harness(tmp_path)
+    declared = declare(harness_dir, contract())
+
+    with pytest.raises(InterfaceContractError, match="EVIDENCE_REFERENCE_INVALID"):
+        verify(harness_dir, declared["id"], "../outside.json")
+
+
 def test_external_contract_rejects_missing_consumers(tmp_path):
     """Break caught: external contract lacks identified dependent consumer."""
     from harness.interface_contract import InterfaceContractError, declare

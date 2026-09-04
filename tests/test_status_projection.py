@@ -197,6 +197,28 @@ def test_status_projects_stale_evidence_without_mutating_task(tmp_path: Path):
     assert task_path.read_bytes() == before
 
 
+def test_status_rejects_done_with_cached_pass_and_open_canonical_finding(tmp_path):
+    repo = make_repo(tmp_path)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, check=True)
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-qm", "base"], cwd=repo, check=True)
+    task_path = repo / ".harness/current-task.yaml"
+    task = yaml.safe_load(task_path.read_text())
+    task["state"] = "DONE"
+    task["gate"] = {"status": "PASS", "blocked_by": []}
+    task_path.write_text(yaml.safe_dump(task))
+    (repo / ".harness/findings/FND-001.yaml").write_text(yaml.safe_dump({
+        "id": "FND-001", "kind": "failure_scenario", "target": "REQ-001",
+        "scenario": "open canonical defect", "severity": "major", "status": "PROPOSED",
+    }))
+
+    result = run_cli(repo, "status")
+
+    assert result.returncode == 2
+    assert "DONE without current gate PASS" in result.stderr
+
+
 def test_projection_marks_missing_evidence_missing(tmp_path: Path):
     """Break caught: absent required evidence is indistinguishable from invalid data."""
     from harness.evidence_validator import EvidenceStatus, project_evidence

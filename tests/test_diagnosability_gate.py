@@ -98,6 +98,49 @@ critical_events: [created]
     assert [blocker.code for blocker in blockers] == ["DIAGNOSABILITY_REVIEW_STALE"]
 
 
+def test_gate_blocks_review_when_current_owned_scope_changes(tmp_path):
+    import json
+    import yaml
+
+    harness = tmp_path / ".harness"
+    (harness / "evidence").mkdir(parents=True)
+    (harness / "findings").mkdir()
+    (harness / "observability.yaml").write_text("""version: 1
+required: true
+applicability: {reasons: [security], inspected_paths: [src/order.py]}
+business_keys: [order_id]
+failure_boundaries: [payment]
+critical_events: [created]
+""")
+    (harness / "impact.yaml").write_text("impact: {changed: [src/changed.py], contracts: [], direct_dependents: []}\n")
+    workspace = "sha256:" + "a" * 64
+    checks = {
+        name: "pass"
+        for name in (
+            "business_keys", "external_failure_context", "state_transitions",
+            "caller_rejections", "sensitive_data", "duplicate_exception_logging",
+            "low_value_logging",
+        )
+    }
+    (harness / "evidence/diagnosability-review.json").write_text(json.dumps({
+        "type": "diagnosability_review", "timestamp": "t",
+        "command": "harness review diagnosability", "exit_code": 0,
+        "commit": "head", "workspace_fingerprint": workspace,
+        "workspace_fingerprint_after": workspace, "contract_required": True,
+        "checks": checks, "finding_ids": [],
+        "review_scope": {"files": ["src/order.py"], "direct_dependencies": []},
+    }))
+
+    blockers = gate_blockers(
+        harness,
+        {"risk": {"level": "Q3"}, "task": {"type": "feature"},
+         "scope": {"owned_paths": ["src/changed.py"], "protected_user_paths": []}},
+        head="head", workspace=workspace,
+    )
+
+    assert [blocker.code for blocker in blockers] == ["DIAGNOSABILITY_REVIEW_STALE"]
+
+
 def test_persisted_review_rejects_unknown_check():
     from harness.diagnosability import validate_review_evidence
 

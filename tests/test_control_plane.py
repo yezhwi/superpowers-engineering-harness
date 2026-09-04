@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 import yaml
 
+from harness import controlplane, quality_gate
 from evidence_factory import write_complexity_review, write_evidence
 
 REPO = Path(__file__).resolve().parent.parent
@@ -25,6 +26,24 @@ def run_cli(cwd: Path, *args: str):
         text=True,
         env={"PYTHONPATH": str(REPO / "src"), "PATH": "/usr/bin:/bin"},
     )
+
+
+def test_gate_preflight_requires_release_readiness_for_ready_output(tmp_path, monkeypatch, capsys):
+    harness = tmp_path / ".harness"
+    harness.mkdir()
+    (harness / "gate.yaml").write_text("gate: {verification_commands: {}}\n")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        quality_gate,
+        "assess_gate",
+        lambda *_args, **_kwargs: quality_gate.GateAssessment(
+            "PASS", (), {"status": "PASS"},
+            {"status": "DRAFT_ONLY", "reasons": ["full_suite_required_but_not_authorized"]},
+        ),
+    )
+
+    assert controlplane.cmd_gate_preflight() == 0
+    assert "READY: no" in capsys.readouterr().out
 
 
 def make_repo(tmp_path: Path, **task_overrides) -> Path:
@@ -330,4 +349,7 @@ def test_gate_blocked_transitions_to_blocked(tmp_path):
     result = run_cli(tmp_path, "gate")
     assert result.returncode == 0
     assert "not verified" in result.stdout
-    assert yaml.safe_load((h / "current-task.yaml").read_text())["state"] == "BLOCKED"
+    task = yaml.safe_load((h / "current-task.yaml").read_text())
+    assert task["state"] == "BLOCKED"
+    assert task["gate"]["quality"]["status"] == "BLOCKED"
+    assert task["gate"]["release_readiness"]["status"] == "NOT_READY"

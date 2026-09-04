@@ -285,6 +285,12 @@
     "git": {
       "type": "object",
       "properties": {
+        "base_ref": {
+          "type": ["string", "null"]
+        },
+        "head_at_start": {
+          "type": ["string", "null"]
+        },
         "head": {
           "type": [
             "string",

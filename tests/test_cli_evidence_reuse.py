@@ -54,7 +54,7 @@ def test_evidence_attach_imports_complete_record_without_execution(tmp_path):
     setup(tmp_path)
     from harness.workspace import snapshot
 
-    result_file = tmp_path / "result.json"
+    result_file = tmp_path.parent / "result.json"
     result_file.write_text(
         json.dumps(
             {
@@ -71,6 +71,19 @@ def test_evidence_attach_imports_complete_record_without_execution(tmp_path):
                 "workspace_fingerprint": snapshot(tmp_path).fingerprint,
                 "stdout_digest": "ok",
                 "stderr_digest": "",
+                "provenance": {
+                    "kind": "external",
+                    "command": "false",
+                    "exit_code": 0,
+                    "git_head": subprocess.run(
+                        ["git", "rev-parse", "HEAD"],
+                        cwd=tmp_path,
+                        capture_output=True,
+                        text=True,
+                    ).stdout.strip(),
+                    "workspace_fingerprint": snapshot(tmp_path).fingerprint,
+                    "reference": "ci-run-1",
+                },
             }
         )
     )
@@ -90,6 +103,35 @@ def test_evidence_attach_imports_complete_record_without_execution(tmp_path):
         json.loads((tmp_path / ".harness/evidence/build.json").read_text())["command"]
         == "false"
     )
+
+
+def test_evidence_attach_rejects_mismatched_structured_provenance(tmp_path):
+    setup(tmp_path)
+    from harness.workspace import snapshot
+
+    head = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=tmp_path, capture_output=True, text=True
+    ).stdout.strip()
+    fingerprint = snapshot(tmp_path).fingerprint
+    result_file = tmp_path / "result.json"
+    result_file.write_text(json.dumps({
+        "command": "false", "exit_code": 0,
+        "started_at": "2026-01-01T00:00:00+00:00",
+        "finished_at": "2026-01-01T00:01:00+00:00",
+        "git_head": head, "workspace_fingerprint": fingerprint,
+        "stdout_digest": "ok", "stderr_digest": "",
+        "provenance": {
+            "kind": "external", "command": "true", "exit_code": 0,
+            "git_head": head, "workspace_fingerprint": fingerprint,
+            "reference": "ci-run-1",
+        },
+    }))
+
+    result = cli(tmp_path, "evidence", "attach", "--type", "build", "--command", "false", "--result-file", str(result_file))
+
+    assert result.returncode == 2
+    assert "EVIDENCE_ATTACH_INCOMPLETE" in result.stderr
+    assert not (tmp_path / ".harness/evidence/build.json").exists()
 
 
 def test_evidence_attach_rejects_incomplete_record_without_execution(tmp_path):

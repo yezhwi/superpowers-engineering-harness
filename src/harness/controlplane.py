@@ -417,7 +417,20 @@ def cmd_review_outcome(outcome: str, reason_code: str, finding_ids: list[str]) -
         return 2
     target = routes[outcome]
     if target == "GATING":
-        status, blockers = quality_gate.run_gate(harness_dir, allow_preflight=True)
+        try:
+            for name, schema in (
+                ("current-task.yaml", "task.schema.json"),
+                ("requirements.yaml", "requirement.schema.json"),
+                ("invariants.yaml", "invariant.schema.json"),
+            ):
+                path = harness_dir / name
+                quality_gate.validate_schema(
+                    quality_gate._load_yaml(path), schema, path
+                )
+            status, blockers = quality_gate.run_gate(harness_dir, allow_preflight=True)
+        except quality_gate.InvalidHarnessState as exc:
+            print(f"GATE_PREFLIGHT_INVALID: {exc}", file=sys.stderr)
+            return 2
         if status != "PASS":
             print("GATE_PREFLIGHT_MISSING_EVIDENCE", file=sys.stderr)
             for blocker in blockers:
@@ -524,7 +537,26 @@ def cmd_evidence_attach(evidence_type, command, scope, result_file):
             "stdout_digest",
             "stderr_digest",
         }
-        if required - set(record) or record["command"] != command:
+        provenance = record.get("provenance")
+        provenance_required = {
+            "kind",
+            "command",
+            "exit_code",
+            "git_head",
+            "workspace_fingerprint",
+            "reference",
+        }
+        if (
+            required - set(record)
+            or record["command"] != command
+            or not isinstance(provenance, dict)
+            or provenance_required - set(provenance)
+            or provenance["kind"] != "external"
+            or any(
+                provenance[field] != record[field]
+                for field in ("command", "exit_code", "git_head", "workspace_fingerprint")
+            )
+        ):
             raise ValueError
         record.update(
             {
@@ -537,13 +569,27 @@ def cmd_evidence_attach(evidence_type, command, scope, result_file):
                 "scope": scope,
             }
         )
-        path = (
-            Path(".harness")
-            / "evidence"
-            / collect_evidence.evidence_filename(evidence_type)
+        harness_dir = Path(".harness")
+        quality_gate.validate_schema(
+            record, "evidence.schema.json", result_file
         )
+        current = workspace.snapshot()
+        evidence_validator.validate_evidence(
+            record,
+            current_head=current.head,
+            current_workspace=current.fingerprint,
+            expected_success=True,
+        )
+        path = harness_dir / "evidence" / collect_evidence.evidence_filename(evidence_type)
         transaction.atomic_write(path, json.dumps(record).encode())
-    except (OSError, json.JSONDecodeError, ValueError):
+    except (
+        OSError,
+        json.JSONDecodeError,
+        ValueError,
+        quality_gate.InvalidHarnessState,
+        evidence_validator.EvidenceValidationError,
+        workspace.WorkspaceError,
+    ):
         print("EVIDENCE_ATTACH_INCOMPLETE", file=sys.stderr)
         return 2
     print("evidence attached")
@@ -652,11 +698,13 @@ def cmd_mr_describe() -> int:
 def cmd_gate_preflight() -> int:
     """Run Gate assessment without changing task state."""
     try:
-        status, blockers = quality_gate.run_gate(Path(".harness"), allow_preflight=True)
+        assessment = quality_gate.assess_gate(Path(".harness"), allow_preflight=True)
     except Exception as exc:
         print(f"GATE_PREFLIGHT_INVALID: {exc}", file=sys.stderr)
         return 2
-    print("READY: yes" if status == "PASS" else "READY: no")
+    status, blockers = assessment.status, assessment.blockers
+    ready = status == "PASS" and assessment.release_readiness["status"] == "READY"
+    print("READY: yes" if ready else "READY: no")
     commands = (
         yaml.safe_load((Path(".harness") / "gate.yaml").read_text())
         .get("gate", {})
@@ -781,7 +829,9 @@ def _cmd_gate_convergence() -> int:
         state_machine.require_legal("BLOCKED", "ESCALATED")
         task["state"] = "ESCALATED"
         task["iteration"] = iteration + 1
-        task["gate"] = {"status": "BLOCKED", "blocked_by": blocker_documents}
+        task.setdefault("gate", {}).update(
+            {"status": "BLOCKED", "blocked_by": blocker_documents}
+        )
         save_task(harness_dir, task)
         print("DECISION: ESCALATED")
         print(f"REASON: REPEATED_REGRESSION ({reopened} was VERIFIED, now open again)")
@@ -792,7 +842,9 @@ def _cmd_gate_convergence() -> int:
         state_machine.require_legal("BLOCKED", "ESCALATED")
         task["state"] = "ESCALATED"
         task["iteration"] = iteration + 1
-        task["gate"] = {"status": "BLOCKED", "blocked_by": blocker_documents}
+        task.setdefault("gate", {}).update(
+            {"status": "BLOCKED", "blocked_by": blocker_documents}
+        )
         save_task(harness_dir, task)
         print("DECISION: ESCALATED")
         print("REASON: MAX_ITERATIONS")
@@ -803,7 +855,9 @@ def _cmd_gate_convergence() -> int:
     state_machine.require_legal("GATING", "BLOCKED")
     task["state"] = "BLOCKED"
     task["iteration"] = iteration + 1
-    task["gate"] = {"status": "BLOCKED", "blocked_by": blocker_documents}
+    task.setdefault("gate", {}).update(
+        {"status": "BLOCKED", "blocked_by": blocker_documents}
+    )
     save_task(harness_dir, task)
     print(f"DECISION: CONTINUE (iteration {task['iteration']} / {max_iterations})")
     for blocker in blockers:
@@ -1022,8 +1076,13 @@ def cmd_task_classify(level: str, dimensions: dict[str, str]) -> int:
         state_machine.require_legal("CREATED", "CLASSIFIED")
         user_changes = workspace.snapshot().changed_paths
         task["scope"] = {"owned_paths": [], "protected_user_paths": list(user_changes)}
-        task.setdefault("git", {})["head"] = workspace.git_head()
-        task["git"]["base_commit"] = workspace.git_head()
+        head = workspace.git_head()
+        task["git"] = {
+            "base_ref": "HEAD",
+            "base_commit": head,
+            "head_at_start": head,
+            "head": head,
+        }
         task["risk"] = {
             "level": level,
             "profile": profile,
@@ -1405,11 +1464,8 @@ def cmd_impact(action, value=None, reason=None, args=None):
                 owned.append(value)
             if value in protected:
                 protected.remove(value)
-        else:
-            if value in owned:
-                owned.remove(value)
-            if value not in protected:
-                protected.append(value)
+        elif value not in owned and value not in protected:
+            protected.append(value)
         save_task(harness_dir, task)
         return 0
     if action == "add-interface":
@@ -1444,8 +1500,11 @@ def cmd_impact(action, value=None, reason=None, args=None):
     if key:
         if value not in impact[key]:
             impact[key].append(value)
-        if action == "add-change" and value not in scope["owned_paths"]:
-            scope["owned_paths"].append(value)
+        if action == "add-change":
+            if value not in scope["owned_paths"]:
+                scope["owned_paths"].append(value)
+            if value in scope["protected_user_paths"]:
+                scope["protected_user_paths"].remove(value)
             save_task(harness_dir, task)
     elif action == "require-full-suite":
         impact["full_suite"] = {"recommended": True, "reason": reason}

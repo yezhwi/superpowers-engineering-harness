@@ -118,13 +118,20 @@ def test_q1_external_interface_requires_explicit_escalation(tmp_path):
     assert "PUBLIC_INTERFACE_RISK_ESCALATION_REQUIRED" in result.stderr
 
 
-def test_ignore_user_path_revokes_existing_ownership(tmp_path):
+def test_owned_path_cannot_be_protected_or_revoked(tmp_path):
     setup(tmp_path)
+    task_path = tmp_path / ".harness/current-task.yaml"
+    task = yaml.safe_load(task_path.read_text())
+    task["scope"] = {"owned_paths": [], "protected_user_paths": ["src/x.py"]}
+    task_path.write_text(yaml.safe_dump(task))
+
     assert cli(tmp_path, "impact", "add-change", "src/x.py").returncode == 0
     assert cli(tmp_path, "impact", "ignore-user-path", "src/x.py").returncode == 0
+
     scope = yaml.safe_load(cli(tmp_path, "impact", "scope", "--format", "yaml").stdout)
-    assert "src/x.py" not in scope["owned_paths"]
-    assert "src/x.py" not in scope["effective_scope"]
+    assert scope["owned_paths"] == ["src/x.py"]
+    assert "src/x.py" not in scope["protected_user_paths"]
+    assert scope["effective_scope"] == ["src/x.py"]
 
 
 def test_project_task_scope_includes_inspected_paths_and_excludes_protected_paths():

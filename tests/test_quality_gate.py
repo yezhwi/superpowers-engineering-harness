@@ -807,8 +807,10 @@ def test_bad_evidence_json_invalid(tmp_path):
 
 def test_malformed_finding_invalid(tmp_path):
     h = make_harness(tmp_path)
-    (h / "findings" / "F-BAD.yaml").write_text("just_a_string\n")
-    assert _gate(h).returncode == 2
+    (h / "findings" / "F-BAD.yaml").write_text("{not valid yaml")
+    result = _gate(h)
+    assert result.returncode == 2
+    assert "INVALID_HARNESS_STATE" in result.stderr
 
 
 def test_multiple_blockers_listed(tmp_path):

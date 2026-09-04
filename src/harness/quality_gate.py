@@ -133,7 +133,10 @@ def load_findings(findings_dir: Path) -> list:
     if not findings_dir.is_dir():
         return findings
     for path in sorted(findings_dir.glob("*.yaml")):
-        data = yaml.safe_load(path.read_text())
+        try:
+            data = yaml.safe_load(path.read_text())
+        except (OSError, yaml.YAMLError) as exc:
+            raise InvalidHarnessState(f"bad YAML in {path}: {exc}") from exc
         if not isinstance(data, dict):
             raise InvalidHarnessState(f"{path} is not a mapping")
         validate_schema(data, finding_schema_name(data), path)

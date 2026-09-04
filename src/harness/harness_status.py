@@ -56,20 +56,34 @@ def _load(harness_dir: Path):
     return data
 
 
-def _validate(data) -> bool:
+def _validate(data, harness_dir: Path) -> bool:
     state = data.get("state")
     if state not in STATES:
         print(f"INVALID_HARNESS_STATE: unknown state {state!r}", file=sys.stderr)
         return False
     # LAW 1: no DONE without quality gate PASS. Only legal entry to DONE
     # is CONVERGED -> DONE; a persisted DONE must show gate PASS.
-    if state == "DONE" and data["gate"].get("status") != "PASS":
-        print(
-            "INVALID_HARNESS_STATE: DONE without gate PASS "
-            "(only CONVERGED -> DONE is legal)",
-            file=sys.stderr,
-        )
-        return False
+    if state == "DONE":
+        if data["gate"].get("status") != "PASS":
+            print(
+                "INVALID_HARNESS_STATE: DONE without gate PASS "
+                "(only CONVERGED -> DONE is legal)",
+                file=sys.stderr,
+            )
+            return False
+        try:
+            from .quality_gate import assess_gate
+
+            assessment = assess_gate(harness_dir, allow_preflight=True)
+        except Exception as exc:
+            print(f"INVALID_HARNESS_STATE: DONE gate invalid: {exc}", file=sys.stderr)
+            return False
+        if assessment.status != "PASS":
+            print(
+                "INVALID_HARNESS_STATE: DONE without current gate PASS",
+                file=sys.stderr,
+            )
+            return False
     prev = data.get("previous_state")
     if prev is not None:
         if prev not in STATES:
@@ -205,7 +219,7 @@ def main(argv=None):
     data = _load(Path(args.harness_dir))
     if data is None:
         return 2
-    if not _validate(data):
+    if not _validate(data, Path(args.harness_dir)):
         return 2
     print(_render(data, Path(args.harness_dir)))
     return 0

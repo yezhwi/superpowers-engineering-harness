@@ -77,6 +77,26 @@ def test_task_new_defaults_type_to_feature(tmp_path):
     assert task["task"]["type"] == "feature"
 
 
+def test_classify_freezes_complete_git_identity(tmp_path):
+    h = setup(tmp_path, state="CREATED")
+    flags = [
+        item
+        for name, value in {
+            "scope": "low", "contract": "low", "data": "none",
+            "authorization": "none", "security": "none", "concurrency": "none",
+            "deployment": "none",
+        }.items()
+        for item in (f"--{name}", value)
+    ]
+
+    result = cli(tmp_path, "task", "classify", "--level", "Q2", *flags)
+
+    assert result.returncode == 0, result.stderr
+    git = yaml.safe_load((h / "current-task.yaml").read_text())["git"]
+    assert git["base_ref"]
+    assert git["base_commit"] == git["head_at_start"] == git["head"]
+
+
 def test_task_new_refuses_active_task(tmp_path):
     setup(tmp_path, "IMPLEMENTING")
     assert cli(tmp_path, "task", "new", "TASK-002").returncode == 1

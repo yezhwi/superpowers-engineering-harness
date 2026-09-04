@@ -152,6 +152,24 @@ def test_defect_rejects_terminal_finding(tmp_path):
     assert result.returncode == 2
 
 
+def test_pass_review_outcome_maps_invalid_gate_state_to_exit_2(tmp_path):
+    repo = make_repo(tmp_path)
+    set_task_state(repo, "REVIEWING")
+    import subprocess
+
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, check=True)
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-qm", "base"], cwd=repo, check=True)
+    (repo / ".harness/requirements.yaml").write_text("{bad yaml")
+
+    result = run_cli(repo, "review", "outcome", "PASS", "--reason-code", "REVIEW_CLEAN")
+
+    assert result.returncode == 2
+    assert "GATE_PREFLIGHT_INVALID" in result.stderr
+    assert "Traceback" not in result.stderr
+
+
 def test_generic_transition_cannot_bypass_review_outcome(tmp_path):
     """Break caught: agent labels a review result by directly choosing target state."""
     repo = make_repo(tmp_path)

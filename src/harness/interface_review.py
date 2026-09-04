@@ -9,9 +9,30 @@ from pathlib import Path
 import yaml
 
 from .interface_contract import load_interface_contract
+from .transaction import StagedArtifact, publish, stage
 from .workspace import git_head, snapshot
 
 CHECKS = {"boundary", "dto", "errors", "dependency", "compatibility", "tests"}
+
+
+def _load_existing_findings(findings_dir: Path) -> list[dict]:
+    findings = []
+    for path in sorted(findings_dir.glob("FND-*.yaml")):
+        try:
+            finding = yaml.safe_load(path.read_text())
+        except (OSError, yaml.YAMLError) as exc:
+            raise ValueError("INTERFACE_FINDING_INVALID") from exc
+        if not isinstance(finding, dict):
+            raise ValueError("INTERFACE_FINDING_INVALID")
+        findings.append(finding)
+    return findings
+
+
+def _equivalent(finding: dict, proposal: dict) -> bool:
+    return finding.get("category") == "interface" and all(
+        finding.get(key) == proposal.get(key)
+        for key in ("target", "severity", "scenario", "location")
+    )
 
 
 def write_review(harness_dir: Path, source: Path, *, task_id: str) -> Path:
@@ -39,11 +60,13 @@ def write_review(harness_dir: Path, source: Path, *, task_id: str) -> Path:
         "proposals"
     ):
         raise ValueError("INTERFACE_FINDING_REQUIRED")
-    findings_dir = harness_dir / "findings"
-    existing = [item for item in findings_dir.glob("FND-*.yaml")]
-    next_id = (
-        max((int(item.stem.removeprefix("FND-")) for item in existing), default=0) + 1
-    )
+
+    existing = _load_existing_findings(harness_dir / "findings")
+    next_id = max(
+        (int(str(item.get("id", "")).removeprefix("FND-")) for item in existing),
+        default=0,
+    ) + 1
+    generated = []
     mapping = {}
     for proposal in review.get("proposals", []):
         required = {"target", "severity", "scenario", "location"}
@@ -53,6 +76,13 @@ def write_review(harness_dir: Path, source: Path, *, task_id: str) -> Path:
             or not isinstance(proposal["location"], dict)
         ):
             raise ValueError("INTERFACE_FINDING_INVALID")
+        match = next(
+            (finding for finding in existing if _equivalent(finding, proposal)), None
+        )
+        local_id = proposal.get("local_id")
+        if match:
+            mapping[local_id or match["id"]] = match["id"]
+            continue
         finding_id = f"FND-{next_id:03d}"
         next_id += 1
         finding = {
@@ -65,10 +95,10 @@ def write_review(harness_dir: Path, source: Path, *, task_id: str) -> Path:
             "status": "PROPOSED",
             "location": proposal["location"],
         }
-        (findings_dir / f"{finding_id}.yaml").write_text(
-            yaml.safe_dump(finding, sort_keys=False)
-        )
-        mapping[proposal.get("local_id", finding_id)] = finding_id
+        generated.append(finding)
+        existing.append(finding)
+        mapping[local_id or finding_id] = finding_id
+
     current = snapshot()
     record = {
         "type": "review",
@@ -83,6 +113,23 @@ def write_review(harness_dir: Path, source: Path, *, task_id: str) -> Path:
         "proposals": review.get("proposals", []),
         "finding_mapping": mapping,
     }
-    path = harness_dir / "evidence" / "interface-review.json"
-    path.write_text(json.dumps(record, indent=2))
-    return path
+    artifacts = [
+        StagedArtifact(
+            f"findings/{finding['id']}.yaml",
+            yaml.safe_dump(finding, sort_keys=False).encode(),
+        )
+        for finding in generated
+    ]
+    artifacts.append(
+        StagedArtifact(
+            "evidence/interface-review.json",
+            json.dumps(record, indent=2).encode(),
+            replace=True,
+        )
+    )
+    publish(
+        harness_dir,
+        stage(harness_dir, artifacts),
+        replace_paths=frozenset({"evidence/interface-review.json"}),
+    )
+    return harness_dir / "evidence" / "interface-review.json"
