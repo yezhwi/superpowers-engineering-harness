@@ -139,6 +139,8 @@ Pi 安装 Skills 后需新开会话。Skills 在会话启动时加载。
 
 ## 日常使用
 
+> **安全边界：** `harness evidence --command` 以本地 Harness 操作者直接输入、受信任 shell 文本执行（`shell=True`）。禁止将远程请求、配置值、API payload、CI 元数据或任何不可信输入转发给此选项。
+
 正常成功路径（`review outcome PASS` 执行 `REVIEWING → GATING`）：
 
 ```bash

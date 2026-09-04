@@ -135,6 +135,8 @@ For Pi, open new session after installing skills. Skills load at session start.
 
 ## Daily operations
 
+> **Security boundary:** `harness evidence --command` executes shell syntax (`shell=True`) as trusted text entered directly by local Harness operator. Never forward remote requests, configuration values, API payloads, CI metadata, or other untrusted input to this option. Internal `_collect` is unsupported internal API, not Python access control or provenance proof.
+
 Normal success path (`review outcome PASS` performs `REVIEWING → GATING`):
 
 ```bash

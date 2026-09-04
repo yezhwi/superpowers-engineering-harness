@@ -19,22 +19,44 @@ import platform
 import shlex
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
 
-from .budget import BudgetOverrideRequired, budget_action, check_budget, is_retry, record_budget, record_failure
+from .budget import (
+    BudgetOverrideRequired,
+    budget_action,
+    check_budget,
+    is_retry,
+    record_budget,
+    record_failure,
+)
 from .evidence_validator import ReuseRequest, can_reuse_evidence
 from .telemetry import update_telemetry
 from .workspace import git_head as workspace_head, snapshot
 
 VALID_TYPES = {
-    "build", "lint", "typecheck", "unit_test", "integration_test",
-    "contract_test", "security", "review", "custom",
+    "build",
+    "lint",
+    "typecheck",
+    "unit_test",
+    "integration_test",
+    "contract_test",
+    "security",
+    "review",
+    "custom",
 }
 
 TAIL_CHARS = 4000
 COMMAND_TIMEOUT_SECONDS = 300
+
+
+@dataclass(frozen=True)
+class _TrustedLocalCommand:
+    """Shell text entered directly by local Harness operator."""
+
+    value: str
 
 
 def git_head() -> str:
@@ -59,8 +81,9 @@ def workspace_fingerprint(repo_root: Path | None = None) -> str:
     return snapshot(repo_root).fingerprint
 
 
-def evidence_filename(evidence_type: str, *, finding_id: str | None = None,
-                      phase: str | None = None) -> str:
+def evidence_filename(
+    evidence_type: str, *, finding_id: str | None = None, phase: str | None = None
+) -> str:
     """Return deterministic generic or finding evidence filename."""
     stem = evidence_type.replace("_", "-")
     if finding_id is None:
@@ -84,47 +107,69 @@ def pytest_selectors(command: str) -> tuple[str, ...] | None:
         return None
     if Path(tokens[0]).name.startswith("pytest"):
         start = 1
-    elif len(tokens) >= 3 and Path(tokens[0]).name.startswith("python") and tokens[1] == "-m" and tokens[2] == "pytest":
+    elif (
+        len(tokens) >= 3
+        and Path(tokens[0]).name.startswith("python")
+        and tokens[1] == "-m"
+        and tokens[2] == "pytest"
+    ):
         start = 3
     else:
         return None
     return tuple(
-        token for token in tokens[start:]
+        token
+        for token in tokens[start:]
         if not token.startswith("-") and (".py" in token or "::" in token)
     )
 
 
-def _tail(text: str) -> str:
-    if not text:
+def _text_output(value: str | bytes | None) -> str:
+    if value is None:
         return ""
-    return text[-TAIL_CHARS:]
+    if isinstance(value, bytes):
+        return value.decode(errors="replace")
+    return value
 
 
-def collect(evidence_type: str, command: str, finding_id: str | None = None,
-            test_id: str | None = None, scope: str = "related",
-            covered_tests: tuple[str, ...] = (), covered_test_cases: tuple[str, ...] = (),
-            phase: str | None = None,
-            timeout_seconds: float = COMMAND_TIMEOUT_SECONDS) -> dict:
+def _tail(text: str | bytes | None) -> str:
+    return _text_output(text)[-TAIL_CHARS:]
+
+
+def _collect(
+    evidence_type: str,
+    command: _TrustedLocalCommand,
+    finding_id: str | None = None,
+    test_id: str | None = None,
+    scope: str = "related",
+    covered_tests: tuple[str, ...] = (),
+    covered_test_cases: tuple[str, ...] = (),
+    phase: str | None = None,
+    timeout_seconds: float = COMMAND_TIMEOUT_SECONDS,
+) -> dict:
+    if not isinstance(command, _TrustedLocalCommand):
+        raise ValueError("TRUSTED_LOCAL_COMMAND_REQUIRED")
+    command_text = command.value
     before = workspace_fingerprint()
     error = None
     try:
         run = subprocess.run(
-            command, shell=True, capture_output=True, text=True,
+            command_text,
+            shell=True,
+            capture_output=True,
+            text=True,
             timeout=timeout_seconds,
         )
         exit_code, stdout, stderr = run.returncode, run.stdout, run.stderr
     except subprocess.TimeoutExpired as exc:
         exit_code = 124
-        stdout = exc.stdout or ""
-        stderr = exc.stderr or ""
+        stdout = exc.stdout
+        stderr = exc.stderr
         error = "EVIDENCE_COMMAND_TIMEOUT"
     after = workspace_fingerprint()
     evidence = {
         "type": evidence_type,
-        "timestamp": datetime.datetime.now(
-            datetime.timezone.utc
-        ).isoformat(),
-        "command": command,
+        "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "command": command_text,
         "exit_code": exit_code,
         "commit": git_head(),
         "workspace_fingerprint": before,
@@ -135,6 +180,11 @@ def collect(evidence_type: str, command: str, finding_id: str | None = None,
     }
     if error is not None:
         evidence["error"] = error
+        evidence["error_detail"] = {
+            "code": error,
+            "kind": "timeout",
+            "timeout_seconds": timeout_seconds,
+        }
     if evidence_type == "unit_test":
         evidence["scope"] = scope
     if covered_tests:
@@ -149,8 +199,7 @@ def collect(evidence_type: str, command: str, finding_id: str | None = None,
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Collect harness evidence")
-    parser.add_argument("--type", required=True,
-                        choices=sorted(VALID_TYPES))
+    parser.add_argument("--type", required=True, choices=sorted(VALID_TYPES))
     parser.add_argument("--command", required=True)
     parser.add_argument("--harness-dir", default=".harness")
     parser.add_argument("--finding")
@@ -193,40 +242,73 @@ def main(argv=None):
                 print("COVERED_TEST_NOT_EXECUTED", file=sys.stderr)
                 return 2
     out_dir = Path(args.harness_dir) / "evidence"
-    out_file = out_dir / evidence_filename(args.type, finding_id=args.finding,
-                                            phase=args.phase)
+    out_file = out_dir / evidence_filename(
+        args.type, finding_id=args.finding, phase=args.phase
+    )
     if args.reuse_if_valid and not args.finding and args.phase is None:
-        request = ReuseRequest(args.type, args.command, args.scope,
-                               tuple(args.covered_test), args.phase,
-                               args.finding, args.test,
-                               tuple(args.covered_test_case))
+        request = ReuseRequest(
+            args.type,
+            args.command,
+            args.scope,
+            tuple(args.covered_test),
+            args.phase,
+            args.finding,
+            args.test,
+            tuple(args.covered_test_case),
+        )
         try:
             candidate = json.loads(out_file.read_text())
-            if can_reuse_evidence(candidate, request, current_head=head,
-                                  current_workspace=workspace_fingerprint(),
-                                  current_runtime=runtime_metadata()):
+            if can_reuse_evidence(
+                candidate,
+                request,
+                current_head=head,
+                current_workspace=workspace_fingerprint(),
+                current_runtime=runtime_metadata(),
+            ):
                 print(f"EVIDENCE_REUSED: {out_file.name}")
                 return 0
         except (OSError, json.JSONDecodeError):
             pass
 
-    override_values = (args.budget_override_reason, args.budget_override_evidence, args.budget_override_hypothesis)
+    override_values = (
+        args.budget_override_reason,
+        args.budget_override_evidence,
+        args.budget_override_hypothesis,
+    )
     if any(override_values) and not all(override_values):
-        print("BUDGET_OVERRIDE_REQUIRED", file=sys.stderr); return 2
+        print("BUDGET_OVERRIDE_REQUIRED", file=sys.stderr)
+        return 2
     task_path = Path(args.harness_dir) / "current-task.yaml"
     task = yaml.safe_load(task_path.read_text()) if task_path.exists() else None
     action = budget_action(args.type, 0, args.command)
-    override = ({"reason": args.budget_override_reason, "evidence": args.budget_override_evidence, "hypothesis": args.budget_override_hypothesis} if all(override_values) else None)
+    override = (
+        {
+            "reason": args.budget_override_reason,
+            "evidence": args.budget_override_evidence,
+            "hypothesis": args.budget_override_hypothesis,
+        }
+        if all(override_values)
+        else None
+    )
     try:
         if task and action:
             check_budget(task, action, override)
             if is_retry(task, args.command):
                 check_budget(task, "retry", override)
     except BudgetOverrideRequired as exc:
-        print(str(exc), file=sys.stderr); return 2
+        print(str(exc), file=sys.stderr)
+        return 2
 
-    evidence = collect(args.type, args.command, args.finding, args.test,
-                       args.scope, tuple(args.covered_test), tuple(args.covered_test_case), args.phase)
+    evidence = _collect(
+        args.type,
+        _TrustedLocalCommand(args.command),
+        args.finding,
+        args.test,
+        args.scope,
+        tuple(args.covered_test),
+        tuple(args.covered_test_case),
+        args.phase,
+    )
     evidence["commit"] = head
 
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -240,8 +322,10 @@ def main(argv=None):
         task_path.write_text(yaml.safe_dump(task, sort_keys=False))
         update_telemetry(Path(args.harness_dir), task)
 
-    print(f"evidence written: {out_file} "
-          f"(exit_code={evidence['exit_code']}, commit={head[:12]})")
+    print(
+        f"evidence written: {out_file} "
+        f"(exit_code={evidence['exit_code']}, commit={head[:12]})"
+    )
     # Evidence collection itself succeeds even when the command fails;
     # the gate decides based on exit_code in the evidence.
     return 0
