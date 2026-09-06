@@ -1,7 +1,7 @@
 """Finding schema covers the full lifecycle (review fix #4).
 
 Each status has a representative, realistic finding record that MUST
-validate against schemas/finding.schema.json.
+validate against category-specific Finding schemas.
 """
 
 import json
@@ -24,6 +24,10 @@ SCHEMAS = {
 
 def validate(finding: dict) -> None:
     jsonschema.validate(finding, SCHEMAS[finding["category"]])
+
+
+def test_generic_finding_schema_is_absent():
+    assert not resources.files("harness").joinpath("schemas", "finding.schema.json").is_file()
 
 
 BASE = {

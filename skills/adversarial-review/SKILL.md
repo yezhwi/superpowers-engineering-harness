@@ -80,7 +80,7 @@ results. "Might fail under load" is not a scenario. Discard it.
 ### 3. Write Findings -> `.harness/findings/FND-nnn.yaml`
 
 One file per finding, e.g. `.harness/findings/fnd-001.yaml`.
-Use schema `schemas/finding.schema.json` (top level IS the finding object):
+Use schema `schemas/adversarial-finding.schema.json` (top level IS the finding object):
 
 ```yaml
 id: FND-001
@@ -127,5 +127,5 @@ Final report format:
 - [ ] Every scenario is concrete (actors, order, inputs, observable violation)?
 - [ ] For every conditional gate, did attacks cover missing/mutable control fields and policy downgrades?
 - [ ] All statuses are `PROPOSED`? No "confirmed" language anywhere?
-- [ ] YAML validates against `schemas/finding.schema.json`?
+- [ ] YAML validates against `schemas/adversarial-finding.schema.json`?
 - [ ] No business code modified?
