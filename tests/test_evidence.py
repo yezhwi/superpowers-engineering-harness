@@ -193,6 +193,18 @@ def test_collect_related_scope_records_covered_tests(tmp_path):
     assert evidence["covered_tests"] == ["tests/test_x.py::test_x"]
 
 
+def test_collect_non_test_evidence_rejects_covered_test(tmp_path):
+    result = subprocess.run(
+        [
+            sys.executable, str(REPO / "scripts" / "collect_evidence.py"),
+            "--type", "build", "--covered-test", "tests/test_x.py::test_x",
+            "--command", "true", "--harness-dir", str(tmp_path),
+        ], capture_output=True, text=True, cwd=REPO,
+    )
+    assert result.returncode == 2
+    assert "COVERED_TEST_TYPE_INVALID" in result.stderr
+
+
 def test_collect_related_scope_requires_covered_test(tmp_path):
     result = subprocess.run(
         [

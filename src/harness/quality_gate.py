@@ -1022,26 +1022,8 @@ def main(argv=None):
     parser.add_argument("--harness-dir", default=".harness")
     args = parser.parse_args(argv)
 
-    harness_dir = Path(args.harness_dir)
     print("DEPRECATED: use harness gate", file=sys.stderr)
-    try:
-        assessment = assess_gate(harness_dir)
-        status, blockers = assessment.status, list(assessment.blockers)
-        write_back(harness_dir, assessment)
-    except InvalidHarnessState as exc:
-        print(f"INVALID_HARNESS_STATE: {exc}", file=sys.stderr)
-        return 2
-
-    if status == "PASS":
-        print("QUALITY GATE: PASS")
-        return 0
-
-    print("QUALITY GATE: BLOCKED")
-    print()
-    print("Blocking:")
-    for blocker in blockers:
-        print(f"- {blocker.message}")
-    return 1
+    return 2
 
 
 if __name__ == "__main__":

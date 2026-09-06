@@ -154,6 +154,23 @@ def test_defect_rejects_terminal_finding(tmp_path):
     assert result.returncode == 2
 
 
+def test_pass_review_outcome_reports_open_finding(tmp_path):
+    repo = make_repo(tmp_path)
+    set_task_state(repo, "REVIEWING")
+    import subprocess
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, check=True)
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-qm", "base"], cwd=repo, check=True)
+    (repo / ".harness/findings/FND-001.yaml").write_text(yaml.safe_dump({
+        "id": "FND-001", "category": "adversarial", "kind": "failure_scenario",
+        "target": "REQ-001", "scenario": "open", "severity": "major", "status": "PROPOSED",
+    }))
+    result = run_cli(repo, "review", "outcome", "PASS", "--reason-code", "REVIEW_CLEAN")
+    assert result.returncode == 1
+    assert "OPEN_FINDINGS_BLOCK_PASS" in result.stderr
+
+
 def test_pass_review_outcome_maps_invalid_gate_state_to_exit_2(tmp_path):
     repo = make_repo(tmp_path)
     set_task_state(repo, "REVIEWING")

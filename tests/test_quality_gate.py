@@ -29,17 +29,18 @@ HEAD = subprocess.run(
 
 
 def _gate(harness_dir: Path):
-    return subprocess.run(
-        [
-            sys.executable,
-            str(REPO / "scripts" / "quality_gate.py"),
-            "--harness-dir",
-            str(harness_dir),
-        ],
-        capture_output=True,
-        text=True,
-        cwd=REPO,
+    from harness.quality_gate import InvalidHarnessState, assess_gate
+
+    try:
+        assessment = assess_gate(harness_dir)
+    except InvalidHarnessState as exc:
+        return subprocess.CompletedProcess([], 2, "", f"INVALID_HARNESS_STATE: {exc}\n")
+    if assessment.status == "PASS":
+        return subprocess.CompletedProcess([], 0, "QUALITY GATE: PASS\n", "")
+    output = "QUALITY GATE: BLOCKED\n\nBlocking:\n" + "".join(
+        f"- {blocker.message}\n" for blocker in assessment.blockers
     )
+    return subprocess.CompletedProcess([], 1, output, "")
 
 
 def make_harness(tmp_path: Path) -> Path:
@@ -131,6 +132,18 @@ def make_harness(tmp_path: Path) -> Path:
     findings_dir.mkdir()
 
     return h
+
+
+def test_standalone_quality_gate_is_disabled_without_state_write(tmp_path):
+    h = make_harness(tmp_path)
+    before = (h / "current-task.yaml").read_bytes()
+    result = subprocess.run(
+        [sys.executable, str(REPO / "scripts" / "quality_gate.py"), "--harness-dir", str(h)],
+        capture_output=True, text=True, cwd=REPO,
+    )
+    assert result.returncode == 2
+    assert "DEPRECATED: use harness gate" in result.stderr
+    assert (h / "current-task.yaml").read_bytes() == before
 
 
 def test_requirement_evidence_reference_cannot_escape_evidence_directory(tmp_path):
@@ -470,8 +483,10 @@ def test_open_high_complexity_finding_blocks(tmp_path):
 
 
 def test_gate_writes_back_status(tmp_path):
+    from harness.quality_gate import assess_gate, write_back
+
     h = make_harness(tmp_path)
-    assert _gate(h).returncode == 0
+    write_back(h, assess_gate(h))
     task = yaml.safe_load((h / "current-task.yaml").read_text())
     assert task["gate"]["status"] == "PASS"
     assert task["git"]["head"] == HEAD
@@ -488,9 +503,10 @@ def test_gate_write_back_preserves_task_git_baseline(tmp_path):
     task["git"]["base_commit"] = "b" * 40
     task_path.write_text(yaml.safe_dump(task))
 
-    result = _gate(h)
+    from harness.quality_gate import assess_gate, write_back
 
-    assert result.returncode == 0
+    write_back(h, assess_gate(h))
+
     persisted = yaml.safe_load(task_path.read_text())
     assert persisted["git"] == {"base_commit": "b" * 40, "head": HEAD}
 

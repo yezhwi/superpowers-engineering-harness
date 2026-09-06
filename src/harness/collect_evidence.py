@@ -333,3 +333,8 @@ def main(argv=None):
 
 if __name__ == "__main__":
     sys.exit(main())
+TEST_EVIDENCE_TYPES = {"unit_test", "integration_test", "contract_test"}
+
+    if args.covered_test and args.type not in TEST_EVIDENCE_TYPES:
+        print("COVERED_TEST_TYPE_INVALID", file=sys.stderr)
+        return 2

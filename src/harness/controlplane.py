@@ -1510,3 +1510,12 @@ def cmd_impact(action, value=None, reason=None, args=None):
         impact["full_suite"] = {"recommended": True, "reason": reason}
     transaction.atomic_write(path, yaml.safe_dump(document, sort_keys=False).encode())
     return 0
+            open_findings = [
+                finding["id"] for finding in _findings(harness_dir)
+                if finding.get("status") not in {"VERIFIED", "CLOSED", "REJECTED"}
+            ]
+            if open_findings:
+                print("OPEN_FINDINGS_BLOCK_PASS", file=sys.stderr)
+                for finding_id in open_findings:
+                    print(f"- {finding_id}", file=sys.stderr)
+                return 1
