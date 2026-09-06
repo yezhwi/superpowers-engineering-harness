@@ -50,6 +50,7 @@ def test_complexity_validator_rejects_adversarial_finding():
         validate_complexity_finding(
             {
                 "id": "FND-001",
+                "category": "adversarial",
                 "kind": "failure_scenario",
                 "target": "REQ-001",
                 "scenario": "wrong consumer",
@@ -91,6 +92,7 @@ def test_write_complexity_review_persists_findings_and_metadata(tmp_path):
         "task": "TASK-004",
         "base": "HEAD~1",
         "head": "HEAD",
+        "checks": audit_checks(),
         "findings": [finding()],
     }
 
@@ -113,7 +115,11 @@ def test_complexity_review_validation_failure_leaves_no_canonical_artifacts(tmp_
     with pytest.raises(ValidationError):
         write_complexity_review(
             harness_dir,
-            {"task": "TASK-004", "findings": [finding(), invalid]},
+            {
+                "task": "TASK-004",
+                "checks": audit_checks(),
+                "findings": [finding(), invalid],
+            },
         )
 
     assert not list((harness_dir / "findings").glob("CPLX-*.yaml"))

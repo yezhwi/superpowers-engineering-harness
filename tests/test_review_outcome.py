@@ -92,6 +92,7 @@ def test_defect_routes_to_reproducing_with_open_finding(tmp_path):
         yaml.safe_dump(
             {
                 "id": "FND-001",
+                "category": "adversarial",
                 "kind": "failure_scenario",
                 "target": "REQ-001",
                 "scenario": "reproduces",
@@ -127,6 +128,7 @@ def test_defect_rejects_terminal_finding(tmp_path):
         yaml.safe_dump(
             {
                 "id": "FND-001",
+                "category": "adversarial",
                 "kind": "failure_scenario",
                 "target": "REQ-001",
                 "scenario": "closed",

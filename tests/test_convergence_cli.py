@@ -103,6 +103,7 @@ def add_finding(h: Path, fid: str, status="PROPOSED", severity="major"):
         yaml.safe_dump(
             {
                 "id": fid,
+                "category": "adversarial",
                 "kind": "failure_scenario",
                 "target": "REQ-001",
                 "scenario": "attack",
@@ -208,7 +209,25 @@ def test_blocked_recovery_preserves_baseline_across_second_complexity_review(tmp
     assert yaml.safe_load(task_path.read_text())["git"]["base_commit"] == base
 
     source = tmp_path / "second-review.yaml"
-    source.write_text(yaml.safe_dump({"task": task["task"]["id"], "findings": []}))
+    source.write_text(
+        yaml.safe_dump(
+            {
+                "task": task["task"]["id"],
+                "checks": {
+                    name: {"result": "not_applicable", "evidence": "fixture"}
+                    for name in (
+                        "delete",
+                        "reuse",
+                        "stdlib",
+                        "native",
+                        "yagni",
+                        "shrink",
+                    )
+                },
+                "findings": [],
+            }
+        )
+    )
     second_review = run_cli(tmp_path, "review", "complexity", "--file", str(source))
 
     assert second_review.returncode == 0, second_review.stderr

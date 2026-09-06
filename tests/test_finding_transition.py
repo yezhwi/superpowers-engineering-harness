@@ -32,6 +32,7 @@ def setup(tmp_path):
     h = tmp_path / ".harness"
     f = {
         "id": "FND-001",
+        "category": "adversarial",
         "kind": "failure_scenario",
         "target": "REQ-001",
         "scenario": "attack",

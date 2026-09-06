@@ -40,6 +40,7 @@ def make_harness(tmp_path: Path) -> Path:
 def write_finding(h: Path, **overrides):
     finding = {
         "id": "FND-001",
+        "category": "adversarial",
         "kind": "failure_scenario",
         "target": "REQ-001",
         "scenario": "concrete lifecycle test attack",
@@ -163,6 +164,7 @@ def test_confirmed_diagnosability_finding_blocks_without_regression_test(tmp_pat
     h = make_harness(tmp_path)
     finding = {
         "id": "FND-001",
+        "category": "adversarial",
         "kind": "requirement_violation",
         "target": "REQ-001",
         "scenario": "missing diagnostic context",

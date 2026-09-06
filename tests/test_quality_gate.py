@@ -120,6 +120,11 @@ def make_harness(tmp_path: Path) -> Path:
     (evidence_dir / "build.json").write_text(json.dumps(build_evidence))
     review = json.loads((evidence_dir / "build.json").read_text())
     review["type"] = "review"
+    review["checks"] = {
+        name: {"result": "not_applicable", "evidence": "fixture"}
+        for name in ("delete", "reuse", "stdlib", "native", "yagni", "shrink")
+    }
+    review["review_scope"] = {"files": []}
     (evidence_dir / "complexity-review.json").write_text(json.dumps(review))
 
     findings_dir = h / "findings"
@@ -570,6 +575,7 @@ def test_stale_evidence_via_real_collection(tmp_path):
 def finding_doc(fid, severity, status, **extra):
     finding = {
         "id": fid,
+        "category": "adversarial",
         "kind": "failure_scenario",
         "target": "REQ-001",
         "scenario": "concrete attack scenario",
@@ -990,7 +996,7 @@ def test_finding_missing_lifecycle_fields_is_invalid_harness_state(tmp_path):
     )
     result = _gate(h)
     assert result.returncode == 2
-    assert "FINDING_SCHEMA_UNKNOWN" in result.stderr
+    assert "MIGRATION_REQUIRED" in result.stderr
 
 
 def test_evidence_missing_commit_is_invalid_harness_state(tmp_path):

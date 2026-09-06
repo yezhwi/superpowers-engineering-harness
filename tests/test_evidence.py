@@ -189,7 +189,7 @@ def test_collect_related_scope_records_covered_tests(tmp_path):
     )
     assert result.returncode == 0, result.stderr
     evidence = json.loads((tmp_path / "evidence" / "unit-test.json").read_text())
-    assert evidence["scope"] == "related"
+    assert "scope" not in evidence
     assert evidence["covered_tests"] == ["tests/test_x.py::test_x"]
 
 
@@ -236,6 +236,38 @@ def test_collect_integration_evidence_records_covered_tests(tmp_path):
     assert result.returncode == 0, result.stderr
     evidence = json.loads((tmp_path / "evidence" / "integration-test.json").read_text())
     assert evidence["covered_tests"] == ["tests/test_api.py::test_create"]
+    assert "scope" not in evidence
+
+
+def test_collect_integration_related_scope_records_scope(tmp_path):
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(REPO / "scripts" / "collect_evidence.py"),
+            "--type",
+            "integration_test",
+            "--finding",
+            "FND-001",
+            "--test",
+            "tests/test_api.py::test_create",
+            "--phase",
+            "full",
+            "--scope",
+            "related",
+            "--covered-test",
+            "tests/test_api.py::test_create",
+            "--command",
+            "true",
+            "--harness-dir",
+            str(tmp_path),
+        ],
+        capture_output=True,
+        text=True,
+        cwd=REPO,
+    )
+    assert result.returncode == 0, result.stderr
+    evidence = json.loads((tmp_path / "evidence" / "FND-001-full-integration-test.json").read_text())
+    assert evidence["scope"] == "related"
 
 
 def test_collect_timeout_records_deterministic_failed_evidence():

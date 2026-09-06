@@ -28,11 +28,11 @@ run gate
    project, or contract content yourself. Sub-skills do that.
 2. **No state in context only.** Task state lives ONLY in
    `.harness/current-task.yaml`. Always read it from disk before deciding.
-3. **No ad-hoc transitions.** Every state change must go through
-   the shared state machine via `harness transition` (or, only when
-   working inside the harness repo itself,
-   `scripts/state_machine.py` / `scripts/validate_state.py`); never edit
-   the state field ad hoc without validating the transition.
+3. **No ad-hoc transitions.** Persist state only through harness CLI
+   commands. `GATING → CONVERGED` and `GATING → BLOCKED` may only be written
+   by `harness gate`. Other legal edges use `harness transition`,
+   `harness review outcome`, `harness resume`, or `harness finding resume-review`.
+   Never edit the state field by hand.
 4. **No self-declared done.** Only persisted `DECISION: CONVERGED` plus an
    explicit `CONVERGED -> DONE` transition ends a task.
 
@@ -126,7 +126,7 @@ Read persisted `state` and `risk.profile` from `.harness/current-task.yaml`, the
 | `CREATED` | Classify mutating task first with `harness task classify`; do not invoke task-contract before profile selection. |
 | `CLASSIFIED` | FAST only: transition to IMPLEMENTING and follow RED/fix/GREEN/Light Gate. Q2/Q3 classification must use standard task contract before implementation. |
 | `PLANNED` | Invoke **minimal-implementation** before any implementation. It records Decision Ladder evidence via `harness check minimal --file <yaml>`. Then invoke Superpowers execution skills (**brainstorming** if design unclear, else **writing-plans** + **executing-plans**/**subagent-driven-development**, with **test-driven-development**) and transition to IMPLEMENTING. |
-| `IMPLEMENTING` | Continue execution skill. Before requesting VERIFYING, automatically record impacted files, dependents, contracts, risks, and related tests with `harness impact add-*`; use related tests by default. If impact recommends full suite, request explicit human authorization; never authorize it autonomously. Then transition to VERIFYING and collect evidence via `harness evidence --type <t> --command "<cmd>"`. |
+| `IMPLEMENTING` | Continue execution skill. Before requesting VERIFYING, automatically record impacted files, dependents, contracts, risks, and related tests with `harness impact add-*`; use related tests by default. If impact recommends full suite, request explicit human authorization; never authorize it autonomously. Then transition to VERIFYING and collect evidence via `harness evidence run --type <t> --command "<cmd>"`. Record effective review scope with `harness impact scope --format yaml`. |
 | `VERIFYING` | Run deterministic Verification Plan commands/tests. Any red -> IMPLEMENTING (TDD), then re-verify. All green -> invoke **complexity-reviewer** and transition to REVIEWING. |
 | `REVIEWING` | For Q3, and Q2 when `observability.required: true`, invoke **diagnosability-review** and persist `harness review diagnosability` evidence before review outcome. `--base <ref>` is explicit override; missing baseline fails closed. Then invoke Superpowers review and route only with review outcome. |
 | `REPRODUCING` | Invoke **reproduce-finding** skill. CONFIRMED finding -> FIXING (fix with TDD) -> VERIFYING. REJECTED finding -> close it, return to REVIEWING. |
@@ -148,7 +148,7 @@ Full-suite execution requires explicit user authorization persisted by:
 
 ```bash
 harness authorize full-suite
-harness evidence --type unit_test --scope full_suite --command "pytest"
+harness evidence run --type unit_test --scope full_suite --command "pytest"
 ```
 
 Without authorization, `--scope full_suite` exits 2 before executing the
@@ -166,17 +166,17 @@ harness review outcome VERIFICATION_GAP --reason-code TEST_COVERAGE_INSUFFICIENT
 harness review complexity --file review.yaml       # task Git baseline
 harness review complexity --base origin/main --file review.yaml  # explicit override
 harness transition VERIFYING                # validate + persist transition
-harness evidence --type unit_test --command "pytest"   # HEAD-bound evidence
+harness evidence run --type unit_test --command "pytest" # HEAD-bound evidence
+harness evidence attach --type build --scope related --file external-proof.json
+harness finding resume-review FND-001       # route FIXED Finding to REVIEWING
+harness gate preflight                      # inspect Gate blockers before final Gate
 harness gate                                # inspect DECISION: and persisted status
 ```
 
-Script equivalents — ONLY inside the harness repo root:
-
-```bash
-python scripts/harness_status.py            # current state overview
-python scripts/validate_state.py CUR TGT    # transition legality only
-python scripts/quality_gate.py              # deterministic gate
-```
+Inside the harness repo, `python scripts/harness_status.py` and
+`python scripts/validate_state.py CUR TGT` remain library wrappers.
+`python scripts/quality_gate.py` is deprecated: it evaluates Gate without
+moving state. Use `harness gate`.
 
 Transition example:
 

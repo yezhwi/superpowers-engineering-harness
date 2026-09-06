@@ -209,7 +209,7 @@ def test_status_rejects_done_with_cached_pass_and_open_canonical_finding(tmp_pat
     task["gate"] = {"status": "PASS", "blocked_by": []}
     task_path.write_text(yaml.safe_dump(task))
     (repo / ".harness/findings/FND-001.yaml").write_text(yaml.safe_dump({
-        "id": "FND-001", "kind": "failure_scenario", "target": "REQ-001",
+        "id": "FND-001", "category": "adversarial", "kind": "failure_scenario", "target": "REQ-001",
         "scenario": "open canonical defect", "severity": "major", "status": "PROPOSED",
     }))
 

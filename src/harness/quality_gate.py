@@ -35,6 +35,8 @@ from .workspace import (
     WorkspaceError,
     changed_paths_since,
     git_head as workspace_head,
+    observability_inspected_paths,
+    project_task_scope,
     protected_paths_fingerprint,
     snapshot,
 )
@@ -119,12 +121,10 @@ def finding_schema_name(finding: dict) -> str:
         return "complexity-finding.schema.json"
     if category == "interface":
         return "interface-finding.schema.json"
-    if category is None and finding.get("kind") in {
-        "failure_scenario",
-        "requirement_violation",
-        "invariant_violation",
-    }:
+    if category == "adversarial":
         return "adversarial-finding.schema.json"
+    if category is None:
+        raise InvalidHarnessState("MIGRATION_REQUIRED")
     raise InvalidHarnessState("FINDING_SCHEMA_UNKNOWN")
 
 
@@ -555,6 +555,24 @@ def _evaluate_gate(
                 value == "fail" for value in review_record.get("checks", {}).values()
             ):
                 raise ValueError("invalid interface review")
+            expected_files = list(
+                project_task_scope(
+                    task,
+                    impact.get("impact") or {},
+                    inspected_paths=observability_inspected_paths(harness_dir),
+                )
+            )
+            recorded_files = list(
+                (review_record.get("review_scope") or {}).get("files") or []
+            )
+            if recorded_files != expected_files:
+                raise ValueError("interface review scope is stale")
+            expected_contracts = {
+                item.get("contract_id") or item.get("id")
+                for item in external_interfaces
+            }
+            if expected_contracts - set(review_record.get("contracts") or []):
+                raise ValueError("interface review contracts are incomplete")
         except (OSError, json.JSONDecodeError, EvidenceValidationError, ValueError):
             block(
                 "INTERFACE_VERIFICATION_MISSING",
@@ -824,6 +842,39 @@ def _evaluate_gate(
                     f"complexity-review evidence invalid: {exc}",
                     source="complexity-review",
                 )
+            else:
+                expected_files = list(
+                    project_task_scope(
+                        task,
+                        impact.get("impact") or {},
+                        inspected_paths=observability_inspected_paths(harness_dir),
+                    )
+                )
+                recorded_files = list(
+                    (review.get("review_scope") or {}).get("files") or []
+                )
+                if recorded_files != expected_files:
+                    block(
+                        "COMPLEXITY_REVIEW_STALE",
+                        "verification",
+                        "complexity review scope is stale",
+                        source="complexity-review",
+                    )
+                checks = review.get("checks") or {}
+                if set(checks) != {
+                    "delete",
+                    "reuse",
+                    "stdlib",
+                    "native",
+                    "yagni",
+                    "shrink",
+                }:
+                    block(
+                        "COMPLEXITY_REVIEW_STALE",
+                        "verification",
+                        "complexity review checks are missing",
+                        source="complexity-review",
+                    )
         blocking = set(complexity_cfg.get("blocking", ["high"]))
         for finding in findings:
             if (
@@ -972,6 +1023,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
 
     harness_dir = Path(args.harness_dir)
+    print("DEPRECATED: use harness gate", file=sys.stderr)
     try:
         assessment = assess_gate(harness_dir)
         status, blockers = assessment.status, list(assessment.blockers)

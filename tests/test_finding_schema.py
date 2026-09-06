@@ -11,17 +11,24 @@ import pytest
 
 jsonschema = pytest.importorskip("jsonschema")
 
-SCHEMA = json.loads(
-    resources.files("harness").joinpath("schemas", "finding.schema.json").read_text()
-)
+SCHEMAS = {
+    category: json.loads(
+        resources.files("harness").joinpath("schemas", filename).read_text()
+    )
+    for category, filename in {
+        "adversarial": "adversarial-finding.schema.json",
+        "diagnosability": "diagnosability-finding.schema.json",
+    }.items()
+}
 
 
 def validate(finding: dict) -> None:
-    jsonschema.validate(finding, SCHEMA)
+    jsonschema.validate(finding, SCHEMAS[finding["category"]])
 
 
 BASE = {
     "id": "FND-001",
+    "category": "adversarial",
     "kind": "invariant_violation",
     "target": "INV-001",
     "scenario": "duplicate side effect under concurrent pickup",
@@ -55,6 +62,7 @@ def test_diag_finding_requires_reason_location_and_compliance():
         validate(
             {
                 "id": "FND-004",
+                "category": "adversarial",
                 "kind": "requirement_violation",
                 "target": "REQ-003",
                 "category": "diagnosability",
@@ -212,6 +220,10 @@ def test_canonical_finding_schema_resolver_selects_one_schema_per_category():
         finding_schema_name({**BASE, "status": "PROPOSED"})
         == "adversarial-finding.schema.json"
     )
+    with pytest.raises(Exception, match="MIGRATION_REQUIRED"):
+        finding_schema_name(
+            {key: value for key, value in BASE.items() if key != "category"}
+        )
     assert (
         finding_schema_name({**DIAG_BASE, "status": "PROPOSED"})
         == "diagnosability-finding.schema.json"

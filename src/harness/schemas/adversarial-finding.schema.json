@@ -6,6 +6,7 @@
   "type": "object",
   "required": [
     "id",
+    "category",
     "kind",
     "target",
     "scenario",
@@ -13,6 +14,9 @@
     "status"
   ],
   "properties": {
+    "category": {
+      "const": "adversarial"
+    },
     "id": {
       "type": "string",
       "pattern": "^FND-[0-9]+$"
@@ -105,11 +109,6 @@
     "verified_at": {
       "type": "string",
       "description": "ISO timestamp, set at VERIFIED"
-    },
-    "category": {
-      "enum": [
-        "diagnosability"
-      ]
     },
     "reason_code": {
       "enum": [
