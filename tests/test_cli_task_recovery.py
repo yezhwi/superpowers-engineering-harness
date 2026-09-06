@@ -229,7 +229,10 @@ def test_task_recover_records_current_git_head_as_complexity_baseline(tmp_path):
 
     assert result.returncode == 0, result.stderr
     task = yaml.safe_load((repo / ".harness/current-task.yaml").read_text())
-    assert task["git"] == {"head": head, "base_commit": head}
+    assert task["git"]["head"] == head
+    assert task["git"]["base_commit"] == head
+    assert task["git"]["head_at_start"] == head
+    assert task["git"]["base_ref"]
 
 
 def test_task_new_without_git_head_fails_without_mutation(tmp_path):

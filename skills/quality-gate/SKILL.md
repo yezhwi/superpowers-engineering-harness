@@ -1,6 +1,6 @@
 ---
 name: quality-gate
-description: "Use when task state is GATING and a go/no-go decision is needed before CONVERGED. Runs quality_gate.py and maps its exit code to state transitions; MUST NOT assess quality by judgement."
+description: "Use when task state is GATING and a go/no-go decision is needed before CONVERGED. Runs `harness gate` and follows `DECISION:`; MUST NOT assess quality by judgement."
 ---
 
 # Quality Gate Skill

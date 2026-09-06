@@ -13,6 +13,7 @@ import sys
 
 from pathlib import Path
 from harness import controlplane
+from harness.collect_evidence import VALID_TYPES
 from harness.init import InitResult, init_current_repository
 from harness.repository import RepositoryNotFoundError, find_git_root
 
@@ -79,7 +80,7 @@ def _main(argv=None) -> int:
     p_outcome.add_argument("--reason-code", required=True)
     p_outcome.add_argument("--finding", action="append", default=[])
     p_ev = sub.add_parser("evidence", help="run a command and save HEAD-bound evidence")
-    p_ev.add_argument("--type", required=True)
+    p_ev.add_argument("--type", required=True, choices=sorted(VALID_TYPES))
     p_ev.add_argument("--scope", choices=["related", "full_suite"], default="related")
     p_ev.add_argument("--command", required=True, dest="evidence_command")
     p_ev.add_argument("--finding")

@@ -26,6 +26,13 @@ def make_repo(tmp_path: Path) -> Path:
     return tmp_path
 
 
+def audit_checks():
+    return {
+        name: {"result": "not_applicable", "evidence": "fixture"}
+        for name in ("delete", "reuse", "stdlib", "native", "yagni", "shrink")
+    }
+
+
 def set_task_state(repo: Path, state: str) -> None:
     path = repo / ".harness/current-task.yaml"
     task = yaml.safe_load(path.read_text())
@@ -108,6 +115,7 @@ def test_review_complexity_writes_findings_and_metadata(tmp_path):
             capture_output=True,
             text=True,
         ).stdout.strip(),
+        "checks": audit_checks(),
         "findings": [
             {
                 "id": "CPLX-001",
@@ -159,6 +167,7 @@ def test_complexity_scope_excludes_protected_dirty_path(tmp_path):
         yaml.safe_dump(
             {
                 "task": "TASK-004",
+                "checks": audit_checks(),
                 "findings": [],
                 "review_scope": {"files": ["owned.py"]},
             }
@@ -186,6 +195,7 @@ def test_complexity_scope_excludes_unadopted_dirty_file(tmp_path):
         yaml.safe_dump(
             {
                 "task": "TASK-004",
+                "checks": audit_checks(),
                 "findings": [],
                 "review_scope": {"files": []},
             }
@@ -214,8 +224,8 @@ def test_legacy_complexity_input_warns_before_v04_rejection(tmp_path):
     result = run_cli(
         repo, "review", "complexity", "--base", "HEAD", "--file", str(source)
     )
-    assert result.returncode == 0, result.stderr
-    assert "COMPLEXITY_CHECKS_DEPRECATED" in result.stderr
+    assert result.returncode == 2
+    assert "COMPLEXITY_CHECKS_REQUIRED" in result.stderr
 
 
 def test_complexity_defaults_to_task_baseline_for_clean_committed_change(tmp_path):
@@ -237,7 +247,9 @@ def test_complexity_defaults_to_task_baseline_for_clean_committed_change(tmp_pat
     task["task"]["id"] = "TASK-005"
     task_path.write_text(yaml.safe_dump(task))
     source = tmp_path / "review.yaml"
-    source.write_text(yaml.safe_dump({"task": "TASK-005", "findings": []}))
+    source.write_text(
+        yaml.safe_dump({"task": "TASK-005", "checks": audit_checks(), "findings": []})
+    )
 
     result = run_cli(repo, "review", "complexity", "--file", str(source))
 

@@ -41,6 +41,7 @@ def test_missing_case_evidence_recovers_only_through_verifying(tmp_path):
 
     evidence = json.loads((harness_dir / "evidence" / "build.json").read_text())
     evidence["type"] = "integration_test"
+    evidence["command"] = f"pytest {NODE}"
     evidence["covered_tests"] = [NODE]
     (harness_dir / "evidence" / "recovered-case.json").write_text(json.dumps(evidence))
 
@@ -76,6 +77,7 @@ def test_bound_case_with_fresh_evidence_reaches_done(tmp_path):
 
     build = json.loads((harness_dir / "evidence" / "build.json").read_text())
     build["type"] = "integration_test"
+    build["command"] = f"pytest {NODE}"
     build["covered_tests"] = [NODE]
     (harness_dir / "evidence" / "case-evidence.json").write_text(json.dumps(build))
 

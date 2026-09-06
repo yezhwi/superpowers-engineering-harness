@@ -5,6 +5,8 @@ import hashlib
 import subprocess
 from pathlib import Path
 
+import yaml
+
 
 class WorkspaceError(RuntimeError):
     """Git repository state cannot be read deterministically."""
@@ -44,6 +46,38 @@ def git_head(repo_root: Path | None = None) -> str:
         return _run(root, "rev-parse", "HEAD").decode().strip()
     except WorkspaceError as exc:
         raise WorkspaceError(f"cannot resolve git HEAD: {exc}") from exc
+
+
+def git_baseline(head: str | None = None, repo_root: Path | None = None) -> dict:
+    """Freeze task Git identity: branch name when attached, otherwise the SHA."""
+    sha = head or git_head(repo_root)
+    try:
+        ref = _run(_root(repo_root), "rev-parse", "--abbrev-ref", "HEAD").decode().strip()
+    except WorkspaceError:
+        ref = sha
+    if not ref or ref == "HEAD":
+        ref = sha
+    return {
+        "base_ref": ref,
+        "base_commit": sha,
+        "head_at_start": sha,
+        "head": sha,
+    }
+
+
+def observability_inspected_paths(harness_dir: Path) -> tuple[str, ...]:
+    """Return observability inspected paths; missing contract yields an empty tuple."""
+    path = harness_dir / "observability.yaml"
+    if not path.is_file():
+        return ()
+    try:
+        document = yaml.safe_load(path.read_text()) or {}
+    except (OSError, yaml.YAMLError):
+        return ()
+    if not isinstance(document, dict) or not document.get("required"):
+        return ()
+    paths = (document.get("applicability") or {}).get("inspected_paths") or ()
+    return tuple(path for path in paths if path and path != ".")
 
 
 def _untracked_paths(repo_root: Path) -> set[str]:
@@ -132,14 +166,18 @@ def project_task_scope(
     inspected_paths: tuple[str, ...] | list[str] = (),
     direct_dependencies: tuple[str, ...] | list[str] = (),
 ) -> tuple[str, ...]:
-    """Project task ownership into review files, excluding protected user paths."""
+    """Project owned, contract, dependency, and inspected paths into review files.
+
+    Protected user paths never enter this set unless they are also owned,
+    contracted, inspected, or declared as dependencies.
+    """
     scope = task.get("scope") or {}
     included = set(scope.get("owned_paths") or ())
     included.update(impact.get("contracts") or ())
     included.update(impact.get("direct_dependents") or ())
     included.update(inspected_paths)
     included.update(direct_dependencies)
-    return tuple(sorted(included - set(scope.get("protected_user_paths") or ())))
+    return tuple(sorted(included))
 
 
 def review_scope(base_ref: str, repo_root: Path | None = None) -> ReviewScope:

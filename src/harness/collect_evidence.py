@@ -16,6 +16,7 @@ import argparse
 import datetime
 import json
 import platform
+import re
 import shlex
 import subprocess
 import sys
@@ -24,6 +25,7 @@ from pathlib import Path
 
 import yaml
 
+from .paths import EvidenceReferenceError, evidence_output_path
 from .budget import (
     BudgetOverrideRequired,
     budget_action,
@@ -35,6 +37,8 @@ from .budget import (
 from .evidence_validator import ReuseRequest, can_reuse_evidence
 from .telemetry import update_telemetry
 from .workspace import git_head as workspace_head, snapshot
+
+TEST_EVIDENCE_TYPES = {"unit_test", "integration_test", "contract_test"}
 
 VALID_TYPES = {
     "build",
@@ -49,7 +53,8 @@ VALID_TYPES = {
 }
 
 TAIL_CHARS = 4000
-COMMAND_TIMEOUT_SECONDS = 300
+COMMAND_TIMEOUT_SECONDS = 1800
+FINDING_ID_PATTERN = re.compile(r"^(?:FND|CPLX|DIAG)-[0-9]+$")
 
 
 @dataclass(frozen=True)
@@ -94,33 +99,51 @@ def evidence_filename(
         return f"fast-{phase}-{stem}.json"
     if phase not in {"red", "green", "full"}:
         raise ValueError("finding evidence requires phase red, green, or full")
+    if not FINDING_ID_PATTERN.fullmatch(finding_id):
+        raise ValueError("FINDING_ID_INVALID")
     return f"{finding_id}-{phase}-{stem}.json"
 
 
+def test_selectors(command: str) -> tuple[str, ...] | None:
+    """Return explicit pytest or Vitest selectors, including ``sh -lc`` payloads."""
+    pending = [command]
+    selectors: list[str] = []
+    found_runner = False
+    while pending:
+        try:
+            tokens = shlex.split(pending.pop())
+        except ValueError:
+            continue
+        for index, token in enumerate(tokens):
+            if (
+                Path(token).name in {"sh", "bash"}
+                and tokens[index + 1:index + 2] == ["-lc"]
+                and index + 2 < len(tokens)
+            ):
+                pending.append(tokens[index + 2])
+            if Path(token).name.startswith("pytest"):
+                found_runner = True
+                start = index + 1
+            elif (
+                Path(token).name.startswith("python")
+                and tokens[index + 1:index + 3] == ["-m", "pytest"]
+            ) or (token == "npx" and tokens[index + 1:index + 3] == ["vitest", "run"]):
+                found_runner = True
+                start = index + 3
+            else:
+                continue
+            selectors.extend(
+                value
+                for value in tokens[start:tokens.index("&&", start) if "&&" in tokens[start:] else len(tokens)]
+                if not value.startswith("-")
+                and (".py" in value or value.endswith((".js", ".ts", ".tsx", ".jsx")))
+            )
+    return tuple(dict.fromkeys(selectors)) if found_runner else None
+
+
 def pytest_selectors(command: str) -> tuple[str, ...] | None:
-    """Return explicit pytest selectors, or ``None`` for non-pytest commands."""
-    try:
-        tokens = shlex.split(command)
-    except ValueError:
-        return None
-    if not tokens:
-        return None
-    if Path(tokens[0]).name.startswith("pytest"):
-        start = 1
-    elif (
-        len(tokens) >= 3
-        and Path(tokens[0]).name.startswith("python")
-        and tokens[1] == "-m"
-        and tokens[2] == "pytest"
-    ):
-        start = 3
-    else:
-        return None
-    return tuple(
-        token
-        for token in tokens[start:]
-        if not token.startswith("-") and (".py" in token or "::" in token)
-    )
+    """Compatibility alias for callers that only need explicit test selectors."""
+    return test_selectors(command)
 
 
 def _text_output(value: str | bytes | None) -> str:
@@ -185,7 +208,7 @@ def _collect(
             "kind": "timeout",
             "timeout_seconds": timeout_seconds,
         }
-    if evidence_type == "unit_test":
+    if finding_id is not None:
         evidence["scope"] = scope
     if covered_tests:
         evidence["covered_tests"] = list(covered_tests)
@@ -223,11 +246,17 @@ def main(argv=None):
     if bool(args.finding) != bool(args.test):
         print("INVALID_USAGE: --finding and --test must be paired", file=sys.stderr)
         return 2
+    if args.finding and not FINDING_ID_PATTERN.fullmatch(args.finding):
+        print("FINDING_ID_INVALID", file=sys.stderr)
+        return 2
     if args.finding and not args.phase:
         print("INVALID_USAGE: --finding requires --phase", file=sys.stderr)
         return 2
     if not args.finding and args.phase == "full":
         print("INVALID_USAGE: task phase must be red or green", file=sys.stderr)
+        return 2
+    if args.covered_test and args.type not in TEST_EVIDENCE_TYPES:
+        print("COVERED_TEST_TYPE_INVALID", file=sys.stderr)
         return 2
     if args.type == "unit_test" and args.scope == "related" and not args.covered_test:
         print("RELATED_COVERED_TEST_REQUIRED", file=sys.stderr)
@@ -242,9 +271,14 @@ def main(argv=None):
                 print("COVERED_TEST_NOT_EXECUTED", file=sys.stderr)
                 return 2
     out_dir = Path(args.harness_dir) / "evidence"
-    out_file = out_dir / evidence_filename(
-        args.type, finding_id=args.finding, phase=args.phase
-    )
+    try:
+        out_file = evidence_output_path(
+            Path(args.harness_dir),
+            evidence_filename(args.type, finding_id=args.finding, phase=args.phase),
+        )
+    except (ValueError, EvidenceReferenceError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
     if args.reuse_if_valid and not args.finding and args.phase is None:
         request = ReuseRequest(
             args.type,
@@ -333,8 +367,3 @@ def main(argv=None):
 
 if __name__ == "__main__":
     sys.exit(main())
-TEST_EVIDENCE_TYPES = {"unit_test", "integration_test", "contract_test"}
-
-    if args.covered_test and args.type not in TEST_EVIDENCE_TYPES:
-        print("COVERED_TEST_TYPE_INVALID", file=sys.stderr)
-        return 2

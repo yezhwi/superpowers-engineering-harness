@@ -76,7 +76,7 @@ def validate_complexity_finding(document: dict) -> None:
 def validate_complexity_checks(review: dict) -> None:
     checks = review.get("checks")
     if checks is None:
-        return  # v0.2.7 legacy compatibility
+        _invalid("COMPLEXITY_CHECKS_REQUIRED")
     names = {"delete", "reuse", "stdlib", "native", "yagni", "shrink"}
     if set(checks) != names:
         _invalid("COMPLEXITY_CHECKS_INVALID")

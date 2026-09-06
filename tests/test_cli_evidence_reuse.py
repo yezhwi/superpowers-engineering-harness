@@ -3,6 +3,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import yaml
+
 REPO = Path(__file__).resolve().parent.parent
 
 
@@ -55,9 +57,7 @@ def test_evidence_attach_imports_complete_record_without_execution(tmp_path):
     from harness.workspace import snapshot
 
     result_file = tmp_path.parent / "result.json"
-    result_file.write_text(
-        json.dumps(
-            {
+    record = {
                 "command": "false",
                 "exit_code": 0,
                 "started_at": "2026-01-01T00:00:00+00:00",
@@ -85,8 +85,26 @@ def test_evidence_attach_imports_complete_record_without_execution(tmp_path):
                     "reference": "ci-run-1",
                 },
             }
-        )
+    result_file.write_text(json.dumps(record))
+    missing_task = cli(
+        tmp_path,
+        "evidence",
+        "attach",
+        "--type",
+        "build",
+        "--command",
+        "false",
+        "--result-file",
+        str(result_file),
     )
+    assert missing_task.returncode == 2
+    assert "EVIDENCE_ATTACH_TASK_MISMATCH" in missing_task.stderr
+
+    assert cli(tmp_path, "task", "migrate-id", "TASK-001").returncode == 0
+    record["task"] = yaml.safe_load(
+        (tmp_path / ".harness/current-task.yaml").read_text()
+    )["task"]["id"]
+    result_file.write_text(json.dumps(record))
     result = cli(
         tmp_path,
         "evidence",

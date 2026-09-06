@@ -34,6 +34,7 @@ def integration_evidence(harness_dir, name, covered_tests):
     source = json.loads((harness_dir / "evidence" / "build.json").read_text())
     source["type"] = "integration_test"
     source["covered_tests"] = covered_tests
+    source["command"] = "pytest " + " ".join(covered_tests)
     (harness_dir / "evidence" / name).write_text(json.dumps(source))
 
 
@@ -180,3 +181,114 @@ def test_gate_uses_multiple_same_type_evidence_records_for_case_coverage(tmp_pat
 
     assert status == "PASS"
     assert blockers == []
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "kubectl exec deploy/app -- sh -lc 'cd /workspace && pytest tests/test_orders.py::test_cancel'",
+        "sh -lc 'pytest tests/test_orders.py::test_cancel'",
+    ],
+)
+def test_gate_accepts_explicit_pytest_selector_inside_supported_wrappers(tmp_path, command):
+    """Wrapped explicit pytest selectors remain auditable coverage proof."""
+    from harness.quality_gate import run_gate
+
+    harness_dir = make_harness(tmp_path)
+    configure_requirement_case(harness_dir, tests=[NODE_A])
+    integration_evidence(harness_dir, "integration.json", [NODE_A])
+    path = harness_dir / "evidence" / "integration.json"
+    evidence = json.loads(path.read_text())
+    evidence["command"] = command
+    path.write_text(json.dumps(evidence))
+
+    status, blockers = run_gate(harness_dir)
+
+    assert status == "PASS"
+    assert blockers == []
+
+
+def test_gate_accepts_explicit_vitest_file_selector_inside_container_wrapper(tmp_path):
+    """Container-wrapped Vitest file selector proves matching frontend binding."""
+    from harness.quality_gate import run_gate
+
+    node = "src/__tests__/knowledgeBase-document-tree.spec.ts"
+    harness_dir = make_harness(tmp_path)
+    configure_requirement_case(harness_dir, tests=[node])
+    integration_evidence(harness_dir, "integration.json", [node])
+    path = harness_dir / "evidence" / "integration.json"
+    evidence = json.loads(path.read_text())
+    evidence["command"] = (
+        "kubectl exec deploy/frontend -- sh -lc "
+        "'cd /workspace && npx vitest run src/__tests__/knowledgeBase-document-tree.spec.ts'"
+    )
+    path.write_text(json.dumps(evidence))
+
+    status, blockers = run_gate(harness_dir)
+
+    assert status == "PASS"
+    assert blockers == []
+
+
+def test_gate_rejects_path_after_wrapped_pytest_command_separator(tmp_path):
+    """Only pytest arguments, never later shell command arguments, prove coverage."""
+    from harness.quality_gate import run_gate
+
+    harness_dir = make_harness(tmp_path)
+    configure_requirement_case(harness_dir, tests=[NODE_B])
+    integration_evidence(harness_dir, "integration.json", [NODE_B])
+    path = harness_dir / "evidence" / "integration.json"
+    evidence = json.loads(path.read_text())
+    evidence["command"] = (
+        "sh -lc 'pytest tests/test_orders.py::test_cancel && echo tests/test_orders.py::test_refund'"
+    )
+    path.write_text(json.dumps(evidence))
+
+    status, blockers = run_gate(harness_dir)
+
+    assert status == "BLOCKED"
+    assert blocker_codes(blockers) == {"TEST_EVIDENCE_MISSING"}
+
+
+def test_gate_accepts_container_relative_pytest_selector_for_declared_repo_path(tmp_path):
+    """Container workdir-relative selectors match only declared repository path suffixes."""
+    from harness.quality_gate import run_gate
+
+    node = "backend/tests/test_orders.py::test_cancel"
+    harness_dir = make_harness(tmp_path)
+    configure_requirement_case(harness_dir, tests=[node])
+    integration_evidence(harness_dir, "integration.json", [node])
+    path = harness_dir / "evidence" / "integration.json"
+    evidence = json.loads(path.read_text())
+    evidence["command"] = "sh -lc 'cd /workspace/backend && pytest tests/test_orders.py::test_cancel'"
+    path.write_text(json.dumps(evidence))
+
+    status, blockers = run_gate(harness_dir)
+
+    assert status == "PASS"
+    assert blockers == []
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "kubectl exec deploy/app -- sh -lc 'cd /workspace && pytest'",
+        "kubectl exec deploy/frontend -- sh -lc 'cd /workspace && npx vitest run'",
+    ],
+)
+def test_gate_rejects_wrapped_test_command_without_explicit_selector(tmp_path, command):
+    """Covered-test metadata cannot turn an unselected suite run into node proof."""
+    from harness.quality_gate import run_gate
+
+    harness_dir = make_harness(tmp_path)
+    configure_requirement_case(harness_dir, tests=[NODE_A])
+    integration_evidence(harness_dir, "integration.json", [NODE_A])
+    path = harness_dir / "evidence" / "integration.json"
+    evidence = json.loads(path.read_text())
+    evidence["command"] = command
+    path.write_text(json.dumps(evidence))
+
+    status, blockers = run_gate(harness_dir)
+
+    assert status == "BLOCKED"
+    assert blocker_codes(blockers) == {"TEST_EVIDENCE_MISSING"}

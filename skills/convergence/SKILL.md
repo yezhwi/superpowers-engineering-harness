@@ -1,6 +1,6 @@
 ---
 name: convergence
-description: "Use when quality_gate.py has returned PASS or BLOCKED and the loop must decide to finish (CONVERGED/DONE), continue iterating, or escalate. Applies v0.1 escalation rules with no scoring."
+description: "Use when `harness gate` has printed DECISION: CONVERGED, CONTINUE, or ESCALATED and the loop must finish, resume, or stop. Applies v0.1 escalation rules with no scoring."
 ---
 
 # Convergence Skill

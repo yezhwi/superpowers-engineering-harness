@@ -32,7 +32,7 @@ import sys
 import yaml
 from pathlib import Path
 
-from harness.paths import evidence_path
+from harness.paths import EvidenceReferenceError, evidence_output_path, evidence_path
 from harness.task_replacement import publish_replacement, replacement_workspace
 from harness.templates import templates_dir
 
@@ -253,6 +253,9 @@ def cmd_transition(target: str) -> int:
     if current == "REVIEWING" and target in {"GATING", "VERIFYING", "REPRODUCING"}:
         print("REVIEW_OUTCOME_REQUIRED: use harness review outcome", file=sys.stderr)
         return 1
+    if current == "GATING" and target in {"CONVERGED", "BLOCKED"}:
+        print("GATE_DECISION_REQUIRED: use harness gate", file=sys.stderr)
+        return 1
     if current == "CONVERGED" and target == "DONE":
         try:
             status, _ = quality_gate.run_gate(harness_dir, allow_converged=True)
@@ -418,6 +421,15 @@ def cmd_review_outcome(outcome: str, reason_code: str, finding_ids: list[str]) -
     target = routes[outcome]
     if target == "GATING":
         try:
+            open_findings = [
+                finding["id"] for finding in _findings(harness_dir)
+                if finding.get("status") not in {"VERIFIED", "CLOSED", "REJECTED"}
+            ]
+            if open_findings:
+                print("OPEN_FINDINGS_BLOCK_PASS", file=sys.stderr)
+                for finding_id in open_findings:
+                    print(f"- {finding_id}", file=sys.stderr)
+                return 1
             for name, schema in (
                 ("current-task.yaml", "task.schema.json"),
                 ("requirements.yaml", "requirement.schema.json"),
@@ -455,7 +467,10 @@ def cmd_review_interface(source: Path, base_ref: str | None = None) -> int:
         if task.get("state") != "REVIEWING":
             raise ValueError("review requires state REVIEWING")
         path = interface_review.write_review(
-            harness_dir, source, task_id=task["task"]["id"]
+            harness_dir,
+            source,
+            task_id=task["task"]["id"],
+            base_ref=base_ref or task.get("git", {}).get("base_commit"),
         )
     except Exception as exc:
         print(f"INVALID INTERFACE REVIEW: {exc}", file=sys.stderr)
@@ -493,6 +508,8 @@ def cmd_review_complexity(source: Path, base_ref: str | None = None) -> int:
     try:
         review = yaml.safe_load(source.read_text(encoding="utf-8"))
         task = load_task(Path(".harness"))
+        if task.get("state") not in {"VERIFYING", "REVIEWING"}:
+            raise ValueError("review requires state VERIFYING or REVIEWING")
         if not isinstance(review, dict) or review.get("task") != task.get(
             "task", {}
         ).get("id"):
@@ -504,7 +521,11 @@ def cmd_review_complexity(source: Path, base_ref: str | None = None) -> int:
             )
         scope = workspace.review_scope(base_ref)
         if task.get("scope") is not None:
-            files = workspace.project_task_scope(task, _impact()[1]["impact"])
+            files = workspace.project_task_scope(
+                task,
+                _impact()[1]["impact"],
+                inspected_paths=workspace.observability_inspected_paths(Path(".harness")),
+            )
             scope = replace(scope, files=files)
         claimed_scope = review.get("review_scope")
         if claimed_scope is not None and claimed_scope.get("files") != list(
@@ -515,14 +536,15 @@ def cmd_review_complexity(source: Path, base_ref: str | None = None) -> int:
     except Exception as exc:
         print(f"INVALID COMPLEXITY REVIEW: {exc}", file=sys.stderr)
         return 2
-    if "checks" not in review:
-        print("COMPLEXITY_CHECKS_DEPRECATED", file=sys.stderr)
     print(f"complexity review written: {len(paths)} findings")
     return 0
 
 
 def cmd_evidence_attach(evidence_type, command, scope, result_file):
     if result_file is None:
+        print("EVIDENCE_ATTACH_INCOMPLETE", file=sys.stderr)
+        return 2
+    if evidence_type not in collect_evidence.VALID_TYPES:
         print("EVIDENCE_ATTACH_INCOMPLETE", file=sys.stderr)
         return 2
     try:
@@ -570,6 +592,12 @@ def cmd_evidence_attach(evidence_type, command, scope, result_file):
             }
         )
         harness_dir = Path(".harness")
+        task = load_task(harness_dir)
+        task_id = (task.get("task") or {}).get("id")
+        if not isinstance(task_id, str) or record.get("task") != task_id:
+            print("EVIDENCE_ATTACH_TASK_MISMATCH", file=sys.stderr)
+            return 2
+        record["task"] = task_id
         quality_gate.validate_schema(
             record, "evidence.schema.json", result_file
         )
@@ -580,7 +608,9 @@ def cmd_evidence_attach(evidence_type, command, scope, result_file):
             current_workspace=current.fingerprint,
             expected_success=True,
         )
-        path = harness_dir / "evidence" / collect_evidence.evidence_filename(evidence_type)
+        path = evidence_output_path(
+            harness_dir, collect_evidence.evidence_filename(evidence_type)
+        )
         transaction.atomic_write(path, json.dumps(record).encode())
     except (
         OSError,
@@ -589,6 +619,8 @@ def cmd_evidence_attach(evidence_type, command, scope, result_file):
         quality_gate.InvalidHarnessState,
         evidence_validator.EvidenceValidationError,
         workspace.WorkspaceError,
+        EvidenceReferenceError,
+        HarnessStateError,
     ):
         print("EVIDENCE_ATTACH_INCOMPLETE", file=sys.stderr)
         return 2
@@ -788,7 +820,7 @@ def _cmd_gate_convergence() -> int:
         assessment = quality_gate.assess_gate(harness_dir)
     except quality_gate.InvalidHarnessState as exc:
         print(f"INVALID_HARNESS_STATE: {exc}", file=sys.stderr)
-        return 1
+        return 2
 
     status, blockers = assessment.status, list(assessment.blockers)
     quality_gate.write_back(harness_dir, assessment)
@@ -892,17 +924,16 @@ _FINDING_TRANSITIONS = {
 
 
 def cmd_finding_resume_review(fid):
-    import yaml
-
     harness_dir = Path(".harness")
     task = load_task(harness_dir)
     if task.get("state") != "REPRODUCING":
         print("FINDING_REVIEW_RESUME_STATE_INVALID", file=sys.stderr)
         return 1
-    findings = [
-        yaml.safe_load(path.read_text())
-        for path in (harness_dir / "findings").glob("*.yaml")
-    ]
+    try:
+        findings = _findings(harness_dir)
+    except HarnessStateError as exc:
+        print(f"INVALID_HARNESS_STATE: {exc}", file=sys.stderr)
+        return 2
     finding = next((item for item in findings if item.get("id") == fid), None)
     if not finding or finding.get("status") != "FIXED":
         print("FINDING_REVIEW_RESUME_INVALID", file=sys.stderr)
@@ -939,8 +970,15 @@ def cmd_finding_transition(
     path = None
     finding = None
     for candidate in Path(".harness/findings").glob("*.yaml"):
-        document = yaml.safe_load(candidate.read_text())
-        if isinstance(document, dict) and document.get("id") == fid:
+        try:
+            document = yaml.safe_load(candidate.read_text())
+        except (OSError, yaml.YAMLError):
+            print("FINDING_STATE_INVALID", file=sys.stderr)
+            return 2
+        if not isinstance(document, dict):
+            print("FINDING_STATE_INVALID", file=sys.stderr)
+            return 2
+        if document.get("id") == fid:
             path, finding = candidate, document
             break
     if not path:
@@ -1077,12 +1115,7 @@ def cmd_task_classify(level: str, dimensions: dict[str, str]) -> int:
         user_changes = workspace.snapshot().changed_paths
         task["scope"] = {"owned_paths": [], "protected_user_paths": list(user_changes)}
         head = workspace.git_head()
-        task["git"] = {
-            "base_ref": "HEAD",
-            "base_commit": head,
-            "head_at_start": head,
-            "head": head,
-        }
+        task["git"] = workspace.git_baseline(head)
         task["risk"] = {
             "level": level,
             "profile": profile,
@@ -1202,7 +1235,7 @@ def cmd_invariant_verify(rid, ref):
 
 def initialize_task_git(task: dict, head: str) -> None:
     """Set replacement-task immutable baseline and current HEAD together."""
-    task["git"] = {"base_commit": head, "head": head}
+    task["git"] = workspace.git_baseline(head)
 
 
 def task_git_head_or_error() -> str:
@@ -1445,7 +1478,11 @@ def cmd_impact(action, value=None, reason=None, args=None):
         save_task(harness_dir, task)
     scope = task["scope"]
     if action == "scope":
-        effective = workspace.project_task_scope(task, impact)
+        effective = workspace.project_task_scope(
+            task,
+            impact,
+            inspected_paths=workspace.observability_inspected_paths(harness_dir),
+        )
         print(
             yaml.safe_dump(
                 {
@@ -1464,7 +1501,10 @@ def cmd_impact(action, value=None, reason=None, args=None):
                 owned.append(value)
             if value in protected:
                 protected.remove(value)
-        elif value not in owned and value not in protected:
+        elif value in owned or value in (impact.get("contracts") or []):
+            print("PROTECTED_PATH_OWNED", file=sys.stderr)
+            return 1
+        elif value not in protected:
             protected.append(value)
         save_task(harness_dir, task)
         return 0
@@ -1510,12 +1550,3 @@ def cmd_impact(action, value=None, reason=None, args=None):
         impact["full_suite"] = {"recommended": True, "reason": reason}
     transaction.atomic_write(path, yaml.safe_dump(document, sort_keys=False).encode())
     return 0
-            open_findings = [
-                finding["id"] for finding in _findings(harness_dir)
-                if finding.get("status") not in {"VERIFIED", "CLOSED", "REJECTED"}
-            ]
-            if open_findings:
-                print("OPEN_FINDINGS_BLOCK_PASS", file=sys.stderr)
-                for finding_id in open_findings:
-                    print(f"- {finding_id}", file=sys.stderr)
-                return 1

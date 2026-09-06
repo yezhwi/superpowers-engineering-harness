@@ -10,7 +10,12 @@ import yaml
 
 from .interface_contract import load_interface_contract
 from .transaction import StagedArtifact, publish, stage
-from .workspace import git_head, snapshot
+from .workspace import (
+    git_head,
+    observability_inspected_paths,
+    project_task_scope,
+    snapshot,
+)
 
 CHECKS = {"boundary", "dto", "errors", "dependency", "compatibility", "tests"}
 
@@ -35,7 +40,9 @@ def _equivalent(finding: dict, proposal: dict) -> bool:
     )
 
 
-def write_review(harness_dir: Path, source: Path, *, task_id: str) -> Path:
+def write_review(
+    harness_dir: Path, source: Path, *, task_id: str, base_ref: str | None = None
+) -> Path:
     try:
         review = yaml.safe_load(source.read_text())
     except (OSError, yaml.YAMLError) as exc:
@@ -100,6 +107,16 @@ def write_review(harness_dir: Path, source: Path, *, task_id: str) -> Path:
         mapping[local_id or finding_id] = finding_id
 
     current = snapshot()
+    task = yaml.safe_load((harness_dir / "current-task.yaml").read_text()) or {}
+    impact_path = harness_dir / "impact.yaml"
+    impact_doc = (
+        yaml.safe_load(impact_path.read_text()) if impact_path.exists() else {}
+    ) or {}
+    files = project_task_scope(
+        task if isinstance(task, dict) else {},
+        impact_doc.get("impact") or {},
+        inspected_paths=observability_inspected_paths(harness_dir),
+    )
     record = {
         "type": "review",
         "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
@@ -112,6 +129,10 @@ def write_review(harness_dir: Path, source: Path, *, task_id: str) -> Path:
         "checks": checks,
         "proposals": review.get("proposals", []),
         "finding_mapping": mapping,
+        "review_scope": {
+            "base_ref": base_ref,
+            "files": list(files),
+        },
     }
     artifacts = [
         StagedArtifact(

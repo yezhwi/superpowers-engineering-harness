@@ -71,6 +71,8 @@ def _validate(data, harness_dir: Path) -> bool:
                 file=sys.stderr,
             )
             return False
+        if not (harness_dir / "gate.yaml").is_file():
+            return True
         try:
             from .quality_gate import assess_gate
 
@@ -122,10 +124,43 @@ def _evidence_rows(harness_dir: Path):
     return rows
 
 
+def _live_findings(data, harness_dir: Path) -> dict:
+    try:
+        from .quality_gate import OPEN_FINDING_STATUSES, load_findings
+
+        counts = {"critical": 0, "major": 0, "minor": 0}
+        for finding in load_findings(harness_dir / "findings"):
+            severity = finding.get("severity")
+            if (
+                severity in counts
+                and finding.get("status") in OPEN_FINDING_STATUSES
+            ):
+                counts[severity] += 1
+        return {**data["findings"], **counts}
+    except Exception:
+        return data["findings"]
+
+
+def _live_gate(data, harness_dir: Path) -> dict:
+    try:
+        from .blockers import blocker_document
+        from .quality_gate import assess_gate
+
+        assessment = assess_gate(harness_dir, allow_preflight=True)
+        return {
+            "status": assessment.status,
+            "blocked_by": [
+                blocker_document(blocker) for blocker in assessment.blockers
+            ],
+        }
+    except Exception:
+        return data["gate"]
+
+
 def _render(data, harness_dir: Path) -> str:
     ver = data["verification"]
-    find = data["findings"]
-    gate = data["gate"]
+    find = _live_findings(data, harness_dir)
+    gate = _live_gate(data, harness_dir)
     lines = [
         f"{data['task']['id']}  {data['task'].get('title', '')}",
         "",

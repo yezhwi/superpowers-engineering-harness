@@ -126,7 +126,9 @@ def test_owned_path_cannot_be_protected_or_revoked(tmp_path):
     task_path.write_text(yaml.safe_dump(task))
 
     assert cli(tmp_path, "impact", "add-change", "src/x.py").returncode == 0
-    assert cli(tmp_path, "impact", "ignore-user-path", "src/x.py").returncode == 0
+    ignored = cli(tmp_path, "impact", "ignore-user-path", "src/x.py")
+    assert ignored.returncode == 1
+    assert "PROTECTED_PATH_OWNED" in ignored.stderr
 
     scope = yaml.safe_load(cli(tmp_path, "impact", "scope", "--format", "yaml").stdout)
     assert scope["owned_paths"] == ["src/x.py"]
@@ -153,3 +155,16 @@ def test_project_task_scope_includes_inspected_paths_and_excludes_protected_path
         "src/inspected.py",
         "src/owned.py",
     )
+
+
+def test_project_task_scope_keeps_owned_and_contract_when_also_protected():
+    from harness.workspace import project_task_scope
+
+    task = {
+        "scope": {
+            "owned_paths": ["src/api.py"],
+            "protected_user_paths": ["src/api.py", "src/contract.py"],
+        }
+    }
+    impact = {"contracts": ["src/contract.py"]}
+    assert project_task_scope(task, impact) == ("src/api.py", "src/contract.py")

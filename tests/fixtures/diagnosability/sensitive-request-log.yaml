@@ -15,9 +15,9 @@ review:
   checks: {business_keys: pass, external_failure_context: not_applicable, state_transitions: not_applicable, caller_rejections: not_applicable, sensitive_data: fail, duplicate_exception_logging: pass, low_value_logging: pass}
 finding:
   id: FND-001
+  category: diagnosability
   kind: requirement_violation
   target: REQ-001
-  category: diagnosability
   reason_code: DIAG_SENSITIVE_DATA_LOGGED
   severity: critical
   status: PROPOSED

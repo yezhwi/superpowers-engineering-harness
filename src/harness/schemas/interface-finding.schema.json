@@ -1,1 +1,71 @@
-{"$schema":"http://json-schema.org/draft-07/schema#","type":"object","required":["id","kind","category","target","scenario","severity","status","location"],"properties":{"id":{"type":"string","pattern":"^FND-[0-9]+$"},"kind":{"const":"requirement_violation"},"category":{"const":"interface"},"target":{"type":"string","pattern":"^(REQ|INV)-[0-9]+$"},"scenario":{"type":"string","minLength":1},"severity":{"enum":["critical","major","minor"]},"status":{"enum":["PROPOSED","REPRODUCING","CONFIRMED","FIXING","FIXED","VERIFIED","CLOSED","REJECTED"]},"location":{"type":"object","required":["file"],"properties":{"file":{"type":"string","minLength":1},"line":{"type":"integer","minimum":1}},"additionalProperties":false}},"additionalProperties":false}
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": [
+    "id",
+    "kind",
+    "category",
+    "target",
+    "scenario",
+    "severity",
+    "status",
+    "location"
+  ],
+  "properties": {
+    "id": {"type": "string", "pattern": "^FND-[0-9]+$"},
+    "kind": {"const": "requirement_violation"},
+    "category": {"const": "interface"},
+    "target": {"type": "string", "pattern": "^(REQ|INV)-[0-9]+$"},
+    "scenario": {"type": "string", "minLength": 1},
+    "severity": {"enum": ["critical", "major", "minor"]},
+    "status": {
+      "enum": [
+        "PROPOSED",
+        "REPRODUCING",
+        "CONFIRMED",
+        "FIXING",
+        "FIXED",
+        "VERIFIED",
+        "CLOSED",
+        "REJECTED"
+      ]
+    },
+    "location": {
+      "type": "object",
+      "required": ["file"],
+      "properties": {
+        "file": {"type": "string", "minLength": 1},
+        "line": {"type": "integer", "minimum": 1}
+      },
+      "additionalProperties": false
+    },
+    "regression_test": {
+      "type": "object",
+      "required": ["path"],
+      "properties": {
+        "path": {"type": "string"},
+        "red_evidence": {"type": "string"},
+        "green_evidence": {"type": "string"}
+      },
+      "additionalProperties": true
+    },
+    "test": {"type": "string"},
+    "fix": {"type": "string"},
+    "evidence": {"type": "string"},
+    "attempts": {"type": "array", "items": {"type": "string"}},
+    "rejection_reason": {"type": "string"},
+    "confirmed_at": {"type": "string"},
+    "verified_at": {"type": "string"},
+    "closure": {
+      "type": "object",
+      "properties": {
+        "mode": {"type": "string"},
+        "critical_related_approved": {"type": "boolean"},
+        "approved_at": {"type": "string"},
+        "source": {"type": "string"}
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}

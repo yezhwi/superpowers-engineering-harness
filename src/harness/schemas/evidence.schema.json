@@ -101,6 +101,9 @@
       "required": ["node_id"],
       "properties": {"node_id": {"type": "string", "minLength": 1}},
       "additionalProperties": false
+    },
+    "task": {
+      "type": ["string", "null"]
     }
   },
   "required": [
