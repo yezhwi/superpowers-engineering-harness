@@ -8,15 +8,27 @@ description: "Use when quality_gate.py has returned PASS or BLOCKED and the loop
 Decide whether the harness loop continues. v0.1 uses fixed rules only — no
 scoring, no model confidence.
 
+## Workflow Commands
+
+```bash
+harness gate preflight
+harness impact scope --format yaml
+harness evidence run --type unit_test --command "pytest"
+harness evidence attach --type build --file external-proof.json
+harness finding resume-review FND-001
+```
+
 ## Rules
 
 ### PASS
 
 ```text
-Gate PASS
-→ transition CONVERGED → DONE
+harness gate prints DECISION: CONVERGED
+→ harness transition DONE
 → report to user with gate output attached
 ```
+
+Never `harness transition CONVERGED`. Only `harness gate` may enter CONVERGED.
 
 ### Continue
 

@@ -13,7 +13,18 @@ You run the gate. You never evaluate quality yourself.
 harness gate
 ```
 
-(In-harness-repo equivalent: `python scripts/quality_gate.py`.)
+Do not run `python scripts/quality_gate.py` as a product command. It does not
+move `GATING → CONVERGED` and is not equivalent to `harness gate`.
+
+## Related Commands
+
+```bash
+harness gate preflight
+harness impact scope --format yaml
+harness evidence run --type unit_test --command "pytest"
+harness evidence attach --type build --file external-proof.json
+harness finding resume-review FND-001
+```
 
 ## Exit Code → Action Mapping
 
