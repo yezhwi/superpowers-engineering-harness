@@ -34,6 +34,17 @@ def test_readmes_document_explicit_fail_closed_evidence_reuse():
         assert "EVIDENCE_REUSED" in text
 
 
+def test_readmes_document_product_freshness_and_canonical_covered_tests():
+    for path in (REPO / "README.md", REPO / "README.zh-CN.md"):
+        text = path.read_text()
+        assert "product workspace fingerprint" in text
+        assert "control-plane fingerprint" in text
+        assert "COVERED_TEST_NOT_EXECUTED" in text
+        assert "COVERED_TEST_PATH_INVALID" in text
+        assert "backend/tests/foo.py" in text
+        assert "EVIDENCE_WORKSPACE_STALE" in text
+
+
 def test_readmes_document_risk_profiles_and_independent_authorization():
     for path in (REPO / "README.md", REPO / "README.zh-CN.md"):
         text = path.read_text()

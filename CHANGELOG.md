@@ -3,6 +3,8 @@
 ## 0.2.7
 
 - Close Decision and Interface Contract correctness gaps: task-scoped Gate participation, explicit cross-task Interface reuse, validated active Decision references, safe supersession acceptance, and canonical Decision/Interface IDs.
+- Separate product workspace fingerprint from control-plane fingerprint: requirement/invariant verification, review outcomes, and other `.harness/` metadata writes no longer mark product test/build evidence `EVIDENCE_WORKSPACE_STALE`. Product code, tests, and non-control-plane config changes still stale evidence. Gate still fail-closes on tampered evidence payload, invalid bindings, and invalid control-plane schema, without reporting control-plane self-updates as product-test stale.
+- Canonicalize covered tests to repository-root paths. Subproject cwd pytest/Vitest selectors (including `sh -lc 'cd ... && ...'`) bind to test-plan paths such as `backend/tests/foo.py`. Collection still rejects missing files, repo-escaping paths, invalid relative cwd, and selectors the command did not execute (`COVERED_TEST_NOT_EXECUTED`, `COVERED_TEST_PATH_INVALID`). Legacy cwd-relative covered tests remain accepted until the next collection.
 
 - Add explicit task-owned and protected-user scopes, preventing unrelated dirty paths from entering review.
 - Add DIAG proposal publication, Finding-aware `resume-review`, unified evidence references, and evidence run/attach modes.

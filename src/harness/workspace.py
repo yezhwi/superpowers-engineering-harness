@@ -80,6 +80,9 @@ def observability_inspected_paths(harness_dir: Path) -> tuple[str, ...]:
     return tuple(path for path in paths if path and path != ".")
 
 
+_PRODUCT_EXCLUDE = (":(exclude).harness", ":(exclude).harness/**")
+
+
 def _untracked_paths(repo_root: Path) -> set[str]:
     paths = set()
     for name in (
@@ -93,11 +96,10 @@ def _untracked_paths(repo_root: Path) -> set[str]:
 
 
 def _working_paths(repo_root: Path) -> set[str]:
-    exclude = ":(exclude).harness/**"
     paths = set()
     for args in (
-        ("diff", "--name-only", "HEAD", "--", ".", exclude),
-        ("diff", "--cached", "--name-only", "HEAD", "--", ".", exclude),
+        ("diff", "--name-only", "HEAD", "--", ".", *_PRODUCT_EXCLUDE),
+        ("diff", "--cached", "--name-only", "HEAD", "--", ".", *_PRODUCT_EXCLUDE),
     ):
         paths.update(
             name for name in _run(repo_root, *args).decode().splitlines() if name
@@ -106,12 +108,13 @@ def _working_paths(repo_root: Path) -> set[str]:
 
 
 def _fingerprint(repo_root: Path) -> str:
-    """Preserve established Evidence fingerprint semantics."""
-    exclude = ":(exclude).harness/**"
+    """Product workspace fingerprint; control-plane files are excluded."""
     parts = [
         _run(repo_root, "rev-parse", "HEAD"),
-        _run(repo_root, "diff", "--binary", "HEAD", "--", ".", exclude),
-        _run(repo_root, "diff", "--cached", "--binary", "HEAD", "--", ".", exclude),
+        _run(repo_root, "diff", "--binary", "HEAD", "--", ".", *_PRODUCT_EXCLUDE),
+        _run(
+            repo_root, "diff", "--cached", "--binary", "HEAD", "--", ".", *_PRODUCT_EXCLUDE
+        ),
     ]
     for name in sorted(_untracked_paths(repo_root)):
         parts.extend(
@@ -125,9 +128,14 @@ def changed_paths_since(
 ) -> tuple[str, ...]:
     """Changed business paths from immutable baseline through current workspace."""
     root = _root(repo_root)
-    exclude = ":(exclude).harness/**"
     committed = _run(
-        root, "diff", "--name-only", f"{base_commit}..HEAD", "--", ".", exclude
+        root,
+        "diff",
+        "--name-only",
+        f"{base_commit}..HEAD",
+        "--",
+        ".",
+        *_PRODUCT_EXCLUDE,
     )
     paths = set(name for name in committed.decode().splitlines() if name)
     paths.update(snapshot(root).changed_paths)
@@ -159,6 +167,26 @@ def snapshot(repo_root: Path | None = None) -> WorkspaceSnapshot:
     )
 
 
+def product_workspace_fingerprint(repo_root: Path | None = None) -> str:
+    """Fingerprint product code, tests, and non-control-plane config."""
+    return snapshot(repo_root).fingerprint
+
+
+def control_plane_fingerprint(harness_dir: Path | None = None) -> str:
+    """Fingerprint `.harness/` metadata without affecting product freshness."""
+    root = (harness_dir or Path(".harness")).resolve()
+    parts: list[bytes] = []
+    if root.is_dir():
+        for path in sorted(candidate for candidate in root.rglob("*") if candidate.is_file()):
+            parts.extend(
+                [
+                    path.relative_to(root).as_posix().encode(),
+                    hashlib.sha256(path.read_bytes()).digest(),
+                ]
+            )
+    return "sha256:" + hashlib.sha256(b"\0".join(parts)).hexdigest()
+
+
 def project_task_scope(
     task: dict,
     impact: dict,
@@ -185,7 +213,6 @@ def review_scope(base_ref: str, repo_root: Path | None = None) -> ReviewScope:
     root = _root(repo_root)
     base_commit = _run(root, "merge-base", base_ref, "HEAD").decode().strip()
     current = snapshot(root)
-    exclude = ":(exclude).harness/**"
     committed = (
         _run(
             root,
@@ -194,7 +221,7 @@ def review_scope(base_ref: str, repo_root: Path | None = None) -> ReviewScope:
             f"{base_commit}..{current.head}",
             "--",
             ".",
-            exclude,
+            *_PRODUCT_EXCLUDE,
         )
         .decode()
         .splitlines()

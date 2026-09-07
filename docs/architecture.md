@@ -36,7 +36,7 @@ Harness
   - validate schema and cross-artifact semantics
   - stage/publish review artifacts
   - enforce legal state transitions
-  - calculate evidence freshness
+  - calculate product evidence freshness separately from control-plane integrity
   - fail-close Gate
 ```
 
@@ -60,7 +60,9 @@ Artifacts are source of truth. Status is projection, not separate truth.
 
 ## v0.2.7 ownership and convergence
 
-`scope.owned_paths` defines review/verification ownership. `scope.protected_user_paths` remains part of workspace freshness, but never enters task review scope without explicit adoption.
+`scope.owned_paths` defines review/verification ownership. `scope.protected_user_paths` remains part of product workspace freshness, but never enters task review scope without explicit adoption.
+
+Product test/build evidence uses the product workspace fingerprint (code, tests, dependencies, non-control-plane config). `.harness/` task state, evidence files, review outcomes, and requirement/invariant verification metadata use a separate control-plane fingerprint and do not stale product proof. Covered tests canonicalize to repository-root paths so subproject cwd selectors bind to test-plan paths.
 
 Diagnosability reviewers publish proposals, not persistent findings. Harness validates, deduplicates, allocates `FND-NNN`, and atomically writes finding plus review evidence mapping. A FIXED finding returns to REVIEWING only through `harness finding resume-review`.
 
@@ -102,7 +104,7 @@ input validation
       │
       ▼
 readiness validation
-Contract + Findings + Scope + Git HEAD + workspace fingerprint
+Contract + Findings + Scope + Git HEAD + product workspace fingerprint
       │
       ▼
 .harness/.staging/<operation-id>/

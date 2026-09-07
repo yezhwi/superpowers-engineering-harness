@@ -42,6 +42,46 @@ def test_snapshot_lists_all_business_changes_and_ignores_harness(tmp_path):
     assert len(state.fingerprint) == 71
 
 
+def test_product_fingerprint_ignores_tracked_and_untracked_harness_metadata(tmp_path):
+    """Break caught: writing requirement verification stale-s product evidence."""
+    from harness.workspace import control_plane_fingerprint, snapshot
+
+    repo = committed_repo(tmp_path)
+    harness = repo / ".harness"
+    harness.mkdir()
+    (harness / "requirements.yaml").write_text("requirements: []\n")
+    git(repo, "add", "-f", ".harness/requirements.yaml")
+    git(repo, "commit", "-qm", "track harness")
+    before = snapshot(repo)
+    control_before = control_plane_fingerprint(harness)
+
+    (harness / "requirements.yaml").write_text("requirements: [{id: REQ-001}]\n")
+    (harness / "evidence").mkdir()
+    (harness / "evidence" / "unit-test.json").write_text("{}\n")
+    after = snapshot(repo)
+
+    assert after.fingerprint == before.fingerprint
+    assert after.changed_paths == before.changed_paths
+    assert control_plane_fingerprint(harness) != control_before
+
+
+def test_product_fingerprint_changes_when_covered_product_test_changes(tmp_path):
+    """Break caught: editing a product test leaves evidence marked fresh."""
+    from harness.workspace import snapshot
+
+    repo = committed_repo(tmp_path)
+    backend = repo / "backend" / "tests"
+    backend.mkdir(parents=True)
+    target = backend / "test_foo.py"
+    target.write_text("def test_ok():\n    assert True\n")
+    git(repo, "add", "backend/tests/test_foo.py")
+    git(repo, "commit", "-qm", "product tests")
+    before = snapshot(repo).fingerprint
+    target.write_text("def test_ok():\n    assert False\n")
+
+    assert snapshot(repo).fingerprint != before
+
+
 def test_changed_paths_since_includes_committed_and_working_paths(tmp_path):
     from harness.workspace import changed_paths_since
 

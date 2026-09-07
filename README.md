@@ -2,7 +2,7 @@
 
 [简体中文](README.zh-CN.md)
 
-`v0.2.7 current release`; risk-adaptive behavior, task ownership, finding-aware review recovery, evidence run/attach, Gate preflight, dual-axis readiness, and auditable complexity review are included in this release. Decision and Interface Contracts now use task-scoped Gate participation, explicit cross-task interface reuse, validated Decision references, safe supersession, and canonical artifact identifiers.
+`v0.2.7 current release`; risk-adaptive behavior, task ownership, finding-aware review recovery, evidence run/attach, Gate preflight, dual-axis readiness, and auditable complexity review are included in this release. Decision and Interface Contracts now use task-scoped Gate participation, explicit cross-task interface reuse, validated Decision references, safe supersession, and canonical artifact identifiers. Product test/build evidence freshness uses the product workspace fingerprint, not `.harness/` control-plane writes. Covered tests canonicalize to repository-root paths.
 
 **Routing:** Q0 answers without task; Q1 / FAST uses RED/fix/GREEN/Light Gate; Q2 / STANDARD and Q3 / STRICT use full contract/review/Gate workflow.
 
@@ -45,6 +45,7 @@ v0.2.4  Test Plan → executable binding → fresh evidence
 v0.2.6  Production Diagnosability Contract + DIAG Finding + Gate
   ↓
 v0.2.7  Task Ownership + Review Convergence + Gate Readiness
+        + product freshness / canonical covered tests
 ```
 
 ## Engineering Quality
@@ -262,7 +263,27 @@ Reuse is explicit and same-task only:
 harness evidence run --type build --command "python -m pip wheel . --no-deps" --reuse-if-valid
 ```
 
-`EVIDENCE_REUSED` means no command ran. Reuse needs prior success plus exact command/proof identity, unchanged HEAD/workspace, and exact runtime. Any mismatch runs command normally.
+`EVIDENCE_REUSED` means no command ran. Reuse needs prior success plus exact command/proof identity, unchanged HEAD and product workspace fingerprint, and exact runtime. Any mismatch runs command normally.
+
+### Product evidence freshness and covered-test paths
+
+Test/build evidence is fresh against the **product workspace fingerprint** (product code, tests, dependencies, and non-control-plane config). A separate **control-plane fingerprint** covers `.harness/` task state, evidence files, review outcomes, and requirement/invariant verification metadata.
+
+Writing control-plane records does not stale product proof. After collecting related tests, `harness requirement verify`, `harness invariant verify`, complexity/diagnosability review, and `harness review outcome` may update `.harness/` without forcing a product-test rerun. Editing product code, product tests, or in-scope non-control-plane config still marks evidence `EVIDENCE_WORKSPACE_STALE`. Tampered evidence payload, invalid bindings, and invalid control-plane schema still block Gate; those failures are not reported as product-test stale.
+
+Covered tests store repository-root canonical paths. A command that `cd`s into a subproject still binds to the test-plan path:
+
+```bash
+harness evidence run --type unit_test --scope related \
+  --covered-test backend/tests/foo.py \
+  --command "sh -lc 'cd backend && pytest tests/foo.py'"
+
+harness evidence run --type unit_test --scope related \
+  --covered-test agents-frontend/src/__tests__/foo.spec.ts \
+  --command "sh -lc 'cd agents-frontend && npx vitest run src/__tests__/foo.spec.ts'"
+```
+
+The same test run from repo root or the subproject directory stores the same canonical covered-test path. Collection rejects a canonical path that does not exist, escapes the repository, uses an invalid relative `cd`, or was not selected by the command (`COVERED_TEST_NOT_EXECUTED`, `COVERED_TEST_PATH_INVALID`). Older evidence that stored a cwd-relative selector still binds; the next collection migrates it to the canonical path.
 
 ### Adaptive operations
 
@@ -317,6 +338,8 @@ Caveman Mode is recommended to reduce agent output tokens. Keep code, commands, 
 
 ## Docs and development
 
+- [Architecture: big picture](docs/architecture.md)
+- [Evidence freshness and test path binding](docs/2026-09-07-evidence-freshness-and-test-path-binding-issues.md)
 - [v0.2.2 flow hardening design](docs/superpowers/specs/2026-08-26-v022-flow-hardening-design.md)
 - [v0.2 design](docs/superpowers/specs/2026-08-25-v02-minimal-complexity-design.md)
 - [Worked lifecycle example](docs/worked-example.md)

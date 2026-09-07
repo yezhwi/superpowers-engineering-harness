@@ -2,7 +2,7 @@
 
 [English](README.md)
 
-`v0.2.7 current release`；本 release 已包含 risk-adaptive behavior、Task Ownership、Finding review recovery、evidence run/attach、Gate preflight、双轴 readiness 与 complexity audit。Decision 与 Interface Contract 现具备 task-scoped Gate 参与、显式跨 Task Interface 复用、Decision reference 校验、安全 supersession 与 canonical artifact identifier。
+`v0.2.7 current release`；本 release 已包含 risk-adaptive behavior、Task Ownership、Finding review recovery、evidence run/attach、Gate preflight、双轴 readiness 与 complexity audit。Decision 与 Interface Contract 现具备 task-scoped Gate 参与、显式跨 Task Interface 复用、Decision reference 校验、安全 supersession 与 canonical artifact identifier。产品 test/build evidence 的 freshness 使用 product workspace fingerprint，不因 `.harness/` control-plane 写入而 stale。Covered tests 规范化为仓库根路径。
 
 **Routing：** Q0 直接回答、不创建 task；Q1 / FAST 使用 RED/fix/GREEN/Light Gate；Q2 / STANDARD 与 Q3 / STRICT 使用完整 contract/review/Gate 流程。
 
@@ -49,6 +49,7 @@ v0.2.4  Test Plan → 可执行绑定 → fresh evidence
 v0.2.6  Production Diagnosability Contract + DIAG Finding + Gate
   ↓
 v0.2.7  Task Ownership + Review Convergence + Gate Readiness
+        + product freshness / canonical covered tests
 ```
 
 ## Engineering Quality
@@ -265,7 +266,27 @@ harness task escalate --level Q2 --reason "public contract changed"
 harness evidence run --type build --command "python -m pip wheel . --no-deps" --reuse-if-valid
 ```
 
-`EVIDENCE_REUSED` 表示未运行命令。复用要求之前成功、命令/证明身份完全一致、HEAD/workspace 未变、运行时完全一致。任一不匹配都会正常执行命令。
+`EVIDENCE_REUSED` 表示未运行命令。复用要求之前成功、命令/证明身份完全一致、HEAD 与 product workspace fingerprint 未变、运行时完全一致。任一不匹配都会正常执行命令。
+
+### 产品 evidence freshness 与 covered-test 路径
+
+Test/build evidence 相对 **product workspace fingerprint** 判断是否 fresh（产品代码、测试、依赖、非 control-plane 配置）。另有 **control-plane fingerprint** 覆盖 `.harness/` 任务状态、evidence 文件、review 结果、requirement/invariant verification metadata。
+
+写入 control-plane 记录不会使产品证明 stale。收集相关测试后，执行 `harness requirement verify`、`harness invariant verify`、complexity/diagnosability review、`harness review outcome` 可以更新 `.harness/`，无需因此重跑产品测试。修改产品代码、产品测试或任务纳入的非 control-plane 配置仍会标记 `EVIDENCE_WORKSPACE_STALE`。篡改 evidence payload、无效 binding、无效 control-plane schema 仍阻断 Gate；这些失败不会被报告成产品测试 stale。
+
+Covered tests 存储为仓库根目录 canonical path。命令 `cd` 进入子项目时，仍绑定 test plan 的根路径：
+
+```bash
+harness evidence run --type unit_test --scope related \
+  --covered-test backend/tests/foo.py \
+  --command "sh -lc 'cd backend && pytest tests/foo.py'"
+
+harness evidence run --type unit_test --scope related \
+  --covered-test agents-frontend/src/__tests__/foo.spec.ts \
+  --command "sh -lc 'cd agents-frontend && npx vitest run src/__tests__/foo.spec.ts'"
+```
+
+同一测试在仓库根目录或子项目目录执行，存储相同 canonical covered-test path。canonical path 不存在、逃逸仓库、无效相对 `cd`、或 selector 未在命令中执行时，收集拒绝绑定（`COVERED_TEST_NOT_EXECUTED`、`COVERED_TEST_PATH_INVALID`）。旧 evidence 中的 cwd-relative selector 仍可绑定；下一次 collection 会迁移为 canonical path。
 
 ### 自适应运行
 
@@ -316,6 +337,8 @@ Harness 依赖 Superpowers worker Skills，尤其 brainstorming、writing-plans�
 
 ## 文档与开发
 
+- [架构全景图](docs/architecture.md)
+- [Evidence freshness 与测试路径绑定](docs/2026-09-07-evidence-freshness-and-test-path-binding-issues.md)
 - [v0.2.2 flow hardening 设计](docs/superpowers/specs/2026-08-26-v022-flow-hardening-design.md)
 - [v0.2 设计](docs/superpowers/specs/2026-08-25-v02-minimal-complexity-design.md)
 - [完整生命周期示例](docs/worked-example.md)

@@ -15,6 +15,7 @@ Exit codes: 0 = evidence written; 2 = invalid harness state / usage.
 import argparse
 import datetime
 import json
+import os
 import platform
 import re
 import shlex
@@ -55,6 +56,8 @@ VALID_TYPES = {
 TAIL_CHARS = 4000
 COMMAND_TIMEOUT_SECONDS = 1800
 FINDING_ID_PATTERN = re.compile(r"^(?:FND|CPLX|DIAG)-[0-9]+$")
+_SHELL_SEP = frozenset({"&&", ";", "|", "||"})
+_TEST_SUFFIXES = (".py", ".js", ".ts", ".tsx", ".jsx")
 
 
 @dataclass(frozen=True)
@@ -144,6 +147,288 @@ def test_selectors(command: str) -> tuple[str, ...] | None:
 def pytest_selectors(command: str) -> tuple[str, ...] | None:
     """Compatibility alias for callers that only need explicit test selectors."""
     return test_selectors(command)
+
+
+def _split_test_id(value: str) -> tuple[str, str | None]:
+    path, separator, node = value.partition("::")
+    return path, (node if separator else None)
+
+
+def _join_test_id(path: str, node: str | None) -> str:
+    return f"{path}::{node}" if node else path
+
+
+def _has_glob(path: str) -> bool:
+    return any(character in path for character in "*?[")
+
+
+def _repo_root(repo_root: Path | None) -> Path:
+    return (repo_root or Path.cwd()).resolve()
+
+
+def _relative_to_repo(path: Path, repo_root: Path) -> str | None:
+    try:
+        relative = path.relative_to(repo_root)
+    except ValueError:
+        return None
+    if ".." in relative.parts:
+        return None
+    return relative.as_posix()
+
+
+def canonicalize_path(path: str, cwd: Path, repo_root: Path) -> str | None:
+    """Return a repo-root-relative path, or None when the path escapes the repo."""
+    repo_root = repo_root.resolve()
+    raw = Path(path)
+    joined = raw if raw.is_absolute() else cwd / path
+    normalized = Path(os.path.normpath(str(joined)))
+    if _has_glob(path):
+        return _relative_to_repo(normalized, repo_root)
+    try:
+        return _relative_to_repo(normalized.resolve(strict=False), repo_root)
+    except OSError:
+        return None
+
+
+def _cwd_is_local_repo_path(cwd: Path, repo_root: Path) -> bool:
+    repo_root = repo_root.resolve()
+    joined = cwd if cwd.is_absolute() else repo_root / cwd
+    return _relative_to_repo(Path(os.path.normpath(str(joined))), repo_root) is not None
+
+
+def _local_cwd_missing(cwd: Path, repo_root: Path) -> bool:
+    if not _cwd_is_local_repo_path(cwd, repo_root):
+        return False
+    joined = cwd if cwd.is_absolute() else repo_root / cwd
+    return not Path(os.path.normpath(str(joined))).is_dir()
+
+
+def _concrete_path_missing(path: str, repo_root: Path) -> bool:
+    target = repo_root / path
+    if _has_glob(path):
+        return not target.parent.is_dir()
+    return not target.is_file()
+
+
+def _selector_start(tokens: list[str], index: int) -> int | None:
+    token = tokens[index]
+    if Path(token).name.startswith("pytest"):
+        return index + 1
+    if Path(token).name.startswith("python") and tokens[index + 1 : index + 3] == [
+        "-m",
+        "pytest",
+    ]:
+        return index + 3
+    if token == "npx" and tokens[index + 1 : index + 3] == ["vitest", "run"]:
+        return index + 3
+    return None
+
+
+def _is_selector_token(value: str) -> bool:
+    return not value.startswith("-") and (
+        ".py" in value or value.endswith(_TEST_SUFFIXES)
+    )
+
+
+def _selectors_from(tokens: list[str], start: int) -> tuple[str, ...]:
+    end = len(tokens)
+    for index, token in enumerate(tokens[start:], start):
+        if token in _SHELL_SEP:
+            end = index
+            break
+    return tuple(
+        value for value in tokens[start:end] if _is_selector_token(value)
+    )
+
+
+def iter_test_invocations(command: str, cwd: Path):
+    """Yield `(cwd, selectors)` for each pytest/Vitest invocation in `command`."""
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        return
+    current = cwd
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        if token in _SHELL_SEP:
+            index += 1
+            continue
+        if (
+            Path(token).name in {"sh", "bash"}
+            and tokens[index + 1 : index + 2] == ["-lc"]
+            and index + 2 < len(tokens)
+        ):
+            yield from iter_test_invocations(tokens[index + 2], current)
+            index += 3
+            continue
+        if token == "cd" and index + 1 < len(tokens) and tokens[index + 1] not in _SHELL_SEP:
+            destination = tokens[index + 1]
+            current = (
+                Path(destination)
+                if Path(destination).is_absolute()
+                else current / destination
+            )
+            current = Path(os.path.normpath(str(current)))
+            index += 2
+            continue
+        start = _selector_start(tokens, index)
+        if start is not None:
+            yield current, _selectors_from(tokens, start)
+            index = start
+            while index < len(tokens) and tokens[index] not in _SHELL_SEP:
+                index += 1
+            continue
+        index += 1
+
+
+def _path_candidates(path: str, cwd: Path, repo_root: Path) -> tuple[str, ...]:
+    found: list[str] = []
+    for base in (cwd, repo_root):
+        canonical = canonicalize_path(path, base, repo_root)
+        if canonical and canonical not in found:
+            found.append(canonical)
+    return tuple(found)
+
+
+def _suffix_paths_match(left: str, right: str) -> bool:
+    return left == right or left.endswith(f"/{right}") or right.endswith(f"/{left}")
+
+
+def claimed_matches_selector(
+    claimed: str, selector: str, cwd: Path, repo_root: Path
+) -> bool:
+    """Return True when `claimed` is the same test as executed `selector`."""
+    claimed_path, claimed_node = _split_test_id(claimed)
+    selector_path, selector_node = _split_test_id(selector)
+    claimed_ids = [
+        _join_test_id(path, claimed_node)
+        for path in _path_candidates(claimed_path, cwd, repo_root)
+    ] or [claimed]
+    selector_ids = [
+        _join_test_id(path, selector_node)
+        for path in _path_candidates(selector_path, cwd, repo_root)
+    ] or [selector]
+    for claimed_id in (*claimed_ids, claimed):
+        for selector_id in (*selector_ids, selector):
+            if claimed_id == selector_id or claimed_id.startswith(f"{selector_id}::"):
+                return True
+    if not _suffix_paths_match(claimed_path, selector_path):
+        return False
+    longer = claimed_path if len(claimed_path) >= len(selector_path) else selector_path
+    return _join_test_id(longer, claimed_node) == _join_test_id(
+        longer, selector_node
+    ) or _join_test_id(longer, claimed_node).startswith(
+        f"{_join_test_id(longer, selector_node)}::"
+    )
+
+
+def _local_cwd_relative(cwd: Path, repo_root: Path) -> str | None:
+    if not _cwd_is_local_repo_path(cwd, repo_root):
+        return None
+    joined = cwd if cwd.is_absolute() else repo_root / cwd
+    return _relative_to_repo(Path(os.path.normpath(str(joined))), repo_root)
+
+
+def canonicalize_test_id(
+    value: str, command: str, repo_root: Path | None = None
+) -> str:
+    """Resolve a test id against command cwd into a repo-root-relative path."""
+    repo_root = _repo_root(repo_root)
+    path, node = _split_test_id(value)
+    invocations = list(iter_test_invocations(command, repo_root))
+    cwd = invocations[-1][0] if invocations else repo_root
+    bases: list[Path] = []
+    cwd_rel = _local_cwd_relative(cwd, repo_root)
+    already_repo_path = cwd_rel in {None, ".", ""} or path == cwd_rel or path.startswith(
+        f"{cwd_rel}/"
+    )
+    if cwd_rel not in {None, ".", ""} and not already_repo_path:
+        bases.append(cwd)
+    bases.append(repo_root)
+    seen: list[Path] = []
+    for base in bases:
+        resolved = base.resolve() if base.exists() else Path(os.path.normpath(str(base)))
+        if resolved in seen:
+            continue
+        seen.append(resolved)
+        canonical = canonicalize_path(path, base, repo_root)
+        if canonical:
+            return _join_test_id(canonical, node)
+    return value
+
+
+def bind_covered_tests(
+    covered_tests: tuple[str, ...],
+    command: str,
+    repo_root: Path | None = None,
+) -> tuple[str, ...] | str:
+    """Canonicalize covered tests or return a fail-closed error code."""
+    repo_root = _repo_root(repo_root)
+    invocations = list(iter_test_invocations(command, repo_root))
+    for cwd, _selectors in invocations:
+        if _local_cwd_missing(cwd, repo_root):
+            return "COVERED_TEST_PATH_INVALID"
+    canonical: list[str] = []
+    for item in covered_tests:
+        path, _node = _split_test_id(item)
+        if Path(path).is_absolute() and canonicalize_path(path, repo_root, repo_root) is None:
+            return "COVERED_TEST_PATH_INVALID"
+        canonical.append(canonicalize_test_id(item, command, repo_root))
+    if any(selectors for _cwd, selectors in invocations):
+        for item in canonical:
+            executed = any(
+                claimed_matches_selector(item, selector, cwd, repo_root)
+                for cwd, selectors in invocations
+                for selector in selectors
+            )
+            if not executed:
+                return "COVERED_TEST_NOT_EXECUTED"
+        for item in canonical:
+            path, _node = _split_test_id(item)
+            cwd = invocations[-1][0]
+            if _cwd_is_local_repo_path(cwd, repo_root) and _concrete_path_missing(
+                path, repo_root
+            ):
+                return "COVERED_TEST_PATH_INVALID"
+    return tuple(canonical)
+
+
+def record_covers_test(
+    record: dict, node_id: str, repo_root: Path | None = None
+) -> bool:
+    """Return True when evidence covered_tests bind to `node_id`."""
+    repo_root = _repo_root(repo_root)
+    command = record.get("command") or ""
+    invocations = list(iter_test_invocations(command, repo_root))
+    cwd = invocations[-1][0] if invocations else repo_root
+    return any(
+        claimed_matches_selector(node_id, covered, cwd, repo_root)
+        for covered in record.get("covered_tests", [])
+    )
+
+
+def command_covers_test(
+    command: str, node_id: str, repo_root: Path | None = None
+) -> bool:
+    """Return True when `command` executed a selector covering `node_id`."""
+    repo_root = _repo_root(repo_root)
+    invocations = list(iter_test_invocations(command, repo_root))
+    if invocations:
+        return any(
+            claimed_matches_selector(node_id, selector, cwd, repo_root)
+            for cwd, selectors in invocations
+            for selector in selectors
+        )
+    selectors = test_selectors(command)
+    if not selectors:
+        return False
+    return any(
+        node_id == selector
+        or node_id.startswith(f"{selector}::")
+        or node_id.endswith(f"/{selector}")
+        for selector in selectors
+    )
 
 
 def _text_output(value: str | bytes | None) -> str:
@@ -261,15 +546,12 @@ def main(argv=None):
     if args.type == "unit_test" and args.scope == "related" and not args.covered_test:
         print("RELATED_COVERED_TEST_REQUIRED", file=sys.stderr)
         return 2
-    selectors = pytest_selectors(args.command)
-    if selectors:
-        for covered_test in args.covered_test:
-            if not any(
-                covered_test == selector or covered_test.startswith(f"{selector}::")
-                for selector in selectors
-            ):
-                print("COVERED_TEST_NOT_EXECUTED", file=sys.stderr)
-                return 2
+    covered_tests = tuple(args.covered_test)
+    bound = bind_covered_tests(covered_tests, args.command)
+    if isinstance(bound, str):
+        print(bound, file=sys.stderr)
+        return 2
+    covered_tests = bound
     out_dir = Path(args.harness_dir) / "evidence"
     try:
         out_file = evidence_output_path(
@@ -284,7 +566,7 @@ def main(argv=None):
             args.type,
             args.command,
             args.scope,
-            tuple(args.covered_test),
+            covered_tests,
             args.phase,
             args.finding,
             args.test,
@@ -339,7 +621,7 @@ def main(argv=None):
         args.finding,
         args.test,
         args.scope,
-        tuple(args.covered_test),
+        covered_tests,
         tuple(args.covered_test_case),
         args.phase,
     )

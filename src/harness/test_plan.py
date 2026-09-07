@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 
-from .collect_evidence import pytest_selectors
+from .collect_evidence import command_covers_test, record_covers_test
 
 TEST_EVIDENCE_TYPES = frozenset({"unit_test", "integration_test", "contract_test"})
 
@@ -149,9 +149,9 @@ def validate_test_coverage(
     def covered(node_id: str) -> bool:
         return any(
             record.get("type") in TEST_EVIDENCE_TYPES
-            and node_id in record.get("covered_tests", [])
+            and record_covers_test(record, node_id)
             and evidence_is_fresh(record)
-            and _selector_covers(record.get("command") or "", node_id)
+            and command_covers_test(record.get("command") or "", node_id)
             for record in evidence_records
         )
 
@@ -200,15 +200,3 @@ def validate_test_coverage(
     inspect(requirements, "requirements")
     inspect(invariants, "invariants")
     return issues
-
-
-def _selector_covers(command: str, node_id: str) -> bool:
-    selectors = pytest_selectors(command)
-    if not selectors:
-        return False
-    return any(
-        node_id == selector
-        or node_id.startswith(f"{selector}::")
-        or node_id.endswith(f"/{selector}")
-        for selector in selectors
-    )

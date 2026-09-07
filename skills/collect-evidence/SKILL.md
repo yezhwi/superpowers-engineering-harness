@@ -37,10 +37,29 @@ Generates `.harness/evidence/<type>.json` with command, exit_code, timestamp,
 commit, stdout_tail, stderr_tail. Failing commands still produce evidence —
 that is by design; never re-run until green to hide a failure.
 
+For related unit tests, pass `--covered-test` as the repository-root path even
+when the command `cd`s into a subproject. Harness canonicalizes pytest/Vitest
+selectors (including `sh -lc 'cd ... && ...'`) to that root-relative path:
+
+```bash
+harness evidence run --type unit_test --scope related \
+  --covered-test backend/tests/foo.py \
+  --command "sh -lc 'cd backend && pytest tests/foo.py'"
+```
+
+Missing files, paths outside the repository, invalid relative `cd`, and
+selectors the command did not run fail with `COVERED_TEST_NOT_EXECUTED` or
+`COVERED_TEST_PATH_INVALID`. Do not change cwd just to satisfy string matching.
+
 ## Hard Boundaries (不得违反)
 
 1. **禁止自己写判定**："测试应该通过" / "看起来没问题" is not evidence.
    Only `collect_evidence.py` output counts.
-2. **Fresh only.** Evidence must bind current git HEAD. Stale evidence →
-   re-collect before GATING (gate will reject stale otherwise).
+2. **Fresh only against product workspace.** Evidence must bind current git
+   HEAD and the product workspace fingerprint (product code, tests, and
+   non-control-plane config). Writing `.harness/` verification, review, or
+   task metadata does **not** stale product test/build evidence — do not
+   re-run the same product tests after `harness requirement verify`,
+   `harness invariant verify`, or review writes. Re-collect only when
+   product files changed or Gate reports `EVIDENCE_WORKSPACE_STALE`.
 3. Never hand-edit files under `.harness/evidence/`.
