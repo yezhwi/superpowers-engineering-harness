@@ -65,8 +65,8 @@ def test_user_override_preserves_selected_option_distinct_from_recommendation(tm
     assert accepted["selected"]["source"] == "user_override"
 
 
-def test_supersede_preserves_accepted_record_and_links_replacement(tmp_path):
-    """Break caught: decision revision overwrites accepted audit history."""
+def test_supersede_proposal_keeps_original_active(tmp_path):
+    """Break caught: replacement proposal prematurely changes accepted truth."""
     from harness.decision import accept, load_decision, propose, supersede
 
     harness_dir = setup_harness(tmp_path)
@@ -77,11 +77,27 @@ def test_supersede_preserves_accepted_record_and_links_replacement(tmp_path):
         harness_dir, original["id"], proposal(topic="cache-v2", recommendation="local")
     )
 
-    assert old["status"] == "SUPERSEDED"
+    assert old["status"] == "ACCEPTED"
     assert old["selected"]["option"] == "redis"
-    assert old["superseded_by"] == replacement["id"]
+    assert old["superseded_by"] is None
+    assert replacement["status"] == "PROPOSED"
     assert replacement["supersedes"] == original["id"]
-    assert load_decision(harness_dir, original["id"])["selected"]["option"] == "redis"
+    assert load_decision(harness_dir, original["id"])["status"] == "ACCEPTED"
+
+
+def test_accepted_supersede_replaces_original_decision(tmp_path):
+    from harness.decision import accept, load_decision, propose, supersede
+
+    harness_dir = setup_harness(tmp_path)
+    original = propose(harness_dir, proposal())
+    accept(harness_dir, original["id"], "redis", "accepted_recommendation")
+    _, replacement = supersede(harness_dir, original["id"], proposal(topic="replacement"))
+
+    accepted = accept(harness_dir, replacement["id"], "redis", "accepted_recommendation")
+
+    assert accepted["status"] == "ACCEPTED"
+    assert load_decision(harness_dir, original["id"])["status"] == "SUPERSEDED"
+    assert load_decision(harness_dir, original["id"])["superseded_by"] == replacement["id"]
 
 
 def test_supersede_publish_failure_preserves_accepted_original(tmp_path, monkeypatch):
@@ -97,8 +113,9 @@ def test_supersede_publish_failure_preserves_accepted_original(tmp_path, monkeyp
         raise OSError("injected publication failure")
 
     monkeypatch.setattr("harness.decision.publish", fail_publish, raising=False)
+    _, replacement = supersede(harness_dir, original["id"], proposal(topic="replacement"))
     with pytest.raises(OSError, match="injected publication failure"):
-        supersede(harness_dir, original["id"], proposal(topic="replacement"))
+        accept(harness_dir, replacement["id"], "redis", "accepted_recommendation")
 
     persisted = load_decision(harness_dir, original["id"])
     assert persisted["status"] == "ACCEPTED"
@@ -114,3 +131,17 @@ def test_accept_rejects_wrong_selection_source(tmp_path):
 
     with pytest.raises(DecisionError, match="DECISION_SELECTION_SOURCE_INVALID"):
         accept(harness_dir, created["id"], "redis", "user_override")
+
+
+def test_decision_id_path_escape_rejected_before_lookup(tmp_path):
+    from harness.decision import DecisionError, load_decision
+
+    with pytest.raises(DecisionError, match="DECISION_ID_INVALID"):
+        load_decision(setup_harness(tmp_path), "DEC-../../../escape")
+
+
+def test_decision_id_requires_exact_pattern(tmp_path):
+    from harness.decision import DecisionError, load_decision
+
+    with pytest.raises(DecisionError, match="DECISION_ID_INVALID"):
+        load_decision(setup_harness(tmp_path), "DEC-1.yaml")

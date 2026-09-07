@@ -10,6 +10,7 @@ from importlib import resources
 import yaml
 from jsonschema import ValidationError, validate
 
+from .paths import IdentifierError, identifier_path
 from .transaction import StagedArtifact, publish, stage
 
 
@@ -59,9 +60,10 @@ def _task_id(harness_dir: Path) -> str:
 
 
 def _path(harness_dir: Path, decision_id: str) -> Path:
-    if not decision_id.startswith("DEC-"):
-        raise DecisionError("DECISION_ID_INVALID")
-    return _directory(harness_dir) / f"{decision_id}.yaml"
+    try:
+        return identifier_path(harness_dir, "decisions", decision_id, r"DEC-[0-9]+")
+    except IdentifierError as exc:
+        raise DecisionError("DECISION_ID_INVALID") from exc
 
 
 def _write(path: Path, record: dict) -> None:
@@ -155,7 +157,20 @@ def accept(harness_dir: Path, decision_id: str, option: str, source: str) -> dic
         else "user selected an alternative option"
     ]
     _validate(record)
-    _write(_path(harness_dir, decision_id), record)
+    if record["supersedes"] is None:
+        _write(_path(harness_dir, decision_id), record)
+        return record
+    original = load_decision(harness_dir, record["supersedes"])
+    if original["status"] != "ACCEPTED" or original["superseded_by"] is not None:
+        raise DecisionError("DECISION_SUPERSEDE_INVALID")
+    original["status"] = "SUPERSEDED"
+    original["superseded_by"] = record["id"]
+    _validate(original)
+    artifacts = [
+        StagedArtifact(f"decisions/{original['id']}.yaml", yaml.safe_dump(original, sort_keys=False).encode()),
+        StagedArtifact(f"decisions/{record['id']}.yaml", yaml.safe_dump(record, sort_keys=False).encode()),
+    ]
+    publish(harness_dir, stage(harness_dir, artifacts), replace_paths=frozenset({f"decisions/{original['id']}.yaml", f"decisions/{record['id']}.yaml"}))
     return record
 
 
@@ -177,25 +192,8 @@ def supersede(harness_dir: Path, decision_id: str, document: dict) -> tuple[dict
         raise DecisionError("DECISION_SUPERSEDE_INVALID")
     replacement = _proposal_record(harness_dir, document)
     replacement["supersedes"] = original["id"]
-    original["status"] = "SUPERSEDED"
-    original["superseded_by"] = replacement["id"]
-    _validate(original)
     _validate(replacement)
-    artifacts = [
-        StagedArtifact(
-            f"decisions/{original['id']}.yaml",
-            yaml.safe_dump(original, sort_keys=False).encode(),
-        ),
-        StagedArtifact(
-            f"decisions/{replacement['id']}.yaml",
-            yaml.safe_dump(replacement, sort_keys=False).encode(),
-        ),
-    ]
-    publish(
-        harness_dir,
-        stage(harness_dir, artifacts),
-        replace_paths=frozenset({f"decisions/{original['id']}.yaml"}),
-    )
+    _write(_path(harness_dir, replacement["id"]), replacement)
     return original, replacement
 
 

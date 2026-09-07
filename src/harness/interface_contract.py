@@ -9,7 +9,12 @@ from pathlib import Path
 
 import yaml
 
-from .paths import EvidenceReferenceError, evidence_path
+from .paths import (
+    EvidenceReferenceError,
+    IdentifierError,
+    evidence_path,
+    identifier_path,
+)
 from jsonschema import ValidationError, validate
 
 
@@ -26,9 +31,12 @@ def _directory(harness_dir: Path) -> Path:
 
 
 def _path(harness_dir: Path, contract_id: str) -> Path:
-    if not contract_id.startswith("INT-"):
-        raise InterfaceContractError("INTERFACE_CONTRACT_ID_INVALID")
-    return _directory(harness_dir) / f"{contract_id}.yaml"
+    try:
+        return identifier_path(
+            harness_dir, "interface-contracts", contract_id, r"INT-[0-9]+"
+        )
+    except IdentifierError as exc:
+        raise InterfaceContractError("INTERFACE_CONTRACT_ID_INVALID") from exc
 
 
 def _validate(record: dict) -> None:

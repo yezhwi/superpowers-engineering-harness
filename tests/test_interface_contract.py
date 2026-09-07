@@ -90,3 +90,17 @@ def test_external_contract_rejects_missing_consumers(tmp_path):
 
     with pytest.raises(InterfaceContractError, match="INTERFACE_CONTRACT_INVALID"):
         declare(setup_harness(tmp_path), contract(consumers=[]))
+
+
+def test_interface_id_path_escape_rejected_before_lookup(tmp_path):
+    from harness.interface_contract import InterfaceContractError, load_interface_contract
+
+    with pytest.raises(InterfaceContractError, match="INTERFACE_CONTRACT_ID_INVALID"):
+        load_interface_contract(setup_harness(tmp_path), "INT-../../../escape")
+
+
+def test_interface_id_requires_exact_pattern(tmp_path):
+    from harness.interface_contract import InterfaceContractError, load_interface_contract
+
+    with pytest.raises(InterfaceContractError, match="INTERFACE_CONTRACT_ID_INVALID"):
+        load_interface_contract(setup_harness(tmp_path), "INT-1.yaml")

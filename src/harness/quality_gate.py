@@ -421,13 +421,16 @@ def _evaluate_gate(
     )
 
     # Persisted decision facts are task constraints, not advisory chat context.
-    from .decision import DecisionError, load_decisions
+    from .decision import DecisionError, load_decision, load_decisions
 
     try:
         decisions = load_decisions(harness_dir)
     except DecisionError:
         block("DECISION_REFERENCE_INVALID", "harness", "decision record is invalid")
         decisions = []
+    decisions = [
+        record for record in decisions if record["task_id"] == task["task"]["id"]
+    ]
     by_id = {record["id"]: record for record in decisions}
     active_topics: set[str] = set()
     for decision in decisions:
@@ -494,6 +497,31 @@ def _evaluate_gate(
                 f"{declared.get('id')} has no interface contract",
             )
             continue
+        if contract["task_id"] != task["task"]["id"]:
+            reused_refs = declared.get("reused_contract_refs") or []
+            if contract["id"] not in reused_refs:
+                block(
+                    "INTERFACE_CONTRACT_TASK_MISMATCH",
+                    "harness",
+                    f"{contract['id']} belongs to another task",
+                )
+                continue
+        has_accepted_decision_ref = False
+        for decision_ref in contract.get("decision_refs") or []:
+            try:
+                referenced_decision = load_decision(harness_dir, decision_ref)
+            except DecisionError as exc:
+                code = (
+                    "DECISION_REFERENCE_NOT_FOUND"
+                    if str(exc) == "DECISION_NOT_FOUND"
+                    else "DECISION_REFERENCE_INVALID"
+                )
+                block(code, "harness", f"{contract['id']} decision reference invalid")
+                continue
+            if referenced_decision["status"] != "ACCEPTED" or referenced_decision.get("superseded_by"):
+                block("DECISION_REFERENCE_STATUS_INVALID", "harness", f"{contract['id']} decision reference is not active")
+            else:
+                has_accepted_decision_ref = True
         compatibility = contract.get("compatibility", {}).get("classification")
         if compatibility not in {"compatible", "breaking"}:
             block(
@@ -501,9 +529,7 @@ def _evaluate_gate(
                 "harness",
                 f"{contract['id']} lacks compatibility classification",
             )
-        elif compatibility == "breaking" and not contract.get(
-            "breaking_change_approved"
-        ):
+        elif compatibility == "breaking" and not has_accepted_decision_ref:
             block(
                 "INTERFACE_BREAKING_CHANGE_UNAPPROVED",
                 "harness",

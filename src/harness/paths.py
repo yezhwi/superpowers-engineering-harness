@@ -1,10 +1,28 @@
 """Canonical Harness artifact path validation."""
 
 from pathlib import Path
+import re
 
 
 class EvidenceReferenceError(ValueError):
     """An artifact reference does not name a canonical evidence file."""
+
+
+class IdentifierError(ValueError):
+    """Persisted artifact identifier is not canonical."""
+
+
+def identifier_path(
+    harness_dir: Path, directory_name: str, identifier: str, pattern: str
+) -> Path:
+    """Resolve exact identifier to a contained YAML artifact path."""
+    directory = (harness_dir / directory_name).resolve()
+    if not isinstance(identifier, str) or not re.fullmatch(pattern, identifier):
+        raise IdentifierError("IDENTIFIER_INVALID")
+    candidate = (directory / f"{identifier}.yaml").resolve()
+    if candidate.parent != directory:
+        raise IdentifierError("IDENTIFIER_INVALID")
+    return candidate
 
 
 def evidence_output_path(harness_dir: Path, filename: str) -> Path:
