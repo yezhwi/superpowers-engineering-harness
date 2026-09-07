@@ -2,11 +2,16 @@
 
 ## 0.2.7
 
+- Close Decision and Interface Contract correctness gaps: task-scoped Gate participation, explicit cross-task Interface reuse, validated active Decision references, safe supersession acceptance, and canonical Decision/Interface IDs.
+
 - Add explicit task-owned and protected-user scopes, preventing unrelated dirty paths from entering review.
 - Add DIAG proposal publication, Finding-aware `resume-review`, unified evidence references, and evidence run/attach modes.
 - Add Gate preflight, independent quality/release-readiness results, MR draft-only output, and complexity audit decisions.
 - Add persisted Decision Records, Decision CLI, active-decision status summaries, and Gate blockers for unresolved or inconsistent decision state.
 - Add external Interface Contracts, public-interface impact classification, Q1 escalation guard, fresh interface verification, and deterministic interface Gate blockers.
+- Make `harness gate` sole product Gate authority; disable direct standalone quality-gate evaluation and typedly reject open Findings before `review outcome PASS`.
+- Restrict `covered_tests` claims to test evidence, require explicit Finding categories, and reject category-less legacy artifacts with `MIGRATION_REQUIRED`.
+- Remove obsolete aggregate `finding.schema.json`; canonical validation uses adversarial, diagnosability, complexity, and interface schemas.
 
 ### Install
 

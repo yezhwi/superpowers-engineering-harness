@@ -2,7 +2,7 @@
 
 [简体中文](README.zh-CN.md)
 
-`v0.2.7 current release`; risk-adaptive behavior, task ownership, finding-aware review recovery, evidence run/attach, Gate preflight, dual-axis readiness, and auditable complexity review are included in this release.
+`v0.2.7 current release`; risk-adaptive behavior, task ownership, finding-aware review recovery, evidence run/attach, Gate preflight, dual-axis readiness, and auditable complexity review are included in this release. Decision and Interface Contracts now use task-scoped Gate participation, explicit cross-task interface reuse, validated Decision references, safe supersession, and canonical artifact identifiers.
 
 **Routing:** Q0 answers without task; Q1 / FAST uses RED/fix/GREEN/Light Gate; Q2 / STANDARD and Q3 / STRICT use full contract/review/Gate workflow.
 
@@ -135,14 +135,18 @@ For Pi, open new session after installing skills. Skills load at session start.
 
 ## Daily operations
 
-> **Security boundary:** `harness evidence --command` executes shell syntax (`shell=True`) as trusted text entered directly by local Harness operator. Never forward remote requests, configuration values, API payloads, CI metadata, or other untrusted input to this option. Internal `_collect` is unsupported internal API, not Python access control or provenance proof.
+> **Security boundary:** `harness evidence run --command` executes shell syntax (`shell=True`) as trusted text entered directly by local Harness operator.
+
+Never forward remote requests, configuration values, API payloads, CI metadata, or other untrusted input to this option. Internal `_collect` is unsupported internal API, not Python access control or provenance proof.
+
+**Gate and Finding contract:** Only `harness gate` evaluates or persists product Gate results; direct `python scripts/quality_gate.py` is disabled. Persisted Findings require an explicit category (`adversarial`, `diagnosability`, `complexity`, or `interface`); category-less legacy records fail with `MIGRATION_REQUIRED`. `finding.schema.json` was removed; use category-specific schemas.
 
 Normal success path (`review outcome PASS` performs `REVIEWING → GATING`):
 
 ```bash
 harness status
 harness transition IMPLEMENTING
-harness evidence --type unit_test --command "pytest tests/test_cancel.py"
+harness evidence run --type unit_test --command "pytest tests/test_cancel.py"
 harness transition VERIFYING
 harness review complexity --file review.yaml
 harness transition REVIEWING
@@ -166,7 +170,7 @@ Before `VERIFYING`, record impact and related tests. Full suite needs explicit a
 harness impact add-change src/orders/cancel.py
 harness impact add-test tests/test_cancel.py::test_duplicate_cancel_single_refund
 harness authorize full-suite
-harness evidence --type unit_test --scope full_suite --command "pytest"
+harness evidence run --type unit_test --scope full_suite --command "pytest"
 ```
 
 Recover interrupted work with `harness status`; Harness resumes from `.harness/current-task.yaml`. Gate recovery derives target from blocker code, not persisted `recover_to`. Review reasons are controlled: use `REVIEW_CLEAN`, `TEST_COVERAGE_INSUFFICIENT`, `EVIDENCE_INCOMPLETE`, `INVARIANT_UNPROVEN`, `TEST_SCOPE_INSUFFICIENT`, `LOGIC_ERROR`, `REGRESSION`, `CONTRACT_VIOLATION`, or `INVARIANT_VIOLATION` for matching outcome.
@@ -182,8 +186,8 @@ harness task classify --level Q1 --scope low --contract none --data none \
   --authorization none --security none --concurrency none --deployment none
 harness transition IMPLEMENTING
 # collect a failing regression proof before fix, then passing proof after fix
-harness evidence --type unit_test --phase red --covered-test tests/test_x.py::test_x --command "pytest tests/test_x.py::test_x"
-harness evidence --type unit_test --phase green --covered-test tests/test_x.py::test_x --command "pytest tests/test_x.py::test_x"
+harness evidence run --type unit_test --phase red --covered-test tests/test_x.py::test_x --command "pytest tests/test_x.py::test_x"
+harness evidence run --type unit_test --phase green --covered-test tests/test_x.py::test_x --command "pytest tests/test_x.py::test_x"
 harness transition VERIFYING
 harness transition GATING
 harness gate
@@ -255,7 +259,7 @@ harness task escalate --level Q2 --reason "public contract changed"
 Reuse is explicit and same-task only:
 
 ```bash
-harness evidence --type build --command "python -m pip wheel . --no-deps" --reuse-if-valid
+harness evidence run --type build --command "python -m pip wheel . --no-deps" --reuse-if-valid
 ```
 
 `EVIDENCE_REUSED` means no command ran. Reuse needs prior success plus exact command/proof identity, unchanged HEAD/workspace, and exact runtime. Any mismatch runs command normally.
@@ -267,7 +271,7 @@ Evidence blockers recover through `harness resume`; review test gaps use `harnes
 FAST evidence budgets are soft: test 2, build 1, repeated retry 1. Over budget requires all override fields:
 
 ```bash
-harness evidence --type build --command "python -m pip wheel ." --budget-override-reason "new evidence" --budget-override-evidence build.json --budget-override-hypothesis "packaging path"
+harness evidence run --type build --command "python -m pip wheel ." --budget-override-reason "new evidence" --budget-override-evidence build.json --budget-override-hypothesis "packaging path"
 ```
 
 Local-only telemetry: `harness telemetry show`. It measures `elapsed_seconds`, `harness_command_calls`, and evidence counts. Agent metrics remain unavailable: `token_estimate: null`, tool calls/search rounds null. Run fixture validation: `harness benchmark run --fixtures benchmarks/fixtures`.

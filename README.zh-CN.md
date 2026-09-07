@@ -2,7 +2,7 @@
 
 [English](README.md)
 
-`v0.2.7 current release`；本 release 已包含 risk-adaptive behavior、Task Ownership、Finding review recovery、evidence run/attach、Gate preflight、双轴 readiness 与 complexity audit。
+`v0.2.7 current release`；本 release 已包含 risk-adaptive behavior、Task Ownership、Finding review recovery、evidence run/attach、Gate preflight、双轴 readiness 与 complexity audit。Decision 与 Interface Contract 现具备 task-scoped Gate 参与、显式跨 Task Interface 复用、Decision reference 校验、安全 supersession 与 canonical artifact identifier。
 
 **Routing：** Q0 直接回答、不创建 task；Q1 / FAST 使用 RED/fix/GREEN/Light Gate；Q2 / STANDARD 与 Q3 / STRICT 使用完整 contract/review/Gate 流程。
 
@@ -139,14 +139,18 @@ Pi 安装 Skills 后需新开会话。Skills 在会话启动时加载。
 
 ## 日常使用
 
-> **安全边界：** `harness evidence --command` 以本地 Harness 操作者直接输入、受信任 shell 文本执行（`shell=True`）。禁止将远程请求、配置值、API payload、CI 元数据或任何不可信输入转发给此选项。
+> **安全边界：** `harness evidence run --command` 以本地 Harness 操作者直接输入、受信任 shell 文本执行（`shell=True`）。
+
+禁止将远程请求、配置值、API payload、CI 元数据或任何不可信输入转发给此选项。
+
+**Gate 与 Finding 契约：** 只有 `harness gate` 可以评估或持久化产品 Gate 结果；直接运行 `python scripts/quality_gate.py` 已禁用。持久化 Finding 必须显式声明 category（`adversarial`、`diagnosability`、`complexity` 或 `interface`）；无 category 的旧记录以 `MIGRATION_REQUIRED` 失败。`finding.schema.json` 已删除，改用分类 Schema。
 
 正常成功路径（`review outcome PASS` 执行 `REVIEWING → GATING`）：
 
 ```bash
 harness status
 harness transition IMPLEMENTING
-harness evidence --type unit_test --command "pytest tests/test_cancel.py"
+harness evidence run --type unit_test --command "pytest tests/test_cancel.py"
 harness transition VERIFYING
 harness review complexity --file review.yaml
 harness transition REVIEWING
@@ -170,7 +174,7 @@ harness resume
 harness impact add-change src/orders/cancel.py
 harness impact add-test tests/test_cancel.py::test_duplicate_cancel_single_refund
 harness authorize full-suite
-harness evidence --type unit_test --scope full_suite --command "pytest"
+harness evidence run --type unit_test --scope full_suite --command "pytest"
 ```
 
 会话中断后运行 `harness status`；Harness 从 `.harness/current-task.yaml` 恢复。`status` 是只读 projection；Gate 阻塞后运行 `harness resume`，Harness 按 typed blocker code 自动选择正确恢复状态，不信任持久化 `recover_to`。Review reason code 为受控集合，例如 `TEST_COVERAGE_INSUFFICIENT`、`EVIDENCE_INCOMPLETE`、`LOGIC_ERROR`。
@@ -186,8 +190,8 @@ harness task classify --level Q1 --scope low --contract none --data none \
   --authorization none --security none --concurrency none --deployment none
 harness transition IMPLEMENTING
 # 修复前记录失败 regression proof，修复后记录通过 proof
-harness evidence --type unit_test --phase red --covered-test tests/test_x.py::test_x --command "pytest tests/test_x.py::test_x"
-harness evidence --type unit_test --phase green --covered-test tests/test_x.py::test_x --command "pytest tests/test_x.py::test_x"
+harness evidence run --type unit_test --phase red --covered-test tests/test_x.py::test_x --command "pytest tests/test_x.py::test_x"
+harness evidence run --type unit_test --phase green --covered-test tests/test_x.py::test_x --command "pytest tests/test_x.py::test_x"
 harness transition VERIFYING
 harness transition GATING
 harness gate
@@ -258,7 +262,7 @@ harness task escalate --level Q2 --reason "public contract changed"
 复用必须显式请求，且只限当前 task：
 
 ```bash
-harness evidence --type build --command "python -m pip wheel . --no-deps" --reuse-if-valid
+harness evidence run --type build --command "python -m pip wheel . --no-deps" --reuse-if-valid
 ```
 
 `EVIDENCE_REUSED` 表示未运行命令。复用要求之前成功、命令/证明身份完全一致、HEAD/workspace 未变、运行时完全一致。任一不匹配都会正常执行命令。
@@ -270,7 +274,7 @@ Evidence blocker 用 `harness resume` 恢复；review 测试缺口用 `harness r
 FAST evidence budget 为 soft：test 2、build 1、相同失败 retry 1。超预算必须提供全部 override 字段：
 
 ```bash
-harness evidence --type build --command "python -m pip wheel ." --budget-override-reason "new evidence" --budget-override-evidence build.json --budget-override-hypothesis "packaging path"
+harness evidence run --type build --command "python -m pip wheel ." --budget-override-reason "new evidence" --budget-override-evidence build.json --budget-override-hypothesis "packaging path"
 ```
 
 仅本地 telemetry：`harness telemetry show`。它测量 `elapsed_seconds`、`harness_command_calls`、evidence counts；agent metrics 不可用：`token_estimate: null`，tool calls/search rounds 为 null。运行 fixture validation：`harness benchmark run --fixtures benchmarks/fixtures`。
