@@ -5,7 +5,9 @@
 > 主题：Context & Execution Efficiency  
 > 目标：在不降低 Control Fidelity、任务正确性和工程 Gate 强度的前提下，减少 AI Coding 中无效 Context、重复 Tool Calls、重复搜索和重复执行。  
 > 适用范围：Engineering Harness 控制面；不要求修改业务项目代码。  
-> 基线版本：v0.2.7 / commit `239dce28`
+> 基线版本：v0.2.7 / commit `239dce28`  
+>
+> **实现以实施契约为准：** [`Superpowers-Engineering-Harness-v0.2.8-Implementation-Contract.md`](./Superpowers-Engineering-Harness-v0.2.8-Implementation-Contract.md)。本文保留愿景与长期设计；与契约冲突时，v0.2.8 实现和发版门槛以契约为准。
 
 ---
 
