@@ -564,6 +564,18 @@ def test_three_run_q1_improvement_passes_experiment(tmp_path):
     assert report["experiment"] == {"status": "PASS", "confidence": "high"}
 
 
+def test_experiment_fails_when_tokens_per_success_regresses(complete_experiment):
+    def increase_one_adaptive_attempt_cost(run):
+        run["usage"]["total_tokens"] = 10_000
+
+    _mutate_run(complete_experiment, increase_one_adaptive_attempt_cost)
+
+    assert _compare_complete(complete_experiment)["experiment"] == {
+        "status": "FAIL",
+        "confidence": "high",
+    }
+
+
 def test_single_run_q1_without_token_reduction_is_inconclusive(tmp_path):
     fixtures = tmp_path / "fixtures"
     fixtures.mkdir()

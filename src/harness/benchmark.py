@@ -292,6 +292,18 @@ def _experiment_verdict(rows: list[dict]) -> dict:
         for value in baseline_tokens + adaptive_tokens
     ):
         return {"status": INCONCLUSIVE, "confidence": "high"}
+    tokens_per_success_by_mode = {
+        mode: tokens_per_success(
+            [
+                attempt
+                for row in q1
+                for attempt in _usage_attempts(row, mode)
+            ]
+        )
+        for mode in ("baseline", "adaptive")
+    }
+    if INCONCLUSIVE in tokens_per_success_by_mode.values():
+        return {"status": INCONCLUSIVE, "confidence": "high"}
     improvement = False
     for metric in ("tool_calls", "search_rounds", "file_reads", "elapsed_seconds"):
         pairs = [
@@ -308,7 +320,12 @@ def _experiment_verdict(rows: list[dict]) -> dict:
         ):
             return {"status": INCONCLUSIVE, "confidence": "high"}
         improvement = improvement or _median(adaptive_values) < _median(baseline_values)
-    if _median(adaptive_tokens) < _median(baseline_tokens) and improvement:
+    if (
+        _median(adaptive_tokens) < _median(baseline_tokens)
+        and tokens_per_success_by_mode["adaptive"]
+        < tokens_per_success_by_mode["baseline"]
+        and improvement
+    ):
         return {"status": "PASS", "confidence": "high"}
     return {"status": "FAIL", "confidence": "high"}
 

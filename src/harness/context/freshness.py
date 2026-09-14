@@ -13,6 +13,7 @@ from harness.source_access import source_scope
 from harness.workspace import WorkspaceError, snapshot
 
 from .model import ContextBuildError
+from .source import ARTIFACT_PATTERNS
 
 PROJECTION_VERSION = 2
 ROOT_FILES = (
@@ -26,7 +27,7 @@ ROOT_FILES = (
     "config.yaml",
     "context/expansions.yaml",
 )
-ARTIFACT_DIRS = ("decisions", "findings", "interface-contracts", "evidence")
+ARTIFACT_DIRS = tuple(ARTIFACT_PATTERNS)
 
 
 def digest(value) -> str:
@@ -183,11 +184,11 @@ def version_scope(harness_dir: Path, discovered: set[str], protected: set[str]):
     """Freeze known control members before bytes/version collection."""
     root = harness_dir.absolute().parent
     allowed = [harness_dir / name for name in ROOT_FILES]
-    for directory in ARTIFACT_DIRS:
+    for directory, pattern in ARTIFACT_PATTERNS.items():
         path = harness_dir / directory
         allowed.append(path)
         if path.is_dir():
-            allowed.extend(path.rglob("*"))
+            allowed.extend(path.glob(pattern))
     for name in discovered:
         if not any(char in name for char in "*?["):
             allowed.append(contained_path(root, name))
@@ -207,7 +208,7 @@ def capture(harness_dir: Path) -> dict:
 
     This registry covers current Gate's canonical file reads. Changes to Gate's
     input surface must extend ROOT_FILES/ARTIFACT_DIRS and its regression tests.
-    All artifact members (including raw evidence) bind collection membership.
+    Canonical direct artifact members (including raw evidence) bind collection membership.
     """
     root = harness_dir.absolute().parent
     # Discovery cannot use a dynamic declaration to authorize its own input.
@@ -242,9 +243,7 @@ def _capture_versions(
                 )
             files[directory + "/"] = file_version(path)
             if path.exists():
-                for member in sorted(path.rglob("*")):
-                    if member.name.endswith(".tmp"):
-                        continue
+                for member in source_access.members(path, ARTIFACT_PATTERNS[directory]):
                     relative = member.relative_to(harness_dir.absolute()).as_posix()
                     checked = contained_path(root, f"{harness_dir.name}/{relative}")
                     files[relative] = file_version(checked)

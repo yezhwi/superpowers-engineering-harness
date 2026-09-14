@@ -18,6 +18,13 @@ from harness.repository import RepositoryNotFoundError, find_git_root
 
 from .model import AuthoritativeContext, ContextBuildError
 
+ARTIFACT_PATTERNS = {
+    "decisions": "*.yaml",
+    "findings": "*.yaml",
+    "interface-contracts": "*.yaml",
+    "evidence": "*.json",
+}
+
 
 class FileContextSource:
     """Load from repository-root CWD, as normalized by the existing CLI.
@@ -100,7 +107,7 @@ class FileContextSource:
 
     def _records(self, directory: str, loader) -> list[dict]:
         # Existing loaders return records in sorted canonical filename order.
-        names = self._artifact_paths(directory, "*.yaml")
+        names = self._artifact_paths(directory, ARTIFACT_PATTERNS[directory])
         for path in names:
             self._reference(f"{directory}/{path.name}")
         try:
@@ -188,7 +195,7 @@ class FileContextSource:
         try:
             current = workspace.snapshot(self.repo_root)
             evidence = []
-            for path in self._artifact_paths("evidence", "*.json"):
+            for path in self._artifact_paths("evidence", ARTIFACT_PATTERNS["evidence"]):
                 reference = self._reference(f"evidence/{path.name}")
                 projection = project_evidence(path, current.head, current.fingerprint)
                 if projection.status in {

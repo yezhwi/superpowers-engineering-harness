@@ -213,6 +213,14 @@ def test_derived_context_and_telemetry_do_not_self_stale(harness):
     assert build(harness)["context_hash"] == document["context_hash"]
 
 
+def test_unreferenced_artifact_archive_change_does_not_stale_context(harness):
+    document = build(harness)
+    (harness / "evidence/archive").mkdir(parents=True)
+    (harness / "evidence/archive/old.json").write_text('{"historical": true}')
+
+    assert validate(harness, document)["freshness"]
+
+
 def test_temporary_artifact_write_does_not_stale_context(harness):
     document = build(harness)
     write_yaml(harness / "evidence/.review.yaml.tmp", {"temporary": True})
@@ -221,7 +229,7 @@ def test_temporary_artifact_write_does_not_stale_context(harness):
 
 def test_directory_membership_and_optional_presence_are_freshness_inputs(harness):
     document = build(harness)
-    write_yaml(harness / "evidence/extra.yaml", {"metadata": "new"})
+    (harness / "evidence/extra.json").write_text('{"metadata": "new"}')
     with pytest.raises(ContextBuildError, match="CONTEXT_STALE"):
         validate(harness, document)
 
