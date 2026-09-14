@@ -1,8 +1,8 @@
-# Superpowers Engineering Harness v0.2.7
+# Superpowers Engineering Harness v0.2.8
 
 [English](README.md)
 
-`v0.2.7 current release`；本 release 已包含 risk-adaptive behavior、Task Ownership、Finding review recovery、evidence run/attach、Gate preflight、双轴 readiness 与 complexity audit。Decision 与 Interface Contract 现具备 task-scoped Gate 参与、显式跨 Task Interface 复用、Decision reference 校验、安全 supersession 与 canonical artifact identifier。产品 test/build evidence 的 freshness 使用 product workspace fingerprint，不因 `.harness/` control-plane 写入而 stale。Covered tests 规范化为仓库根路径。
+`v0.2.8 current release`；v0.2.7 的 risk-adaptive workflow、Task Ownership、review recovery、evidence、Gate、Decision 和 Interface safeguard 均保留。v0.2.8 新增经过校验的派生 Context 与 fail-closed Integrity、task-bound usage 上报和 multi-run Benchmark 报告。Benchmark 效率结论要求完整 runtime 数据；缺失 metric 保持 `INCONCLUSIVE`，已知 correctness 或 integrity 失败优先。见 [v0.2.8 实现契约](docs/Superpowers-Engineering-Harness-v0.2.8-Implementation-Contract.md)。
 
 **Routing：** Q0 直接回答、不创建 task；Q1 / FAST 使用 RED/fix/GREEN/Light Gate；Q2 / STANDARD 与 Q3 / STRICT 使用完整 contract/review/Gate 流程。
 
@@ -50,6 +50,8 @@ v0.2.6  Production Diagnosability Contract + DIAG Finding + Gate
   ↓
 v0.2.7  Task Ownership + Review Convergence + Gate Readiness
         + product freshness / canonical covered tests
+  ↓
+v0.2.8  Derived Context + Integrity + Host Usage + Multi-run Benchmark
 ```
 
 ## Engineering Quality

@@ -57,14 +57,18 @@ def test_readmes_document_risk_profiles_and_independent_authorization():
 def test_docs_identify_current_adaptive_release():
     for path in (REPO / "README.md", REPO / "README.zh-CN.md"):
         text = path.read_text()
-        assert "v0.2.7 current release" in text
-        assert "risk-adaptive behavior" in text
+        assert "v0.2.8 current release" in text
+        assert "v0.2.8 implementation contract" in text or "v0.2.8 实现契约" in text
+        assert "INCONCLUSIVE" in text
+        assert "risk-adaptive" in text
         assert "Q1 / FAST" in text and "Q2 / STANDARD" in text and "Q3 / STRICT" in text
     changelog = (REPO / "CHANGELOG.md").read_text()
     assert "Evidence reuse" in changelog
     assert "Soft evidence budgets" in changelog
     assert "local telemetry" in changelog
     assert "fixture benchmarks" in changelog
+    assert "## 0.2.8" in changelog
+    assert "multi-run statistics" in changelog
 
 
 def test_readmes_define_telemetry_measurement_boundary():

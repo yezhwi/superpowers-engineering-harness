@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.8
+
+- Add validated derived Context: compact/full projection, task-bound expansion, source freshness, and fail-closed Integrity checks. Context Evidence records generated context, not agent consumption, and does not become product Gate evidence.
+- Add task-bound cumulative host usage reporting with validated token and agent counters. Local telemetry updates preserve reported usage; missing host measurements remain null.
+- Extend Benchmark artifacts with usage and multi-run statistics, including `tokens_per_success`, median/P90 token reporting, and agent tool/search/file-read counters. Missing data remains `INCONCLUSIVE`; estimated usage is low-confidence; known correctness or integrity failures override efficiency claims.
+- Add controlled source-access, schema-resource, workspace, and telemetry-lock boundaries with regression coverage.
+
 ## 0.2.7
 
 - Close Decision and Interface Contract correctness gaps: task-scoped Gate participation, explicit cross-task Interface reuse, validated active Decision references, safe supersession acceptance, and canonical Decision/Interface IDs.

@@ -1,8 +1,8 @@
-# Superpowers Engineering Harness v0.2.7
+# Superpowers Engineering Harness v0.2.8
 
 [简体中文](README.zh-CN.md)
 
-`v0.2.7 current release`; risk-adaptive behavior, task ownership, finding-aware review recovery, evidence run/attach, Gate preflight, dual-axis readiness, and auditable complexity review are included in this release. Decision and Interface Contracts now use task-scoped Gate participation, explicit cross-task interface reuse, validated Decision references, safe supersession, and canonical artifact identifiers. Product test/build evidence freshness uses the product workspace fingerprint, not `.harness/` control-plane writes. Covered tests canonicalize to repository-root paths.
+`v0.2.8 current release`; v0.2.7 risk-adaptive workflow, task ownership, review recovery, evidence, Gate, Decision, and Interface safeguards remain available. v0.2.8 adds validated derived Context with fail-closed integrity, task-bound usage reporting, and multi-run Benchmark reporting. Benchmark efficiency claims require complete runtime data; missing metrics remain `INCONCLUSIVE`, and known correctness or integrity failures take precedence. See [v0.2.8 implementation contract](docs/Superpowers-Engineering-Harness-v0.2.8-Implementation-Contract.md).
 
 **Routing:** Q0 answers without task; Q1 / FAST uses RED/fix/GREEN/Light Gate; Q2 / STANDARD and Q3 / STRICT use full contract/review/Gate workflow.
 
@@ -46,6 +46,8 @@ v0.2.6  Production Diagnosability Contract + DIAG Finding + Gate
   ↓
 v0.2.7  Task Ownership + Review Convergence + Gate Readiness
         + product freshness / canonical covered tests
+  ↓
+v0.2.8  Derived Context + Integrity + Host Usage + Multi-run Benchmark
 ```
 
 ## Engineering Quality
