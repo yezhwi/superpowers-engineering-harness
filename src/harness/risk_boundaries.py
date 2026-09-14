@@ -1,7 +1,7 @@
 """Declared FAST risk boundaries; no semantic inference."""
 
 from fnmatch import fnmatchcase
-from functools import lru_cache
+from functools import cache
 from pathlib import Path
 
 import yaml
@@ -12,8 +12,11 @@ class RiskBoundaryPolicyError(ValueError):
 
 
 def load_boundaries(path: Path) -> dict[str, tuple[str, ...]]:
+    # Lazy import avoids the source_access -> Context model -> Gate import cycle.
+    from harness import source_access
+
     try:
-        data = yaml.safe_load(path.read_text())
+        data = yaml.safe_load(source_access.read_text(path))
         boundaries = data["boundaries"]
         if set(boundaries) != {"q2", "q3"}:
             raise ValueError
@@ -55,7 +58,7 @@ def matches_boundary(path: str, pattern: str) -> bool:
     if not path or path.startswith("/") or ".." in path_parts:
         return False
 
-    @lru_cache(maxsize=None)
+    @cache
     def matches(path_index: int, pattern_index: int) -> bool:
         if pattern_index == len(pattern_parts):
             return path_index == len(path_parts)

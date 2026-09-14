@@ -68,9 +68,12 @@ def publish(
                 raise FileExistsError(f"canonical artifact exists: {target}")
             target.parent.mkdir(parents=True, exist_ok=True)
             temp = target.with_name(f".{target.name}.{uuid4().hex}.tmp")
-            temp.write_bytes(source.read_bytes())
-            temp.replace(target)
-            published.append(target)
+            try:
+                temp.write_bytes(source.read_bytes())
+                temp.replace(target)
+                published.append(target)
+            finally:
+                temp.unlink(missing_ok=True)
         succeeded = True
     except Exception:
         for target in reversed(published):

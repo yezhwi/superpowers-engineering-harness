@@ -24,6 +24,15 @@ def replacement_workspace(harness_dir: Path) -> Path:
 
 def publish_replacement(harness_dir: Path, staged: Path) -> None:
     """Swap complete Harness directory, restoring original if publish fails."""
+    from .telemetry import preserve_usage_for_replacement
+    from .telemetry_lock import telemetry_lock
+
+    with telemetry_lock(harness_dir):
+        preserve_usage_for_replacement(harness_dir, staged)
+        _publish_replacement(harness_dir, staged)
+
+
+def _publish_replacement(harness_dir: Path, staged: Path) -> None:
     backup = harness_dir.with_name(f".{harness_dir.name}.backup")
     if backup.exists():
         raise FileExistsError(f"replacement backup exists: {backup}")

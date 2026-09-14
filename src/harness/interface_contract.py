@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from importlib import resources
-import json
 from pathlib import Path
 
 import yaml
+from jsonschema import ValidationError, validate
+
+from harness import source_access
+from harness.schema_resources import read_schema
 
 from .paths import (
     EvidenceReferenceError,
@@ -15,7 +17,6 @@ from .paths import (
     evidence_path,
     identifier_path,
 )
-from jsonschema import ValidationError, validate
 
 
 class InterfaceContractError(ValueError):
@@ -40,11 +41,7 @@ def _path(harness_dir: Path, contract_id: str) -> Path:
 
 
 def _validate(record: dict) -> None:
-    schema = json.loads(
-        resources.files("harness")
-        .joinpath("schemas/interface-contract.schema.json")
-        .read_text()
-    )
+    schema = read_schema("interface-contract.schema.json")
     try:
         validate(record, schema)
     except ValidationError as exc:
@@ -59,7 +56,7 @@ def _validate(record: dict) -> None:
 
 def _task_id(harness_dir: Path) -> str:
     try:
-        value = yaml.safe_load((harness_dir / "current-task.yaml").read_text())["task"][
+        value = yaml.safe_load(source_access.read_text(harness_dir / "current-task.yaml"))["task"][
             "id"
         ]
     except (OSError, KeyError, TypeError, yaml.YAMLError) as exc:
@@ -78,12 +75,12 @@ def _write(path: Path, record: dict) -> None:
 
 def load_interface_contracts(harness_dir: Path) -> list[dict]:
     directory = _directory(harness_dir)
-    if not directory.is_dir():
+    if not source_access.is_dir(directory):
         return []
     records = []
-    for path in sorted(directory.glob("INT-*.yaml")):
+    for path in source_access.members(directory, "INT-*.yaml"):
         try:
-            record = yaml.safe_load(path.read_text())
+            record = yaml.safe_load(source_access.read_text(path))
         except (OSError, yaml.YAMLError) as exc:
             raise InterfaceContractError("INTERFACE_CONTRACT_INVALID") from exc
         if not isinstance(record, dict):
@@ -95,10 +92,10 @@ def load_interface_contracts(harness_dir: Path) -> list[dict]:
 
 def load_interface_contract(harness_dir: Path, contract_id: str) -> dict:
     path = _path(harness_dir, contract_id)
-    if not path.is_file():
+    if not source_access.is_file(path):
         raise InterfaceContractError("INTERFACE_CONTRACT_NOT_FOUND")
     try:
-        record = yaml.safe_load(path.read_text())
+        record = yaml.safe_load(source_access.read_text(path))
     except (OSError, yaml.YAMLError) as exc:
         raise InterfaceContractError("INTERFACE_CONTRACT_INVALID") from exc
     if not isinstance(record, dict):

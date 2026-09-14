@@ -12,33 +12,35 @@ Exit codes:
 """
 
 import argparse
-from dataclasses import dataclass
 import json
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
 from jsonschema import ValidationError, validate
 
-from .blockers import GateBlocker, RECOVERY_POLICY, blocker_document
+from .blockers import RECOVERY_POLICY, GateBlocker, blocker_document
 from .evidence_validator import EvidenceValidationError, validate_evidence
 from .paths import EvidenceReferenceError, evidence_path
-from .state_machine import STATES
-from .test_plan import validate_test_coverage, validate_test_plan
 from .risk_boundaries import (
     RiskBoundaryPolicyError,
     business_paths,
     load_boundaries,
     required_level,
 )
+from .state_machine import STATES
+from .test_plan import validate_test_coverage, validate_test_plan
 from .workspace import (
     WorkspaceError,
     changed_paths_since,
-    git_head as workspace_head,
     observability_inspected_paths,
     project_task_scope,
     protected_paths_fingerprint,
     snapshot,
+)
+from .workspace import (
+    git_head as workspace_head,
 )
 
 # Finding statuses that must block the gate. Terminal/healthy:
@@ -66,7 +68,9 @@ def validate_schema(document: object, schema_name: str, source: Path) -> None:
     """Fail closed when any persisted harness document violates its schema."""
     schema_path = SCHEMAS_DIR / schema_name
     try:
-        schema = json.loads(schema_path.read_text())
+        from .schema_resources import read_schema
+
+        schema = read_schema(schema_name)
     except (OSError, json.JSONDecodeError) as exc:
         raise InvalidHarnessState(f"cannot load {schema_path}: {exc}") from exc
     try:
@@ -79,10 +83,12 @@ def validate_schema(document: object, schema_name: str, source: Path) -> None:
 
 
 def _load_yaml(path: Path):
-    if not path.exists():
+    from harness import source_access
+
+    if not source_access.exists(path):
         raise InvalidHarnessState(f"missing {path}")
     try:
-        data = yaml.safe_load(path.read_text())
+        data = yaml.safe_load(source_access.read_text(path))
     except yaml.YAMLError as exc:
         raise InvalidHarnessState(f"bad YAML in {path}: {exc}")
     if not isinstance(data, dict):
@@ -99,12 +105,14 @@ def git_head() -> str:
 
 def load_evidence(evidence_dir: Path) -> list[dict]:
     """Return every evidence record; same-type records must not overwrite proof."""
+    from harness import source_access
+
     evidence = []
-    if not evidence_dir.is_dir():
+    if not source_access.is_dir(evidence_dir):
         return evidence
-    for path in sorted(evidence_dir.glob("*.json")):
+    for path in source_access.members(evidence_dir, "*.json"):
         try:
-            data = json.loads(path.read_text())
+            data = json.loads(source_access.read_text(path))
         except json.JSONDecodeError as exc:
             raise InvalidHarnessState(f"bad JSON in {path}: {exc}")
         validate_schema(data, "evidence.schema.json", path)
@@ -129,12 +137,14 @@ def finding_schema_name(finding: dict) -> str:
 
 
 def load_findings(findings_dir: Path) -> list:
+    from harness import source_access
+
     findings = []
-    if not findings_dir.is_dir():
+    if not source_access.is_dir(findings_dir):
         return findings
-    for path in sorted(findings_dir.glob("*.yaml")):
+    for path in source_access.members(findings_dir, "*.yaml"):
         try:
-            data = yaml.safe_load(path.read_text())
+            data = yaml.safe_load(source_access.read_text(path))
         except (OSError, yaml.YAMLError) as exc:
             raise InvalidHarnessState(f"bad YAML in {path}: {exc}") from exc
         if not isinstance(data, dict):
@@ -167,6 +177,8 @@ def run_fast_gate(
     task: dict, harness_dir: Path, head: str, current_workspace: str
 ) -> tuple[str, list[GateBlocker]]:
     """Run Q1 Light Gate without STANDARD/STRICT ceremony artifacts."""
+    from harness import source_access
+
     risk = task.get("risk") or {}
     user_changes = risk.get("user_changes") or {}
     paths = tuple(user_changes.get("paths") or [])
@@ -218,7 +230,7 @@ def run_fast_gate(
         path = harness_dir / "evidence" / f"{evidence_type.replace('_', '-')}.json"
         try:
             validate_evidence(
-                json.loads(path.read_text()),
+                json.loads(source_access.read_text(path)),
                 current_head=head,
                 current_workspace=current_workspace,
                 expected_success=True,
@@ -235,7 +247,7 @@ def run_fast_gate(
     ):
         path = harness_dir / "evidence" / f"fast-{phase}-unit-test.json"
         try:
-            record = json.loads(path.read_text())
+            record = json.loads(source_access.read_text(path))
             validate_evidence(
                 record,
                 current_head=head,
@@ -259,6 +271,8 @@ def _evaluate_gate(
 ) -> tuple[str, list]:
     """Returns (status, blockers). status in {'PASS','BLOCKED'}.
     Raises InvalidHarnessState."""
+    from harness import source_access
+
     task = _load_yaml(harness_dir / "current-task.yaml")
     validate_schema(task, "task.schema.json", harness_dir / "current-task.yaml")
 
@@ -306,7 +320,7 @@ def _evaluate_gate(
     evidence = load_evidence(harness_dir / "evidence")
     findings = load_findings(harness_dir / "findings")
     impact_path = harness_dir / "impact.yaml"
-    impact = _load_yaml(impact_path) if impact_path.exists() else {}
+    impact = _load_yaml(impact_path) if source_access.exists(impact_path) else {}
 
     # HEAD alone misses uncommitted edits. Shared snapshot excludes harness
     # runtime files, so evidence writes do not invalidate business proof.
@@ -315,7 +329,7 @@ def _evaluate_gate(
     def finding_proof(finding, ref, expected_success, label, test_id=None):
         try:
             path = evidence_path(harness_dir, ref)
-            record = json.loads(path.read_text())
+            record = json.loads(source_access.read_text(path))
             validate_evidence(
                 record,
                 current_head=head,
@@ -341,7 +355,9 @@ def _evaluate_gate(
             if state in {"VERIFIED", "CLOSED"}:
                 try:
                     record = json.loads(
-                        evidence_path(harness_dir, finding["evidence"]).read_text()
+                        source_access.read_text(
+                            evidence_path(harness_dir, finding["evidence"])
+                        )
                     )
                     from .diagnosability import validate_compliance_closure
 
@@ -380,7 +396,9 @@ def _evaluate_gate(
         if state in {"VERIFIED", "CLOSED"}:
             try:
                 record = json.loads(
-                    evidence_path(harness_dir, finding["evidence"]).read_text()
+                    source_access.read_text(
+                        evidence_path(harness_dir, finding["evidence"])
+                    )
                 )
                 from .evidence_validator import validate_finding_closure_evidence
 
@@ -518,8 +536,14 @@ def _evaluate_gate(
                 )
                 block(code, "harness", f"{contract['id']} decision reference invalid")
                 continue
-            if referenced_decision["status"] != "ACCEPTED" or referenced_decision.get("superseded_by"):
-                block("DECISION_REFERENCE_STATUS_INVALID", "harness", f"{contract['id']} decision reference is not active")
+            if referenced_decision["status"] != "ACCEPTED" or referenced_decision.get(
+                "superseded_by"
+            ):
+                block(
+                    "DECISION_REFERENCE_STATUS_INVALID",
+                    "harness",
+                    f"{contract['id']} decision reference is not active",
+                )
             else:
                 has_accepted_decision_ref = True
         compatibility = contract.get("compatibility", {}).get("classification")
@@ -546,7 +570,7 @@ def _evaluate_gate(
         for reference in verification_refs:
             try:
                 evidence_record = json.loads(
-                    evidence_path(harness_dir, reference).read_text()
+                    source_access.read_text(evidence_path(harness_dir, reference))
                 )
                 validate_evidence(
                     evidence_record,
@@ -570,7 +594,7 @@ def _evaluate_gate(
     if external_interfaces:
         review_path = harness_dir / "evidence" / "interface-review.json"
         try:
-            review_record = json.loads(review_path.read_text())
+            review_record = json.loads(source_access.read_text(review_path))
             validate_evidence(
                 review_record,
                 current_head=head,
@@ -653,7 +677,7 @@ def _evaluate_gate(
                         requirement_id=req.get("id"),
                     )
                     continue
-                if not path.is_file():
+                if not source_access.is_file(path):
                     block(
                         "EVIDENCE_MISSING",
                         "verification",
@@ -663,7 +687,7 @@ def _evaluate_gate(
                     )
                     continue
                 try:
-                    ev = json.loads(path.read_text())
+                    ev = json.loads(source_access.read_text(path))
                 except json.JSONDecodeError as exc:
                     raise InvalidHarnessState(f"bad JSON in {path}: {exc}")
                 try:
@@ -736,7 +760,7 @@ def _evaluate_gate(
                     )
                     continue
                 try:
-                    ev = json.loads(path.read_text())
+                    ev = json.loads(source_access.read_text(path))
                 except (OSError, json.JSONDecodeError):
                     block(
                         "EVIDENCE_MISSING",
@@ -844,7 +868,7 @@ def _evaluate_gate(
     if complexity_cfg.get("required", False):
         review_path = harness_dir / "evidence" / "complexity-review.json"
         try:
-            review = json.loads(review_path.read_text())
+            review = json.loads(source_access.read_text(review_path))
             validate_schema(review, "evidence.schema.json", review_path)
         except (OSError, json.JSONDecodeError, InvalidHarnessState):
             block(
@@ -987,11 +1011,9 @@ def assess_gate(
     )
     release = _load_yaml(harness_dir / "gate.yaml").get("gate", {}).get("release", {})
     authorized = bool(
-        (
-            (_load_yaml(harness_dir / "current-task.yaml").get("authorizations") or {})
-            .get("full_suite", {})
-            .get("granted")
-        )
+        (_load_yaml(harness_dir / "current-task.yaml").get("authorizations") or {})
+        .get("full_suite", {})
+        .get("granted")
     )
     readiness = (
         {"status": "NOT_READY", "reasons": ["quality_gate_blocked"]}
@@ -1029,7 +1051,9 @@ def run_gate(
 def write_back(harness_dir: Path, assessment: GateAssessment):
     """Persist already-computed assessment; never evaluate Gate a second time."""
     path = harness_dir / "current-task.yaml"
-    task = yaml.safe_load(path.read_text())
+    from harness import source_access
+
+    task = yaml.safe_load(source_access.read_text(path))
     task.setdefault("gate", {})
     task["gate"]["status"] = assessment.status
     task["gate"]["blocked_by"] = [

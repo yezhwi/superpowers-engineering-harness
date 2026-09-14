@@ -295,7 +295,24 @@ FAST evidence budgets are soft: test 2, build 1, repeated retry 1. Over budget r
 harness evidence run --type build --command "python -m pip wheel ." --budget-override-reason "new evidence" --budget-override-evidence build.json --budget-override-hypothesis "packaging path"
 ```
 
-Local-only telemetry: `harness telemetry show`. It measures `elapsed_seconds`, `harness_command_calls`, and evidence counts. Agent metrics remain unavailable: `token_estimate: null`, tool calls/search rounds null. Run fixture validation: `harness benchmark run --fixtures benchmarks/fixtures`.
+For classified mutating tasks, generate a validated derived Context:
+
+```bash
+harness context                   # compact YAML, complete Control Core
+harness context --full --json
+harness context validate           # read-only; does not regenerate stale Context
+harness context explain --json     # explain the saved selection
+```
+
+Latest successful snapshot lives in `.harness/context/{current,manifest,evidence}.yaml`, linked by `context_hash`. Integrity failures exit 2 without Context stdout. Publication uses a shared lock and exception rollback; this is not crash-atomic recovery from process termination. Context Evidence records what Harness generated, not what an Agent consumed, and is never product evidence for Gate. No task is created or advanced. Q0 remains outside this flow. Explicit expansion is available: `harness context expand --trigger INSUFFICIENT_CONTEXT --reason "Need dependency context"`. It records a task-bound event, increments `budget.context_expansions`, and advances LOCAL → BOUNDED → EXPANDED without changing risk or authorization. Run `harness context` again to refresh the now-stale snapshot. Generation automatically records out-of-scope open findings and ACCEPTED decisions, deduplicated by task, trigger, object ID, and relevant path/scope fingerprint. Control events persist before the derived snapshot is rebuilt. Failed evidence with `covered_tests` outside the Working Set also triggers expansion. Existing risk escalation history produces `RISK_ESCALATED` events without adding an extra policy step. Integrity failures remain fail-closed; no expansion bypasses validation.
+
+Local-only telemetry: `harness telemetry show`. It measures `elapsed_seconds`, `harness_command_calls`, and evidence counts. Host usage can be reported with `harness telemetry report --usage-file <path>` (JSON or YAML; relative to the invocation directory):
+
+```json
+{"task_id":"TASK-101","usage":{"total_tokens":1234,"source":"runtime","tool_calls":12}}
+```
+
+Report a cumulative snapshot for the current task, not a delta. Repeated snapshots are idempotent; omitted fields become null. `save_task` preserves reported usage; new tasks do not inherit it. Counts must be nonnegative integers or null. Any token count requires `source: runtime|provider|estimated`; when all token counts are supplied, input + output must equal total. Missing task, mismatched task ID, or invalid usage exits 2. Usage is local host input, not independently authenticated provider evidence; Harness does not count unseen agent actions or call a tokenizer. Unreported usage stays null; legacy `token_estimate: null` remains unchanged. Reporting does not itself prove efficiency improvements. Run fixture validation: `harness benchmark run --fixtures benchmarks/fixtures`.
 
 Compare recorded baseline/adaptive artifacts:
 

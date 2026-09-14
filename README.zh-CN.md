@@ -298,7 +298,24 @@ FAST evidence budget 为 soft：test 2、build 1、相同失败 retry 1。超预
 harness evidence run --type build --command "python -m pip wheel ." --budget-override-reason "new evidence" --budget-override-evidence build.json --budget-override-hypothesis "packaging path"
 ```
 
-仅本地 telemetry：`harness telemetry show`。它测量 `elapsed_seconds`、`harness_command_calls`、evidence counts；agent metrics 不可用：`token_estimate: null`，tool calls/search rounds 为 null。运行 fixture validation：`harness benchmark run --fixtures benchmarks/fixtures`。
+已分类的 mutating task 可生成经过验证的派生 Context：
+
+```bash
+harness context                   # compact YAML，保留完整 Control Core
+harness context --full --json
+harness context validate           # 只读；不重新生成 stale Context
+harness context explain --json     # 解释已保存的选择结果
+```
+
+最近一次成功快照保存在 `.harness/context/{current,manifest,evidence}.yaml`，由同一 `context_hash` 关联。Integrity 失败返回 2，不输出 Context 正文。发布使用共享锁及异常回滚；尚不提供进程强制终止后的崩溃原子恢复。Context Evidence 只记录 Harness 生成了什么，不证明 Agent 实际消费，也不作为 Gate 的 product evidence。不会创建或推进任务；Q0 不进入此流程。已支持显式扩大：`harness context expand --trigger INSUFFICIENT_CONTEXT --reason "需要依赖上下文"`。命令记录 task-bound 事件、递增 `budget.context_expansions`，按 LOCAL → BOUNDED → EXPANDED 升级，不改变 risk 或授权。随后重新运行 `harness context` 刷新已 stale 的快照。生成时会自动记录越界的开放 finding 和 ACCEPTED decision，按 task、trigger、对象 ID、相关路径/scope 指纹去重。控制事件先落盘，再重建派生快照。失败 evidence 的 `covered_tests` 不在 Working Set 时也会触发扩大。已有风险升级历史生成 `RISK_ESCALATED` 事件，不额外增加 policy 等级。Integrity 失败仍 fail-closed，不通过 expansion 绕过校验。
+
+仅本地 telemetry：`harness telemetry show`，测量 `elapsed_seconds`、`harness_command_calls`、evidence counts。宿主可通过 `harness telemetry report --usage-file <path>` 上报 usage；文件支持 JSON/YAML，相对路径以命令调用目录为准：
+
+```json
+{"task_id":"TASK-101","usage":{"total_tokens":1234,"source":"runtime","tool_calls":12}}
+```
+
+上报当前任务的累计快照，不是增量；重复快照幂等，省略字段变为 null。`save_task` 保留 usage，新任务不继承旧 usage。计数只能为非负整数或 null；任一 token 有值时必须给出 `source: runtime|provider|estimated`，三项 token 齐全时 input + output 必须等于 total。任务缺失、ID 不匹配、非法 usage 均退出 2。usage 是本地宿主输入，不是独立认证的供应商证据；Harness 不猜测不可见的 agent 调用，不运行 tokenizer。未上报保持 null，历史 `token_estimate: null` 不变；可上报不代表已证明效率提升。运行 fixture validation：`harness benchmark run --fixtures benchmarks/fixtures`。
 
 比较已记录的 baseline/adaptive artifacts：
 

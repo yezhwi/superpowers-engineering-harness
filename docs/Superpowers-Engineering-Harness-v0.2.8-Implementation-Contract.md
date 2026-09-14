@@ -9,6 +9,8 @@
 
 本文件冻结 v0.2.8 **实际要做、实际能验收** 的范围。愿景规格保留意图与长期设计；二者冲突时，**以实现契约为准**。
 
+本次边界修订对应 [契约验收用例清单](./Superpowers-Engineering-Harness-v0.2.8-Contract-Acceptance-Cases.md)。清单是待实现测试要求，不是已通过证据。
+
 ---
 
 ## 1. 效力
@@ -112,6 +114,7 @@ Q0 不进入本版本 Context Policy。
 | 行为 | Q0 不创建 task、不读 `.harness`、不跑 `harness status`、不跑 `harness context` |
 | SKILL | Q0 Decision Table 保持不变 |
 | 无 task | `harness context*` 对缺失 `current-task.yaml` 返回既有 `INVALID_HARNESS_STATE` / exit 2 |
+| 未分类 task | task 合法但 risk 缺失或为 null 时，`harness context*` 返回 `INVALID_HARNESS_STATE` / exit 2，提示先 classify；不得推断 risk/profile |
 
 愿景规格 §13 的 `Q0 → MINIMAL` **作废**。
 
@@ -185,7 +188,9 @@ Context = Layer 0 Lossless Global Core
 
 `next_action` 只能由 `state` + `risk.profile` 按现有 SKILL dispatch 表投影，禁止模型生成。
 
-其余 should/could requirement、closed finding、非 owned 源文件、evidence raw 正文：必须进入 `omitted`，不得静默消失。
+候选集合限定为本次 source manifest 中的控制记录，以及由 scope、impact、finding、decision、已声明 contract/evidence 显式引用的文件或对象。不得为构造 omitted 默认枚举整个仓库。
+
+候选集合中未内联的 should/could requirement、closed finding、非 owned 源文件、evidence raw 正文必须进入 `omitted`。未声明、未发现的仓库文件不属于该集合；manifest 必须说明候选集边界，不宣称已发现全部隐藏依赖。目录引用作为单个对象保留，不默认递归列出内容；显式展开后，新发现的对象加入候选集。
 
 ### 7.3 Layer 2
 
@@ -197,6 +202,16 @@ sha256: sha256:...
 ```
 
 引用必须可解析（CI-08）。
+
+### 7.3.1 引用与路径规则
+
+- 文件 ref 使用仓库根相对路径；拒绝绝对路径、`..` 路径段、解析到仓库外的符号链接。目录引用遵守同一边界。
+- fragment 按源文档 id 精确定位，必须恰好匹配一条记录；零匹配或重复匹配均为 `CONTEXT_REFERENCE_BROKEN`。文件引用 sha256 绑定整个源文件原始字节。
+- 测试 selector 原值保留；路径比较使用 `::` 前的文件部分。路径匹配不证明测试已执行，执行覆盖仍由既有 Test Plan / Evidence 校验。
+- 包含关系按规范化路径段判定：`src/foo` 包含 `src/foo/a.py`，不包含 `src/foobar/a.py`；不得使用裸字符串前缀。
+- 目录引用 hash 绑定目录身份，不默认递归 hash；展开文件分别绑定内容 hash。product workspace hash 保持既有 Git 语义，不因此承诺覆盖全部 ignored 文件。
+- 已删除文件、未来测试路径作为原始控制事实保留，标记 `availability: missing`，引用声明它的现存 authoritative 记录；不得伪造直接指向不存在文件的可展开 ref。
+- FAST 缺失 requirements/invariants 时记录稳定 missing/empty 源标记，不生成坏 ref；文件随后出现必须使旧 Context stale。
 
 ### 7.4 Risk → Context Policy
 
@@ -210,7 +225,16 @@ LOCAL 默认不得把 full repo / full docs / full test suite 列入 Working Set
 BOUNDED 允许 `impact.direct_dependents` 与 declared contracts。  
 EXPANDED 允许更广的 impact/contract 展开，仍必须记录 expansions 与 omitted。
 
-Policy 由 risk 决定；Agent 不得自行把 LOCAL 标成 EXPANDED。升级只走 §10。
+明确区分：
+
+```text
+base_policy      = policy(task.risk.level)
+effective_policy = max(base_policy, 当前 task 已持久化的 expansion policy)
+```
+
+顺序为 `LOCAL < BOUNDED < EXPANDED`。Context 与 Context Evidence 的 `policy` 表示 effective policy，同时记录 base policy。扩大 Context 不修改 risk/profile，不增加执行授权，也不绕过已有风险升级规则。Agent 不得自行标记 effective policy，升级只走 §10。
+
+CI-12 校验 task risk/profile 原值；另外校验 base policy 映射及 effective policy 的合法来源，违规返回 `CONTEXT_POLICY_MISMATCH`。
 
 ---
 
@@ -252,7 +276,16 @@ CLI：
 harness telemetry report --usage-file <path>
 ```
 
-### 8.3 Budget schema
+### 8.3 Usage 上报、隔离与一致性
+
+- 上报是当前 task 的累计快照，不是增量；宿主负责跨会话汇总。usage-file 顶层必须含 `task_id` 与 `usage`，其中 usage 使用 §8.1 字段。
+- 相同快照重复上报幂等，不累加。新快照整体替换宿主 usage 域，缺失 optional 字段规范化为 null，不从旧快照拼接；Harness-local facts 不被覆盖。
+- 计数只接受非负整数或 null，拒绝布尔值、负数、浮点数。任一 token 非 null 时 source 必填；三项 token 均非 null 时要求 input + output = total。不从缺失字段推算 token。
+- task_id 不匹配时拒绝且不改文件。新 task 不继承旧 task agent/usage；同 task 的普通 save_task 保留 usage。
+- ingest 与本地 telemetry 更新共享串行化的 read-modify-write 边界，并原子替换文件；只有 atomic rename 不足以防并发丢更新。提交上报时重新核验 task 身份，发生变化则拒绝，不得跨任务写入。
+- Context 读取/validate 不回写 usage 或递增 harness_command_calls；纯 telemetry 变化不使 Context stale。
+
+### 8.4 Budget schema
 
 `task.schema.json` 的 `budget` 保持 `additionalProperties: false`。新增 **optional** 计数：
 
@@ -262,8 +295,8 @@ file_reads
 context_expansions
 ```
 
-不加入 `required`。旧 task 缺这些字段仍合法，读取时视为 `0`。  
-v0.2.8 Product Done **不**对 search/file_reads 做 FAST override 强制；只允许 `context_expansions` 被 `harness context expand` 递增。超限不 fail-closed。
+不加入 `required`。旧 task 缺这些字段仍合法，读取时视为 `0`；这是本地 budget 计数默认值，不适用于缺失的宿主 metrics。
+v0.2.8 Product Done **不**对 search/file_reads 做 FAST override 强制。`context_expansions` 统计 §10 已持久化的有效 expansion 事件，包括自动事件和显式 expand；自动去重事件不重复计数。超限不 fail-closed。
 
 ---
 
@@ -298,6 +331,8 @@ CONTEXT_SCHEMA_INVALID
 `--compact` 默认 fail-closed：Integrity 失败则非 0 退出，不把损坏 compact 打到 stdout。  
 `--full` 同样 fail-closed；调试用完整投影不得跳过 Integrity。
 
+业务 Gate BLOCKED 不等于 Context Integrity 失败：源合法且 blockers 准确投影时，应成功输出 Context。源损坏、Gate 无法评估或投影不一致才拒绝；禁止复制 status 的异常后回退旧摘要策略。
+
 ### 9.1 Freshness hash
 
 ```yaml
@@ -310,29 +345,59 @@ generated_from:
   evidence_hash:
   impact_hash:
   workspace_hash:          # product fingerprint（v0.2.7 语义）
-  control_plane_hash:      # 控制面文件指纹；requirement 校验写入会使 context stale，但不得误标 product evidence STALE
+  control_plane_hash:      # Context 专用 authoritative source manifest 指纹，不是全 .harness 递归 hash
   head:
 context_hash:
 ```
 
-任一源变化 → 旧 context STALE。  
+任一 authoritative 源变化 → 旧 context STALE。
 **禁止**用 product workspace fingerprint 代替 control-plane hash。二者分开，与 v0.2.7 evidence freshness 拆分一致。
+
+### 9.2 Source manifest 边界
+
+新增 Context 专用 source manifest；不得直接使用现有 `control_plane_fingerprint()` 对全部 `.harness/` 文件递归 hash，也不重定义该 API。
+
+必须纳入：
+
+- current-task、requirements、invariants、impact；
+- findings、decisions、interface-contracts、evidence 的相关 canonical 文件集合，成员名及新增/删除参与 hash；
+- gate、risk boundaries、observability，以及 live Gate / evidence projection 实际读取的其他配置、artifact 和 raw evidence 依赖；
+- 当前 task 的 `context/expansions.yaml`；
+- Context 直接引用的工作文件内容 hash、product workspace hash 和 HEAD。
+
+必须排除：context/current、manifest、evidence 等派生产物；staging、临时文件、历史归档、纯观测 telemetry/benchmark report。历史或观测 artifact 只有被显式声明为本次控制输入时才纳入。
+
+源按规范路径排序，optional 缺失源使用稳定 missing 标记；manifest 记录存在性、原始字节 hash、目录成员边界和投影版本。相同输入与版本得到相同 context_hash，generated_at 不参与语义 hash。不得遗漏 Gate 间接依赖；读取未登记控制输入时拒绝发布。
+
+SRC-09 的威胁模型经用户确认：防止可信 Harness Python 代码意外漏登记；不承诺拦截恶意原生扩展或任意子进程绕过。该边界不免除可信读取链的文件内容、缺失、目录成员和间接依赖登记义务。机制设计见 [SRC-09 受控读取设计](./Superpowers-Engineering-Harness-v0.2.8-SRC09-Design.md)；设计不等于实现或验收通过。
+
+### 9.3 快照一致性与发布
+
+构建开始采集源版本，完成构建及 live Gate assessment 后重新核验。中途源集合、内容、workspace 或 HEAD 变化，则 `CONTEXT_STALE` / exit 2，不发布混合 compact；调用方可重新生成。
+
+Integrity 成功后才发布派生文件；current、manifest、evidence 必须携带同一 context_hash。读者遇到版本不一致必须拒绝；逐文件 atomic rename 不等于多文件原子快照。发布失败不得用半写入产物替代最后一份完整快照。
+
+`context validate` 校验已落盘 current 与当前源，不重新生成后掩盖 stale，不写 task、telemetry 或派生产物。freshness 只在核验时成立；之后变化需再次 validate，不宣称可阻止宿主使用缓存旧文本。
 
 ---
 
 ## 10. Escalation
 
-Context policy 只升不降。记录：
+同一 task 的 effective policy 只升不降；base policy 仍由 risk 决定。记录：
 
 ```yaml
 context_expansion:
+  task_id: TASK-001
+  source_hash: sha256:...
   from: LOCAL
   to: BOUNDED
   trigger: FINDING_OUTSIDE_SCOPE
   reason: "..."
 ```
 
-写入 `.harness/context/expansions.yaml`，**不**把该结构做成 `current-task.yaml` 的 required 字段。
+写入 `.harness/context/expansions.yaml`，**不**把该结构做成 `current-task.yaml` 的 required 字段。新 task 不继承旧 expansion，旧 task 的 current Context 也不得用于新 task。
+
+自动 trigger 按 task_id、trigger、对象 id、触发依据源指纹去重；该指纹只绑定触发对象及 scope 等判定输入，不包含 expansion 自身、budget 或无关源变化。相同依据重复生成不得重复记录、逐次升级或增加 budget。自动 expansion 先完成控制写入，再从更新后的源构建 Context，禁止发布写入前快照。
 
 ### 10.1 Core 可自动判定的 trigger
 
@@ -400,7 +465,7 @@ P1（本版本不做）：`harness review-context`。
 
 ## 12. 落盘位置
 
-Context 是 derived view，不是 authoritative state。
+current、manifest、evidence 是 derived view，不是 authoritative state；expansions 是 CLI 持久化的控制事件输入，不属于派生输出。
 
 ```text
 .harness/context/
@@ -411,7 +476,9 @@ Context 是 derived view，不是 authoritative state。
 ```
 
 禁止把上述文件当作 Gate 的 product evidence。  
-Context Evidence 至少包含：task_id、context_hash、generated_at、policy、generated_from、integrity 四元组、included ids、omitted、expansions。
+Context Evidence 至少包含：task_id、context_hash、generated_at、base_policy、policy、generated_from、integrity 四元组、included ids、omitted、expansions。
+
+v0.2.8 Product Done 只保证**最近一次成功生成的完整快照**，三份派生文件关联同一 context_hash；失败生成不覆盖它。历史不可变快照与宿主消费回执延后。该证据只能证明 Harness 生成/提供了什么，不能证明 Agent 实际读取或遵循了什么，也不提供完整历史会话追溯。
 
 ---
 
@@ -439,7 +506,7 @@ src/harness/context/
 
 ## 14. SKILL 变更
 
-`SKILL.md` Session Startup 在 **存在活跃 mutating task** 时改为：
+`SKILL.md` Session Startup 在 **存在已分类的活跃 mutating task** 时改为：
 
 ```text
 1. Detect .harness/
@@ -454,6 +521,8 @@ src/harness/context/
 - 「No state in context only」：权威仍是磁盘上的 `current-task.yaml`
 - 禁止手改 state 字段
 
+未分类的 CREATED task 先走既有 classify 路径，不要求先成功生成 Context；允许只读 task 分类字段以完成该路由，不读取全部控制文件。合法旧 task 的 risk 缺失/null 不得被静默补成某个 profile。
+
 删除或降级「一上来就读全部 requirements/invariants/findings/evidence 文件」的默认路径。  
 Agent 仍可通过 Layer 2 ref 按需 `Read` 单个文件。
 
@@ -465,10 +534,19 @@ Agent 仍可通过 Layer 2 ref 按需 `Read` 单个文件。
 
 - artifact 可带 `usage` 与 `agent` 字段
 - 缺字段 → `INCONCLUSIVE`
-- 新增 `tokens_per_success` **计算函数**（成功任务的 total_tokens 之和 / 成功数）；输入含 null 则 INCONCLUSIVE
+- 新增 `tokens_per_success` **计算函数**：全部尝试（包括失败尝试）的 total_tokens 之和 / 成功尝试数；任一尝试 total_tokens 或成功状态未知、零成功或空输入时为 INCONCLUSIVE，不输出 0。成功定义绑定 fixture 的全部 required_correctness，不由省 token 与否决定。
 - 不把 AC-028-10 做成 CI 红灯
 
 v0.2.7 的 AC16–18（Q1 算术平均 tool_calls / token_estimate / elapsed）保留为历史 comparator，不在本版本改为 median 以免假 PASS。新报告若输出 median，必须与旧 AC 分列。
+
+新增独立 v0.2.8 总判定，禁止将历史效率子指标 PASS 当作优化成功：
+
+1. 已知 Integrity 失败或 correctness regression → FAIL，即使 metrics 缺失或成本下降。
+2. 无已知失败但任一必要 integrity/correctness/metrics 数据缺失 → INCONCLUSIVE；不得把 null 转 0。
+3. 前两层有完整通过证据后，才比较效率。成功率下降不得以 token 降幅抵消；完整真实数据达到约定实验门槛才可 PASS，否则 FAIL。
+4. 无已知安全/正确性失败时，estimated usage 单列低可信比较，不作为真实 runtime token 改善证明；真实效率结论保持 INCONCLUSIVE，优先于第 3 条的效率门槛比较。已知失败仍按第 1 条 FAIL。
+
+报告分别列出历史 AC、Product Done 测试证据和 Experiment 总判定。缺外部实验数据不阻止 Product Done，不生成虚构 baseline。
 
 ---
 
@@ -522,7 +600,8 @@ task classify
 
 | Step | 内容 | 完成判据 |
 |---|---|---|
-| 1 | Telemetry ingest + 禁止覆盖 | `telemetry report`；save_task 保留 usage |
+| 0 | 契约边界与验收用例冻结 | 本契约及关联用例清单一致；尚未执行项明确标记 |
+| 1 | Telemetry ingest + 禁止覆盖 | `telemetry report`；save_task 保留 usage，快照幂等且任务隔离 |
 | 2 | Control Core builder + `--full` | 单测 100% fact recall |
 | 3 | Integrity / freshness / omitted | CI-01～12 全绿；失败 fail-closed |
 | 4 | Selector + Policy | Q1 无 full-repo working set；全局核不被滤掉 |
@@ -536,7 +615,7 @@ Step 1 可先于 Context 包合并。Step 4 不得先于 Step 3。
 
 ## 18. 兼容性
 
-- 旧 `current-task.yaml` 不迁移即可 `harness context`。
+- 已分类、risk/profile 合法的旧 `current-task.yaml` 不迁移即可 `harness context`；未分类旧 task 先 classify，见 §5、§14。
 - 不要求旧 task 具备 `budget.search_rounds` 等新字段。
 - 现有 evidence / findings / decisions schema 不为 Context 做破坏性 required 变更。
 - `harness status` 输出契约保持不变。
@@ -551,7 +630,7 @@ Product Done 必须同步：
 - `SKILL.md`
 - `README.md` / `README.zh-CN.md`（增加 `harness context`，不删除 Q0 表）
 - CLI help
-- 本契约
+- 本契约与关联验收用例清单
 
 愿景规格不必改写成与本契约逐段相同；在愿景规格文首增加指向本契约的说明即可（实现阶段做，不阻塞本文件生效）。
 

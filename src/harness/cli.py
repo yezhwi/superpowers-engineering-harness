@@ -48,6 +48,21 @@ def _main(argv=None) -> int:
     sub.add_parser("init", help="initialize .harness/ at the git repo root")
     p_status = sub.add_parser("status", help="render unified persisted-state view")
     p_status.add_argument("--harness-dir", default=".harness")
+    p_context = sub.add_parser("context", help="generate a validated derived Context")
+    context_mode = p_context.add_mutually_exclusive_group()
+    context_mode.add_argument("--compact", dest="context_mode", action="store_const", const="compact")
+    context_mode.add_argument("--full", dest="context_mode", action="store_const", const="full")
+    p_context.add_argument("--json", dest="context_json", action="store_true")
+    context_sub = p_context.add_subparsers(dest="context_command")
+    for command, help_text in (("validate", "validate saved Context without rewriting it"),
+                               ("explain", "explain the validated saved selection")):
+        context_read = context_sub.add_parser(command, help=help_text)
+        context_read.add_argument("--json", dest="context_json", action="store_true", default=argparse.SUPPRESS)
+    from .context.escalation import REPORTED_TRIGGERS
+    context_expand = context_sub.add_parser("expand", help="report a task-bound Context expansion")
+    context_expand.add_argument("--trigger", choices=REPORTED_TRIGGERS, required=True)
+    context_expand.add_argument("--reason", required=True)
+    context_expand.add_argument("--json", dest="context_json", action="store_true", default=argparse.SUPPRESS)
     p_trans = sub.add_parser(
         "transition", help="validate and persist a state transition"
     )
@@ -157,6 +172,10 @@ def _main(argv=None) -> int:
     p_telemetry = sub.add_parser("telemetry")
     telemetry_sub = p_telemetry.add_subparsers(dest="telemetry_command")
     telemetry_sub.add_parser("show")
+    telemetry_report = telemetry_sub.add_parser(
+        "report", help="report task-bound cumulative host usage"
+    )
+    telemetry_report.add_argument("--usage-file", dest="source_file", required=True)
     p_benchmark = sub.add_parser("benchmark")
     benchmark_sub = p_benchmark.add_subparsers(dest="benchmark_command")
     p_benchmark_run = benchmark_sub.add_parser("run")
@@ -287,6 +306,8 @@ def _main(argv=None) -> int:
     sub.add_parser("converge", help="deterministic convergence decision")
 
     args = parser.parse_args(argv)
+    if args.subcommand == "context" and args.context_command and args.context_mode:
+        parser.error("Context mode flags apply only to generation")
 
     invocation_dir = Path.cwd()
     for attribute in ("source_file", "fixtures", "baseline", "adaptive", "corpus"):
@@ -310,6 +331,11 @@ def _main(argv=None) -> int:
         return 0
     if args.subcommand == "status":
         return controlplane.cmd_status(Path(args.harness_dir).resolve())
+    if args.subcommand == "context":
+        return controlplane.cmd_context(
+            args.context_command, args.context_mode or "compact", args.context_json,
+            trigger=getattr(args, "trigger", None), reason=getattr(args, "reason", None),
+        )
     if args.subcommand == "transition":
         return controlplane.cmd_transition(args.target)
     if args.subcommand == "check" and args.check_command == "minimal":
@@ -376,6 +402,8 @@ def _main(argv=None) -> int:
             if args.gate_command == "preflight"
             else controlplane.cmd_gate()
         )
+    if args.subcommand == "telemetry" and args.telemetry_command == "report":
+        return controlplane.cmd_telemetry_report(Path(args.source_file))
     if args.subcommand == "telemetry" and args.telemetry_command == "show":
         return controlplane.cmd_telemetry_show()
     if args.subcommand == "benchmark" and args.benchmark_command == "run":

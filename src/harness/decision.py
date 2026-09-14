@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-import json
 from pathlib import Path
-from importlib import resources
 
 import yaml
 from jsonschema import ValidationError, validate
+
+from harness import source_access
+from harness.schema_resources import read_schema
 
 from .paths import IdentifierError, identifier_path
 from .transaction import StagedArtifact, publish, stage
@@ -27,9 +28,7 @@ def _directory(harness_dir: Path) -> Path:
 
 
 def _schema() -> dict:
-    return json.loads(
-        resources.files("harness").joinpath("schemas/decision.schema.json").read_text()
-    )
+    return read_schema("decision.schema.json")
 
 
 def _validate(record: dict) -> None:
@@ -50,7 +49,7 @@ def _validate(record: dict) -> None:
 
 def _task_id(harness_dir: Path) -> str:
     try:
-        task = yaml.safe_load((harness_dir / "current-task.yaml").read_text())
+        task = yaml.safe_load(source_access.read_text(harness_dir / "current-task.yaml"))
         task_id = task["task"]["id"]
     except (OSError, KeyError, TypeError, yaml.YAMLError) as exc:
         raise DecisionError("DECISION_TASK_INVALID") from exc
@@ -82,12 +81,12 @@ def _next_id(harness_dir: Path) -> str:
 
 def load_decisions(harness_dir: Path) -> list[dict]:
     directory = _directory(harness_dir)
-    if not directory.is_dir():
+    if not source_access.is_dir(directory):
         return []
     records: list[dict] = []
-    for path in sorted(directory.glob("DEC-*.yaml")):
+    for path in source_access.members(directory, "DEC-*.yaml"):
         try:
-            record = yaml.safe_load(path.read_text())
+            record = yaml.safe_load(source_access.read_text(path))
         except (OSError, yaml.YAMLError) as exc:
             raise DecisionError("DECISION_RECORD_INVALID") from exc
         if not isinstance(record, dict):
@@ -99,10 +98,10 @@ def load_decisions(harness_dir: Path) -> list[dict]:
 
 def load_decision(harness_dir: Path, decision_id: str) -> dict:
     path = _path(harness_dir, decision_id)
-    if not path.is_file():
+    if not source_access.is_file(path):
         raise DecisionError("DECISION_NOT_FOUND")
     try:
-        record = yaml.safe_load(path.read_text())
+        record = yaml.safe_load(source_access.read_text(path))
     except (OSError, yaml.YAMLError) as exc:
         raise DecisionError("DECISION_RECORD_INVALID") from exc
     if not isinstance(record, dict):

@@ -3,8 +3,10 @@
 import datetime
 import json
 from dataclasses import dataclass
-from importlib import resources
 from pathlib import Path
+
+from harness import source_access
+from harness.schema_resources import read_schema
 
 from .transaction import StagedArtifact, publish, stage
 from .workspace import git_head, project_task_scope, review_scope, snapshot
@@ -13,19 +15,6 @@ import yaml
 from jsonschema import ValidationError, validate
 
 
-SCHEMA = resources.files("harness").joinpath("schemas", "observability.schema.json")
-REVIEW_SCHEMA = resources.files("harness").joinpath(
-    "schemas", "diagnosability-review.schema.json"
-)
-PROPOSAL_SCHEMA = resources.files("harness").joinpath(
-    "schemas", "diagnosability-proposal.schema.json"
-)
-FINDING_SCHEMA = resources.files("harness").joinpath(
-    "schemas", "diagnosability-finding.schema.json"
-)
-REVIEW_EVIDENCE_SCHEMA = resources.files("harness").joinpath(
-    "schemas", "diagnosability-review-evidence.schema.json"
-)
 CHECK_NAMES = (
     "business_keys",
     "external_failure_context",
@@ -52,7 +41,7 @@ def _invalid(message: str) -> None:
 
 def _schema() -> dict:
     try:
-        return json.loads(SCHEMA.read_text(encoding="utf-8"))
+        return read_schema("observability.schema.json")
     except (OSError, json.JSONDecodeError) as exc:
         _invalid(f"cannot load schema: {exc}")
 
@@ -105,7 +94,7 @@ def load_contract(harness_dir: Path, *, task_type: str | None = None) -> dict:
     """Load and validate a persisted Contract, failing closed on absence."""
     path = harness_dir / "observability.yaml"
     try:
-        document = yaml.safe_load(path.read_text(encoding="utf-8"))
+        document = yaml.safe_load(source_access.read_text(path, encoding="utf-8"))
     except (OSError, yaml.YAMLError) as exc:
         _invalid(f"cannot load {path}: {exc}")
     validate_contract(document, task_type=task_type)
@@ -125,7 +114,7 @@ class DiagnosabilityReview:
 
 def validate_review_input(document: dict, *, task_id: str) -> DiagnosabilityReview:
     try:
-        validate(document, json.loads(REVIEW_SCHEMA.read_text(encoding="utf-8")))
+        validate(document, read_schema("diagnosability-review.schema.json"))
     except (OSError, json.JSONDecodeError, ValidationError) as exc:
         _invalid(f"review: {exc}")
     if document["task"] != task_id:
@@ -134,7 +123,7 @@ def validate_review_input(document: dict, *, task_id: str) -> DiagnosabilityRevi
     proposals = tuple(document.get("proposals", []))
     for proposal in proposals:
         try:
-            validate(proposal, json.loads(PROPOSAL_SCHEMA.read_text(encoding="utf-8")))
+            validate(proposal, read_schema("diagnosability-proposal.schema.json"))
         except ValidationError as exc:
             code = (
                 "DIAG_PROPOSAL_FIELD_REQUIRED"
@@ -157,7 +146,7 @@ def validate_review_input(document: dict, *, task_id: str) -> DiagnosabilityRevi
 
 def load_review_input(path: Path, *, task_id: str) -> DiagnosabilityReview:
     try:
-        document = yaml.safe_load(path.read_text(encoding="utf-8"))
+        document = yaml.safe_load(source_access.read_text(path, encoding="utf-8"))
     except (OSError, yaml.YAMLError) as exc:
         _invalid(f"cannot load review: {exc}")
     return validate_review_input(document, task_id=task_id)
@@ -203,7 +192,7 @@ def validate_review_readiness(
 def validate_review_evidence(record: dict) -> None:
     """Validate canonical persisted review evidence before Gate admission."""
     try:
-        validate(record, json.loads(REVIEW_EVIDENCE_SCHEMA.read_text(encoding="utf-8")))
+        validate(record, read_schema("diagnosability-review-evidence.schema.json"))
     except (OSError, json.JSONDecodeError, ValidationError) as exc:
         raise ValueError("DIAG_REVIEW_EVIDENCE_INVALID") from exc
     checks = record["checks"]
@@ -248,7 +237,7 @@ def gate_blockers(harness_dir: Path, task: dict, *, head: str, workspace: str):
     if not required:
         return []
     path = harness_dir / "evidence" / "diagnosability-review.json"
-    if not path.exists():
+    if not source_access.exists(path):
         return [
             GateBlocker(
                 "DIAGNOSABILITY_REVIEW_MISSING",
@@ -258,17 +247,17 @@ def gate_blockers(harness_dir: Path, task: dict, *, head: str, workspace: str):
             )
         ]
     try:
-        record = json.loads(path.read_text())
+        record = json.loads(source_access.read_text(path))
         validate_review_evidence(record)
         findings = [
-            yaml.safe_load(item.read_text())
-            for item in (harness_dir / "findings").glob("*.yaml")
+            yaml.safe_load(source_access.read_text(item))
+            for item in source_access.members(harness_dir / "findings", "*.yaml")
         ]
         review_scope_record = record.get("review_scope", {})
         impact_path = harness_dir / "impact.yaml"
         impact = (
-            yaml.safe_load(impact_path.read_text()).get("impact") or {}
-            if impact_path.exists()
+            yaml.safe_load(source_access.read_text(impact_path)).get("impact") or {}
+            if source_access.exists(impact_path)
             else {}
         )
         expected_scope = project_task_scope(
@@ -340,7 +329,7 @@ def write_review(
 ) -> Path:
     contract = load_contract(harness_dir, task_type=task_type)
     scope = review_scope(base_ref)
-    task = yaml.safe_load((harness_dir / "current-task.yaml").read_text())
+    task = yaml.safe_load(source_access.read_text(harness_dir / "current-task.yaml"))
     if task.get("scope") is None:
         files = tuple(
             sorted(
@@ -352,8 +341,8 @@ def write_review(
     else:
         impact_path = harness_dir / "impact.yaml"
         impact_doc = (
-            yaml.safe_load(impact_path.read_text())
-            if impact_path.exists()
+            yaml.safe_load(source_access.read_text(impact_path))
+            if source_access.exists(impact_path)
             else {"impact": {}}
         )
         files = project_task_scope(
@@ -365,8 +354,8 @@ def write_review(
     if review.claimed_files != files:
         raise ValueError("DIAGNOSABILITY_SCOPE_MISMATCH")
     existing = [
-        yaml.safe_load(item.read_text())
-        for item in (harness_dir / "findings").glob("*.yaml")
+        yaml.safe_load(source_access.read_text(item))
+        for item in source_access.members(harness_dir / "findings", "*.yaml")
     ]
 
     def equivalent(finding, proposal):
@@ -424,7 +413,7 @@ def write_review(
         )
     for finding in generated:
         try:
-            validate(finding, json.loads(FINDING_SCHEMA.read_text(encoding="utf-8")))
+            validate(finding, read_schema("diagnosability-finding.schema.json"))
         except ValidationError as exc:
             raise ValueError("DIAG_FINDING_INVALID") from exc
     findings = existing + generated

@@ -42,7 +42,7 @@ Apply this table **before** Session Startup:
 
 | Request intent | Classification | Harness action |
 |---|---|---|
-| Question, explanation, impact assessment, design discussion, or advice; example: `这个修改会影响 API 吗？` | Q0 | Answer only. do not read `.harness`, do not run `harness status`, do not create or advance task. |
+| Question, explanation, impact assessment, design discussion, or advice; example: `这个修改会影响 API 吗？` | Q0 | Answer only. do not read `.harness`, do not run `harness status`, do not run `harness context`, do not create or advance task. |
 | Explicit request to modify repository state: implement, fix, edit, refactor, run a requested change, or create files | mutating | Continue to Session Startup, then persist risk classification before dispatch. |
 | Intent unclear | default Q0 | Ask one clarification question. Do not read `.harness` or create/advance task until user confirms mutating work. |
 
@@ -50,22 +50,26 @@ Repository presence, `.harness` presence, and a prior task state never change a 
 
 ## Session Startup (每次 session 必须先做)
 
-```text
-1. Detect whether .harness/ exists.
-2. Load .harness/current-task.yaml and active accepted decisions from `.harness/decisions/` when present.
-3. Run `harness status`.
+Only enter after the Q0 Decision Table confirms mutating work.
+
+1. Detect whether `.harness/` exists. Read task identity, state, and risk fields only from `.harness/current-task.yaml` to route startup; do not load every control artifact.
+2. If no active task exists, follow existing task creation and classification routing below. Do not reuse a previous task's Context or expansion policy. Do not replace an unrelated active task without explicit user direction.
+3. For `CREATED`, or missing/null risk, use the existing `harness task classify` path before requesting Context. Do not infer a risk/profile. Malformed classification requires correction, not guessed defaults.
+4. For a classified active mutating task, run `harness context --compact` first. Do not eagerly read all control files or run status as a prerequisite. Resume using the validated task state/profile, accepted decisions, global constraints, and typed blockers in that view.
+5. On Integrity failure, stop relying on compact. Do not fall back to stale Context or persisted Gate summaries, and do not use `--full` to bypass validation. Follow the error code; resolve invalid inputs through existing harness CLI. `harness context validate` checks the saved snapshot without rewriting it; after source changes, regenerate with `harness context --compact` before relying on it again.
+6. Write authoritative facts only through existing harness CLI; advisory `next_action` does not authorize execution or transition state. A blocked product Gate is not itself an Integrity failure: retain its blockers and use the normal recovery route.
 
 > Path rule: `harness ...` CLI works in ANY project (requires once:
 > `pip install -e <harness-repo>`). Raw `python scripts/*.py` paths are
 > ONLY valid with CWD = the harness repo root — never use them elsewhere.
-4. Resume from persisted state via the dispatch table below.
-```
 
 ## Inputs
 
+Validated Context is a derived view, not a new authoritative source. Its Control Core retains global constraints; Layer 2 references allow reading a specific source file on demand. The following are canonical sources, not an eager startup reading checklist:
+
 - `.harness/current-task.yaml` — persisted task state (`state:` field).
 - `.harness/requirements.yaml`, `.harness/invariants.yaml`, `.harness/gate.yaml`
-- `findings/*.yaml`, `evidence/*.json`
+- `.harness/decisions/*.yaml`, `.harness/findings/*.yaml`, `.harness/evidence/*.json`
 - deterministic core lives in `<harness-repo>/scripts/`: `state_machine.py`,
   `validate_state.py`, `collect_evidence.py`, `quality_gate.py`,
   `harness_status.py` — always reached through the `harness` CLI from other

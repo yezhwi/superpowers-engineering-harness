@@ -1,8 +1,101 @@
 """Deterministic local benchmark fixture reporting."""
 
 import json
+import math
 from pathlib import Path
+
 import yaml
+
+from harness.telemetry import TelemetryError, normalize_usage
+
+INCONCLUSIVE = "INCONCLUSIVE"
+_COUNTER_METRICS = {"token_estimate", "tool_calls", "search_rounds", "file_reads"}
+_AGENT_FIELDS = _COUNTER_METRICS
+
+
+def _valid_metrics(metrics: dict) -> bool:
+    for key, value in metrics.items():
+        if (
+            key in _COUNTER_METRICS
+            and value is not None
+            and (type(value) is not int or value < 0)
+        ):
+            return False
+        if (
+            key == "elapsed_seconds"
+            and value is not None
+            and (
+                not isinstance(value, (int, float))
+                or isinstance(value, bool)
+                or (isinstance(value, float) and not math.isfinite(value))
+                or value < 0
+            )
+        ):
+            return False
+    return True
+
+
+def _run_metrics(run: dict) -> dict:
+    metrics = dict(run.get("metrics", {}))
+    agent = run.get("agent", {})
+    return {
+        **agent,
+        **{key: value for key, value in metrics.items() if value is not None},
+    }
+
+
+def tokens_per_success(attempts: list[dict]) -> float | int | str:
+    """Return all attempted token cost divided by known successful attempts."""
+    if not attempts:
+        return INCONCLUSIVE
+    total = 0
+    successes = 0
+    for attempt in attempts:
+        tokens = attempt.get("total_tokens")
+        success = attempt.get("success")
+        if (
+            not isinstance(tokens, (int, float))
+            or isinstance(tokens, bool)
+            or success not in {True, False}
+        ):
+            return INCONCLUSIVE
+        total += tokens
+        successes += success
+    return total / successes if successes else INCONCLUSIVE
+
+
+def _metric_per_success(runs: list[dict], key: str) -> float | int | str:
+    values = [run.get(key) for run in runs]
+    if not all(
+        isinstance(value, (int, float)) and not isinstance(value, bool)
+        for value in values
+    ):
+        return INCONCLUSIVE
+    successes = sum(run["success"] for run in runs)
+    return sum(values) / successes if successes else INCONCLUSIVE
+
+
+def summarize_runs(runs: list[dict]) -> dict | str:
+    """Summarize three or more complete attempts without inventing metrics."""
+    if len(runs) < 3:
+        return INCONCLUSIVE
+    tps = tokens_per_success(runs)
+    if tps == INCONCLUSIVE:
+        return INCONCLUSIVE
+    tokens = [run["total_tokens"] for run in runs]
+    if not all(isinstance(token, (int, float)) for token in tokens):
+        return INCONCLUSIVE
+    ordered = sorted(tokens)
+    return {
+        "median_tokens": _median(ordered),
+        "p90_tokens": float(ordered[-(-9 * len(ordered) // 10) - 1]),
+        "success_rate": sum(run["success"] for run in runs) / len(runs),
+        "tokens_per_success": tps,
+        "tool_calls_per_success": _metric_per_success(runs, "tool_calls"),
+        "elapsed_per_success": _metric_per_success(runs, "elapsed_seconds"),
+        "search_rounds_per_success": _metric_per_success(runs, "search_rounds"),
+        "file_reads_per_success": _metric_per_success(runs, "file_reads"),
+    }
 
 
 def validate_corpus(corpus: Path) -> list[dict]:
@@ -61,7 +154,7 @@ def validate_corpus(corpus: Path) -> list[dict]:
         raise ValueError("BENCHMARK_CORPUS_INVALID") from exc
 
 
-def _artifact(path: Path, fixture_id: str, mode: str):
+def _artifact_data(path: Path, fixture_id: str, mode: str) -> dict | None:
     try:
         data = json.loads(path.read_text())
     except (OSError, json.JSONDecodeError):
@@ -72,11 +165,188 @@ def _artifact(path: Path, fixture_id: str, mode: str):
         or data.get("mode") != mode
     ):
         return None
-    if not isinstance(data.get("correctness"), dict) or not isinstance(
-        data.get("metrics"), dict
-    ):
-        return None
     return data
+
+
+def _artifact(data: dict | None):
+    if data is None:
+        return None
+    runs = data.get("runs", [data])
+    if not isinstance(runs, list) or not runs:
+        return None
+    for run in runs:
+        if (
+            not isinstance(run, dict)
+            or not isinstance(run.get("correctness"), dict)
+            or not isinstance(run.get("metrics"), dict)
+        ):
+            return None
+        if not _valid_metrics(run["metrics"]):
+            return None
+        if "agent" in run and (
+            not isinstance(run["agent"], dict)
+            or set(run["agent"]) - _AGENT_FIELDS
+            or not _valid_metrics(run["agent"])
+        ):
+            return None
+        if any(
+            value is not None
+            and run["metrics"].get(key) is not None
+            and value != run["metrics"][key]
+            for key, value in run.get("agent", {}).items()
+        ):
+            return None
+        if "usage" in run:
+            try:
+                run["usage"] = normalize_usage(run["usage"])
+            except TelemetryError:
+                return None
+    return data
+
+
+def _known_failure(data: dict | None, required: list[str]) -> bool:
+    """Keep explicit safety/correctness failures above invalid efficiency data."""
+    if data is None:
+        return False
+    if data.get("integrity") is False:
+        return True
+    correctness = data.get("correctness")
+    if isinstance(correctness, dict) and (
+        any(correctness.get(key) is False for key in required)
+        or correctness.get("integrity") is False
+    ):
+        return True
+    runs = data.get("runs", [data])
+    if not isinstance(runs, list) or not runs:
+        return False
+    for run in runs:
+        if not isinstance(run, dict):
+            continue
+        if run.get("integrity") is False:
+            return True
+        if not isinstance(run.get("correctness"), dict):
+            continue
+        if (
+            any(run["correctness"].get(key) is False for key in required)
+            or run["correctness"].get("integrity") is False
+            or run.get("integrity") is False
+        ):
+            return True
+    return False
+
+
+def _median(values: list[int | float]) -> float:
+    ordered = sorted(values)
+    middle = len(ordered) // 2
+    return (
+        float(ordered[middle])
+        if len(ordered) % 2
+        else (ordered[middle - 1] + ordered[middle]) / 2
+    )
+
+
+def _experiment_verdict(rows: list[dict]) -> dict:
+    """Apply v0.2.8 safety/correctness precedence before efficiency claims."""
+    artifacts = [
+        artifact
+        for row in rows
+        for artifact in (row.get("baseline"), row.get("adaptive"))
+        if artifact is not None
+    ]
+    if any(
+        row["status"] == "CORRECTNESS_REGRESSION" or row.get("known_failure")
+        for row in rows
+    ) or any(
+        artifact.get("correctness", {}).get("integrity") is False
+        or artifact.get("integrity") is False
+        or any(
+            run.get("correctness", {}).get("integrity") is False
+            or run.get("integrity") is False
+            for run in _runs(artifact)
+        )
+        for artifact in artifacts
+    ):
+        return {"status": "FAIL", "confidence": "high"}
+    if any(row["status"] == INCONCLUSIVE for row in rows):
+        return {"status": INCONCLUSIVE, "confidence": "high"}
+    usage = [run.get("usage") for artifact in artifacts for run in _runs(artifact)]
+    if any(
+        isinstance(item, dict) and item.get("source") == "estimated" for item in usage
+    ):
+        return {"status": INCONCLUSIVE, "confidence": "low"}
+    q1 = [row for row in rows if row.get("level") == "Q1"]
+    if len(q1) != 20 or any(
+        len(_runs(row.get(mode))) < 3 for row in q1 for mode in ("baseline", "adaptive")
+    ):
+        return {"status": INCONCLUSIVE, "confidence": "high"}
+    token_pairs = [
+        (run.get("usage", {}).get("total_tokens"), mode)
+        for row in q1
+        for mode in ("baseline", "adaptive")
+        for run in _runs(row[mode])
+    ]
+    baseline_tokens = [value for value, mode in token_pairs if mode == "baseline"]
+    adaptive_tokens = [value for value, mode in token_pairs if mode == "adaptive"]
+    if not all(
+        isinstance(value, (int, float)) and not isinstance(value, bool)
+        for value in baseline_tokens + adaptive_tokens
+    ):
+        return {"status": INCONCLUSIVE, "confidence": "high"}
+    improvement = False
+    for metric in ("tool_calls", "search_rounds", "file_reads", "elapsed_seconds"):
+        pairs = [
+            (_run_metrics(run).get(metric), mode)
+            for row in q1
+            for mode in ("baseline", "adaptive")
+            for run in _runs(row[mode])
+        ]
+        baseline_values = [value for value, mode in pairs if mode == "baseline"]
+        adaptive_values = [value for value, mode in pairs if mode == "adaptive"]
+        if not all(
+            isinstance(value, (int, float)) and not isinstance(value, bool)
+            for value in baseline_values + adaptive_values
+        ):
+            return {"status": INCONCLUSIVE, "confidence": "high"}
+        improvement = improvement or _median(adaptive_values) < _median(baseline_values)
+    if _median(adaptive_tokens) < _median(baseline_tokens) and improvement:
+        return {"status": "PASS", "confidence": "high"}
+    return {"status": "FAIL", "confidence": "high"}
+
+
+def _runs(artifact: dict | None) -> list[dict]:
+    if artifact is None:
+        return []
+    return artifact.get("runs", [artifact])
+
+
+def _correctness(artifact: dict | None, required: list[str]) -> bool | None:
+    runs = _runs(artifact)
+    if not runs:
+        return None
+    values = [run["correctness"].get(key) for run in runs for key in required]
+    if any(value not in {True, False} for value in values):
+        return None
+    return all(values)
+
+
+def _metrics(artifact: dict | None) -> dict:
+    return (artifact or {}).get("metrics", {})
+
+
+def _run_attempt(run: dict, required: list[str]) -> dict:
+    return {
+        "total_tokens": run.get("usage", {}).get("total_tokens"),
+        "success": _correctness({"runs": [run]}, required),
+    }
+
+
+def _usage_attempts(row: dict, mode: str) -> list[dict]:
+    runs = _runs(row.get(mode))
+    return (
+        [_run_attempt(run, row["required_correctness"]) for run in runs]
+        if runs
+        else [{"total_tokens": None, "success": None}]
+    )
 
 
 def compare_benchmarks(fixtures: Path, baseline: Path, adaptive: Path) -> dict:
@@ -90,51 +360,81 @@ def compare_benchmarks(fixtures: Path, baseline: Path, adaptive: Path) -> dict:
         ):
             raise ValueError(f"BENCHMARK_FIXTURE_INVALID: {path}")
         fid = fixture["id"]
-        before = _artifact(baseline / f"{fid}.json", fid, "baseline")
-        after = _artifact(adaptive / f"{fid}.json", fid, "adaptive")
+        before_data = _artifact_data(baseline / f"{fid}.json", fid, "baseline")
+        after_data = _artifact_data(adaptive / f"{fid}.json", fid, "adaptive")
+        before = _artifact(before_data)
+        after = _artifact(after_data)
         status = "CORRECTNESS_PRESERVED"
         if (
             before is None
             or after is None
-            or any(
-                before["correctness"].get(key) is None
-                or after["correctness"].get(key) is None
-                for key in fixture["required_correctness"]
-            )
+            or _correctness(before, fixture["required_correctness"]) is None
+            or _correctness(after, fixture["required_correctness"]) is None
         ):
             status = "INCONCLUSIVE"
-        elif any(
-            after["correctness"].get(key) is not True
-            for key in fixture["required_correctness"]
-        ):
+        elif _correctness(after, fixture["required_correctness"]) is not True:
             status = "CORRECTNESS_REGRESSION"
         metrics = {}
         for key in ("token_estimate", "tool_calls", "elapsed_seconds"):
-            left = before["metrics"].get(key) if before else None
-            right = after["metrics"].get(key) if after else None
+            left = _metrics(before).get(key)
+            right = _metrics(after).get(key)
             metrics[f"{key}_delta"] = (
                 right - left
                 if isinstance(left, (int, float)) and isinstance(right, (int, float))
                 else None
             )
-        rows.append(
-            {
-                "id": fid,
-                "level": fixture.get("level"),
-                "required_correctness": fixture["required_correctness"],
-                "status": status,
-                "metrics": metrics,
-                "baseline": before,
-                "adaptive": after,
-            }
-        )
+        row = {
+            "id": fid,
+            "level": fixture.get("level"),
+            "required_correctness": fixture["required_correctness"],
+            "status": status,
+            "known_failure": _known_failure(
+                before_data, fixture["required_correctness"]
+            )
+            or _known_failure(after_data, fixture["required_correctness"]),
+            "metrics": metrics,
+            "baseline": before,
+            "adaptive": after,
+        }
+        row["tokens_per_success"] = {
+            mode: tokens_per_success(_usage_attempts(row, mode))
+            for mode in ("baseline", "adaptive")
+        }
+        row["run_statistics"] = {
+            mode: summarize_runs(
+                [
+                    {
+                        **_run_attempt(run, fixture["required_correctness"]),
+                        "tool_calls": _run_metrics(run).get("tool_calls"),
+                        "search_rounds": _run_metrics(run).get("search_rounds"),
+                        "file_reads": _run_metrics(run).get("file_reads"),
+                        "elapsed_seconds": _run_metrics(run).get("elapsed_seconds"),
+                    }
+                    for run in _runs(artifact)
+                ]
+            )
+            for mode, artifact in (("baseline", before), ("adaptive", after))
+        }
+        rows.append(row)
     statuses = {row["status"] for row in rows}
     overall = (
         "CORRECTNESS_REGRESSION"
         if "CORRECTNESS_REGRESSION" in statuses
         else ("INCONCLUSIVE" if "INCONCLUSIVE" in statuses else "CORRECTNESS_PRESERVED")
     )
-    return {"overall": overall, "fixtures": rows}
+    return {
+        "overall": overall,
+        "fixtures": rows,
+        "metrics": {
+            "tokens_per_success": {
+                mode: tokens_per_success(
+                    [attempt for row in rows for attempt in _usage_attempts(row, mode)]
+                )
+                for mode in ("baseline", "adaptive")
+            }
+        },
+        "experiment": _experiment_verdict(rows),
+    }
 
 
 def evaluate_acceptance(report: dict, fixtures: list[dict]) -> dict:

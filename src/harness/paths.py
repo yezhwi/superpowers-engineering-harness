@@ -44,11 +44,13 @@ def evidence_output_path(harness_dir: Path, filename: str) -> Path:
 
 def evidence_path(harness_dir: Path, reference: str) -> Path:
     """Resolve ID, filename, project-relative, or absolute canonical evidence path."""
+    from harness import source_access
+
     evidence_dir = (harness_dir / "evidence").resolve()
 
     def invalid():
         candidates = ", ".join(
-            path.stem for path in sorted(evidence_dir.glob("*.json"))
+            path.stem for path in source_access.members(evidence_dir, "*.json")
         )
         raise EvidenceReferenceError(
             f"EVIDENCE_REFERENCE_INVALID; candidates: {candidates}"

@@ -57,13 +57,16 @@ def save_task(harness_dir: Path, task: dict) -> None:
     """Persist atomically: write temp file then rename."""
     import yaml
 
-    path = harness_dir / "current-task.yaml"
-    tmp = path.with_suffix(".yaml.tmp")
-    tmp.write_text(
-        yaml.safe_dump(task, sort_keys=False, allow_unicode=True), encoding="utf-8"
-    )
-    tmp.replace(path)
-    telemetry.update_telemetry(harness_dir, task)
+    from .telemetry_lock import telemetry_lock
+
+    with telemetry_lock(harness_dir):
+        path = harness_dir / "current-task.yaml"
+        tmp = path.with_suffix(".yaml.tmp")
+        tmp.write_text(
+            yaml.safe_dump(task, sort_keys=False, allow_unicode=True), encoding="utf-8"
+        )
+        tmp.replace(path)
+        telemetry.update_telemetry(harness_dir, task)
 
 
 def cmd_status(harness_dir: Path = Path(".harness")) -> int:
@@ -700,6 +703,55 @@ def cmd_benchmark_run(fixtures: Path) -> int:
         return 2
     (harness_dir / "benchmark-report.json").write_text(json.dumps(report, indent=2))
     print("BENCHMARK_REPORT_WRITTEN")
+    return 0
+
+
+def cmd_context(action: str | None, mode: str, json_output: bool, *, trigger: str | None = None, reason: str | None = None) -> int:
+    from .context.model import ContextBuildError
+    from .context.store import explain_context, generate_context, load_context
+
+    try:
+        if action == "expand":
+            from .context.escalation import expand_context
+            result = expand_context(Path(".harness"), trigger, reason)
+        elif action is None:
+            result = generate_context(Path(".harness"), mode=mode)
+        else:
+            document, integrity = load_context(Path(".harness"))
+            result = (
+                explain_context(document) if action == "explain"
+                else {"context_hash": document["context_hash"], "integrity": integrity}
+            )
+        rendered = (
+            json.dumps(result, indent=2, ensure_ascii=False, allow_nan=False) + "\n"
+            if json_output else yaml.safe_dump(result, sort_keys=False, allow_unicode=True)
+        )
+    except ContextBuildError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    except OSError as exc:
+        print(f"INVALID_HARNESS_STATE: Context I/O failed: {exc}", file=sys.stderr)
+        return 2
+    except (ValueError, TypeError, RecursionError, yaml.YAMLError):
+        print("CONTEXT_SCHEMA_INVALID: invalid Context data", file=sys.stderr)
+        return 2
+    print(rendered, end="")
+    return 0
+
+
+def cmd_telemetry_report(source_file: Path) -> int:
+    import yaml
+
+    try:
+        report = yaml.safe_load(source_file.read_text())
+        telemetry.report_usage(Path(".harness"), report)
+    except telemetry.TelemetryError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    except (OSError, UnicodeError, yaml.YAMLError) as exc:
+        print(f"TELEMETRY_USAGE_INVALID: {exc}", file=sys.stderr)
+        return 2
+    print("TELEMETRY_USAGE_REPORTED")
     return 0
 
 

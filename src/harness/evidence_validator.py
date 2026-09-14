@@ -3,12 +3,11 @@
 import json
 from dataclasses import dataclass
 from enum import Enum
-from importlib import resources
 from pathlib import Path
 
 from jsonschema import ValidationError, validate
 
-SCHEMA = resources.files("harness").joinpath("schemas", "evidence.schema.json")
+from harness.schema_resources import read_schema
 
 
 class EvidenceValidationError(Exception):
@@ -29,7 +28,7 @@ class ReuseRequest:
 
 def _schema_valid(record: object) -> bool:
     try:
-        validate(record, json.loads(SCHEMA.read_text()))
+        validate(record, read_schema("evidence.schema.json"))
     except (OSError, json.JSONDecodeError, ValidationError):
         return False
     return True
@@ -105,7 +104,7 @@ def _projection(
     require_current_workspace=True,
 ) -> EvidenceProjection:
     try:
-        validate(record, json.loads(SCHEMA.read_text()))
+        validate(record, read_schema("evidence.schema.json"))
     except (OSError, json.JSONDecodeError, ValidationError):
         return EvidenceProjection(
             EvidenceStatus.INVALID,
@@ -158,12 +157,15 @@ def project_evidence(
     require_current_workspace: bool = True,
 ) -> EvidenceProjection:
     """Classify one Evidence record without mutating Harness state."""
-    if not path.is_file():
+    # Local import avoids source_access -> Context model -> Gate -> evidence cycle.
+    from harness import source_access
+
+    if not source_access.is_file(path):
         return EvidenceProjection(
             EvidenceStatus.MISSING, "EVIDENCE_MISSING", None, None, current_workspace
         )
     try:
-        record = json.loads(path.read_text())
+        record = json.loads(source_access.read_text(path))
     except (OSError, json.JSONDecodeError):
         return EvidenceProjection(
             EvidenceStatus.INVALID,

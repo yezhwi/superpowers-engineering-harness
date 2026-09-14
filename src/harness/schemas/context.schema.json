@@ -1,0 +1,49 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Full or compact derived Context (projection v1)",
+  "type": "object",
+  "required": ["version", "mode", "base_policy", "policy", "expansions", "control", "working", "references", "omitted", "manifest", "generated_from", "context_hash"],
+  "additionalProperties": false,
+  "properties": {
+    "expansions": {"$ref": "#/definitions/records"},
+    "version": {"const": 1},
+    "mode": {"enum": ["full", "compact"]},
+    "base_policy": {"enum": ["LOCAL", "BOUNDED", "EXPANDED"]},
+    "policy": {"enum": ["LOCAL", "BOUNDED", "EXPANDED"]},
+    "control": {
+      "type": "object",
+      "required": ["task", "requirements", "invariants", "decisions", "findings", "blockers", "scope", "authorizations", "constraints", "contracts", "observability", "evidence", "gate"],
+      "additionalProperties": false,
+      "properties": {
+        "task": {"type": "object", "required": ["id", "state", "risk"], "additionalProperties": false, "properties": {"id": {"type": "string"}, "state": {"type": "string"}, "risk": {"type": "object"}}},
+        "requirements": {"$ref": "#/definitions/records"},
+        "invariants": {"$ref": "#/definitions/records"},
+        "decisions": {"$ref": "#/definitions/records"},
+        "findings": {"$ref": "#/definitions/records"},
+        "blockers": {"$ref": "#/definitions/records"},
+        "scope": {"type": ["object", "null"]},
+        "authorizations": {"type": ["object", "null"]},
+        "constraints": {"type": "object"},
+        "contracts": {"type": "object"},
+        "observability": {"type": ["object", "null"]},
+        "evidence": {"$ref": "#/definitions/records"},
+        "gate": {"type": "object"}
+      }
+    },
+    "working": {
+      "type": "object", "required": ["requirements", "decisions", "findings", "files", "tests", "goal", "next_action"], "additionalProperties": false,
+      "properties": {"requirements": {"$ref": "#/definitions/records"}, "decisions": {"$ref": "#/definitions/records"}, "findings": {"$ref": "#/definitions/records"}, "files": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}, "tests": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}, "goal": {"type": "object", "required": ["title", "description"], "additionalProperties": false, "properties": {"title": {"type": ["string", "null"]}, "description": {"type": ["string", "null"]}}}, "next_action": {"type": "string", "minLength": 1}}
+    },
+    "references": {"type": "object", "additionalProperties": {"anyOf": [{"type": "null"}, {"$ref": "#/definitions/reference"}]}},
+    "omitted": {"type": "array", "items": {"type": "object", "required": ["id", "reason", "ref", "sha256"], "additionalProperties": false, "properties": {"id": {"type": "string", "minLength": 1}, "reason": {"type": "string", "pattern": "\\S"}, "ref": {"type": "string", "minLength": 1}, "sha256": {"$ref": "#/definitions/hash"}}}},
+    "manifest": {"type": "object", "required": ["candidate_boundary", "sources"], "additionalProperties": false, "properties": {"candidate_boundary": {"const": "declared-control-artifacts"}, "sources": {"type": "object"}}},
+    "generated_from": {"type": "object", "required": ["projection_version", "schema_resources", "files", "declared_files", "workspace_hash", "head", "control_plane_hash", "task_hash", "requirements_hash", "invariants_hash", "findings_hash", "decisions_hash", "evidence_hash", "impact_hash"], "additionalProperties": false, "properties": {"projection_version": {"const": 2}, "schema_resources": {"$ref": "#/definitions/versions"}, "files": {"$ref": "#/definitions/versions"}, "declared_files": {"$ref": "#/definitions/versions"}, "workspace_hash": {"$ref": "#/definitions/hash"}, "head": {"type": "string", "pattern": "^[a-f0-9]{40,64}$"}, "control_plane_hash": {"$ref": "#/definitions/hash"}, "task_hash": {"$ref": "#/definitions/hash"}, "requirements_hash": {"$ref": "#/definitions/hash"}, "invariants_hash": {"$ref": "#/definitions/hash"}, "findings_hash": {"$ref": "#/definitions/hash"}, "decisions_hash": {"$ref": "#/definitions/hash"}, "evidence_hash": {"$ref": "#/definitions/hash"}, "impact_hash": {"$ref": "#/definitions/hash"}}},
+    "context_hash": {"$ref": "#/definitions/hash"}
+  },
+  "definitions": {
+    "hash": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "versions": {"type": "object", "additionalProperties": {"anyOf": [{"type": "null"}, {"$ref": "#/definitions/hash"}]}},
+    "records": {"type": "array", "items": {"type": "object"}},
+    "reference": {"type": "object", "required": ["ref", "sha256"], "additionalProperties": false, "properties": {"ref": {"type": "string", "minLength": 1}, "sha256": {"$ref": "#/definitions/hash"}}}
+  }
+}

@@ -82,6 +82,9 @@
       "type": "object",
       "required": ["test_runs", "build_runs", "retry_runs", "overrides"],
       "properties": {
+        "context_expansions": {"type": "integer", "minimum": 0},
+        "search_rounds": {"type": "integer", "minimum": 0},
+        "file_reads": {"type": "integer", "minimum": 0},
         "test_runs": {"type": "integer", "minimum": 0},
         "build_runs": {"type": "integer", "minimum": 0},
         "retry_runs": {"type": "integer", "minimum": 0},

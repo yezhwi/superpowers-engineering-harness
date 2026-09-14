@@ -1,11 +1,12 @@
 """Shared Git workspace facts for evidence, Gate, status, and review scope."""
 
-from dataclasses import dataclass
 import hashlib
-import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
+
+from .git_query import GitQueryError, run_git_query
 
 
 class WorkspaceError(RuntimeError):
@@ -33,7 +34,10 @@ def _root(repo_root: Path | None) -> Path:
 
 
 def _run(repo_root: Path, *args: str) -> bytes:
-    result = subprocess.run(["git", *args], cwd=repo_root, capture_output=True)
+    try:
+        result = run_git_query(repo_root, args)
+    except GitQueryError as exc:
+        raise WorkspaceError(str(exc)) from exc
     if result.returncode:
         raise WorkspaceError(result.stderr.decode().strip())
     return result.stdout
@@ -52,7 +56,9 @@ def git_baseline(head: str | None = None, repo_root: Path | None = None) -> dict
     """Freeze task Git identity: branch name when attached, otherwise the SHA."""
     sha = head or git_head(repo_root)
     try:
-        ref = _run(_root(repo_root), "rev-parse", "--abbrev-ref", "HEAD").decode().strip()
+        ref = (
+            _run(_root(repo_root), "rev-parse", "--abbrev-ref", "HEAD").decode().strip()
+        )
     except WorkspaceError:
         ref = sha
     if not ref or ref == "HEAD":
@@ -67,11 +73,13 @@ def git_baseline(head: str | None = None, repo_root: Path | None = None) -> dict
 
 def observability_inspected_paths(harness_dir: Path) -> tuple[str, ...]:
     """Return observability inspected paths; missing contract yields an empty tuple."""
+    from harness import source_access
+
     path = harness_dir / "observability.yaml"
-    if not path.is_file():
+    if not source_access.is_file(path):
         return ()
     try:
-        document = yaml.safe_load(path.read_text()) or {}
+        document = yaml.safe_load(source_access.read_text(path)) or {}
     except (OSError, yaml.YAMLError):
         return ()
     if not isinstance(document, dict) or not document.get("required"):
@@ -90,7 +98,15 @@ def _untracked_paths(repo_root: Path) -> set[str]:
         .decode()
         .splitlines()
     ):
-        if not name.startswith(".harness/") and (repo_root / name).is_file():
+        candidate = Path(name)
+        # Git owns discovery. Avoid a pre-scope Path.is_file metadata probe;
+        # later scoped reads bind actual file content and fail closed on races.
+        if (
+            name
+            and not candidate.is_absolute()
+            and ".." not in candidate.parts
+            and not (name == ".harness" or name.startswith(".harness/"))
+        ):
             paths.add(name)
     return paths
 
@@ -113,7 +129,14 @@ def _fingerprint(repo_root: Path) -> str:
         _run(repo_root, "rev-parse", "HEAD"),
         _run(repo_root, "diff", "--binary", "HEAD", "--", ".", *_PRODUCT_EXCLUDE),
         _run(
-            repo_root, "diff", "--cached", "--binary", "HEAD", "--", ".", *_PRODUCT_EXCLUDE
+            repo_root,
+            "diff",
+            "--cached",
+            "--binary",
+            "HEAD",
+            "--",
+            ".",
+            *_PRODUCT_EXCLUDE,
         ),
     ]
     for name in sorted(_untracked_paths(repo_root)):
@@ -146,14 +169,16 @@ def protected_paths_fingerprint(
     paths: tuple[str, ...], repo_root: Path | None = None
 ) -> str:
     """Fingerprint only declared pre-existing user changes."""
+    from harness import source_access
+
     root = _root(repo_root)
     parts: list[bytes] = []
     for name in sorted(paths):
         path = root / name
         diff = _run(root, "diff", "--binary", "HEAD", "--", name)
         parts.extend([name.encode(), diff])
-        if not diff and path.is_file():
-            parts.append(hashlib.sha256(path.read_bytes()).digest())
+        if not diff and source_access.is_file(path):
+            parts.append(hashlib.sha256(source_access.read_bytes(path)).digest())
     return "sha256:" + hashlib.sha256(b"\0".join(parts)).hexdigest()
 
 
@@ -177,7 +202,9 @@ def control_plane_fingerprint(harness_dir: Path | None = None) -> str:
     root = (harness_dir or Path(".harness")).resolve()
     parts: list[bytes] = []
     if root.is_dir():
-        for path in sorted(candidate for candidate in root.rglob("*") if candidate.is_file()):
+        for path in sorted(
+            candidate for candidate in root.rglob("*") if candidate.is_file()
+        ):
             parts.extend(
                 [
                     path.relative_to(root).as_posix().encode(),
