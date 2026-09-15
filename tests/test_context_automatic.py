@@ -66,16 +66,29 @@ def test_accepted_decision_outside_scope_expands_once(harness):
     assert generate_context(harness)["expansions"] == [event]
 
 
-def test_invalid_integrity_never_records_automatic_expansion(harness):
+def test_context_integrity_unproven_rejects_compact_without_expansion(harness):
+    from harness.context.escalation import (
+        AUTOMATIC_TRIGGERS,
+        FAIL_CLOSED_TRIGGERS,
+        REPORTED_TRIGGERS,
+    )
     from harness.context.model import ContextBuildError
+    from test_context_cli import run_cli
 
+    assert FAIL_CLOSED_TRIGGERS == ("CONTEXT_INTEGRITY_UNPROVEN",)
+    assert "CONTEXT_INTEGRITY_UNPROVEN" not in AUTOMATIC_TRIGGERS + REPORTED_TRIGGERS
     outside_finding(harness)
     write_yaml(harness / "requirements.yaml", {"requirements": "invalid"})
     before = (harness / "current-task.yaml").read_bytes()
     with pytest.raises(ContextBuildError, match="CONTEXT_SCHEMA_INVALID"):
-        generate_context(harness)
+        generate_context(harness, mode="compact")
+    result = run_cli(harness.parent, "--compact")
+    assert result.returncode == 2
+    assert result.stdout == ""
+    assert "CONTEXT_SCHEMA_INVALID" in result.stderr
     assert (harness / "current-task.yaml").read_bytes() == before
     assert not (harness / "context/expansions.yaml").exists()
+    assert not (harness / "context/current.yaml").exists()
 
 
 def test_two_concurrent_generators_record_one_automatic_event(harness):
