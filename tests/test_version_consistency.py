@@ -10,8 +10,8 @@ import tomllib
 REPO = Path(__file__).resolve().parent.parent
 
 
-def test_v027_release_metadata_is_publishable():
-    expected = "0.2.7"
+def test_current_release_metadata_is_publishable():
+    expected = "0.2.8"
     assert (
         tomllib.loads((REPO / "pyproject.toml").read_text())["project"]["version"]
         == expected

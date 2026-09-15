@@ -7,6 +7,12 @@
 - Extend Benchmark artifacts with usage and multi-run statistics, including `tokens_per_success`, median/P90 token reporting, and agent tool/search/file-read counters. Missing data remains `INCONCLUSIVE`; estimated usage is low-confidence; known correctness or integrity failures override efficiency claims.
 - Add controlled source-access, schema-resource, workspace, and telemetry-lock boundaries with regression coverage.
 
+### Install
+
+```bash
+pi install git:github.com/yezhwi/superpowers-engineering-harness@v0.2.8
+```
+
 ## 0.2.7
 
 - Close Decision and Interface Contract correctness gaps: task-scoped Gate participation, explicit cross-task Interface reuse, validated active Decision references, safe supersession acceptance, and canonical Decision/Interface IDs.
