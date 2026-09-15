@@ -325,7 +325,7 @@ harness context explain --json     # 解释已保存的选择结果
 harness benchmark compare --fixtures benchmarks/fixtures --baseline baseline-artifacts --adaptive adaptive-artifacts
 ```
 
-每个 fixture-required correctness 字段必须在两侧均为 true。缺少 proof 为 `INCONCLUSIVE`，不能声称 correctness preserved。Harness 不运行或证明 external agent runs、tokens、tool calls。
+stdout 分别列出历史 `overall:` 与 v0.2.8 `experiment:`。缺 usage 或不完整 runs 时 experiment 为 `INCONCLUSIVE`；即使 overall 是 `CORRECTNESS_PRESERVED`，也不表示效率已通过。每个 fixture-required correctness 字段必须在两侧均为 true。缺少 proof 为 `INCONCLUSIVE`，不能声称 correctness preserved。Harness 不运行或证明 external agent runs、tokens、tool calls。
 
 ### 自动编排
 

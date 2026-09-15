@@ -322,7 +322,7 @@ Compare recorded baseline/adaptive artifacts:
 harness benchmark compare --fixtures benchmarks/fixtures --baseline baseline-artifacts --adaptive adaptive-artifacts
 ```
 
-Comparison requires every fixture-required correctness field to be true in both artifacts. Missing proof is `INCONCLUSIVE`, not correctness preserved. Harness does not run or attest external agent runs, tokens, or tool calls.
+Stdout lists historical `overall:` separately from v0.2.8 `experiment:`. Missing usage or incomplete runs make experiment `INCONCLUSIVE`; that is not an efficiency pass even when overall is `CORRECTNESS_PRESERVED`. Comparison requires every fixture-required correctness field to be true in both artifacts. Missing proof is `INCONCLUSIVE`, not correctness preserved. Harness does not run or attest external agent runs, tokens, or tool calls.
 
 ### Automatic orchestration
 

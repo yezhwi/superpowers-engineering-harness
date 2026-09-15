@@ -690,7 +690,9 @@ def cmd_benchmark_compare(fixtures: Path, baseline: Path, adaptive: Path) -> int
         print(str(exc), file=sys.stderr)
         return 2
     (harness_dir / "benchmark-report.json").write_text(json.dumps(report, indent=2))
-    print(report["overall"])
+    experiment = report.get("experiment") or {}
+    print(f"overall: {report['overall']}")
+    print(f"experiment: {experiment.get('status', 'INCONCLUSIVE')}")
     return 0
 
 

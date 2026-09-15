@@ -83,6 +83,8 @@ def test_readmes_define_benchmark_correctness_comparison_limits():
     for path in (REPO / "README.md", REPO / "README.zh-CN.md"):
         text = path.read_text()
         assert "benchmark compare" in text
+        assert "overall:" in text
+        assert "experiment:" in text
         assert "INCONCLUSIVE" in text
         assert "external agent" in text
 

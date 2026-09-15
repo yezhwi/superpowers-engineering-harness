@@ -723,8 +723,11 @@ def test_cli_benchmark_compare_writes_correctness_report(tmp_path):
         env={"PYTHONPATH": str(REPO / "src")},
     )
     assert result.returncode == 0
+    assert "overall: CORRECTNESS_PRESERVED" in result.stdout
+    assert "experiment: INCONCLUSIVE" in result.stdout
     report = json.loads((tmp_path / ".harness/benchmark-report.json").read_text())
     assert report["overall"] == "CORRECTNESS_PRESERVED"
+    assert report["experiment"]["status"] == "INCONCLUSIVE"
     assert report["acceptance"]["AC16"]["status"] == "INCONCLUSIVE"
 
 
