@@ -194,11 +194,6 @@ def version_scope(harness_dir: Path, discovered: set[str], protected: set[str]):
             allowed.append(contained_path(root, name))
     # FAST protected paths are literal filenames, including `*`/`::`.
     allowed.extend(contained_path(root, name) for name in protected)
-    # Git discovery is fixed before entering the scope; source access to the
-    # resulting finite untracked product files is explicit, not a repo scan.
-    from harness.workspace import _untracked_paths
-
-    allowed.extend(root / name for name in _untracked_paths(root))
     with source_scope(root, allowed=allowed) as observed:
         yield observed
 

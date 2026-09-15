@@ -63,6 +63,29 @@ def test_injected_selector_cannot_read_unregistered_input(harness):
         build_context(harness, selector=ReadingSelector())
 
 
+def test_untracked_product_file_cannot_be_read_as_gate_input(harness, monkeypatch):
+    extra = harness.parent / "extra-policy.yaml"
+    extra.write_text("allow")
+    original = quality_gate.assess_gate
+
+    def read_extra(*args, **kwargs):
+        extra.read_text()
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(quality_gate, "assess_gate", read_extra)
+    with pytest.raises(ContextBuildError, match="CONTEXT_REFERENCE_BROKEN"):
+        generate_context(harness)
+    assert not (harness / "context/current.yaml").exists()
+
+
+def test_untracked_product_file_does_not_block_context_generation(harness):
+    extra = harness.parent / "notes.txt"
+    extra.write_text("local")
+    document = generate_context(harness)
+    assert document["generated_from"]["workspace_hash"]
+    assert (harness / "context/current.yaml").exists()
+
+
 def test_known_missing_canonical_evidence_remains_valid_blocked_projection(harness):
     document = generate_context(harness)
     assert document["control"]["gate"]["status"] == "BLOCKED"

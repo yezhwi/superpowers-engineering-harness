@@ -139,10 +139,12 @@ def _fingerprint(repo_root: Path) -> str:
             *_PRODUCT_EXCLUDE,
         ),
     ]
+    from harness.source_access import _package_open
+
     for name in sorted(_untracked_paths(repo_root)):
-        parts.extend(
-            [name.encode(), hashlib.sha256((repo_root / name).read_bytes()).digest()]
-        )
+        path = repo_root / name
+        with _package_open(path):
+            parts.extend([name.encode(), hashlib.sha256(path.read_bytes()).digest()])
     return "sha256:" + hashlib.sha256(b"\0".join(parts)).hexdigest()
 
 
