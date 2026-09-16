@@ -2,14 +2,15 @@
 
 ## 核对范围与证据等级
 
-- 基线：`main`，HEAD `d6a2438` 加当前未提交实现；不是仅审 HEAD。
+- 基线：`main`，HEAD `5540ca5`。本轮是审查修复后的映射刷新，不是仅审旧 HEAD `d6a2438`。
+- 自 `d6a2438` 起已合入：`1772597` 版本对齐、`eafc69b` SRC-09 untracked Gate 读取、`a45d0fe` benchmark stdout、`d634990` POL-09、`5540ca5` Gate 错误域。
 - 依据：[实施契约](./Superpowers-Engineering-Harness-v0.2.8-Implementation-Contract.md)、[59 项验收案例](./Superpowers-Engineering-Harness-v0.2.8-Contract-Acceptance-Cases.md)。
-- 本轮只做静态映射和文档检查，不改产品代码，不运行全量，不更新 `.harness`。
-- 上轮记录：430 项相关回归通过；本轮不把历史结果标为新执行，也不把“找到测试”标为验收 PASS。
+- 本轮更新映射条目与测试入口；不运行全量，不更新 `.harness`，不把“找到测试”标为验收 PASS。
+- 针对性回归有执行记录（context/read-scope、benchmark CLI、POL-09、Gate 错误域），不是全仓签收。
 - `映射`：找到直接实现与对应测试；仍待正式执行/独立复核。
 - `部分`：只有子场景或间接证据，不能据此关闭整项。
 - `缺口`：未找到条款要求的机制或专属测试，不代表已复现运行时 bug。
-- 全部 59 项均保持未签收。缺真实实验数据时 Experiment 为 INCONCLUSIVE，不能替代待实现的 comparator 功能。
+- 全部 59 项均保持未签收。缺真实实验数据时 Experiment 为 INCONCLUSIVE，不能替代现场效率证明。
 
 ## 核对计划与进度
 
@@ -34,7 +35,7 @@
 
 测试入口用 `简称::函数名` 表示，均需连同参数化值阅读。Context 实现位于 `src/harness/context/`。
 
-静态检查结果：59 个唯一案例 ID 与冻结清单一致；28 项映射、23 项部分、8 项缺口。78 处简称测试引用通过 AST 函数存在性检查；这不是测试执行结果。
+静态检查结果：59 个唯一案例 ID 与冻结清单一致；31 项映射、25 项部分、0 项缺口、3 项已实现（MET-10/11/12，语义同映射，待独立复核）。这不是测试执行结果，也不是 Product Done。
 
 ## 1. Source manifest 与 freshness
 
@@ -48,7 +49,7 @@
 | SRC-06 | 部分 | `freshness.py`；I::test_derived_context_and_telemetry_do_not_self_stale；I::test_temporary_artifact_write_does_not_stale_context | Context 忽略 telemetry/staging/history 有直接证据；product evidence 不受这些更新影响需联合断言。 |
 | SRC-07 | 部分 | `freshness.py`；`tests/test_evidence_freshness_and_path_binding.py::test_requirement_verify_does_not_stale_product_evidence` | 补同一次 requirement verify 同时断言旧 Context STALE、product evidence 不 stale。 |
 | SRC-08 | 部分 | `freshness.py`、`source.py`；I::test_directory_membership_and_optional_presence_are_freshness_inputs；B::test_fast_missing_contract_is_empty_but_not_created | optional 源出现/消失双向参数尚不齐。 |
-| SRC-09 | 缺口 | `freshness.py::ROOT_FILES`、`ARTIFACT_DIRS` 为静态登记 | [SRC-09 审计](./Superpowers-Engineering-Harness-v0.2.8-SRC09-Audit.md)已补显式 RED 探针：未登记读取仍可发布；另复现 FAST risk.user_changes.paths 的 ignored 文件漏登记。具体 FAST 路径漏项已修复并有 10 项正常回归；未知读取机制仍有 2 个 RED 探针，SRC-09 不关闭。 |
+| SRC-09 | 部分 | `read_scope.py`、`workspace.py::_fingerprint`；`tests/test_context_read_scope.py::test_untracked_product_file_cannot_be_read_as_gate_input`；`test_untracked_product_file_does_not_block_context_generation` | `eafc69b`：仓库根 untracked 产品文件不再预授权给 Gate；未登记 `read_text` 拒绝发布。workspace fingerprint 经 `_package_open` 哈希，不开放给 Gate。原生 `exists`/`stat` 审计仍按设计不拦截；`file_version` 仍有原生 Path。不关闭 SRC-09。 |
 | SRC-10 | 部分 | `store.py`、`evidence.py`；I::test_derived_context_and_telemetry_do_not_self_stale | generated_at 在 sidecar，不进 Context hash；补受控变更时间戳的直接等值测试。 |
 
 ## 2. Policy 与 expansion
@@ -63,7 +64,7 @@
 | POL-06 | 映射 | `escalation.py`；A::test_finding_auto_expansion_is_fresh_and_deduplicated；A::test_accepted_decision_outside_scope_expands_once；R::test_failed_tests_outside_working_set_expand_once | 三类均有重复测试；独立审计指纹是否只绑定判定输入及是否受自身写入影响。 |
 | POL-07 | 映射 | `cli.py`、`escalation.py`；E::test_cli_does_not_accept_unknown_or_core_only_reports；E::test_blank_reason_fails_without_writes；E::test_expansion_publication_failure_restores_event_and_budget | 等待独立复核。 |
 | POL-08 | 部分 | `escalation.py`、`integrity.py`；E::test_new_task_does_not_inherit_old_expansion | 已测旧 expansion 不继承；补旧 current 对新 task 的 CLI validate 拒绝断言。 |
-| POL-09 | 映射 | `escalation.py`、`store.py`；A::test_invalid_integrity_never_records_automatic_expansion；A/R 的上述触发测试 | Integrity 失败以拒绝生成覆盖，不要求写 escalation 事件。 |
+| POL-09 | 映射 | `escalation.py::FAIL_CLOSED_TRIGGERS`、`store.py`；A::test_context_integrity_unproven_rejects_compact_without_expansion；E::test_cli_does_not_accept_unknown_or_core_only_reports；A/R 其余自动 trigger | `CONTEXT_INTEGRITY_UNPROVEN` 不进入 AUTOMATIC/REPORTED；compact 与 CLI `--compact` 失败且不写 expansions。等待独立复核。 |
 | POL-10 | 映射 | `escalation.py::REPORTED_TRIGGERS`；E::test_reported_expansion_changes_policy_not_risk_or_authority | 五枚举参数化。 |
 
 ## 3. 分类与兼容
@@ -76,7 +77,7 @@
 | CMP-04 | 映射 | `source.py`、`schemas/task.schema.json`、`telemetry.py`；B::test_classified_old_task_loads_without_new_budget_fields；U::test_unreported_usage_is_null | 等待独立复核。 |
 | CMP-05 | 映射 | `source.py`；B::test_fast_missing_contract_is_empty_but_not_created；B::test_existing_invalid_fast_contract_is_not_treated_as_empty | 等待独立复核。 |
 | CMP-06 | 映射 | `source.py`；B::test_non_fast_missing_contract_fails_closed | Q2/Q3 × 两份 contract 参数。 |
-| CMP-07 | 部分 | `harness_status.py`、`quality_gate.py`、`evidence_validator.py`；`tests/test_status_projection.py`、`tests/test_quality_gate.py`、`tests/test_evidence_validator.py` | 上轮相关回归有执行记录；仍需独立审查是否引入额外 ceremony。 |
+| CMP-07 | 部分 | `harness_status.py`、`quality_gate.py`、`evidence_validator.py`；`tests/test_status_projection.py`、`tests/test_quality_gate.py`、`tests/test_evidence_validator.py` | `5540ca5`：schema-resource `ContextBuildError` 映射为 `InvalidHarnessState`；`harness gate` stderr 为 `INVALID_HARNESS_STATE`。仍需独立审查是否引入额外 ceremony。 |
 
 ## 4. Control Core、候选集与引用
 
@@ -117,9 +118,9 @@
 | MET-04 | 映射 | `telemetry.py`；U::test_invalid_usage_leaves_telemetry_unchanged | 参数化类型、范围、来源与合计检查。 |
 | MET-05 | 映射 | `telemetry.py`、`task_replacement.py`；U::test_wrong_task_is_rejected_and_new_task_does_not_inherit | 等待独立复核。 |
 | MET-06 | 映射 | `telemetry_lock.py`、`task_replacement.py`；U::test_report_and_local_update_serialize_read_modify_write；U::test_queued_report_rechecks_identity_after_directory_replacement | 等待独立复核。 |
-| MET-07 | 缺口 | `src/harness/benchmark.py::compare_benchmarks` 仍是历史 correctness/metrics 比较 | 缺 usage 时的新 v0.2.8 总判定及测试尚无；历史 INCONCLUSIVE 不等价。 |
-| MET-08 | 缺口 | `src/harness/benchmark.py` | 缺已知 Integrity/correctness 失败优先的新总判定和负例。 |
-| MET-09 | 缺口 | `src/harness/benchmark.py` | 缺新报告 integrity/correctness/metrics 完备性规则及测试。 |
+| MET-07 | 映射 | `benchmark.py::_experiment_verdict`、`controlplane.py::cmd_benchmark_compare`；`tests/test_benchmark.py::test_cli_benchmark_compare_writes_correctness_report` | 缺 usage 时 `experiment=INCONCLUSIVE`；stdout 分列 `overall:` 与 `experiment:`。历史 `overall` 仍可 `CORRECTNESS_PRESERVED`。等待独立复核。 |
+| MET-08 | 映射 | `benchmark.py::_experiment_verdict`；`tests/test_benchmark.py::test_experiment_failure_overrides_missing_usage_metrics`；`test_experiment_integrity_failure_overrides_estimated_usage` | 已知 Integrity/correctness 失败 → `experiment=FAIL`，不被缺 usage 或 estimated 抵消。等待独立复核。 |
+| MET-09 | 映射 | `benchmark.py::_experiment_verdict`；`tests/test_benchmark.py` 缺 usage / 单 run / 非有限 elapsed 等 INCONCLUSIVE 用例 | 无已知失败但必要证据缺失 → INCONCLUSIVE；禁止 null→0。等待独立复核。 |
 | MET-10 | 已实现 | `src/harness/benchmark.py`, `tests/test_benchmark.py` | 全部尝试 token / 成功数；100+900/1=1000 测试。 |
 | MET-11 | 已实现 | `src/harness/benchmark.py`, `tests/test_benchmark.py` | 空/未知/零成功纯计算与 report 聚合零成功均为 INCONCLUSIVE。 |
 | MET-12 | 已实现 | `src/harness/benchmark.py`, `tests/test_benchmark.py` | required correctness regression 优先于缺 usage/estimated/token 降幅，experiment=FAIL。历史 AC16–20 保持分列。 |
@@ -129,17 +130,18 @@
 
 1. **§14/§19 SKILL 路由已补**：根 `SKILL.md` 与 `skills/engineering-harness/SKILL.md` 对活跃已分类 mutating task 优先 compact，不再默认 status/全量读取；保留 Q0、CREATED/缺失风险先 classify、禁止手改 state、Integrity 失败不回退、Layer 2 按需读取。新增 `tests/test_context_skill_routing.py`，与既有文档测试合计 29 项通过。此为静态路由验证，外部 Agent 行为测试及独立复核未做。
 2. **§13 接口**：`telemetry.py` 已有 `AgentUsage`/`UsageProvider` 和 `report_provider_usage` 注入测试；benchmark artifact 已复用 `normalize_usage`。
-3. **§9.2 SRC-09**：后续审计已复现未知读取保护缺失，以及当前 FAST 的 risk.user_changes.paths 间接 ignored 文件漏项；见 [SRC-09 审计](./Superpowers-Engineering-Harness-v0.2.8-SRC09-Audit.md)。具体漏项修复后探针 2 RED、2 GREEN，相关回归 447 passed；未知读取机制仍待设计，不代表已证明 Gate 绕过。
+3. **§9.2 SRC-09**：`eafc69b` 已拒绝仓库根 untracked 产品文件作为未登记 Gate 输入；`.harness/` 内 extra-policy 负例仍在。原生 `exists`/`stat` 不在 open audit 范围内，SRC-09 保持部分。见 [SRC-09 审计](./Superpowers-Engineering-Harness-v0.2.8-SRC09-Audit.md)。
 4. **§16 集成/属性测试**：已新增真实 CLI classify → compact → requirement 修改 → validate STALE → regenerate → Context Evidence/reload 的端到端路径。非 requirement 控制记录的随机子集属性测试仍待补。
 5. **§19 文档**：双语 README 已介绍 Context/expansion；愿景规格第 10 行已有实施契约链接。CLI 的完整帮助/错误码验收尚待逐项签收。
 6. **快照边界**：README 已说明异常回滚不等于进程强杀恢复。独立复核 §9.3/§12 对“最近成功完整快照”的要求是否接受该边界；未经批准不得把更强保证自动延期。
+7. **§19 版本**：`pyproject.toml` / `package.json` / README H1 / CHANGELOG `## 0.2.8` 已对齐（`1772597`）。
+8. **Gate 错误域**：产品 Gate 将 schema/source 的 `CONTEXT_*` 收为 `InvalidHarnessState`（`5540ca5`）；Context 未登记读取仍为 `CONTEXT_REFERENCE_BROKEN`。
 
 ## 8. 后续建议顺序
 
-1. SKILL 路由及静态测试已补；保留 Step 7 的独立复核与 CLI help 完整验收，不视为整个版本签收。
-2. 独立审计 SRC-09、expansion 判定指纹/事件依据与异常回滚；必要时建立可复现负例，不凭报告猜测直接修复。
-3. 实现 §15 Benchmark 独立 v0.2.8 判定与 tokens_per_success；保留历史 AC，不虚构真实实验结果。
-4. 补上表“部分”项的专属测试，以及非 requirement 控制记录的随机子集属性测试。
-5. 授权后跑全量，逐项更新为实际执行证据；独立复审完成前不声称 Product Done / Gate CONVERGED。
+1. 正式审查列出的发版阻塞 Spec 项（版本、SRC-09 untracked Gate 读取、benchmark stdout、POL-09、Gate 错误域）已合入 `5540ca5`；仍须独立复核，不视为 Product Done。
+2. SRC-09 剩余：原生 `exists`/`stat` 与 `file_version` 原生 Path；按设计不扩沙箱，除非契约改威胁模型。
+3. 补上表“部分”项的专属测试，以及非 requirement 控制记录的随机子集属性测试。
+4. 授权后跑全量，逐项更新为实际执行证据；独立复审完成前不声称 Product Done / Gate CONVERGED，不打 `v0.2.8` tag。
 
 本报告是覆盖盘点，不是正式代码审查结论，不是新产品 evidence，也不授权提交或推进现有无关任务。
