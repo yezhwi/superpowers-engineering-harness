@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 import yaml
 
-from harness.collect_evidence import main
+from harness.collect_evidence import bind_covered_tests, command_covers_test, main
 from harness.evidence_validator import EvidenceValidationError, validate_evidence
 from harness.test_plan import validate_test_coverage
 from harness.workspace import control_plane_fingerprint, snapshot
@@ -95,6 +95,84 @@ def test_frontend_cwd_vitest_selector_binds_repo_root_test_plan_path():
         ["src/__tests__/foo.spec.ts"],
     )
     assert issues == []
+
+
+def _frontend_vitest_package(root: Path, *, script: str = "vitest run") -> Path:
+    frontend = root / "agents-frontend"
+    spec = frontend / "src" / "__tests__" / "a.spec.ts"
+    spec.parent.mkdir(parents=True, exist_ok=True)
+    spec.write_text("test('a', () => {})\n")
+    (frontend / "package.json").write_text(
+        json.dumps({"scripts": {"test:unit": script, "unrelated": "eslint ."}})
+    )
+    return spec
+
+
+def test_npm_run_vitest_script_covers_repo_root_plan_path(tmp_path):
+    """Break caught: npm run test:unit -- --run is ignored, forcing npx vitest."""
+    _frontend_vitest_package(tmp_path)
+    command = (
+        "sh -lc 'cd agents-frontend && npm run test:unit -- "
+        "--run src/__tests__/a.spec.ts'"
+    )
+    node_id = "agents-frontend/src/__tests__/a.spec.ts"
+    assert command_covers_test(command, node_id, tmp_path)
+    bound = bind_covered_tests((node_id,), command, tmp_path)
+    assert bound == (node_id,)
+
+
+def test_npm_run_unrelated_script_does_not_cover_test(tmp_path):
+    """Break caught: extra --run args on a non-Vitest npm script count as coverage."""
+    _frontend_vitest_package(tmp_path)
+    command = (
+        "sh -lc 'cd agents-frontend && npm run unrelated -- "
+        "--run src/__tests__/a.spec.ts'"
+    )
+    assert not command_covers_test(
+        command, "agents-frontend/src/__tests__/a.spec.ts", tmp_path
+    )
+    bound = bind_covered_tests(
+        ("agents-frontend/src/__tests__/a.spec.ts",), command, tmp_path
+    )
+    assert isinstance(bound, str)
+    assert bound.startswith("TEST_RUNNER_UNRESOLVED")
+    assert "unrelated" in bound
+    assert "agents-frontend/package.json" in bound
+
+
+def test_npm_run_missing_package_json_is_unresolved(tmp_path):
+    frontend = tmp_path / "agents-frontend"
+    spec = frontend / "src" / "__tests__" / "a.spec.ts"
+    spec.parent.mkdir(parents=True)
+    spec.write_text("ok\n")
+    command = (
+        "sh -lc 'cd agents-frontend && npm run test:unit -- "
+        "--run src/__tests__/a.spec.ts'"
+    )
+    bound = bind_covered_tests(
+        ("agents-frontend/src/__tests__/a.spec.ts",), command, tmp_path
+    )
+    assert isinstance(bound, str)
+    assert bound.startswith("TEST_RUNNER_UNRESOLVED")
+    assert "test:unit" in bound
+    assert "agents-frontend/package.json" in bound
+
+
+def test_collect_npm_run_vitest_stores_canonical_path(tmp_path, monkeypatch):
+    _frontend_vitest_package(tmp_path)
+    code = collect_related(
+        tmp_path,
+        monkeypatch,
+        covered_test="src/__tests__/a.spec.ts",
+        command=(
+            "sh -lc 'cd agents-frontend && npm run test:unit -- "
+            "--run src/__tests__/a.spec.ts'"
+        ),
+        create_files=("agents-frontend/src/__tests__/a.spec.ts",),
+    )
+    assert code == 0
+    evidence = json.loads((tmp_path / ".harness/evidence/unit-test.json").read_text())
+    assert evidence["covered_tests"] == ["agents-frontend/src/__tests__/a.spec.ts"]
 
 
 def test_coverage_rejects_unexecuted_selector_even_when_path_suffix_matches():

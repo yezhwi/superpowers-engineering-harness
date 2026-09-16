@@ -283,9 +283,13 @@ harness evidence run --type unit_test --scope related \
 harness evidence run --type unit_test --scope related \
   --covered-test agents-frontend/src/__tests__/foo.spec.ts \
   --command "sh -lc 'cd agents-frontend && npx vitest run src/__tests__/foo.spec.ts'"
+
+harness evidence run --type unit_test --scope related \
+  --covered-test agents-frontend/src/__tests__/foo.spec.ts \
+  --command "sh -lc 'cd agents-frontend && npm run test:unit -- --run src/__tests__/foo.spec.ts'"
 ```
 
-The same test run from repo root or the subproject directory stores the same canonical covered-test path. Collection rejects a canonical path that does not exist, escapes the repository, uses an invalid relative `cd`, or was not selected by the command (`COVERED_TEST_NOT_EXECUTED`, `COVERED_TEST_PATH_INVALID`). Older evidence that stored a cwd-relative selector still binds; the next collection migrates it to the canonical path.
+The same test run from repo root or the subproject directory stores the same canonical covered-test path. Collection rejects a canonical path that does not exist, escapes the repository, uses an invalid relative `cd`, or was not selected by the command (`COVERED_TEST_NOT_EXECUTED`, `COVERED_TEST_PATH_INVALID`). `npm run <script>` is accepted only when the cwd `package.json` script statically runs pytest or `vitest run`; otherwise collection fails with `TEST_RUNNER_UNRESOLVED`. Older evidence that stored a cwd-relative selector still binds; the next collection migrates it to the canonical path.
 
 ### Adaptive operations
 

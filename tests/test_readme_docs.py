@@ -41,6 +41,8 @@ def test_readmes_document_product_freshness_and_canonical_covered_tests():
         assert "control-plane fingerprint" in text
         assert "COVERED_TEST_NOT_EXECUTED" in text
         assert "COVERED_TEST_PATH_INVALID" in text
+        assert "TEST_RUNNER_UNRESOLVED" in text
+        assert "npm run test:unit" in text
         assert "backend/tests/foo.py" in text
         assert "EVIDENCE_WORKSPACE_STALE" in text
 

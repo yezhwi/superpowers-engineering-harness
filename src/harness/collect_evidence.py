@@ -84,6 +84,7 @@ def runtime_metadata() -> dict[str, str]:
     }
 
 
+
 def workspace_fingerprint(repo_root: Path | None = None) -> str:
     """Compatibility wrapper for shared workspace snapshot fingerprint."""
     return snapshot(repo_root).fingerprint
@@ -221,7 +222,63 @@ def _selector_start(tokens: list[str], index: int) -> int | None:
         return index + 3
     if token == "npx" and tokens[index + 1 : index + 3] == ["vitest", "run"]:
         return index + 3
+    if Path(token).name == "vitest" and tokens[index + 1 : index + 2] == ["run"]:
+        return index + 2
     return None
+
+
+def _npm_unresolved(script: str, package_json: str) -> str:
+    return f"TEST_RUNNER_UNRESOLVED: script {script!r} package.json {package_json!r}"
+
+
+def _package_json_ref(cwd: Path, repo_root: Path) -> str:
+    package = cwd / "package.json"
+    relative = _relative_to_repo(Path(os.path.normpath(str(package))), repo_root.resolve())
+    return relative if relative else "package.json"
+
+
+def _load_npm_script(cwd: Path, name: str) -> str | None:
+    package = cwd / "package.json"
+    if not package.is_file():
+        return None
+    try:
+        document = json.loads(package.read_text())
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return None
+    scripts = document.get("scripts")
+    if not isinstance(scripts, dict):
+        return None
+    value = scripts.get(name)
+    return value if isinstance(value, str) and value.strip() else None
+
+
+def _npm_run_span(tokens: list[str], index: int) -> tuple[str, int, int] | None:
+    if Path(tokens[index]).name not in {"npm", "npm.cmd"}:
+        return None
+    if tokens[index + 1 : index + 2] != ["run"]:
+        return None
+    if (
+        index + 2 >= len(tokens)
+        or tokens[index + 2] in _SHELL_SEP
+        or tokens[index + 2].startswith("-")
+    ):
+        return None
+    name = tokens[index + 2]
+    cursor = index + 3
+    if cursor < len(tokens) and tokens[cursor] == "--":
+        cursor += 1
+    extra_start = cursor
+    while cursor < len(tokens) and tokens[cursor] not in _SHELL_SEP:
+        cursor += 1
+    return name, extra_start, cursor
+
+
+def _script_has_allowed_runner(script: str) -> bool:
+    try:
+        tokens = shlex.split(script)
+    except ValueError:
+        return False
+    return any(_selector_start(tokens, index) is not None for index in range(len(tokens)))
 
 
 def _is_selector_token(value: str) -> bool:
@@ -241,13 +298,28 @@ def _selectors_from(tokens: list[str], start: int) -> tuple[str, ...]:
     )
 
 
-def iter_test_invocations(command: str, cwd: Path):
+def iter_test_invocations(
+    command: str,
+    cwd: Path,
+    repo_root: Path | None = None,
+    unresolved: list[str] | None = None,
+):
     """Yield `(cwd, selectors)` for each pytest/Vitest invocation in `command`."""
     try:
         tokens = shlex.split(command)
     except ValueError:
         return
-    current = cwd
+    yield from _iter_test_tokens(
+        tokens, cwd, _repo_root(repo_root if repo_root is not None else cwd), unresolved
+    )
+
+
+def _iter_test_tokens(
+    tokens: list[str],
+    current: Path,
+    repo_root: Path,
+    unresolved: list[str] | None,
+):
     index = 0
     while index < len(tokens):
         token = tokens[index]
@@ -259,7 +331,11 @@ def iter_test_invocations(command: str, cwd: Path):
             and tokens[index + 1 : index + 2] == ["-lc"]
             and index + 2 < len(tokens)
         ):
-            yield from iter_test_invocations(tokens[index + 2], current)
+            try:
+                nested = shlex.split(tokens[index + 2])
+            except ValueError:
+                nested = []
+            yield from _iter_test_tokens(nested, current, repo_root, unresolved)
             index += 3
             continue
         if token == "cd" and index + 1 < len(tokens) and tokens[index + 1] not in _SHELL_SEP:
@@ -271,6 +347,38 @@ def iter_test_invocations(command: str, cwd: Path):
             )
             current = Path(os.path.normpath(str(current)))
             index += 2
+            continue
+        if Path(token).name in {"npm", "npm.cmd"} and tokens[index + 1 : index + 2] == [
+            "run"
+        ]:
+            parsed = _npm_run_span(tokens, index)
+            package_ref = _package_json_ref(current, repo_root)
+            if parsed is None:
+                if unresolved is not None:
+                    unresolved.append(_npm_unresolved("run", package_ref))
+                index += 1
+                continue
+            name, extra_start, consumed = parsed
+            script = _load_npm_script(current, name)
+            if script is None or not _script_has_allowed_runner(script):
+                if unresolved is not None:
+                    unresolved.append(_npm_unresolved(name, package_ref))
+                index = consumed
+                continue
+            try:
+                script_tokens = shlex.split(script)
+            except ValueError:
+                if unresolved is not None:
+                    unresolved.append(_npm_unresolved(name, package_ref))
+                index = consumed
+                continue
+            yield from _iter_test_tokens(
+                script_tokens + tokens[extra_start:consumed],
+                current,
+                repo_root,
+                unresolved,
+            )
+            index = consumed
             continue
         start = _selector_start(tokens, index)
         if start is not None:
@@ -365,7 +473,14 @@ def bind_covered_tests(
 ) -> tuple[str, ...] | str:
     """Canonicalize covered tests or return a fail-closed error code."""
     repo_root = _repo_root(repo_root)
-    invocations = list(iter_test_invocations(command, repo_root))
+    unresolved: list[str] = []
+    invocations = list(
+        iter_test_invocations(
+            command, repo_root, repo_root=repo_root, unresolved=unresolved
+        )
+    )
+    if unresolved:
+        return unresolved[0]
     for cwd, _selectors in invocations:
         if _local_cwd_missing(cwd, repo_root):
             return "COVERED_TEST_PATH_INVALID"

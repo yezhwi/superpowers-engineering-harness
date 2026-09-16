@@ -39,7 +39,9 @@ that is by design; never re-run until green to hide a failure.
 
 For related unit tests, pass `--covered-test` as the repository-root path even
 when the command `cd`s into a subproject. Harness canonicalizes pytest/Vitest
-selectors (including `sh -lc 'cd ... && ...'`) to that root-relative path:
+selectors (including `sh -lc 'cd ... && ...'`, `npx vitest run`, and
+`npm run <script> --` when the package script is pytest or `vitest run`)
+to that root-relative path:
 
 ```bash
 harness evidence run --type unit_test --scope related \
@@ -49,7 +51,9 @@ harness evidence run --type unit_test --scope related \
 
 Missing files, paths outside the repository, invalid relative `cd`, and
 selectors the command did not run fail with `COVERED_TEST_NOT_EXECUTED` or
-`COVERED_TEST_PATH_INVALID`. Do not change cwd just to satisfy string matching.
+`COVERED_TEST_PATH_INVALID`. An `npm run` script that cannot be resolved to
+pytest/`vitest run` fails with `TEST_RUNNER_UNRESOLVED`. Do not change cwd
+just to satisfy string matching.
 
 ## Hard Boundaries (不得违反)
 

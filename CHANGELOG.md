@@ -6,6 +6,7 @@
 - Add task-bound cumulative host usage reporting with validated token and agent counters. Local telemetry updates preserve reported usage; missing host measurements remain null.
 - Extend Benchmark artifacts with usage and multi-run statistics, including `tokens_per_success`, median/P90 token reporting, and agent tool/search/file-read counters. Missing data remains `INCONCLUSIVE`; estimated usage is low-confidence; known correctness or integrity failures override efficiency claims.
 - Add controlled source-access, schema-resource, workspace, and telemetry-lock boundaries with regression coverage.
+- Resolve `npm run <script> --` Vitest selectors from the package script at the command cwd; unresolvable or non-Vitest scripts fail closed with `TEST_RUNNER_UNRESOLVED`.
 
 ### Install
 
