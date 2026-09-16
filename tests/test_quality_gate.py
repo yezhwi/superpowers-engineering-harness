@@ -198,6 +198,37 @@ def test_gate_rejects_invalid_configuration_value(tmp_path):
         run_gate(h)
 
 
+def test_schema_resource_failure_stays_in_gate_error_domain(tmp_path):
+    from harness.context.model import ContextBuildError
+    from harness.quality_gate import InvalidHarnessState, validate_schema
+
+    h = make_harness(tmp_path)
+    with pytest.raises(InvalidHarnessState, match="cannot load") as caught:
+        validate_schema({}, "unknown.schema.json", h / "gate.yaml")
+    assert not isinstance(caught.value, ContextBuildError)
+
+
+def test_gate_cli_maps_context_source_errors_to_invalid_harness_state(
+    tmp_path, monkeypatch, capsys
+):
+    from harness import controlplane, schema_resources
+    from harness.context.model import ContextBuildError
+
+    make_harness(tmp_path)
+    monkeypatch.chdir(tmp_path)
+
+    def boom(name):
+        raise ContextBuildError(
+            "CONTEXT_REFERENCE_BROKEN", "unregistered schema resource"
+        )
+
+    monkeypatch.setattr(schema_resources, "read_schema", boom)
+    assert controlplane.cmd_gate() == 2
+    captured = capsys.readouterr()
+    assert "INVALID_HARNESS_STATE" in captured.err
+    assert captured.out == ""
+
+
 def test_task_schema_rejects_incompatible_risk_level_and_profile(tmp_path):
     from harness.quality_gate import InvalidHarnessState, validate_schema
 

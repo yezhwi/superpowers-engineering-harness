@@ -262,7 +262,7 @@ def cmd_transition(target: str) -> int:
     if current == "CONVERGED" and target == "DONE":
         try:
             status, _ = quality_gate.run_gate(harness_dir, allow_converged=True)
-        except quality_gate.InvalidHarnessState as exc:
+        except quality_gate.gate_command_errors() as exc:
             print(f"INVALID_HARNESS_STATE: {exc}", file=sys.stderr)
             return 2
         if status != "PASS":
@@ -443,7 +443,7 @@ def cmd_review_outcome(outcome: str, reason_code: str, finding_ids: list[str]) -
                     quality_gate._load_yaml(path), schema, path
                 )
             status, blockers = quality_gate.run_gate(harness_dir, allow_preflight=True)
-        except quality_gate.InvalidHarnessState as exc:
+        except quality_gate.gate_command_errors() as exc:
             print(f"GATE_PREFLIGHT_INVALID: {exc}", file=sys.stderr)
             return 2
         if status != "PASS":
@@ -872,7 +872,7 @@ def _cmd_gate_convergence() -> int:
 
     try:
         assessment = quality_gate.assess_gate(harness_dir)
-    except quality_gate.InvalidHarnessState as exc:
+    except quality_gate.gate_command_errors() as exc:
         print(f"INVALID_HARNESS_STATE: {exc}", file=sys.stderr)
         return 2
 
@@ -962,7 +962,7 @@ def gate_pass(harness_dir: Path) -> bool:
     head = quality_gate.git_head()
     try:
         status, _ = quality_gate.run_gate(harness_dir, head=head)
-    except quality_gate.InvalidHarnessState:
+    except quality_gate.gate_command_errors():
         return False
     return status == "PASS"
 

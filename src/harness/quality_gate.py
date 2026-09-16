@@ -64,14 +64,22 @@ from importlib import resources
 SCHEMAS_DIR = resources.files("harness").joinpath("schemas")
 
 
+def gate_command_errors() -> tuple[type[BaseException], ...]:
+    from harness.context.model import ContextBuildError
+
+    return (InvalidHarnessState, ContextBuildError)
+
+
 def validate_schema(document: object, schema_name: str, source: Path) -> None:
     """Fail closed when any persisted harness document violates its schema."""
+    from harness.context.model import ContextBuildError
+
     schema_path = SCHEMAS_DIR / schema_name
     try:
         from .schema_resources import read_schema
 
         schema = read_schema(schema_name)
-    except (OSError, json.JSONDecodeError) as exc:
+    except (OSError, json.JSONDecodeError, ContextBuildError) as exc:
         raise InvalidHarnessState(f"cannot load {schema_path}: {exc}") from exc
     try:
         validate(document, schema)
