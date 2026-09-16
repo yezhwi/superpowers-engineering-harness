@@ -2,11 +2,11 @@
 
 ## 核对范围与证据等级
 
-- 基线：`main`，HEAD `5540ca5`。本轮是审查修复后的映射刷新，不是仅审旧 HEAD `d6a2438`。
+- 基线代码：`5540ca5`。映射文档刷新于 `be2e21b`。本轮补记 Product Done 测试包执行结果，不是仅审旧 HEAD `d6a2438`。
 - 自 `d6a2438` 起已合入：`1772597` 版本对齐、`eafc69b` SRC-09 untracked Gate 读取、`a45d0fe` benchmark stdout、`d634990` POL-09、`5540ca5` Gate 错误域。
 - 依据：[实施契约](./Superpowers-Engineering-Harness-v0.2.8-Implementation-Contract.md)、[59 项验收案例](./Superpowers-Engineering-Harness-v0.2.8-Contract-Acceptance-Cases.md)。
-- 本轮更新映射条目与测试入口；不运行全量，不更新 `.harness`，不把“找到测试”标为验收 PASS。
-- 针对性回归有执行记录（context/read-scope、benchmark CLI、POL-09、Gate 错误域），不是全仓签收。
+- 映射状态与执行证据分开：找到测试 ≠ 本轮跑过 ≠ 验收 PASS。
+- 未运行全仓 `pytest`，不更新 `.harness`。
 - `映射`：找到直接实现与对应测试；仍待正式执行/独立复核。
 - `部分`：只有子场景或间接证据，不能据此关闭整项。
 - `缺口`：未找到条款要求的机制或专属测试，不代表已复现运行时 bug。
@@ -18,7 +18,8 @@
 - [x] 为 59 项建立实现/测试入口，区分直接映射与未覆盖子场景。
 - [x] 记录清单之外的契约缺口及后续顺序。
 - [ ] 独立复核逐项断言和错误码；不是本轮已完成内容。
-- [ ] 补齐缺口后运行授权范围内验证，收集可追溯执行结果。
+- [x] 在 `be2e21b` 运行 Product Done 相关测试包并记录结果（见 §执行记录）。
+- [ ] 全仓 `pytest`；授权后另记。
 
 下表文件简称：
 
@@ -137,11 +138,24 @@
 7. **§19 版本**：`pyproject.toml` / `package.json` / README H1 / CHANGELOG `## 0.2.8` 已对齐（`1772597`）。
 8. **Gate 错误域**：产品 Gate 将 schema/source 的 `CONTEXT_*` 收为 `InvalidHarnessState`（`5540ca5`）；Context 未登记读取仍为 `CONTEXT_REFERENCE_BROKEN`。
 
-## 8. 后续建议顺序
+## 8. 执行记录
 
-1. 正式审查列出的发版阻塞 Spec 项（版本、SRC-09 untracked Gate 读取、benchmark stdout、POL-09、Gate 错误域）已合入 `5540ca5`；仍须独立复核，不视为 Product Done。
+日期：2026-09-16。工作树：`be2e21b`（代码基线 `5540ca5` + 本映射文档）。命令与结果：
+
+| 命令 | 结果 |
+|---|---|
+| `python -m pytest tests/test_version_consistency.py tests/test_readme_docs.py tests/test_telemetry_usage.py tests/test_benchmark.py -q --tb=line` | **136 passed** in 13.29s |
+| `python -m pytest tests/test_quality_gate.py tests/test_context_*.py tests/test_context_skill_routing.py -q --tb=line` | **308 passed** in 539.77s |
+
+合计 **444 passed，0 failed**。覆盖版本一致性、README、usage、benchmark、quality_gate、全部 `test_context_*.py` 与 skill routing。
+
+这不是全仓 `pytest`，不是 59 项签收，不是 Product Done，也不证明 Experiment 效率。缺真实宿主 usage 时 Experiment 仍为 `INCONCLUSIVE`。
+
+## 9. 后续建议顺序
+
+1. 正式审查列出的发版阻塞 Spec 项已合入 `5540ca5`，Product Done 测试包已在 `be2e21b` 绿；仍须独立复核，不视为 Product Done。
 2. SRC-09 剩余：原生 `exists`/`stat` 与 `file_version` 原生 Path；按设计不扩沙箱，除非契约改威胁模型。
 3. 补上表“部分”项的专属测试，以及非 requirement 控制记录的随机子集属性测试。
-4. 授权后跑全量，逐项更新为实际执行证据；独立复审完成前不声称 Product Done / Gate CONVERGED，不打 `v0.2.8` tag。
+4. 授权后跑全仓 `pytest`；独立复审完成前不声称 Product Done / Gate CONVERGED，不打 `v0.2.8` tag。
 
 本报告是覆盖盘点，不是正式代码审查结论，不是新产品 evidence，也不授权提交或推进现有无关任务。
