@@ -530,7 +530,7 @@ def cmd_review_complexity(source: Path, base_ref: str | None = None) -> int:
                 _impact()[1]["impact"],
                 inspected_paths=workspace.observability_inspected_paths(Path(".harness")),
             )
-            scope = replace(scope, files=files)
+            scope = replace(scope, files=files, contract_refs=expected_refs)
         claimed_scope = review.get("review_scope")
         if claimed_scope is not None:
             claimed_files, claimed_refs = workspace.claimed_scope_sets(claimed_scope)

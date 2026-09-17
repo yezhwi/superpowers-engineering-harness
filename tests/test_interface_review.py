@@ -67,6 +67,12 @@ def test_interface_review_proposal_publishes_interface_finding(tmp_path):
     result = cli(tmp_path, "review", "interface", "--file", str(source))
 
     assert result.returncode == 0, result.stderr
+    import json
+
+    record = json.loads(
+        (tmp_path / ".harness" / "evidence" / "interface-review.json").read_text()
+    )
+    assert "contract_refs" in record["review_scope"]
     finding = yaml.safe_load(
         (tmp_path / ".harness" / "findings" / "FND-001.yaml").read_text()
     )

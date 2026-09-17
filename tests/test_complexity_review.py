@@ -107,6 +107,30 @@ def test_write_complexity_review_persists_findings_and_metadata(tmp_path):
     assert metadata["finding_ids"] == ["CPLX-001"]
 
 
+def test_write_complexity_review_persists_contract_refs(tmp_path):
+    from harness.workspace import ReviewScope, WorkspaceSnapshot
+
+    harness_dir = tmp_path / ".harness"
+    scope = ReviewScope(
+        base_ref="HEAD",
+        base_commit="a" * 40,
+        head_commit="b" * 40,
+        workspace=WorkspaceSnapshot(
+            head="b" * 40, fingerprint="sha256:" + "c" * 64, changed_paths=()
+        ),
+        files=("src/a.py",),
+        contract_refs=("DEC-001:orders",),
+    )
+    write_complexity_review(
+        harness_dir,
+        {"task": "TASK-004", "checks": audit_checks(), "findings": []},
+        scope,
+    )
+    metadata = json.loads((harness_dir / "evidence/complexity-review.json").read_text())
+    assert metadata["review_scope"]["files"] == ["src/a.py"]
+    assert metadata["review_scope"]["contract_refs"] == ["DEC-001:orders"]
+
+
 def test_complexity_review_validation_failure_leaves_no_canonical_artifacts(tmp_path):
     harness_dir = tmp_path / ".harness"
     invalid = finding(id="CPLX-002")

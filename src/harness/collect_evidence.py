@@ -583,7 +583,11 @@ def bind_covered_tests(
             command, repo_root, repo_root=repo_root, unresolved=unresolved
         )
     )
-    if unresolved:
+    if (
+        covered_tests
+        and unresolved
+        and not any(selectors for _cwd, selectors in invocations)
+    ):
         return unresolved[0]
     for cwd, _selectors in invocations:
         if _local_cwd_missing(cwd, repo_root):

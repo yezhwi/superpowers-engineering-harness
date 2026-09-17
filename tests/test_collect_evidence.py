@@ -112,6 +112,56 @@ def test_main_records_kubectl_provenance_without_changing_result(tmp_path, monke
     }
 
 
+def test_npm_run_build_is_not_test_runner_unresolved(tmp_path, monkeypatch):
+    """Break caught: npm run build fails collection with TEST_RUNNER_UNRESOLVED."""
+    import subprocess
+
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    (tmp_path / "package.json").write_text('{"scripts": {"build": "tsc"}}')
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("harness.collect_evidence.git_head", lambda: "a" * 40)
+    monkeypatch.setattr(
+        "harness.collect_evidence.workspace_fingerprint", lambda: "workspace"
+    )
+    monkeypatch.setattr(
+        "harness.collect_evidence.subprocess.run",
+        lambda *args, **kwargs: type(
+            "R", (), {"returncode": 0, "stdout": "", "stderr": ""}
+        )(),
+    )
+    from harness.collect_evidence import bind_covered_tests
+
+    assert bind_covered_tests((), "npm run build", tmp_path) == ()
+    assert (
+        main(
+            [
+                "--type",
+                "build",
+                "--command",
+                "npm run build",
+                "--harness-dir",
+                str(tmp_path / ".harness"),
+            ]
+        )
+        == 0
+    )
+
+
+def test_pytest_command_is_not_blocked_by_unrelated_npm_run(tmp_path):
+    from harness.collect_evidence import bind_covered_tests
+
+    spec = tmp_path / "tests" / "test_x.py"
+    spec.parent.mkdir()
+    spec.write_text("def test_x():\n    assert True\n")
+    (tmp_path / "package.json").write_text('{"scripts": {"lint": "eslint ."}}')
+    bound = bind_covered_tests(
+        ("tests/test_x.py",),
+        "pytest tests/test_x.py && npm run lint",
+        tmp_path,
+    )
+    assert bound == ("tests/test_x.py",)
+
+
 def test_main_marks_cli_command_as_trusted_local(tmp_path, monkeypatch):
     """Break caught: CLI passes raw command text past trust boundary."""
     monkeypatch.setattr("harness.collect_evidence.git_head", lambda: "a" * 40)

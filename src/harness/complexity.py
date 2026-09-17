@@ -134,6 +134,7 @@ def write_complexity_review(harness_dir: Path, review: dict, scope=None) -> list
             "head_commit": scope.head_commit,
             "workspace_fingerprint": scope.workspace.fingerprint,
             "files": list(scope.files),
+            "contract_refs": list(scope.contract_refs),
         }
         if scope
         else None,

@@ -13,7 +13,7 @@ from .transaction import StagedArtifact, publish, stage
 from .workspace import (
     git_head,
     observability_inspected_paths,
-    project_task_scope,
+    project_typed_scope,
     snapshot,
 )
 
@@ -112,7 +112,7 @@ def write_review(
     impact_doc = (
         yaml.safe_load(impact_path.read_text()) if impact_path.exists() else {}
     ) or {}
-    files = project_task_scope(
+    files, contract_refs = project_typed_scope(
         task if isinstance(task, dict) else {},
         impact_doc.get("impact") or {},
         inspected_paths=observability_inspected_paths(harness_dir),
@@ -132,6 +132,7 @@ def write_review(
         "review_scope": {
             "base_ref": base_ref,
             "files": list(files),
+            "contract_refs": list(contract_refs),
         },
     }
     artifacts = [

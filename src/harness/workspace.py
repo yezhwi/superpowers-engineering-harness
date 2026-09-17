@@ -28,6 +28,7 @@ class ReviewScope:
     head_commit: str
     workspace: WorkspaceSnapshot
     files: tuple[str, ...]
+    contract_refs: tuple[str, ...] = ()
 
 
 def _root(repo_root: Path | None) -> Path:
