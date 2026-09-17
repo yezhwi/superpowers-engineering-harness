@@ -78,7 +78,13 @@ def init_harness(repo_root: Path, templates: Path | None = None) -> InitResult:
     if index.exists():
         result.skipped.append(index)
     else:
-        index.write_text("decisions: []\n", encoding="utf-8")
+        members = list((harness_dir / "decisions").glob("DEC-*.yaml"))
+        if members:
+            from harness.decision import reindex
+
+            reindex(harness_dir)
+        else:
+            index.write_text("decisions: []\n", encoding="utf-8")
         result.created.append(index)
 
     return result

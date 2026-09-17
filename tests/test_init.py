@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 import pytest
+import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
@@ -70,6 +71,52 @@ def test_files_match_templates(repo):
         produced = (repo / ".harness" / name).read_text(encoding="utf-8")
         source = (templates_dir() / name).read_text(encoding="utf-8")
         assert produced == source, name
+
+
+def test_init_rebuilds_index_from_existing_decision_members(repo):
+    from harness.decision import load_decision_index
+
+    init_harness(repo)
+    (repo / ".harness/decisions/index.yaml").unlink()
+    (repo / ".harness/decisions/DEC-001.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "id": "DEC-001",
+                "task_id": "TASK-001",
+                "status": "ACCEPTED",
+                "topic": "cached",
+                "question": "keep?",
+                "context": ["old"],
+                "options": [{"id": "keep", "description": "keep"}],
+                "recommendation": {
+                    "option": "keep",
+                    "reasons": ["done"],
+                    "tradeoffs": [],
+                },
+                "selected": {
+                    "option": "keep",
+                    "source": "accepted_recommendation",
+                    "decided_by": "user",
+                },
+                "decision_reason": ["user accepted current recommendation"],
+                "rejection_reason": None,
+                "scope": ["src/a.py"],
+                "constraints": [],
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "accepted_at": "2026-01-01T00:00:01+00:00",
+                "rejected_at": None,
+                "supersedes": None,
+                "superseded_by": None,
+            },
+            sort_keys=False,
+        )
+    )
+
+    result = init_harness(repo)
+
+    assert any(path.name == "index.yaml" for path in result.created)
+    index = load_decision_index(repo / ".harness")
+    assert [record["id"] for record in index] == ["DEC-001"]
 
 
 def test_is_idempotent(repo):

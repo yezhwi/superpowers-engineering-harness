@@ -133,21 +133,47 @@ def _declared_paths(harness_dir: Path) -> set[str]:
                         for test in tests
                         if isinstance(test, str)
                     )
-    for directory, pattern in (("decisions", "DEC-*.yaml"), ("findings", "*.yaml")):
-        for path in sorted((harness_dir / directory).glob(pattern)):
+    findings = harness_dir / "findings"
+    if findings.is_dir():
+        for path in sorted(findings.glob("*.yaml")):
             record = yaml.safe_load(path.read_text())
             if not isinstance(record, dict):
                 continue
-            if directory == "decisions":
-                scope = record.get("scope", [])
-                if isinstance(scope, list):
-                    result.update(name for name in scope if isinstance(name, str))
-            else:
-                for section, key in (("regression_test", "path"), ("location", "file")):
-                    value = record.get(section)
-                    if isinstance(value, dict) and isinstance(value.get(key), str):
-                        result.add(value[key].split("::", 1)[0])
+            for section, key in (("regression_test", "path"), ("location", "file")):
+                value = record.get(section)
+                if isinstance(value, dict) and isinstance(value.get(key), str):
+                    result.add(value[key].split("::", 1)[0])
+    result.update(_current_task_decision_scope_paths(harness_dir))
     return result
+
+
+def _current_task_decision_scope_paths(harness_dir: Path) -> set[str]:
+    """Declared paths from current-task decision bodies only, never historical YAML."""
+    from harness import decision
+
+    task_path = harness_dir / "current-task.yaml"
+    if not task_path.exists():
+        return set()
+    document = yaml.safe_load(task_path.read_text())
+    task_id = (document or {}).get("task", {}).get("id") if isinstance(document, dict) else None
+    if not task_id:
+        return set()
+    try:
+        index = decision.load_decision_index(harness_dir)
+    except decision.DecisionError:
+        return set()
+    declared: set[str] = set()
+    for meta in index:
+        if meta.get("task_id") != task_id:
+            continue
+        try:
+            record = decision.load_decision(harness_dir, meta["id"])
+        except decision.DecisionError:
+            continue
+        scope = record.get("scope", [])
+        if isinstance(scope, list):
+            declared.update(name for name in scope if isinstance(name, str))
+    return declared
 
 
 def _protected_paths(harness_dir: Path) -> set[str]:
@@ -242,7 +268,10 @@ def _capture_versions(
                 for member in source_access.members(path, ARTIFACT_PATTERNS[directory]):
                     relative = member.relative_to(harness_dir.absolute()).as_posix()
                     checked = contained_path(root, f"{harness_dir.name}/{relative}")
-                    files[relative] = file_version(checked)
+                    if directory == "decisions":
+                        files[relative] = digest({"member": member.name})
+                    else:
+                        files[relative] = file_version(checked)
         declared = {}
         # Scope globs do not authorize scans. FAST protected paths, however,
         # name literal files even when their filenames contain glob characters.

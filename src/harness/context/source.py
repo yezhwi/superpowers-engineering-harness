@@ -168,9 +168,27 @@ class FileContextSource:
         else:
             self.references["decisions/index.yaml"] = None
         task_id = task["task"]["id"]
+        indexed = {record["id"]: record for record in decision_metadata}
+
         def load_decision_body(decision_id: str) -> dict:
-            self._reference(f"decisions/{decision_id}.yaml")
-            return decision.load_decision(self.harness_dir, decision_id)
+            meta = indexed[decision_id]
+            name = f"decisions/{decision_id}.yaml"
+            path = self._checked_path(name)
+            content = source_access.read_bytes(path)
+            digest = "sha256:" + hashlib.sha256(content).hexdigest()
+            if digest != meta["sha256"]:
+                raise ContextBuildError(
+                    "CONTEXT_SCHEMA_INVALID",
+                    f"decision index digest mismatch: {decision_id}",
+                )
+            record = decision.load_decision(self.harness_dir, decision_id)
+            if record.get("id") != decision_id or record.get("task_id") != meta["task_id"]:
+                raise ContextBuildError(
+                    "CONTEXT_SCHEMA_INVALID",
+                    f"decision identity mismatch: {decision_id}",
+                )
+            self._reference(name, content=content)
+            return record
 
         decisions = [
             load_decision_body(record["id"])

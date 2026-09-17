@@ -15,6 +15,7 @@
 - Record optional `execution_environment` on collected evidence for `kubectl exec` (namespace/workload/cwd/container when present). Unparseable kubectl commands store `transport: unknown` without changing result semantics.
 - Add `harness task verify-existing` for already-implemented work: records `verification_mode: existing_implementation` from CLASSIFIED/PLANNED with GREEN evidence, without RED, fake findings, or tracker writes. FAST Gate skips RED only with that mode plus a valid persisted verification record.
 - Keep `TEST_RUNNER_UNRESOLVED` for unbound test selectors only; `npm run` build/lint evidence is not treated as a missing test runner. Persist `contract_refs` on complexity and interface review evidence so Gate matches typed scope.
+- Rebuild a missing decision index from existing members during `harness init`. Context freshness versions `decisions/index.yaml` and member names, not historical bodies, and selected bodies must match index id/task_id/sha256.
 
 ### Install
 

@@ -18,6 +18,9 @@ def outside_finding(root):
     record = yaml.safe_load(decision.read_text())
     record["scope"] = ["src/local.py"]
     write_yaml(decision, record)
+    from harness import decision as decision_mod
+
+    decision_mod.reindex(root)
     path = root / "findings/FND-001.yaml"
     record = yaml.safe_load(path.read_text())
     record["location"] = {"file": "src/other.py"}
@@ -154,6 +157,39 @@ def test_context_loads_only_current_decision_body_from_index(harness, monkeypatc
     assert loaded and set(loaded) == {"DEC-001"}
 
 
+def test_capture_ignores_unreferenced_decision_body_edit_until_reindex(harness):
+    from harness import decision
+    from harness.context.freshness import capture
+
+    add_core_records(harness)
+    write_yaml(
+        harness / "decisions/DEC-101.yaml",
+        historical_accepted("DEC-101", "TASK-001", topic="old", scope=[]),
+    )
+    decision.reindex(harness)
+    before = capture(harness)
+    body = yaml.safe_load((harness / "decisions/DEC-101.yaml").read_text())
+    body["topic"] = "mutated-without-reindex"
+    write_yaml(harness / "decisions/DEC-101.yaml", body)
+    assert capture(harness) == before
+    decision.reindex(harness)
+    assert capture(harness) != before
+
+
+def test_context_rejects_index_identity_mismatch(harness):
+    from harness import decision
+    from harness.context.model import ContextBuildError
+
+    add_core_records(harness)
+    current = next(p for p in (harness / "decisions").glob("DEC-*.yaml"))
+    body = yaml.safe_load(current.read_text())
+    body["id"] = "DEC-999"
+    write_yaml(current, body)
+
+    with pytest.raises(ContextBuildError, match="CONTEXT_SCHEMA_INVALID"):
+        generate_context(harness, mode="compact")
+
+
 def test_explicit_cross_task_decision_is_layer2_ref_not_inlined(harness):
     add_core_records(harness)
     current_path = next((harness / "decisions").glob("*.yaml"))
@@ -192,6 +228,9 @@ def test_broken_cross_task_decision_ref_fails_closed(harness):
     current["scope"] = ["src/local.py"]
     current["supersedes"] = "DEC-999"
     write_yaml(current_path, current)
+    from harness import decision
+
+    decision.reindex(harness)
 
     from harness.context.model import ContextBuildError
 
@@ -261,4 +300,7 @@ def test_intersecting_or_empty_decision_scope_does_not_expand(harness, scope):
     record = yaml.safe_load(path.read_text())
     record["scope"] = scope
     write_yaml(path, record)
+    from harness import decision
+
+    decision.reindex(harness)
     assert generate_context(harness)["expansions"] == []
