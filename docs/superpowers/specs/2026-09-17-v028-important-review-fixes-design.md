@@ -18,7 +18,7 @@ Split decision processing into two phases:
 
 - Byte-read and hash every direct canonical `decisions/DEC-*.yaml` member for freshness.
 - Scan YAML nodes/events for only top-level metadata required to identify ID, task ownership, status, and cross-task references; do not construct full Python records for historical decisions.
-- Parse full YAML bodies only for current-task decisions and decisions explicitly referenced through supported dependency edges.
+- Parse full YAML bodies only for current-task decisions and decisions explicitly referenced through current-decision `supersedes`/`superseded_by`, `impact.contracts` `DEC-<id>:` labels, or loaded interface-contract `decision_refs`.
 
 Unreferenced historical decisions remain omitted with a content-bound Layer 2 reference, but their body is not deserialized or projected. Duplicate IDs, malformed metadata, or missing explicit references fail closed. Collection membership and every canonical decision content hash remain in freshness versions. This does not claim zero file I/O: byte hashing remains required to detect arbitrary historical content edits.
 
@@ -49,7 +49,7 @@ Use test-first changes:
 - bare or malformed existing-mode record does not skip RED;
 - `DEC-*` in files is rejected and valid contract refs accepted;
 - hundreds of historical decision fixture bodies are neither fully deserialized nor serialized;
-- current and explicit reference decision bodies remain loaded; malformed/missing dependencies fail closed;
+- current, supersession, impact-contract, and interface-contract reference decision bodies remain loaded; malformed/missing dependencies fail closed;
 - historical body mutation still makes context stale.
 
 Run affected context, gate, verify-existing, diagnosability, schema suites; then full `pytest`, Ruff, and diff review.
