@@ -8,6 +8,31 @@ from harness.quality_gate import OPEN_FINDING_STATUSES
 from .model import AuthoritativeContext, ControlCore
 
 
+def layer0_decisions(records: list[dict], task_id: str) -> list[dict]:
+    """ACCEPTED decisions owned by the current task; no historical inlining."""
+    return [
+        record
+        for record in records
+        if record.get("status") == "ACCEPTED" and record.get("task_id") == task_id
+    ]
+
+
+def cross_task_decision_ids(records: list[dict], task_id: str) -> set[str]:
+    """Decision ids the current task explicitly supersedes or is superseded by."""
+    owned = {
+        record["id"] for record in records if record.get("task_id") == task_id
+    }
+    referenced: set[str] = set()
+    for record in records:
+        if record.get("task_id") != task_id:
+            continue
+        for field in ("supersedes", "superseded_by"):
+            value = record.get(field)
+            if isinstance(value, str) and value and value not in owned:
+                referenced.add(value)
+    return referenced
+
+
 def build_control_core(source: AuthoritativeContext) -> ControlCore:
     """Project validated source records; final Context Integrity is a later step.
 
@@ -45,7 +70,7 @@ def build_control_core(source: AuthoritativeContext) -> ControlCore:
             },
             "requirements": [r for r in source.requirements if r["priority"] == "must"],
             "invariants": source.invariants,
-            "decisions": [r for r in source.decisions if r["status"] == "ACCEPTED"],
+            "decisions": layer0_decisions(source.decisions, task["task"]["id"]),
             "findings": [
                 r for r in source.findings if r["status"] in OPEN_FINDING_STATUSES
             ],

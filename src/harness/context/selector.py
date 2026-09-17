@@ -7,6 +7,7 @@ from typing import Protocol
 
 from harness.quality_gate import OPEN_FINDING_STATUSES
 
+from .builder import cross_task_decision_ids
 from .escalation import effective_policy
 from .model import AuthoritativeContext, ContextBuildError
 from .policy import next_action
@@ -139,11 +140,45 @@ class DeterministicSelector:
                     "unrelated_to_scope",
                     record["id"],
                 )
+        task_id = source.task["task"]["id"]
+        referenced_decisions = cross_task_decision_ids(source.decisions, task_id)
+        known_decisions = {record["id"] for record in source.decisions}
+        missing = sorted(referenced_decisions - known_decisions)
+        if missing:
+            raise ContextBuildError(
+                "CONTEXT_REFERENCE_BROKEN",
+                f"missing declaration: decisions/{missing[0]}.yaml",
+            )
         for group, records, global_status in (
             ("decisions", source.decisions, {"ACCEPTED"}),
             ("findings", source.findings, OPEN_FINDING_STATUSES),
         ):
             for record in records:
+                if group == "decisions" and record.get("task_id") != task_id:
+                    if record["id"] in referenced_decisions:
+                        omit(
+                            record["id"],
+                            f"decisions/{record['id']}.yaml",
+                            "cross_task_reference",
+                            record["id"],
+                        )
+                    elif record["status"] == "ACCEPTED":
+                        omit(
+                            record["id"],
+                            f"decisions/{record['id']}.yaml",
+                            "different_task_not_referenced",
+                            record["id"],
+                        )
+                    elif full:
+                        working[group].append(record)
+                    else:
+                        omit(
+                            record["id"],
+                            f"decisions/{record['id']}.yaml",
+                            "non_global_record",
+                            record["id"],
+                        )
+                    continue
                 if record["status"] in global_status:
                     continue
                 if full:
@@ -196,6 +231,8 @@ class DeterministicSelector:
             if location:
                 add("files", [location], declaration, False)
         for record in source.decisions:
+            if record.get("task_id") != task_id:
+                continue
             add(
                 "files",
                 record.get("scope", []),

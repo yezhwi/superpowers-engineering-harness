@@ -50,7 +50,7 @@
 
 | ID | 场景 | 必须观察到的结果 |
 |---|---|---|
-| REF-01 | 随机 MUST/invariant/open finding/accepted decision 子集 | 全记录进入 Layer 0，原枚举/statement 无损；protected paths 永不遗漏 |
+| REF-01 | 随机 MUST/invariant/open finding/当前 task 的 accepted decision 子集 | 全记录进入 Layer 0，原枚举/statement 无损；protected paths 永不遗漏。其他 task 的 accepted decision 不进入 Layer 0 |
 | REF-02 | should/could 无绑定，或 closed finding/raw evidence 未内联 | 在候选集内逐项 omitted，含非空 reason 和可解析 ref |
 | REF-03 | Q1 仓库包含大量未声明 docs/代码 | 不为 omitted 全仓枚举；manifest 明确集合边界 |
 | REF-04 | owned=src/foo，候选 src/foo/a.py 与 src/foobar/a.py | 前者包含，后者不包含 |

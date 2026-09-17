@@ -130,7 +130,7 @@ Context 只投影已有 artifact。禁止为了 YAML 示例新增第二份权威
 | `risk` / `profile` | `current-task.yaml` `risk` | 原值；缺失则按现有 task 规则 fail-closed |
 | MUST requirements | `requirements.yaml` 中 `priority: must` | 完整记录；禁止摘要 statement |
 | invariants | `invariants.yaml` 全部条目 | 全部进入 Layer 0；`pending/verified/violated` 原值 |
-| decisions | `decisions/` 中 `status: ACCEPTED` | 完整记录 |
+| decisions | 当前 `task.id` 的 `decisions/` 记录且 `status: ACCEPTED` | 完整记录。其他 task 的 ACCEPTED 不得进入 Layer 0 |
 | findings | `findings/*.yaml` 且 `status ∈ OPEN_FINDING_STATUSES` | 完整记录。`OPEN_FINDING_STATUSES` = `PROPOSED, REPRODUCING, CONFIRMED, FIXING, FIXED` |
 | finding 关联 | 现有 `target`（`REQ\|INV-n`） | **不**新增 `affected_requirements` |
 | blockers | `assess_gate(..., allow_preflight=True)` | typed blocker 文档，与 status 投影一致 |
@@ -165,7 +165,7 @@ Context = Layer 0 Lossless Global Core
 
 - 全部 MUST requirements
 - 全部 invariants
-- 全部 ACCEPTED decisions
+- 当前 task 的全部 ACCEPTED decisions（`decision.task_id == current-task.id`）
 - 全部 OPEN/BLOCKING findings
 - 全部 blockers
 - 全部 `owned_paths` / `protected_user_paths`
@@ -318,7 +318,7 @@ CONTEXT_SCHEMA_INVALID
 | CI-01 | 每个 `priority: must` requirement 完整存在于 Layer 0，或 Layer 2 给出可解析 ref（Product Done 选择：MUST **完整存在于 Layer 0**，不允许只留 ref） |
 | CI-02 | 全部 invariant 完整存在于 Layer 0 |
 | CI-03 | 全部 OPEN/BLOCKING findings 完整存在于 Layer 0 |
-| CI-04 | 全部 ACCEPTED decisions 完整存在于 Layer 0 |
+| CI-04 | 当前 task 的全部 ACCEPTED decisions 完整存在于 Layer 0。其他 task 的 ACCEPTED 不得内联；未引用的记 omitted `different_task_not_referenced`；当前 task 经 `supersedes` / `superseded_by` 显式引用的跨 task decision 只保留可解析 Layer 2 `{id, ref, sha256, reason}`，损坏引用 fail-closed |
 | CI-05 | `owned_paths` / `protected_user_paths` 与 task 一致且无损 |
 | CI-06 | blockers 与 live preflight gate 一致 |
 | CI-07 | context 内 status/enum 与 authoritative 文件逐字段相等；context 不得引入新 status |
@@ -406,7 +406,7 @@ Harness 在生成 context 时可以检测并记录（或拒绝 compact）：
 | Trigger | 判定 |
 |---|---|
 | `FINDING_OUTSIDE_SCOPE` | finding 的 `regression_test.path` 或可解析路径不在 `owned_paths` 内 |
-| `DECISION_OUTSIDE_SCOPE` | ACCEPTED decision 的 `scope[]` 与 `owned_paths` 无交集且 scope 非空 |
+| `DECISION_OUTSIDE_SCOPE` | **当前 task** 的 ACCEPTED decision 的 `scope[]` 与 `owned_paths` 无交集且 scope 非空。其他 task 的历史 decision 不得触发该 expansion |
 | `TEST_FAILURE_OUTSIDE_WORKING_SET` | 失败 evidence 的 `covered_tests` 不在 Layer 1 测试集 |
 | `RISK_ESCALATED` | 已有 `harness task escalate`；随后 context policy 跟随新 risk |
 | `CONTEXT_INTEGRITY_UNPROVEN` | Integrity 失败 → fail-closed，不「升级后凑合用 compact」 |
@@ -587,7 +587,7 @@ task classify
 - 非目标模块上的 invariant 仍在 Layer 0
 - protected_user_path 仍在 Layer 0
 - reopened / open finding 不可省略
-- ACCEPTED decision 不可省略
+- 当前 task 的 ACCEPTED decision 不可省略；其他 task 未引用的 ACCEPTED decision 必须省略且不得 expansion
 - Q1 compact 的 Working Set 不含仓库级 docs 全量列表
 
 不要求本仓库启动外部 Agent 来证明 token 下降。

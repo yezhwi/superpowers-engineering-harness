@@ -66,6 +66,108 @@ def test_accepted_decision_outside_scope_expands_once(harness):
     assert generate_context(harness)["expansions"] == [event]
 
 
+def historical_accepted(decision_id, task_id, *, topic, scope):
+    return {
+        "id": decision_id,
+        "task_id": task_id,
+        "status": "ACCEPTED",
+        "topic": topic,
+        "question": f"HISTORICAL-BODY-{decision_id}",
+        "context": ["old task"],
+        "options": [{"id": "keep", "description": "keep"}],
+        "recommendation": {
+            "option": "keep",
+            "reasons": ["done"],
+            "tradeoffs": [],
+        },
+        "selected": {
+            "option": "keep",
+            "source": "accepted_recommendation",
+            "decided_by": "user",
+        },
+        "decision_reason": ["user accepted current recommendation"],
+        "rejection_reason": None,
+        "scope": scope,
+        "constraints": [],
+        "created_at": "2026-01-01T00:00:00+00:00",
+        "accepted_at": "2026-01-01T00:00:01+00:00",
+        "rejected_at": None,
+        "supersedes": None,
+        "superseded_by": None,
+    }
+
+
+def test_other_task_accepted_decisions_do_not_enter_layer0_or_expand(harness):
+    """Break caught: historical ACCEPTED decisions inflate compact and expansion."""
+    add_core_records(harness)
+    current = next((harness / "decisions").glob("*.yaml"))
+    record = yaml.safe_load(current.read_text())
+    record["scope"] = ["src/local.py"]
+    write_yaml(current, record)
+    for index in range(101, 106):
+        write_yaml(
+            harness / f"decisions/DEC-{index:03d}.yaml",
+            historical_accepted(
+                f"DEC-{index:03d}",
+                "TASK-001",
+                topic=f"old-{index}",
+                scope=["src/unrelated.py"],
+            ),
+        )
+
+    document = generate_context(harness, mode="compact")
+
+    assert [item["id"] for item in document["control"]["decisions"]] == [record["id"]]
+    assert document["expansions"] == []
+    omitted_ids = {item["id"]: item["reason"] for item in document["omitted"]}
+    assert omitted_ids["DEC-101"] == "different_task_not_referenced"
+    dumped = yaml.safe_dump(document)
+    assert "HISTORICAL-BODY-DEC-101" not in dumped
+    assert "HISTORICAL-BODY-DEC-105" not in dumped
+
+
+def test_explicit_cross_task_decision_is_layer2_ref_not_inlined(harness):
+    add_core_records(harness)
+    current_path = next((harness / "decisions").glob("*.yaml"))
+    current = yaml.safe_load(current_path.read_text())
+    current["scope"] = ["src/local.py"]
+    current["supersedes"] = "DEC-200"
+    write_yaml(current_path, current)
+    write_yaml(
+        harness / "decisions/DEC-200.yaml",
+        historical_accepted(
+            "DEC-200",
+            "TASK-001",
+            topic="old-cache",
+            scope=["src/unrelated.py"],
+        ),
+    )
+
+    document = generate_context(harness, mode="compact")
+
+    assert [item["id"] for item in document["control"]["decisions"]] == [current["id"]]
+    omitted = {item["id"]: item for item in document["omitted"] if item["id"] == "DEC-200"}
+    assert omitted["DEC-200"]["reason"] == "cross_task_reference"
+    assert "decisions/DEC-200.yaml" in omitted["DEC-200"]["ref"]
+    assert omitted["DEC-200"]["sha256"].startswith("sha256:")
+    assert "HISTORICAL-BODY-DEC-200" not in yaml.safe_dump(document["control"])
+    assert document["expansions"] == []
+
+
+def test_broken_cross_task_decision_ref_fails_closed(harness):
+    add_core_records(harness)
+    current_path = next((harness / "decisions").glob("*.yaml"))
+    current = yaml.safe_load(current_path.read_text())
+    current["scope"] = ["src/local.py"]
+    current["supersedes"] = "DEC-999"
+    write_yaml(current_path, current)
+
+    from harness.context.model import ContextBuildError
+
+    with pytest.raises(ContextBuildError, match="CONTEXT_REFERENCE_BROKEN"):
+        generate_context(harness, mode="compact")
+
+
 def test_context_integrity_unproven_rejects_compact_without_expansion(harness):
     from harness.context.escalation import (
         AUTOMATIC_TRIGGERS,

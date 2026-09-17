@@ -12,7 +12,7 @@ from harness.blockers import blocker_document
 from harness.quality_gate import OPEN_FINDING_STATUSES
 from harness.schema_resources import read_schema
 
-from .builder import build_control_core
+from .builder import build_control_core, layer0_decisions
 from .escalation import effective_policy
 from .freshness import capture, contained_path, digest, file_version, require_fresh
 from .model import AuthoritativeContext, ContextBuildError
@@ -71,7 +71,11 @@ def _manifest(source: AuthoritativeContext, versions: dict, working: dict) -> di
                     sum(r["priority"] == "must" for r in records)
                     + len(working["requirements"])
                     if name == "requirements"
-                    else sum(r["status"] == "ACCEPTED" for r in records)
+                    else sum(
+                        r["status"] == "ACCEPTED"
+                        and r.get("task_id") == source.task["task"]["id"]
+                        for r in records
+                    )
                     + len(working["decisions"])
                     if name == "decisions"
                     else sum(r["status"] in OPEN_FINDING_STATUSES for r in records)
@@ -172,7 +176,7 @@ def _check_document(source: AuthoritativeContext, document: dict, root: Path) ->
     mandatory = {
         "requirements": [r for r in source.requirements if r["priority"] == "must"],
         "invariants": source.invariants,
-        "decisions": [r for r in source.decisions if r["status"] == "ACCEPTED"],
+        "decisions": layer0_decisions(source.decisions, source.task["task"]["id"]),
         "findings": [
             r for r in source.findings if r["status"] in OPEN_FINDING_STATUSES
         ],

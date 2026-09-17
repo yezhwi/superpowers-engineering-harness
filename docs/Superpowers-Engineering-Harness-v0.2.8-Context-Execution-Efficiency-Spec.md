@@ -581,7 +581,7 @@ Traceability
 CI-01 所有 active MUST requirements 必须存在或明确 reference
 CI-02 所有 active invariants 必须完整存在
 CI-03 所有 OPEN/BLOCKING findings 必须完整存在
-CI-04 所有 ACCEPTED decisions 必须完整存在
+CI-04 当前 task 的所有 ACCEPTED decisions 必须完整存在
 CI-05 scope / protected paths 必须无损
 CI-06 blockers 必须无损
 CI-07 derived status 必须与 authoritative state 一致
