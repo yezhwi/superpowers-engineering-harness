@@ -54,6 +54,54 @@ def run_cli(cwd: Path, *args: str):
     )
 
 
+CLASSIFY_FLAGS = [
+    item for pair in SAFE.items() for item in (f"--{pair[0]}", pair[1])
+]
+
+
+def test_q1_classify_rejects_dirty_q2_boundary_without_persisting(tmp_path):
+    """Break caught: Q1 is persisted before path risk is visible."""
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    assert run_cli(tmp_path, "init").returncode == 0
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-qm", "base"], cwd=tmp_path, check=True)
+    (tmp_path / ".harness/risk-boundaries.yaml").write_text(
+        "boundaries:\n  q2: [src/**]\n  q3: [auth/**]\n"
+    )
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "api.py").write_text("print('changed')\n")
+
+    result = run_cli(tmp_path, "task", "classify", "--level", "Q1", *CLASSIFY_FLAGS)
+
+    assert result.returncode != 0
+    assert "RISK_ESCALATION_REQUIRED" in result.stderr
+    assert "Q2" in result.stderr
+    assert "harness task classify --level Q2" in result.stderr
+    task = yaml.safe_load((tmp_path / ".harness/current-task.yaml").read_text())
+    assert task["state"] == "CREATED"
+    assert task.get("risk") in (None, {})
+
+
+def test_q1_classify_succeeds_when_dirty_paths_are_outside_boundaries(tmp_path):
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    assert run_cli(tmp_path, "init").returncode == 0
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-qm", "base"], cwd=tmp_path, check=True)
+    (tmp_path / ".harness/risk-boundaries.yaml").write_text(
+        "boundaries:\n  q2: [src/**]\n  q3: [auth/**]\n"
+    )
+    (tmp_path / "docs").mkdir(exist_ok=True)
+    (tmp_path / "docs/note.md").write_text("notes\n")
+
+    result = run_cli(tmp_path, "task", "classify", "--level", "Q1", *CLASSIFY_FLAGS)
+
+    assert result.returncode == 0, result.stderr
+    task = yaml.safe_load((tmp_path / ".harness/current-task.yaml").read_text())
+    assert task["state"] == "CLASSIFIED"
+    assert task["risk"]["level"] == "Q1"
+
+
 def test_classified_profile_routes_to_its_required_entry_state(tmp_path):
     for level, target in (
         ("Q1", "IMPLEMENTING"),

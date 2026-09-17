@@ -9,6 +9,7 @@
 - Resolve `npm run <script> --` Vitest selectors from the package script at the command cwd; unresolvable or non-Vitest scripts fail closed with `TEST_RUNNER_UNRESOLVED`.
 - Compare diagnosability/complexity/interface review file scope as a set, and list actual-only vs expected-only paths on `DIAGNOSABILITY_SCOPE_MISMATCH`.
 - Split review scope into path `files` and `contract_refs`. `DEC-*` labels are rejected in `review_scope.files`, compared as refs, and migrated out of old artifacts instead of being treated as paths.
+- Reject `harness task classify` below the path-required risk in `.harness/risk-boundaries.yaml` without persisting task state; print `RISK_ESCALATION_REQUIRED` and the classify command to rerun.
 
 ### Install
 

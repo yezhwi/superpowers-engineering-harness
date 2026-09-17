@@ -85,3 +85,16 @@ def required_level(paths, boundaries: dict[str, tuple[str, ...]]) -> str | None:
         if any(matches_boundary(path, pattern) for pattern in boundaries["q2"]):
             required = "Q2"
     return required
+
+
+_LEVEL_ORDER = ("Q1", "Q2", "Q3")
+
+
+def level_below_path_risk(level: str, paths, boundaries: dict[str, tuple[str, ...]]) -> str | None:
+    """Return the higher path-required level, or None when `level` is sufficient."""
+    needed = required_level(paths, boundaries)
+    if needed is None:
+        return None
+    if _LEVEL_ORDER.index(level) < _LEVEL_ORDER.index(needed):
+        return needed
+    return None

@@ -1170,6 +1170,39 @@ def cmd_task_classify(level: str, dimensions: dict[str, str]) -> int:
         profile = risk.classify(level, dimensions)
         state_machine.require_legal("CREATED", "CLASSIFIED")
         user_changes = workspace.snapshot().changed_paths
+        from .risk_boundaries import (
+            RiskBoundaryPolicyError,
+            business_paths,
+            level_below_path_risk,
+            load_boundaries,
+        )
+
+        paths = business_paths(user_changes)
+        if paths:
+            try:
+                needed = level_below_path_risk(
+                    level, paths, load_boundaries(harness_dir / "risk-boundaries.yaml")
+                )
+            except RiskBoundaryPolicyError:
+                print(
+                    "RISK_REVALIDATION_POLICY_MISSING: "
+                    "business changes require risk-boundaries policy",
+                    file=sys.stderr,
+                )
+                return 2
+            if needed:
+                flags = " ".join(
+                    f"--{name} {value}" for name, value in dimensions.items()
+                )
+                print(
+                    f"RISK_ESCALATION_REQUIRED: current changes require {needed}",
+                    file=sys.stderr,
+                )
+                print(
+                    f"use: harness task classify --level {needed} {flags}",
+                    file=sys.stderr,
+                )
+                return 1
         task["scope"] = {"owned_paths": [], "protected_user_paths": list(user_changes)}
         head = workspace.git_head()
         task["git"] = workspace.git_baseline(head)
