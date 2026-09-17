@@ -77,6 +77,9 @@ Requirement → executable test binding → fresh Evidence → Gate
 
 Review failure → Finding → reproduce RED → fix GREEN → verify → Gate
 
+Already on the reference branch → GREEN evidence → verify-existing
+                               → ordinary bugfix still RED → GREEN
+
 Diagnosability Contract → scope-bound review → DIAG Finding when failed
                        → static-compliance closure → Gate
 ```
@@ -87,7 +90,8 @@ A test that is not bound to Requirement/Invariant is useful regression coverage,
 
 ```text
 Q0  answer only; no Harness task
-Q1  FAST: RED / fix / GREEN / Light Gate
+Q1  FAST: RED / fix / GREEN / Light Gate; already-implemented work may use
+    verify-existing (GREEN, no forged RED) from CLASSIFIED or PLANNED
 Q2  STANDARD: Task Contract, verification, review, Gate
 Q3  STRICT: Q2 plus mandatory non-sentinel Observability Contract and fresh diagnosability review
 ```
