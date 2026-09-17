@@ -399,6 +399,7 @@ def test_control_directory_cannot_be_replaced_with_regular_file(harness, directo
     from harness.context.model import ContextBuildError
 
     path = harness / directory
+    (path / "index.yaml").unlink(missing_ok=True)
     path.rmdir()
     path.write_text("not a directory")
     with pytest.raises(ContextBuildError, match="CONTEXT_SCHEMA_INVALID"):
@@ -415,6 +416,7 @@ def test_external_source_symlink_is_rejected_even_when_directory_is_empty(
 
     outside = tmp_path_factory.mktemp("outside-context")
     path = harness / directory
+    (path / "index.yaml").unlink(missing_ok=True)
     path.rmdir()
     path.symlink_to(outside, target_is_directory=True)
     with pytest.raises(ContextBuildError, match="CONTEXT_REFERENCE_BROKEN"):
@@ -425,6 +427,7 @@ def test_broken_control_directory_symlink_is_rejected(harness):
     from harness.context.model import ContextBuildError
 
     path = harness / "decisions"
+    (path / "index.yaml").unlink()
     path.rmdir()
     path.symlink_to(harness.parent / "missing-decisions", target_is_directory=True)
     with pytest.raises(ContextBuildError, match="CONTEXT_REFERENCE_BROKEN"):
@@ -433,7 +436,9 @@ def test_broken_control_directory_symlink_is_rejected(harness):
 
 def test_absent_record_directories_are_empty_without_being_created(harness):
     for directory in ("decisions", "findings", "interface-contracts", "evidence"):
-        (harness / directory).rmdir()
+        path = harness / directory
+        (path / "index.yaml").unlink(missing_ok=True)
+        path.rmdir()
     _, core = load_and_build(harness)
     assert core["decisions"] == []
     assert core["findings"] == []

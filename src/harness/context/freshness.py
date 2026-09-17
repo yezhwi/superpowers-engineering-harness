@@ -26,6 +26,7 @@ ROOT_FILES = (
     "observability.yaml",
     "config.yaml",
     "context/expansions.yaml",
+    "decisions/index.yaml",
 )
 ARTIFACT_DIRS = tuple(ARTIFACT_PATTERNS)
 
@@ -132,8 +133,8 @@ def _declared_paths(harness_dir: Path) -> set[str]:
                         for test in tests
                         if isinstance(test, str)
                     )
-    for directory in ("decisions", "findings"):
-        for path in sorted((harness_dir / directory).glob("*.yaml")):
+    for directory, pattern in (("decisions", "DEC-*.yaml"), ("findings", "*.yaml")):
+        for path in sorted((harness_dir / directory).glob(pattern)):
             record = yaml.safe_load(path.read_text())
             if not isinstance(record, dict):
                 continue

@@ -219,7 +219,8 @@ def _main(argv=None) -> int:
     ds.add_argument("--tradeoff", action="append", default=[])
     ds.add_argument("--scope", action="append", default=[])
     ds.add_argument("--constraint", action="append", default=[])
-    dl = decision_sub.add_parser("list")
+    decision_sub.add_parser("reindex")
+    decision_sub.add_parser("list")
     dshow = decision_sub.add_parser("show")
     dshow.add_argument("id")
     p_interface = sub.add_parser(

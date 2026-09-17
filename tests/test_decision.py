@@ -34,6 +34,53 @@ def proposal(*, topic: str = "cache", recommendation: str = "redis") -> dict:
     }
 
 
+def test_first_decision_write_creates_metadata_index(tmp_path):
+    from harness.decision import propose
+
+    harness_dir = setup_harness(tmp_path)
+    created = propose(harness_dir, proposal())
+
+    index = yaml.safe_load((harness_dir / "decisions/index.yaml").read_text())
+    assert index["decisions"][0] == {
+        "id": created["id"],
+        "task_id": "TASK-042",
+        "status": "PROPOSED",
+        "supersedes": None,
+        "superseded_by": None,
+        "sha256": index["decisions"][0]["sha256"],
+    }
+    assert index["decisions"][0]["sha256"].startswith("sha256:")
+
+
+def test_reindex_updates_metadata_after_manual_body_edit(tmp_path):
+    from harness.decision import load_decision_index, propose, reindex
+
+    harness_dir = setup_harness(tmp_path)
+    created = propose(harness_dir, proposal())
+    path = harness_dir / f"decisions/{created['id']}.yaml"
+    body = yaml.safe_load(path.read_text())
+    body["status"] = "REJECTED"
+    path.write_text(yaml.safe_dump(body, sort_keys=False))
+
+    reindex(harness_dir)
+
+    assert load_decision_index(harness_dir)[0]["status"] == "REJECTED"
+
+
+def test_decision_index_rejects_duplicate_ids(tmp_path):
+    from harness.decision import DecisionError, load_decision_index, propose
+
+    harness_dir = setup_harness(tmp_path)
+    propose(harness_dir, proposal())
+    path = harness_dir / "decisions/index.yaml"
+    index = yaml.safe_load(path.read_text())
+    index["decisions"].append(dict(index["decisions"][0]))
+    path.write_text(yaml.safe_dump(index))
+
+    with pytest.raises(DecisionError, match="DECISION_INDEX_INVALID"):
+        load_decision_index(harness_dir)
+
+
 def test_accept_persists_recommended_option_without_mutating_proposal(tmp_path):
     """Break caught: accepted choice missing from persisted decision record."""
     from harness.decision import accept, load_decision, propose
@@ -103,7 +150,6 @@ def test_accepted_supersede_replaces_original_decision(tmp_path):
 def test_supersede_publish_failure_preserves_accepted_original(tmp_path, monkeypatch):
     """Break caught: partial supersede leaves accepted decision chain broken."""
     from harness.decision import accept, load_decision, propose, supersede
-    from harness.transaction import publish
 
     harness_dir = setup_harness(tmp_path)
     original = propose(harness_dir, proposal())
@@ -113,9 +159,8 @@ def test_supersede_publish_failure_preserves_accepted_original(tmp_path, monkeyp
         raise OSError("injected publication failure")
 
     monkeypatch.setattr("harness.decision.publish", fail_publish, raising=False)
-    _, replacement = supersede(harness_dir, original["id"], proposal(topic="replacement"))
     with pytest.raises(OSError, match="injected publication failure"):
-        accept(harness_dir, replacement["id"], "redis", "accepted_recommendation")
+        supersede(harness_dir, original["id"], proposal(topic="replacement"))
 
     persisted = load_decision(harness_dir, original["id"])
     assert persisted["status"] == "ACCEPTED"

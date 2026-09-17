@@ -62,6 +62,7 @@ ALLOWED = ENTRIES | {
     "init",
     "templates",
     "collect_evidence",
+    "existing_verification",
     "telemetry_lock",
 }
 ADAPTERS = {

@@ -76,7 +76,9 @@ def test_is_idempotent(repo):
     first = init_harness(repo)
     second = init_harness(repo)
     assert first.created and not second.created
-    assert sorted(p.name for p in second.skipped) == sorted(REQUIRED_FILES)
+    assert sorted(p.name for p in second.skipped) == sorted(
+        (*REQUIRED_FILES, "index.yaml")
+    )
 
 
 def test_does_not_overwrite_modified_current_task(repo):
@@ -129,7 +131,7 @@ def test_fails_if_template_missing(repo, monkeypatch):
 
 def test_result_reports_created_and_skipped(repo):
     result = init_harness(repo)
-    assert len(result.created) == len(REQUIRED_FILES)
+    assert len(result.created) == len(REQUIRED_FILES) + 1
     assert result.skipped == []
 
 

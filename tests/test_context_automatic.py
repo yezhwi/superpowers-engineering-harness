@@ -115,6 +115,9 @@ def test_other_task_accepted_decisions_do_not_enter_layer0_or_expand(harness):
             ),
         )
 
+    from harness import decision
+
+    decision.reindex(harness)
     document = generate_context(harness, mode="compact")
 
     assert [item["id"] for item in document["control"]["decisions"]] == [record["id"]]
@@ -124,6 +127,31 @@ def test_other_task_accepted_decisions_do_not_enter_layer0_or_expand(harness):
     dumped = yaml.safe_dump(document)
     assert "HISTORICAL-BODY-DEC-101" not in dumped
     assert "HISTORICAL-BODY-DEC-105" not in dumped
+
+
+def test_context_loads_only_current_decision_body_from_index(harness, monkeypatch):
+    from harness import decision
+
+    add_core_records(harness)
+    for index in range(101, 106):
+        write_yaml(
+            harness / f"decisions/DEC-{index:03d}.yaml",
+            historical_accepted(
+                f"DEC-{index:03d}", "TASK-001", topic=f"old-{index}", scope=[]
+            ),
+        )
+    decision.reindex(harness)
+    loaded = []
+    original = decision.load_decision
+
+    def count(path, decision_id):
+        loaded.append(decision_id)
+        return original(path, decision_id)
+
+    monkeypatch.setattr(decision, "load_decision", count)
+    generate_context(harness, mode="compact")
+
+    assert loaded and set(loaded) == {"DEC-001"}
 
 
 def test_explicit_cross_task_decision_is_layer2_ref_not_inlined(harness):
@@ -143,6 +171,9 @@ def test_explicit_cross_task_decision_is_layer2_ref_not_inlined(harness):
         ),
     )
 
+    from harness import decision
+
+    decision.reindex(harness)
     document = generate_context(harness, mode="compact")
 
     assert [item["id"] for item in document["control"]["decisions"]] == [current["id"]]

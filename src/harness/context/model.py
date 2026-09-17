@@ -23,6 +23,7 @@ class AuthoritativeContext:
     requirements: list[dict]
     invariants: list[dict]
     decisions: list[dict]
+    decision_metadata: list[dict]
     findings: list[dict]
     interface_contracts: list[dict]
     impact: dict | None

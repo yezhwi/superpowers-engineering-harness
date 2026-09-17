@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+import hashlib
+from datetime import UTC, datetime
 from pathlib import Path
 
 import yaml
@@ -20,7 +21,7 @@ class DecisionError(ValueError):
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _directory(harness_dir: Path) -> Path:
@@ -72,11 +73,76 @@ def _write(path: Path, record: dict) -> None:
     temporary.replace(path)
 
 
+def _index_record(record: dict) -> dict:
+    content = yaml.safe_dump(record, sort_keys=False).encode()
+    return {
+        "id": record["id"],
+        "task_id": record["task_id"],
+        "status": record["status"],
+        "supersedes": record["supersedes"],
+        "superseded_by": record["superseded_by"],
+        "sha256": "sha256:" + hashlib.sha256(content).hexdigest(),
+    }
+
+
+def _publish_records(harness_dir: Path, records: list[dict]) -> None:
+    current = {record["id"]: record for record in load_decisions(harness_dir)}
+    current.update({record["id"]: record for record in records})
+    artifacts = [
+        StagedArtifact(
+            f"decisions/{record['id']}.yaml",
+            yaml.safe_dump(record, sort_keys=False).encode(),
+        )
+        for record in records
+    ]
+    artifacts.append(
+        StagedArtifact(
+            "decisions/index.yaml",
+            yaml.safe_dump(
+                {"decisions": [_index_record(current[key]) for key in sorted(current)]},
+                sort_keys=False,
+            ).encode(),
+        )
+    )
+    paths = frozenset(artifact.relative_path for artifact in artifacts)
+    publish(harness_dir, stage(harness_dir, artifacts), replace_paths=paths)
+
+
 def _next_id(harness_dir: Path) -> str:
     maximum = 0
     for record in load_decisions(harness_dir):
         maximum = max(maximum, int(record["id"].removeprefix("DEC-")))
     return f"DEC-{maximum + 1:03d}"
+
+
+def reindex(harness_dir: Path) -> list[dict]:
+    records = load_decisions(harness_dir)
+    _publish_records(harness_dir, records)
+    return load_decision_index(harness_dir)
+
+
+def load_decision_index(harness_dir: Path) -> list[dict]:
+    directory = _directory(harness_dir)
+    if not source_access.exists(directory):
+        return []
+    path = directory / "index.yaml"
+    try:
+        document = yaml.safe_load(source_access.read_text(path))
+    except (OSError, yaml.YAMLError) as exc:
+        raise DecisionError("DECISION_INDEX_INVALID") from exc
+    records = document.get("decisions") if isinstance(document, dict) else None
+    required = {"id", "task_id", "status", "supersedes", "superseded_by", "sha256"}
+    if (
+        not isinstance(records, list)
+        or any(not isinstance(record, dict) or set(record) != required for record in records)
+        or len({record["id"] for record in records}) != len(records)
+    ):
+        raise DecisionError("DECISION_INDEX_INVALID")
+    members = source_access.members(_directory(harness_dir), "DEC-*.yaml")
+    indexed = {record["id"]: record for record in records}
+    if {path.stem for path in members} != set(indexed):
+        raise DecisionError("DECISION_INDEX_INVALID")
+    return records
 
 
 def load_decisions(harness_dir: Path) -> list[dict]:
@@ -132,7 +198,7 @@ def _proposal_record(harness_dir: Path, document: dict) -> dict:
 
 def propose(harness_dir: Path, document: dict) -> dict:
     record = _proposal_record(harness_dir, document)
-    _write(_path(harness_dir, record["id"]), record)
+    _publish_records(harness_dir, [record])
     return record
 
 
@@ -157,7 +223,7 @@ def accept(harness_dir: Path, decision_id: str, option: str, source: str) -> dic
     ]
     _validate(record)
     if record["supersedes"] is None:
-        _write(_path(harness_dir, decision_id), record)
+        _publish_records(harness_dir, [record])
         return record
     original = load_decision(harness_dir, record["supersedes"])
     if original["status"] != "ACCEPTED" or original["superseded_by"] is not None:
@@ -165,11 +231,7 @@ def accept(harness_dir: Path, decision_id: str, option: str, source: str) -> dic
     original["status"] = "SUPERSEDED"
     original["superseded_by"] = record["id"]
     _validate(original)
-    artifacts = [
-        StagedArtifact(f"decisions/{original['id']}.yaml", yaml.safe_dump(original, sort_keys=False).encode()),
-        StagedArtifact(f"decisions/{record['id']}.yaml", yaml.safe_dump(record, sort_keys=False).encode()),
-    ]
-    publish(harness_dir, stage(harness_dir, artifacts), replace_paths=frozenset({f"decisions/{original['id']}.yaml", f"decisions/{record['id']}.yaml"}))
+    _publish_records(harness_dir, [original, record])
     return record
 
 
@@ -181,7 +243,7 @@ def reject(harness_dir: Path, decision_id: str, reason: str) -> dict:
     record["rejection_reason"] = reason
     record["rejected_at"] = _now()
     _validate(record)
-    _write(_path(harness_dir, decision_id), record)
+    _publish_records(harness_dir, [record])
     return record
 
 
@@ -192,7 +254,7 @@ def supersede(harness_dir: Path, decision_id: str, document: dict) -> tuple[dict
     replacement = _proposal_record(harness_dir, document)
     replacement["supersedes"] = original["id"]
     _validate(replacement)
-    _write(_path(harness_dir, replacement["id"]), replacement)
+    _publish_records(harness_dir, [replacement])
     return original, replacement
 
 

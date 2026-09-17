@@ -191,6 +191,20 @@ class DeterministicSelector:
                         record["id"],
                     )
 
+        loaded_decision_ids = {record["id"] for record in source.decisions}
+        for record in source.decision_metadata:
+            if (
+                record["id"] not in loaded_decision_ids
+                and record["task_id"] != task_id
+                and record["status"] == "ACCEPTED"
+            ):
+                omit(
+                    record["id"],
+                    "decisions/index.yaml",
+                    "different_task_not_referenced",
+                    record["id"],
+                )
+
         candidates: dict[str, dict[str, tuple[str, bool]]] = {"files": {}, "tests": {}}
 
         def add(group: str, paths: list[str], name: str, allowed: bool = True):

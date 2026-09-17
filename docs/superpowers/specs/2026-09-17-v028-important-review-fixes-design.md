@@ -7,7 +7,7 @@ Resolve Important findings 3–7 from `docs/Superpowers-Engineering-Harness-v0.2
 ## Invariants
 
 1. Historical decision bodies are not deserialized or projected unless current task owns or explicitly references them.
-2. `decisions/index.yaml` is authoritative metadata; every canonical decision remains content-bound through its indexed sha256, and index mismatch fails closed.
+2. `decisions/index.yaml` is authoritative metadata; direct body edits are unsupported until explicit reindex/import, and steady-state Context trusts index membership without reading historical bodies.
 3. FAST skips RED only with a valid persisted existing-implementation verification record.
 4. Contract labels and repository file paths remain separate typed fields.
 5. `requires_reproduction` does not mutate task state; task remains `CLASSIFIED` and user enters existing finding/reproduce workflow.
@@ -16,7 +16,7 @@ Resolve Important findings 3–7 from `docs/Superpowers-Engineering-Harness-v0.2
 
 Add `decisions/index.yaml`, an authoritative metadata registry of each direct canonical decision member: ID, task ID, status, supersession links, and content sha256. Decision write paths atomically publish decision body and index together. Context/freshness reads index to select current-task and explicit dependency bodies, then reads full YAML only for that selected finite set.
 
-Index and decision collection are mutually validated: missing/extra member, duplicate ID, malformed metadata, or indexed hash/content mismatch fails closed. Existing repositories without index perform one lock-protected full migration, atomically write index, then re-read/validate it. Unreferenced historical decisions remain omitted with content-bound Layer 2 references, without YAML body reads during steady-state Context generation. Historical body modification makes index validation report `CONTEXT_STALE`.
+Index and decision collection validate member identity: missing/extra member, duplicate ID, or malformed metadata fails closed. Existing repositories without index perform one lock-protected full migration, atomically write index, then re-read/validate it. Unreferenced historical decisions remain omitted with content-bound Layer 2 references, without YAML body reads during steady-state Context generation. Direct body edits bypassing Harness are unsupported and require explicit reindex/import before use.
 
 This change is decision-only. Findings, interface contracts, and evidence retain current source loading because they carry separate control semantics.
 

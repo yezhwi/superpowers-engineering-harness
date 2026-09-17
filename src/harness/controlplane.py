@@ -117,6 +117,10 @@ def cmd_decision(args) -> int:
             _, record = decision.supersede(
                 harness_dir, args.id, _decision_document(args)
             )
+        elif args.decision_command == "reindex":
+            decision.reindex(harness_dir)
+            print("OK: decision index rebuilt")
+            return 0
         elif args.decision_command == "list":
             print(yaml.safe_dump(decision.load_decisions(harness_dir), sort_keys=False))
             return 0

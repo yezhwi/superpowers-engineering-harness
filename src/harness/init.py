@@ -74,6 +74,13 @@ def init_harness(repo_root: Path, templates: Path | None = None) -> InitResult:
         )
         result.created.append(target)
 
+    index = harness_dir / "decisions/index.yaml"
+    if index.exists():
+        result.skipped.append(index)
+    else:
+        index.write_text("decisions: []\n", encoding="utf-8")
+        result.created.append(index)
+
     return result
 
 

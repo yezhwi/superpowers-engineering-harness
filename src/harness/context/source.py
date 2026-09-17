@@ -19,7 +19,7 @@ from harness.repository import RepositoryNotFoundError, find_git_root
 from .model import AuthoritativeContext, ContextBuildError
 
 ARTIFACT_PATTERNS = {
-    "decisions": "*.yaml",
+    "decisions": "DEC-*.yaml",
     "findings": "*.yaml",
     "interface-contracts": "*.yaml",
     "evidence": "*.json",
@@ -158,8 +158,41 @@ class FileContextSource:
         invariants = (invariants or {}).get("invariants", [])
         self._unique(requirements, "requirements.yaml")
         self._unique(invariants, "invariants.yaml")
-        decisions = self._records(
-            "decisions", lambda: decision.load_decisions(self.harness_dir)
+        self._artifact_paths("decisions", ARTIFACT_PATTERNS["decisions"])
+        try:
+            decision_metadata = decision.load_decision_index(self.harness_dir)
+        except decision.DecisionError as exc:
+            raise ContextBuildError("CONTEXT_SCHEMA_INVALID", str(exc)) from exc
+        if source_access.exists(self.harness_dir / "decisions/index.yaml"):
+            self._reference("decisions/index.yaml")
+        else:
+            self.references["decisions/index.yaml"] = None
+        task_id = task["task"]["id"]
+        def load_decision_body(decision_id: str) -> dict:
+            self._reference(f"decisions/{decision_id}.yaml")
+            return decision.load_decision(self.harness_dir, decision_id)
+
+        decisions = [
+            load_decision_body(record["id"])
+            for record in decision_metadata
+            if record["task_id"] == task_id
+        ]
+        known = {record["id"] for record in decision_metadata}
+        referenced = {
+            value
+            for record in decisions
+            for value in (record.get("supersedes"), record.get("superseded_by"))
+            if isinstance(value, str) and value
+        }
+        missing = referenced - known
+        if missing:
+            raise ContextBuildError(
+                "CONTEXT_REFERENCE_BROKEN",
+                f"missing declaration: decisions/{min(missing)}.yaml",
+            )
+        decisions.extend(
+            load_decision_body(decision_id)
+            for decision_id in sorted(referenced - {record["id"] for record in decisions})
         )
         findings = self._records(
             "findings",
@@ -183,6 +216,28 @@ class FileContextSource:
                 raise ContextBuildError(
                     "CONTEXT_SCHEMA_INVALID", "invalid impact contracts"
                 )
+        contract_refs = {
+            ref
+            for interface in interfaces
+            for ref in interface.get("decision_refs", [])
+            if isinstance(ref, str)
+        }
+        contract_refs.update(
+            value.split(":", 1)[0]
+            for value in (impact or {}).get("impact", {}).get("contracts", [])
+            if isinstance(value, str) and value.startswith("DEC-") and ":" in value
+        )
+        missing = contract_refs - known
+        if missing:
+            raise ContextBuildError(
+                "CONTEXT_REFERENCE_BROKEN",
+                f"missing declaration: decisions/{min(missing)}.yaml",
+            )
+        loaded = {record["id"] for record in decisions}
+        decisions.extend(
+            load_decision_body(decision_id)
+            for decision_id in sorted(contract_refs - loaded)
+        )
         observability = self._document("observability.yaml", optional=True)
         if observability is not None:
             try:
@@ -238,6 +293,7 @@ class FileContextSource:
             requirements=requirements,
             invariants=invariants,
             decisions=decisions,
+            decision_metadata=decision_metadata,
             findings=findings,
             interface_contracts=interfaces,
             impact=impact,
