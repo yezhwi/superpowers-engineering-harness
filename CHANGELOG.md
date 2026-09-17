@@ -10,6 +10,7 @@
 - Compare diagnosability/complexity/interface review file scope as a set, and list actual-only vs expected-only paths on `DIAGNOSABILITY_SCOPE_MISMATCH`.
 - Split review scope into path `files` and `contract_refs`. `DEC-*` labels are rejected in `review_scope.files`, compared as refs, and migrated out of old artifacts instead of being treated as paths.
 - Reject `harness task classify` below the path-required risk in `.harness/risk-boundaries.yaml` without persisting task state; print `RISK_ESCALATION_REQUIRED` and the classify command to rerun.
+- Derive `harness status` Build/Unit/Integration summary from the same live evidence projection as the Evidence list, including the selected record path.
 
 ### Install
 

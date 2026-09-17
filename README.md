@@ -181,7 +181,7 @@ Recover interrupted work with `harness status`; Harness resumes from `.harness/c
 ### Risk-adaptive workflow (v0.2.3)
 
 - **Q0:** direct answer; no Harness task.
-- **Q1 / FAST:** narrow, low-risk work only. Classify explicitly; Q1 is rejected without persisting when current business paths already match `.harness/risk-boundaries.yaml` Q2/Q3. FAST still needs task-level failing RED and passing GREEN evidence, then Light Gate. It skips impact, complexity review, requirements, and invariants ceremony.
+- **Q1 / FAST:** narrow, low-risk work only. Classify explicitly; Q1 is rejected without persisting when current business paths already match `.harness/risk-boundaries.yaml` Q2/Q3. FAST still needs task-level failing RED and passing GREEN evidence, then Light Gate. It skips impact, complexity review, requirements, and invariants ceremony. `harness status` Build/Unit/Integration lines use the same live evidence projection as the Evidence list.
 - **Q2 / STANDARD** and **Q3 / STRICT:** use current full Harness workflow. Risk may only escalate, never downgrade.
 
 ```bash

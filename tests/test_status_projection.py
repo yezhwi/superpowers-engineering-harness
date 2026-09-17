@@ -165,6 +165,118 @@ def test_projection_marks_head_mismatch_stale(tmp_path: Path):
     assert projection.code == "EVIDENCE_HEAD_MISMATCH"
 
 
+def test_status_summary_matches_fresh_build_evidence(tmp_path: Path):
+    """Break caught: FRESH build evidence still prints Build unknown."""
+    repo = make_repo(tmp_path)
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"], cwd=repo, check=True
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "Test"], cwd=repo, check=True
+    )
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-qm", "base"], cwd=repo, check=True)
+    head = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    from harness.workspace import snapshot
+
+    record = fresh_record()
+    record["commit"] = head
+    record["workspace_fingerprint"] = snapshot(repo).fingerprint
+    record["workspace_fingerprint_after"] = record["workspace_fingerprint"]
+    (repo / ".harness/evidence/build.json").write_text(json.dumps(record))
+    task_path = repo / ".harness/current-task.yaml"
+    before = task_path.read_bytes()
+
+    result = run_cli(repo, "status")
+
+    assert result.returncode == 0, result.stderr
+    assert "Build        unknown" not in result.stdout
+    assert "Build        passed" in result.stdout
+    assert "evidence/build.json" in result.stdout
+    assert task_path.read_bytes() == before
+
+
+def test_status_summary_marks_stale_build_instead_of_unknown(tmp_path: Path):
+    repo = make_repo(tmp_path)
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"], cwd=repo, check=True
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "Test"], cwd=repo, check=True
+    )
+    (repo / "app.py").write_text("base\n")
+    subprocess.run(["git", "add", "app.py"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-qm", "base"], cwd=repo, check=True)
+    head = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    record = fresh_record()
+    record["commit"] = head
+    (repo / ".harness/evidence/build.json").write_text(json.dumps(record))
+    (repo / "app.py").write_text("changed\n")
+
+    result = run_cli(repo, "status")
+
+    assert result.returncode == 0, result.stderr
+    assert "Build        unknown" not in result.stdout
+    assert "Build        stale" in result.stdout
+    assert "evidence/build.json" in result.stdout
+
+
+def test_status_summary_selects_latest_valid_evidence_path(tmp_path: Path):
+    repo = make_repo(tmp_path)
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"], cwd=repo, check=True
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "Test"], cwd=repo, check=True
+    )
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-qm", "base"], cwd=repo, check=True)
+    head = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    from harness.workspace import snapshot
+
+    fingerprint = snapshot(repo).fingerprint
+    older = fresh_record()
+    older.update(
+        {
+            "commit": head,
+            "timestamp": "2026-08-27T00:00:00+00:00",
+            "workspace_fingerprint": fingerprint,
+            "workspace_fingerprint_after": fingerprint,
+        }
+    )
+    newer = dict(older)
+    newer["timestamp"] = "2026-08-28T00:00:00+00:00"
+    newer["command"] = "python -m build"
+    (repo / ".harness/evidence/build.json").write_text(json.dumps(older))
+    (repo / ".harness/evidence/build-later.json").write_text(json.dumps(newer))
+
+    result = run_cli(repo, "status")
+
+    assert result.returncode == 0, result.stderr
+    assert "Build        passed" in result.stdout
+    assert "evidence/build-later.json" in result.stdout.split("Build", 1)[1].split(
+        "Unit Tests", 1
+    )[0]
+
+
 def test_status_projects_stale_evidence_without_mutating_task(tmp_path: Path):
     """Break caught: status trusts persisted verification flags or writes a new truth."""
     repo = make_repo(tmp_path)

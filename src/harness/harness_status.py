@@ -17,7 +17,7 @@ from pathlib import Path
 
 import yaml
 
-from .evidence_validator import project_evidence
+from .evidence_validator import EvidenceStatus, project_evidence
 from .state_machine import STATES, is_legal
 from .workspace import WorkspaceError, snapshot
 
@@ -120,8 +120,50 @@ def _evidence_rows(harness_dir: Path):
             expected_success=True,
         )
         record = projection.record or {}
-        rows.append((record.get("type", path.stem), projection, record))
+        rows.append((record.get("type", path.stem), projection, record, path))
     return rows
+
+
+_SUMMARY_TYPES = ("build", "unit_test", "integration_test")
+_SUMMARY_LABELS = {
+    "build": "Build",
+    "unit_test": "Unit Tests",
+    "integration_test": "Integration",
+}
+
+
+def _summary_status(projection) -> str:
+    if projection.status is EvidenceStatus.FRESH:
+        return "passed"
+    if projection.status is EvidenceStatus.STALE:
+        return "stale"
+    if projection.status is EvidenceStatus.FAILED:
+        return "failed"
+    if projection.status is EvidenceStatus.INVALID:
+        return "invalid"
+    return "unknown"
+
+
+def _verification_summary(rows, harness_dir: Path) -> dict[str, tuple[str, str | None]]:
+    chosen: dict[str, tuple[tuple[str, str], object, Path]] = {}
+    for evidence_type, projection, record, path in rows:
+        if evidence_type not in _SUMMARY_TYPES:
+            continue
+        key = (str(record.get("timestamp") or ""), path.name)
+        previous = chosen.get(evidence_type)
+        if previous is None or key > previous[0]:
+            chosen[evidence_type] = (key, projection, path)
+    summary: dict[str, tuple[str, str | None]] = {}
+    for evidence_type in _SUMMARY_TYPES:
+        if evidence_type not in chosen:
+            summary[evidence_type] = ("unknown", None)
+            continue
+        _key, projection, path = chosen[evidence_type]
+        summary[evidence_type] = (
+            _summary_status(projection),
+            path.relative_to(harness_dir).as_posix(),
+        )
+    return summary
 
 
 def _live_findings(data, harness_dir: Path) -> dict:
@@ -158,23 +200,27 @@ def _live_gate(data, harness_dir: Path) -> dict:
 
 
 def _render(data, harness_dir: Path) -> str:
-    ver = data["verification"]
     find = _live_findings(data, harness_dir)
     gate = _live_gate(data, harness_dir)
+    rows = _evidence_rows(harness_dir)
+    summary = _verification_summary(rows, harness_dir)
     lines = [
         f"{data['task']['id']}  {data['task'].get('title', '')}",
         "",
         f"State        {data['state']}",
         f"Iteration    {data['iteration']} / {data['max_iterations']}",
         "",
-        f"Build        {ver.get('build', 'unknown')}",
-        f"Unit Tests   {ver.get('unit_test', 'unknown')}",
-        f"Integration  {ver.get('integration_test', 'unknown')}",
     ]
-    rows = _evidence_rows(harness_dir)
+    for evidence_type in _SUMMARY_TYPES:
+        status, source = summary[evidence_type]
+        label = _SUMMARY_LABELS[evidence_type]
+        line = f"{label:<12} {status}"
+        if source:
+            line += f"  {source}"
+        lines.append(line)
     if rows:
         lines.extend(["", "Evidence"])
-        for evidence_type, projection, record in rows:
+        for evidence_type, projection, record, path in rows:
             lines.append(
                 f"  {evidence_type:<16} {projection.status.value:<7} "
                 f"exit={record.get('exit_code', '?')}  {record.get('command', '')}"
