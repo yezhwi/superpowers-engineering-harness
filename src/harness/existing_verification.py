@@ -20,6 +20,8 @@ ALLOWED_STATES = frozenset({"CLASSIFIED", "PLANNED"})
 CONCLUSIONS = frozenset(
     {"already_satisfied", "duplicate_request", "requires_reproduction"}
 )
+EXISTING_CONCLUSIONS = CONCLUSIONS - {"requires_reproduction"}
+GREEN_UNIT_TEST_EVIDENCE = ("fast-green-unit-test.json", "unit-test.json")
 
 
 class ExistingVerificationError(ValueError):
@@ -35,6 +37,43 @@ def target_paths(task: dict) -> tuple[str, ...]:
     if owned:
         return owned
     return business_paths(snapshot().changed_paths)
+
+
+def has_existing_verification(task: dict) -> bool:
+    record = task.get("existing_verification")
+    return (
+        task.get("verification_mode") == "existing_implementation"
+        and isinstance(record, dict)
+        and isinstance(record.get("reference"), str)
+        and bool(record["reference"].strip())
+        and isinstance(record.get("reason"), str)
+        and bool(record["reason"].strip())
+        and record.get("conclusion") in EXISTING_CONCLUSIONS
+    )
+
+
+def green_unit_test_evidence(
+    harness_dir: Path, *, head: str, workspace_hash: str
+) -> dict | None:
+    from harness import source_access
+
+    for name in GREEN_UNIT_TEST_EVIDENCE:
+        path = harness_dir / "evidence" / name
+        if not source_access.is_file(path):
+            continue
+        try:
+            record = json.loads(source_access.read_text(path))
+            validate_evidence(
+                record,
+                current_head=head,
+                current_workspace=workspace_hash,
+                expected_success=True,
+            )
+        except (OSError, json.JSONDecodeError, EvidenceValidationError):
+            continue
+        if record.get("type") == "unit_test":
+            return record
+    return None
 
 
 def require_green_evidence(harness_dir: Path) -> None:
@@ -58,25 +97,9 @@ def require_green_evidence(harness_dir: Path) -> None:
             )
         except (OSError, json.JSONDecodeError, EvidenceValidationError):
             _fail("EXISTING_VERIFICATION_GREEN_MISSING")
-    unit_ok = False
-    for name in ("fast-green-unit-test.json", "unit-test.json"):
-        path = harness_dir / "evidence" / name
-        if not source_access.is_file(path):
-            continue
-        try:
-            record = json.loads(source_access.read_text(path))
-            validate_evidence(
-                record,
-                current_head=current.head,
-                current_workspace=current.fingerprint,
-                expected_success=True,
-            )
-        except (OSError, json.JSONDecodeError, EvidenceValidationError):
-            continue
-        if record.get("type") == "unit_test":
-            unit_ok = True
-            break
-    if not unit_ok:
+    if green_unit_test_evidence(
+        harness_dir, head=current.head, workspace_hash=current.fingerprint
+    ) is None:
         _fail("EXISTING_VERIFICATION_GREEN_MISSING")
 
 

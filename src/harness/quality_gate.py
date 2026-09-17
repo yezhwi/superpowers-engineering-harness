@@ -250,10 +250,28 @@ def run_fast_gate(
                 f"FAST {evidence_type.replace('_', '-')} evidence invalid: {exc}",
             )
 
+    from .existing_verification import (
+        green_unit_test_evidence,
+        has_existing_verification,
+    )
+
+    existing = has_existing_verification(task)
     phases = [("green", True, True)]
-    if task.get("verification_mode") != "existing_implementation":
+    if not existing:
         phases = [("red", False, False), *phases]
     for phase, expected_success, require_current in phases:
+        if phase == "green" and existing:
+            if (
+                green_unit_test_evidence(
+                    harness_dir, head=head, workspace_hash=current_workspace
+                )
+                is None
+            ):
+                block(
+                    "FAST_REGRESSION_EVIDENCE_MISSING",
+                    "FAST green regression evidence invalid",
+                )
+            continue
         path = harness_dir / "evidence" / f"fast-{phase}-unit-test.json"
         try:
             record = json.loads(source_access.read_text(path))

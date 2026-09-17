@@ -6,7 +6,6 @@ import sys
 from pathlib import Path
 
 import yaml
-
 from evidence_factory import write_evidence
 from test_risk import CLASSIFY_FLAGS, SAFE
 
@@ -204,10 +203,11 @@ def test_verify_existing_source_does_not_write_gitlab():
         assert "issues.close" not in text
 
 
-def test_fast_gate_skips_red_for_existing_implementation(tmp_path):
+def test_fast_gate_accepts_unit_test_green_for_existing_mode(tmp_path):
+    from test_quality_gate import HEAD, make_harness
+
     from harness.quality_gate import run_gate
     from harness.workspace import protected_paths_fingerprint
-    from test_quality_gate import HEAD, make_harness
 
     h = make_harness(tmp_path)
     task = yaml.safe_load((h / "current-task.yaml").read_text())
@@ -223,6 +223,84 @@ def test_fast_gate_skips_red_for_existing_implementation(tmp_path):
         "user_changes": {"paths": [], "fingerprint": protected_paths_fingerprint(())},
     }
     task["verification_mode"] = "existing_implementation"
+    task["existing_verification"] = {
+        "reference": HEAD,
+        "reason": "already implemented",
+        "conclusion": "already_satisfied",
+        "introducing_commit": HEAD,
+        "introducing_author": None,
+        "introducing_time": None,
+        "untraceable_reason": None,
+        "accepted_diff_reason": None,
+    }
+    (h / "current-task.yaml").write_text(yaml.safe_dump(task))
+    (h / "requirements.yaml").unlink()
+    (h / "invariants.yaml").unlink()
+    write_evidence(REPO, h, "unit_test", name="unit-test.json")
+
+    status, blockers = run_gate(h)
+
+    assert status == "PASS", blockers
+
+
+def test_fast_gate_requires_red_without_existing_verification_record(tmp_path):
+    from test_quality_gate import HEAD, make_harness
+
+    from harness.quality_gate import run_gate
+    from harness.workspace import protected_paths_fingerprint
+
+    h = make_harness(tmp_path)
+    task = yaml.safe_load((h / "current-task.yaml").read_text())
+    task["git"]["base_commit"] = HEAD
+    task["risk"] = {
+        "level": "Q1",
+        "profile": "FAST",
+        "dimensions": {name: "none" if name != "scope" else "low" for name in SAFE},
+        "escalation_history": [],
+        "user_changes": {"paths": [], "fingerprint": protected_paths_fingerprint(())},
+    }
+    task["verification_mode"] = "existing_implementation"
+    (h / "current-task.yaml").write_text(yaml.safe_dump(task))
+    (h / "requirements.yaml").unlink()
+    (h / "invariants.yaml").unlink()
+    write_evidence(REPO, h, "unit_test", name="fast-green-unit-test.json")
+
+    status, blockers = run_gate(h)
+
+    assert status == "BLOCKED"
+    assert any(item.code == "FAST_REGRESSION_EVIDENCE_MISSING" for item in blockers)
+
+
+def test_fast_gate_skips_red_for_valid_existing_implementation(tmp_path):
+    from test_quality_gate import HEAD, make_harness
+
+    from harness.quality_gate import run_gate
+    from harness.workspace import protected_paths_fingerprint
+
+    h = make_harness(tmp_path)
+    task = yaml.safe_load((h / "current-task.yaml").read_text())
+    task["git"]["base_commit"] = HEAD
+    (h / "risk-boundaries.yaml").write_text(
+        "boundaries:\n  q2: [never/**]\n  q3: [never/**]\n"
+    )
+    task["risk"] = {
+        "level": "Q1",
+        "profile": "FAST",
+        "dimensions": {name: "none" if name != "scope" else "low" for name in SAFE},
+        "escalation_history": [],
+        "user_changes": {"paths": [], "fingerprint": protected_paths_fingerprint(())},
+    }
+    task["verification_mode"] = "existing_implementation"
+    task["existing_verification"] = {
+        "reference": HEAD,
+        "reason": "already implemented",
+        "conclusion": "already_satisfied",
+        "introducing_commit": HEAD,
+        "introducing_author": None,
+        "introducing_time": None,
+        "untraceable_reason": None,
+        "accepted_diff_reason": None,
+    }
     (h / "current-task.yaml").write_text(yaml.safe_dump(task))
     (h / "requirements.yaml").unlink()
     (h / "invariants.yaml").unlink()
