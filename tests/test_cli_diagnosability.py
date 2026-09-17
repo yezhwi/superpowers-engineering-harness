@@ -6,6 +6,10 @@ import sys
 from pathlib import Path
 
 import yaml
+import pytest
+from jsonschema import ValidationError, validate
+
+from harness.schema_resources import read_schema
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -250,6 +254,23 @@ def test_review_rejects_contract_label_in_files(tmp_path):
 
     assert result.returncode == 2
     assert "DEC-001" in result.stderr
+
+
+def test_diagnosability_evidence_schema_rejects_contract_label_as_file(tmp_path):
+    repo = make_repo(tmp_path)
+    source = review_source(tmp_path)
+
+    result = run_cli(
+        repo, "review", "diagnosability", "--base", "HEAD", "--file", str(source)
+    )
+
+    assert result.returncode == 0, result.stderr
+    record = json.loads(
+        (repo / ".harness/evidence/diagnosability-review.json").read_text()
+    )
+    record["review_scope"]["files"] = ["DEC-001:orders"]
+    with pytest.raises(ValidationError):
+        validate(record, read_schema("diagnosability-review-evidence.schema.json"))
 
 
 def test_review_accepts_contract_refs_separate_from_files(tmp_path):

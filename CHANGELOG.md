@@ -13,7 +13,7 @@
 - Derive `harness status` Build/Unit/Integration summary from the same live evidence projection as the Evidence list, including the selected record path.
 - Scope compact Layer 0 to the current task's ACCEPTED decisions. Unreferenced historical decisions are omitted as `different_task_not_referenced` and do not trigger `DECISION_OUTSIDE_SCOPE`; explicit `supersedes`/`superseded_by` cross-task ids stay Layer 2 refs.
 - Record optional `execution_environment` on collected evidence for `kubectl exec` (namespace/workload/cwd/container when present). Unparseable kubectl commands store `transport: unknown` without changing result semantics.
-- Add `harness task verify-existing` for already-implemented work: records `verification_mode: existing_implementation` from CLASSIFIED/PLANNED with GREEN evidence, without RED, fake findings, or tracker writes. FAST Gate skips RED only in that mode.
+- Add `harness task verify-existing` for already-implemented work: records `verification_mode: existing_implementation` from CLASSIFIED/PLANNED with GREEN evidence, without RED, fake findings, or tracker writes. FAST Gate skips RED only with that mode plus a valid persisted verification record.
 - Keep `TEST_RUNNER_UNRESOLVED` for unbound test selectors only; `npm run` build/lint evidence is not treated as a missing test runner. Persist `contract_refs` on complexity and interface review evidence so Gate matches typed scope.
 
 ### Install

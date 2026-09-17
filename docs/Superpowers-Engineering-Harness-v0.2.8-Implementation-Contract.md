@@ -89,6 +89,10 @@ v0.2.8 **发版只认 Product Done**。Experiment Done 是宿主会话实验，�
 - 绑定单一 Agent Runtime 或 tokenizer
 - 符号表 / LSP / AST 解析
 
+### 3.4 已有实现 FAST 验证例外
+
+`harness task verify-existing` 只允许 `CLASSIFIED`/`PLANNED` task。仅当 task 同时保存 `verification_mode: existing_implementation` 与 schema-valid `existing_verification`（非空 reference/reason，结论为 `already_satisfied` 或 `duplicate_request`）时，FAST Light Gate 可免 RED；GREEN、build freshness、scope、授权仍必验。`requires_reproduction` 不写 task，保持 `CLASSIFIED`，随后必须创建或恢复 finding 并走既有 reproduce 生命周期。
+
 ---
 
 ## 4. 非目标

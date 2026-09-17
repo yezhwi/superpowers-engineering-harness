@@ -91,7 +91,8 @@ A test that is not bound to Requirement/Invariant is useful regression coverage,
 ```text
 Q0  answer only; no Harness task
 Q1  FAST: RED / fix / GREEN / Light Gate; already-implemented work may use
-    verify-existing (GREEN, no forged RED) from CLASSIFIED or PLANNED
+    verify-existing (valid persisted record + GREEN, no forged RED) from CLASSIFIED or PLANNED;
+    requires_reproduction leaves CLASSIFIED for normal finding/reproduce workflow
 Q2  STANDARD: Task Contract, verification, review, Gate
 Q3  STRICT: Q2 plus mandatory non-sentinel Observability Contract and fresh diagnosability review
 ```
