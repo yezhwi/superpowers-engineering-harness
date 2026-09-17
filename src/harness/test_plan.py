@@ -1,6 +1,7 @@
 """Structured Test Plan policy shared by transition and quality gates."""
 
 from dataclasses import dataclass
+from pathlib import Path
 
 from .collect_evidence import command_covers_test, record_covers_test
 
@@ -31,8 +32,11 @@ class TestPlanIssue:
     test_case_id: str | None = None
 
 
-def validate_test_plan(requirements: dict, invariants: dict) -> list[TestPlanIssue]:
+def validate_test_plan(
+    requirements: dict, invariants: dict, *, repo_root: Path | None = None
+) -> list[TestPlanIssue]:
     """Return planning defects that block STANDARD/STRICT implementation entry."""
+    repo_root = repo_root or Path.cwd()
     issues: list[TestPlanIssue] = []
     seen_case_ids: set[str] = set()
 
@@ -79,6 +83,16 @@ def validate_test_plan(requirements: dict, invariants: dict) -> list[TestPlanIss
                     invariant_id=invariant_id,
                     test_case_id=case_id,
                 )
+            for target in test_case.get("tests", []):
+                path = target.split("::", 1)[0]
+                if not (repo_root / path).is_file():
+                    issue(
+                        "TEST_PLAN_TARGET_MISSING",
+                        f"{case_id} declares missing test target {target}",
+                        requirement_id=requirement_id,
+                        invariant_id=invariant_id,
+                        test_case_id=case_id,
+                    )
         return cases
 
     for requirement in requirements.get("requirements", []):

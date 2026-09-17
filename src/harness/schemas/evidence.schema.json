@@ -65,7 +65,7 @@
       "description": "Business workspace snapshot after command; must equal workspace_fingerprint."
     },
     "scope": {
-      "enum": ["related", "full_suite"]
+      "const": "related"
     },
     "covered_tests": {
       "type": "array",

@@ -109,11 +109,20 @@ def write_finding(h: Path, **overrides):
                     "commit": HEAD,
                     "workspace_fingerprint": fingerprint,
                     "workspace_fingerprint_after": fingerprint,
-                    "scope": "full_suite",
-                    "covered_tests": [],
+                    "scope": "related",
+                    "covered_tests": [finding["test"]],
                 }
             )
         )
+    if status in {"VERIFIED", "CLOSED"}:
+        impact_path = h / "impact.yaml"
+        impact = (
+            yaml.safe_load(impact_path.read_text())
+            if impact_path.exists()
+            else {"impact": {}}
+        )
+        impact["impact"]["required_tests"] = [finding["regression_test"]["path"]]
+        impact_path.write_text(yaml.safe_dump(impact))
     (h / "findings" / f"{finding['id'].lower()}.yaml").write_text(
         yaml.safe_dump(finding)
     )
@@ -213,21 +222,21 @@ def test_verified_finding_accepts_historical_red_evidence(tmp_path):
     assert status == "PASS", blockers
 
 
-def test_verified_finding_with_stale_full_evidence_is_invalid(tmp_path):
+def test_verified_finding_with_stale_related_evidence_is_invalid(tmp_path):
     h = make_harness(tmp_path)
     write_finding(h, status="VERIFIED")
-    full_path = h / "evidence" / "FND-001-full.json"
-    full = json.loads(full_path.read_text())
-    full["workspace_fingerprint"] = "sha256:" + "0" * 64
-    full["workspace_fingerprint_after"] = "sha256:" + "0" * 64
-    full_path.write_text(json.dumps(full))
+    evidence_path = h / "evidence" / "FND-001-full.json"
+    evidence = json.loads(evidence_path.read_text())
+    evidence["workspace_fingerprint"] = "sha256:" + "0" * 64
+    evidence["workspace_fingerprint_after"] = "sha256:" + "0" * 64
+    evidence_path.write_text(json.dumps(evidence))
 
     with pytest.raises(Exception, match="EVIDENCE_WORKSPACE_STALE"):
         run_gate(h)
 
 
 def test_verified_after_fix_passes(tmp_path):
-    # Fix landed, full suite green, finding closed as VERIFIED.
+    # Fix landed, related regression proof green, finding closed as VERIFIED.
     h = make_harness(tmp_path)
     write_finding(
         h, status="VERIFIED", regression_test={"path": "tests/test_regress_fnd_001.py"}

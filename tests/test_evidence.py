@@ -27,7 +27,12 @@ def _head() -> str:
 
 
 def __collect(
-    harness_dir: Path, etype="unit_test", cmd="true", *, reuse_if_valid=False
+    harness_dir: Path,
+    etype="unit_test",
+    cmd="true",
+    *,
+    covered_test="tests/test_x.py::test_x",
+    reuse_if_valid=False,
 ):
     args = [
         sys.executable,
@@ -40,7 +45,7 @@ def __collect(
         str(harness_dir),
     ]
     if etype == "unit_test":
-        args.extend(["--scope", "full_suite"])
+        args.extend(["--scope", "related", "--covered-test", covered_test])
     if reuse_if_valid:
         args.append("--reuse-if-valid")
     return subprocess.run(
@@ -82,12 +87,23 @@ def test_reuse_hit_does_not_execute_or_rewrite_evidence(tmp_path):
     assert path.read_bytes() == before
 
 
+def test_related_test_evidence_is_append_only_per_coverage(tmp_path):
+    assert __collect(tmp_path, "unit_test", "true", covered_test="tests/test_a.py").returncode == 0
+    assert __collect(tmp_path, "unit_test", "true", covered_test="tests/test_b.py").returncode == 0
+
+    records = sorted((tmp_path / "evidence").glob("unit-test-*.json"))
+    assert len(records) == 2
+    assert {json.loads(path.read_text())["covered_tests"][0] for path in records} == {
+        "tests/test_a.py",
+        "tests/test_b.py",
+    }
+
+
 def test_collect_success_evidence(tmp_path):
     result = __collect(tmp_path, "unit_test", "echo hello")
     assert result.returncode == 0, result.stderr
 
-    path = tmp_path / "evidence" / "unit-test.json"
-    assert path.exists()
+    [path] = (tmp_path / "evidence").glob("unit-test-*.json")
     ev = json.loads(path.read_text())
 
     required = {"type", "timestamp", "command", "exit_code", "commit"}
@@ -188,7 +204,8 @@ def test_collect_related_scope_records_covered_tests(tmp_path):
         cwd=REPO,
     )
     assert result.returncode == 0, result.stderr
-    evidence = json.loads((tmp_path / "evidence" / "unit-test.json").read_text())
+    [path] = (tmp_path / "evidence").glob("unit-test-*.json")
+    evidence = json.loads(path.read_text())
     assert "scope" not in evidence
     assert evidence["covered_tests"] == ["tests/test_x.py::test_x"]
 
@@ -246,7 +263,8 @@ def test_collect_integration_evidence_records_covered_tests(tmp_path):
         cwd=REPO,
     )
     assert result.returncode == 0, result.stderr
-    evidence = json.loads((tmp_path / "evidence" / "integration-test.json").read_text())
+    [path] = (tmp_path / "evidence").glob("integration-test-*.json")
+    evidence = json.loads(path.read_text())
     assert evidence["covered_tests"] == ["tests/test_api.py::test_create"]
     assert "scope" not in evidence
 
@@ -340,9 +358,9 @@ def test_collect_failure_still_writes_evidence(tmp_path):
 def test_collect_filename_mapping(tmp_path):
     for etype in ("integration_test", "typecheck", "contract_test"):
         assert __collect(tmp_path, etype, "true").returncode == 0
-    assert (tmp_path / "evidence" / "integration-test.json").exists()
+    assert list((tmp_path / "evidence").glob("integration-test-*.json"))
     assert (tmp_path / "evidence" / "typecheck.json").exists()
-    assert (tmp_path / "evidence" / "contract-test.json").exists()
+    assert list((tmp_path / "evidence").glob("contract-test-*.json"))
 
 
 def test_collect_stderr_tail(tmp_path):

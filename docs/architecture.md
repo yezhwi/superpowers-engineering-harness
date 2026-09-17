@@ -97,7 +97,7 @@ Q2  STANDARD: Task Contract, verification, review, Gate
 Q3  STRICT: Q2 plus mandatory non-sentinel Observability Contract and fresh diagnosability review
 ```
 
-Risk can escalate but never downgrade. User authorization controls Harness actions such as commit, full suite, push, and release; it does not prove external actions did not occur.
+Risk can escalate but never downgrade. User authorization controls Harness actions such as commit, push, and release; it does not prove external actions did not occur. Harness never executes a full-suite test command: only impact-related verification is allowed, even when AGENTS.md requests otherwise. Related test evidence is append-only by command and covered-test identity; Gate unions fresh coverage records. `VERIFYING → REVIEWING` performs Gate freshness preflight, and STANDARD/STRICT plans reject missing declared test target files before implementation.
 
 ## Diagnosability review integrity
 
@@ -130,7 +130,7 @@ Feature complete
 → focused verification
 → review / Gate PASS
 → version + changelog
-→ explicitly authorized full suite
+→ impact-related verification only
 → package checks
 → commit + push
 → immutable annotated tag

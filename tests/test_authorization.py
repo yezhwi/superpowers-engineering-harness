@@ -37,7 +37,7 @@ def test_authorizations_are_independent(tmp_path):
     assert task(tmp_path)["authorizations"]["push"]["granted"] is False
 
 
-def test_full_suite_requires_its_own_authorization(tmp_path):
+def test_full_suite_is_forbidden_even_with_other_authorization(tmp_path):
     setup(tmp_path)
     assert cli(tmp_path, "authorize", "commit").returncode == 0
 
@@ -53,4 +53,4 @@ def test_full_suite_requires_its_own_authorization(tmp_path):
     )
 
     assert result.returncode == 2
-    assert "FULL_SUITE_AUTHORIZATION_REQUIRED" in result.stderr
+    assert "FULL_SUITE_FORBIDDEN" in result.stderr

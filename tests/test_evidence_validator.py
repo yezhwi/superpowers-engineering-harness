@@ -172,7 +172,7 @@ def test_major_closure_rejects_missing_related_coverage():
 def test_major_closure_ignores_advisory_full_suite_recommendation():
     evidence = record(exit_code=0, scope="related", covered_tests=[TEST])
     finding = {"id": "FND-001", "severity": "major"}
-    impact = {"impact": {"required_tests": [TEST], "full_suite": {"recommended": True}}}
+    impact = {"impact": {"required_tests": [TEST]}}
     validate_finding_closure_evidence(
         finding, evidence, impact, current_head=HEAD, current_workspace=FP
     )

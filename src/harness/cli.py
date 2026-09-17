@@ -96,7 +96,7 @@ def _main(argv=None) -> int:
     p_outcome.add_argument("--finding", action="append", default=[])
     p_ev = sub.add_parser("evidence", help="run a command and save HEAD-bound evidence")
     p_ev.add_argument("--type", required=True, choices=sorted(VALID_TYPES))
-    p_ev.add_argument("--scope", choices=["related", "full_suite"], default="related")
+    p_ev.add_argument("--scope", default="related")
     p_ev.add_argument("--command", required=True, dest="evidence_command")
     p_ev.add_argument("--finding")
     p_ev.add_argument("--test")
@@ -128,8 +128,6 @@ def _main(argv=None) -> int:
     ict.add_argument("value")
     irk = ims.add_parser("add-risk")
     irk.add_argument("value")
-    ir = ims.add_parser("require-full-suite")
-    ir.add_argument("--reason", required=True)
     iinterface = ims.add_parser("add-interface")
     iinterface.add_argument("value")
     iinterface.add_argument(
@@ -151,14 +149,12 @@ def _main(argv=None) -> int:
         "action",
         choices=[
             "commit",
-            "full-suite",
             "push",
             "create-mr",
             "ready-mr",
             "merge",
             "deploy",
             "revoke-commit",
-            "revoke-full-suite",
             "revoke-push",
             "revoke-create-mr",
             "revoke-ready-mr",
@@ -362,6 +358,12 @@ def _main(argv=None) -> int:
             args.outcome, args.reason_code, args.finding
         )
     if args.subcommand == "evidence":
+        if args.scope == "full_suite":
+            print("FULL_SUITE_FORBIDDEN", file=sys.stderr)
+            return 2
+        if args.scope != "related":
+            print("EVIDENCE_SCOPE_INVALID", file=sys.stderr)
+            return 2
         if args.attach:
             return controlplane.cmd_evidence_attach(
                 args.type,
@@ -369,11 +371,6 @@ def _main(argv=None) -> int:
                 args.scope,
                 Path(args.result_file) if args.result_file else None,
             )
-        if args.scope == "full_suite" and not controlplane.authorization_granted(
-            controlplane.load_task(Path(".harness")), "full_suite"
-        ):
-            print("FULL_SUITE_AUTHORIZATION_REQUIRED", file=sys.stderr)
-            return 2
         if legacy_evidence:
             print("DEPRECATED: Use `harness evidence run`.", file=sys.stderr)
         return controlplane.cmd_evidence(

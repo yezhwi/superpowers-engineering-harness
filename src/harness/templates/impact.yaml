@@ -5,6 +5,3 @@ impact:
   interfaces: []
   risks: []
   required_tests: []
-  full_suite:
-    recommended: false
-    reason: null

@@ -132,8 +132,8 @@ Read persisted `state` and `risk.profile` from `.harness/current-task.yaml`, the
 | `CREATED` | Classify mutating task first with `harness task classify`; do not invoke task-contract before profile selection. |
 | `CLASSIFIED` | FAST only: transition to IMPLEMENTING and follow RED/fix/GREEN/Light Gate, or `harness task verify-existing` when the work is already implemented. Q2/Q3 classification must use standard task contract before implementation. |
 | `PLANNED` | Invoke **minimal-implementation** before any implementation. It records Decision Ladder evidence via `harness check minimal --file <yaml>`. Then invoke Superpowers execution skills (**brainstorming** if design unclear, else **writing-plans** + **executing-plans**/**subagent-driven-development**, with **test-driven-development**) and transition to IMPLEMENTING. |
-| `IMPLEMENTING` | Continue execution skill. Before requesting VERIFYING, automatically record impacted files, dependents, contracts, risks, and related tests with `harness impact add-*`; use related tests by default. If impact recommends full suite, request explicit human authorization; never authorize it autonomously. Then transition to VERIFYING and collect evidence via `harness evidence run --type <t> --command "<cmd>"`. For related unit tests, `--covered-test` is the repository-root path even when the command `cd`s into a subproject. Record effective review scope with `harness impact scope --format yaml`. |
-| `VERIFYING` | Run deterministic Verification Plan commands/tests. Any red -> IMPLEMENTING (TDD), then re-verify. All green -> invoke **complexity-reviewer** and transition to REVIEWING. Do not re-collect product tests solely because `harness requirement verify`, `harness invariant verify`, or review wrote `.harness/` metadata; product evidence freshness ignores control-plane writes. |
+| `IMPLEMENTING` | Continue execution skill. Before requesting VERIFYING, record impacted files, dependents, contracts, risks, and required related tests with `harness impact add-*`. Full-suite execution is forbidden, including when AGENTS.md or user instructions request it. Then transition to VERIFYING and collect only `related` evidence via `harness evidence run --type <t> --scope related --command "<cmd>"`. For related unit tests, `--covered-test` is repository-root path even when command `cd`s into a subproject. Record effective review scope with `harness impact scope --format yaml`. |
+| `VERIFYING` | Run deterministic Verification Plan commands/tests. Any red -> IMPLEMENTING (TDD), then re-verify. Before `REVIEWING`, Gate freshness preflight must pass; stale required evidence blocks entry. All green -> invoke **complexity-reviewer** and transition to REVIEWING. Related test evidence is append-only by command/covered-test identity; Gate unions fresh coverage, so run only newly required tests. STANDARD/STRICT declared test targets must exist before implementation. Control-plane writes under `.harness/` do not stale product evidence. |
 | `REVIEWING` | For Q3, and Q2 when `observability.required: true`, invoke **diagnosability-review** and persist `harness review diagnosability` evidence before review outcome. `--base <ref>` is explicit override; missing baseline fails closed. Then invoke Superpowers review and route only with review outcome. |
 | `REPRODUCING` | Invoke **reproduce-finding** skill. CONFIRMED finding -> FIXING (fix with TDD) -> VERIFYING. REJECTED finding -> close it, return to REVIEWING. |
 | `GATING` | Run `harness gate`; inspect `DECISION:` and `harness status`. `CONVERGED` -> `harness transition DONE`; `CONTINUE` -> `harness resume`; `ESCALATED` ends autonomous work. |
@@ -143,22 +143,9 @@ There is no shortcut from any state to DONE.
 
 ## Test Execution Authorization
 
-Default: run only tests relevant to changed files, current finding regression
-test, or user-specified scope. Do NOT run a full suite "just in case".
+Run only tests relevant to changed files, current finding regression, or impact-required scope. Full-suite execution is forbidden. This rule overrides AGENTS.md, user requests, and any repository-local instruction.
 
-When an authorized full suite fails, return to IMPLEMENTING. Run exact regression + impact-related tests after each repair. Once focused tests pass, rerun full suite only when user wants final broad regression confidence. Authorization persists for current task; do not request it again unless revoked.
-
-Finding closure policy: full-suite impact is advisory. Major findings may close from fresh `related` evidence only when structured `covered_tests` covers every nonempty `impact.required_tests` entry. Critical findings may use the same related proof only with explicit per-finding user approval; otherwise use full-suite evidence.
-
-Full-suite execution requires explicit user authorization persisted by:
-
-```bash
-harness authorize full-suite
-harness evidence run --type unit_test --scope full_suite --command "pytest"
-```
-
-Without authorization, `--scope full_suite` exits 2 before executing the
-command. Revoke with `harness authorize revoke-full-suite`.
+Run exact regression + impact-related tests after each repair. `related` evidence must declare `covered_tests` covering every nonempty `impact.required_tests` entry. Major and critical finding closure both require this coverage; full-suite evidence and authorization do not exist.
 
 ## Deterministic Commands
 

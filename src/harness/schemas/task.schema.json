@@ -95,7 +95,7 @@
     },
     "authorizations": {
       "type": "object",
-      "propertyNames": {"enum": ["commit", "full_suite", "push", "create_mr", "ready_mr", "merge", "deploy"]},
+      "propertyNames": {"enum": ["commit", "push", "create_mr", "ready_mr", "merge", "deploy"]},
       "additionalProperties": {
         "type": "object",
         "required": ["granted", "granted_at", "source"],

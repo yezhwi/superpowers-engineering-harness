@@ -38,19 +38,31 @@ def test_full_suite_rejected_without_authorization(tmp_path):
     assert r.returncode == 2
 
 
-def test_authorization_allows_full_suite(tmp_path):
+def test_full_suite_authorization_and_evidence_scope_are_forbidden(tmp_path):
     setup(tmp_path)
-    assert cli(tmp_path, "authorize", "full-suite").returncode == 0
-    assert (
-        cli(
-            tmp_path,
-            "evidence",
-            "--type",
-            "unit_test",
-            "--scope",
-            "full_suite",
-            "--command",
-            "true",
-        ).returncode
-        == 0
+    assert cli(tmp_path, "authorize", "full-suite").returncode == 2
+    result = cli(
+        tmp_path,
+        "evidence",
+        "--type",
+        "unit_test",
+        "--scope",
+        "full_suite",
+        "--command",
+        "true",
     )
+    assert result.returncode == 2
+    assert "FULL_SUITE_FORBIDDEN" in result.stderr
+    attached = cli(
+        tmp_path,
+        "evidence",
+        "--type",
+        "unit_test",
+        "--scope",
+        "full_suite",
+        "--command",
+        "ignored.json",
+        "--attach",
+    )
+    assert attached.returncode == 2
+    assert "FULL_SUITE_FORBIDDEN" in attached.stderr

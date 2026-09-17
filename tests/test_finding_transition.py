@@ -59,8 +59,13 @@ def setup(tmp_path):
                 }
             )
         else:
-            evidence.update({"scope": "full_suite", "covered_tests": []})
+            evidence.update(
+                {"scope": "related", "covered_tests": ["tests/test_x.py::test_x"]}
+            )
         (h / "evidence" / name).write_text(json.dumps(evidence))
+    (h / "impact.yaml").write_text(
+        yaml.safe_dump({"impact": {"required_tests": ["tests/test_x.py::test_x"]}})
+    )
     return h
 
 
@@ -330,7 +335,7 @@ def test_fixed_rejects_green_evidence_for_different_test(tmp_path):
     assert status(h) == "FIXING"
 
 
-def test_critical_finding_rejects_related_closure_evidence(tmp_path):
+def test_critical_finding_accepts_related_closure_evidence(tmp_path):
     h = setup(tmp_path)
     full = json.loads((h / "evidence" / "full.json").read_text())
     full["scope"] = "related"
@@ -340,7 +345,6 @@ def test_critical_finding_rejects_related_closure_evidence(tmp_path):
             {
                 "impact": {
                     "required_tests": ["tests/test_x.py::test_x"],
-                    "full_suite": {"recommended": False},
                 }
             }
         )
@@ -394,8 +398,7 @@ def test_critical_finding_rejects_related_closure_evidence(tmp_path):
         "--evidence",
         "full.json",
     )
-    assert result.returncode == 2
-    assert "CRITICAL_RELATED_APPROVAL_REQUIRED" in result.stderr
+    assert result.returncode == 0
 
 
 def test_critical_finding_accepts_approved_related_closure(tmp_path):

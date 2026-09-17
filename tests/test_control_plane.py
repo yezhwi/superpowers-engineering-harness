@@ -38,7 +38,7 @@ def test_gate_preflight_requires_release_readiness_for_ready_output(tmp_path, mo
         "assess_gate",
         lambda *_args, **_kwargs: quality_gate.GateAssessment(
             "PASS", (), {"status": "PASS"},
-            {"status": "DRAFT_ONLY", "reasons": ["full_suite_required_but_not_authorized"]},
+            {"status": "NOT_READY", "reasons": ["quality_gate_blocked"]},
         ),
     )
 
@@ -166,6 +166,22 @@ def test_transition_legal_persists_new_state(tmp_path):
     assert task["state"] == "IMPLEMENTING"
 
 
+def test_verifying_to_reviewing_rejects_stale_required_evidence(tmp_path, monkeypatch, capsys):
+    make_repo(tmp_path, state="VERIFYING")
+    monkeypatch.chdir(tmp_path)
+    blocker = quality_gate.GateBlocker(
+        "EVIDENCE_WORKSPACE_STALE", "verification", "unit evidence invalid"
+    )
+    monkeypatch.setattr(
+        quality_gate,
+        "run_gate",
+        lambda *_args, **_kwargs: ("BLOCKED", [blocker]),
+    )
+
+    assert controlplane.cmd_transition("REVIEWING") == 1
+    assert "EVIDENCE_WORKSPACE_STALE" in capsys.readouterr().err
+
+
 def test_transition_illegal_rejected_and_unchanged(tmp_path):
     make_repo(tmp_path, state="IMPLEMENTING")
     result = run_cli(tmp_path, "transition", "DONE")
@@ -175,11 +191,10 @@ def test_transition_illegal_rejected_and_unchanged(tmp_path):
     assert task["state"] == "IMPLEMENTING"
 
 
-def test_full_suite_recommendation_does_not_block_verifying(tmp_path):
+def test_related_required_tests_do_not_block_verifying(tmp_path):
     h = make_repo(tmp_path, state="IMPLEMENTING")
     impact = yaml.safe_load((h / "impact.yaml").read_text())
     impact["impact"]["required_tests"] = ["tests/test_control_plane.py"]
-    impact["impact"]["full_suite"] = {"recommended": True, "reason": "wide change"}
     (h / "impact.yaml").write_text(yaml.safe_dump(impact))
 
     result = run_cli(tmp_path, "transition", "VERIFYING")
@@ -228,7 +243,8 @@ def test_evidence_failing_command_still_saved(tmp_path):
         "false",
     )
     # evidence is recorded; the wrapper reports the underlying failure
-    ev = json.loads((tmp_path / ".harness" / "evidence" / "unit-test.json").read_text())
+    [path] = (tmp_path / ".harness" / "evidence").glob("unit-test-*.json")
+    ev = json.loads(path.read_text())
     assert ev["exit_code"] != 0
 
 

@@ -129,6 +129,23 @@ def test_standard_planned_to_implementing_rejects_invalid_test_plan(tmp_path):
     )
 
 
+def test_standard_planned_to_implementing_rejects_missing_declared_test_target(tmp_path):
+    repo = standard_repo_in_state(tmp_path)
+    write_minimal_decision(repo)
+    write_documents(repo, valid=True)
+    requirements_path = repo / ".harness/requirements.yaml"
+    requirements = yaml.safe_load(requirements_path.read_text())
+    requirements["requirements"][0]["test_plan"]["cases"][0]["tests"] = [
+        "tests/does-not-exist.py"
+    ]
+    requirements_path.write_text(yaml.safe_dump(requirements))
+
+    result = cli(repo, "transition", "IMPLEMENTING")
+
+    assert result.returncode == 1
+    assert "TEST_PLAN_TARGET_MISSING" in result.stderr
+
+
 def test_standard_planned_to_implementing_accepts_valid_test_plan(tmp_path):
     """Break caught: valid plan cannot reach implementation after minimal check."""
     repo = standard_repo_in_state(tmp_path)

@@ -69,15 +69,12 @@ def test_impact_adopted_path_enters_scope_but_protected_path_does_not(tmp_path):
     assert "docs/user.md" not in scope["effective_scope"]
 
 
-def test_impact_require_full_suite_records_reason(tmp_path):
+def test_impact_rejects_removed_full_suite_action(tmp_path):
     setup(tmp_path)
-    assert (
-        cli(
-            tmp_path, "impact", "require-full-suite", "--reason", "state boundary"
-        ).returncode
-        == 0
+    result = cli(
+        tmp_path, "impact", "require-full-suite", "--reason", "state boundary"
     )
-    assert "state boundary" in cli(tmp_path, "impact", "show").stdout
+    assert result.returncode == 2
 
 
 def test_q1_external_interface_requires_explicit_escalation(tmp_path):

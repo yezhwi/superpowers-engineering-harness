@@ -46,7 +46,7 @@ from .workspace import (
 
 # Finding statuses that must block the gate. Terminal/healthy:
 # VERIFIED, CLOSED, REJECTED. FIXED (test green, regression pending)
-# still blocks - full regression evidence does not exist yet.
+# still blocks - related regression evidence does not exist yet.
 OPEN_FINDING_STATUSES = {
     "PROPOSED",
     "REPRODUCING",
@@ -443,7 +443,7 @@ def _evaluate_gate(
                 EvidenceReferenceError,
             ) as exc:
                 raise InvalidHarnessState(
-                    f"{finding['id']} full regression evidence invalid: {exc}"
+                    f"{finding['id']} related regression evidence invalid: {exc}"
                 ) from exc
 
     blockers: list[GateBlocker] = []
@@ -1036,20 +1036,9 @@ def assess_gate(
         allow_converged=allow_converged,
         allow_preflight=allow_preflight,
     )
-    release = _load_yaml(harness_dir / "gate.yaml").get("gate", {}).get("release", {})
-    authorized = bool(
-        (_load_yaml(harness_dir / "current-task.yaml").get("authorizations") or {})
-        .get("full_suite", {})
-        .get("granted")
-    )
     readiness = (
         {"status": "NOT_READY", "reasons": ["quality_gate_blocked"]}
         if status != "PASS"
-        else {
-            "status": "DRAFT_ONLY",
-            "reasons": ["full_suite_required_but_not_authorized"],
-        }
-        if release.get("full_suite_required") and not authorized
         else {"status": "READY", "reasons": []}
     )
     return GateAssessment(

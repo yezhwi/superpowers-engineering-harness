@@ -14,6 +14,7 @@ Exit codes: 0 = evidence written; 2 = invalid harness state / usage.
 
 import argparse
 import datetime
+import hashlib
 import json
 import os
 import platform
@@ -195,11 +196,24 @@ def workspace_fingerprint(repo_root: Path | None = None) -> str:
 
 
 def evidence_filename(
-    evidence_type: str, *, finding_id: str | None = None, phase: str | None = None
+    evidence_type: str,
+    *,
+    finding_id: str | None = None,
+    phase: str | None = None,
+    related_coverage: tuple[str, ...] | None = None,
+    command: str | None = None,
 ) -> str:
-    """Return deterministic generic or finding evidence filename."""
+    """Return deterministic generic, finding, or related-test evidence filename."""
     stem = evidence_type.replace("_", "-")
     if finding_id is None:
+        if related_coverage is not None:
+            identity = json.dumps(
+                {"command": command, "covered_tests": sorted(related_coverage)},
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            digest = hashlib.sha256(identity.encode()).hexdigest()[:12]
+            return f"{stem}-{digest}.json"
         if phase is None:
             return f"{stem}.json"
         if phase not in {"red", "green"}:
@@ -738,7 +752,7 @@ def main(argv=None):
     parser.add_argument("--harness-dir", default=".harness")
     parser.add_argument("--finding")
     parser.add_argument("--test")
-    parser.add_argument("--scope", choices=["related", "full_suite"], default="related")
+    parser.add_argument("--scope", choices=["related"], default="related")
     parser.add_argument("--covered-test", action="append", default=[])
     parser.add_argument("--covered-test-case", action="append", default=[])
     parser.add_argument("--phase", choices=["red", "green", "full"])
@@ -782,7 +796,17 @@ def main(argv=None):
     try:
         out_file = evidence_output_path(
             Path(args.harness_dir),
-            evidence_filename(args.type, finding_id=args.finding, phase=args.phase),
+            evidence_filename(
+                args.type,
+                finding_id=args.finding,
+                phase=args.phase,
+                related_coverage=(
+                    tuple(args.covered_test)
+                    if args.scope == "related" and args.type in TEST_EVIDENCE_TYPES
+                    else None
+                ),
+                command=args.command,
+            ),
         )
     except (ValueError, EvidenceReferenceError) as exc:
         print(str(exc), file=sys.stderr)

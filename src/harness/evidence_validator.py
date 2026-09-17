@@ -232,7 +232,6 @@ def validate_finding_closure_evidence(
     scope = record.get("scope")
     if scope is None:
         _fail("FINDING_SCOPE_MISSING")
-    severity = finding.get("severity")
     policy = (impact or {}).get("impact", {})
     if scope != "related":
         return
@@ -240,12 +239,3 @@ def validate_finding_closure_evidence(
     covered = set(record.get("covered_tests", []))
     if not required or not required <= covered:
         _fail("RELATED_TEST_COVERAGE_MISSING")
-    if severity == "critical":
-        closure = finding.get("closure", {})
-        if not (
-            closure.get("mode") == "related"
-            and closure.get("critical_related_approved") is True
-            and closure.get("source") == "user"
-            and closure.get("approved_at")
-        ):
-            _fail("CRITICAL_RELATED_APPROVAL_REQUIRED")

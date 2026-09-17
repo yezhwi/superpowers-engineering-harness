@@ -167,14 +167,15 @@ harness gate
 harness resume
 ```
 
-Before `VERIFYING`, record impact and related tests. Full suite needs explicit authorization:
+Before `VERIFYING`, record impact and related tests. Harness never executes a full suite, even when repository instructions request one. Evidence scope is always `related` and must cover every required test:
 
 ```bash
 harness impact add-change src/orders/cancel.py
 harness impact add-test tests/test_cancel.py::test_duplicate_cancel_single_refund
-harness authorize full-suite
-harness evidence run --type unit_test --scope full_suite --command "pytest"
+harness evidence run --type unit_test --scope related --covered-test tests/test_cancel.py::test_duplicate_cancel_single_refund --command "pytest tests/test_cancel.py::test_duplicate_cancel_single_refund"
 ```
+
+Related test evidence is append-only (`unit-test-<hash>.json`). Gate unions fresh records' `covered_tests`, so adding one required test needs only that test's command. `VERIFYING → REVIEWING` runs freshness preflight first; stale required evidence blocks entry. STANDARD/STRICT task plans also reject declared test targets whose file path does not exist.
 
 Recover interrupted work with `harness status`; Harness resumes from `.harness/current-task.yaml`. Gate recovery derives target from blocker code, not persisted `recover_to`. Review reasons are controlled: use `REVIEW_CLEAN`, `TEST_COVERAGE_INSUFFICIENT`, `EVIDENCE_INCOMPLETE`, `INVARIANT_UNPROVEN`, `TEST_SCOPE_INSUFFICIENT`, `LOGIC_ERROR`, `REGRESSION`, `CONTRACT_VIOLATION`, or `INVARIANT_VIOLATION` for matching outcome.
 
@@ -196,11 +197,10 @@ harness transition GATING
 harness gate
 ```
 
-FAST does not grant external actions. Authorizations are independent per task; grant only requested action:
+FAST does not grant external actions. Authorizations are independent per task; grant only requested action. Full-suite authorization does not exist:
 
 ```bash
 harness authorize commit
-harness authorize full-suite
 harness authorize push
 # also: create-mr, ready-mr, merge, deploy; revoke with revoke-<action>
 ```

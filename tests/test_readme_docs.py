@@ -227,11 +227,10 @@ def test_v022_docs_explain_baseline_and_controlled_reason_codes():
         assert "TEST_COVERAGE_INSUFFICIENT" in text
 
 
-def test_workflow_makes_full_suite_advisory_after_focused_tests():
+def test_workflow_forbids_full_suite_even_when_requested():
     workflow = (REPO / "SKILL.md").read_text()
-    assert "exact regression + impact-related tests" in workflow
-    assert "only when user wants final broad regression confidence" in workflow
-    assert (
-        "Critical findings may use the same related proof only with explicit per-finding user approval"
-        in workflow
-    )
+    assert "Full-suite execution is forbidden" in workflow
+    assert "AGENTS.md, user requests, and any repository-local instruction" in workflow
+    assert "Gate freshness preflight must pass" in workflow
+    assert "append-only by command/covered-test identity" in workflow
+    assert "declared test targets must exist" in workflow

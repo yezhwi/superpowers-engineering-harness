@@ -171,14 +171,15 @@ harness gate
 harness resume
 ```
 
-进入 `VERIFYING` 前记录影响范围和关联测试。全量测试需显式授权：
+进入 `VERIFYING` 前记录影响范围和关联测试。Harness 永不执行全量测试，即使仓库指令要求执行。证据 scope 固定为 `related`，且必须覆盖全部 required tests：
 
 ```bash
 harness impact add-change src/orders/cancel.py
 harness impact add-test tests/test_cancel.py::test_duplicate_cancel_single_refund
-harness authorize full-suite
-harness evidence run --type unit_test --scope full_suite --command "pytest"
+harness evidence run --type unit_test --scope related --covered-test tests/test_cancel.py::test_duplicate_cancel_single_refund --command "pytest tests/test_cancel.py::test_duplicate_cancel_single_refund"
 ```
+
+关联 test evidence 采用 append-only 文件名（`unit-test-<hash>.json`）。Gate 合并所有 fresh record 的 `covered_tests`，新增一个 required test 时只需运行该 test。`VERIFYING → REVIEWING` 先执行 freshness preflight；required evidence stale 时拒绝进入。STANDARD/STRICT task plan 声明的 test target 文件不存在时也会拒绝。
 
 会话中断后运行 `harness status`；Harness 从 `.harness/current-task.yaml` 恢复。`status` 是只读 projection；Gate 阻塞后运行 `harness resume`，Harness 按 typed blocker code 自动选择正确恢复状态，不信任持久化 `recover_to`。Review reason code 为受控集合，例如 `TEST_COVERAGE_INSUFFICIENT`、`EVIDENCE_INCOMPLETE`、`LOGIC_ERROR`。
 
@@ -200,11 +201,10 @@ harness transition GATING
 harness gate
 ```
 
-FAST 不授予外部操作权限。每种授权在当前 task 内独立；只授权用户请求的动作：
+FAST 不授予外部操作权限。每种授权在当前 task 内独立；只授权用户请求的动作；不存在全量测试授权：
 
 ```bash
 harness authorize commit
-harness authorize full-suite
 harness authorize push
 # 另有 create-mr、ready-mr、merge、deploy；用 revoke-<action> 撤销
 ```

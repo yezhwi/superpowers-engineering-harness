@@ -314,6 +314,16 @@ def cmd_transition(target: str) -> int:
         )
         return 1
     if current == "VERIFYING" and target == "REVIEWING" and profile != "FAST":
+        try:
+            status, blockers = quality_gate.run_gate(harness_dir, allow_preflight=True)
+        except Exception as exc:
+            print(f"GATE_PREFLIGHT_INVALID: {exc}", file=sys.stderr)
+            return 2
+        if status != "PASS":
+            print("GATE_PREFLIGHT_MISSING_EVIDENCE", file=sys.stderr)
+            for blocker in blockers:
+                print(f"- {blocker.code}: {blocker.message}", file=sys.stderr)
+            return 1
         review_path = harness_dir / "evidence" / "complexity-review.json"
         try:
             review = json.loads(review_path.read_text(encoding="utf-8"))
@@ -1522,7 +1532,6 @@ def cmd_task_recover(task_id: str, title: str, reason: str) -> int:
 
 AUTHORIZATION_ACTIONS = (
     "commit",
-    "full_suite",
     "push",
     "create_mr",
     "ready_mr",
@@ -1536,15 +1545,9 @@ def _authorization_record(granted: bool = False) -> dict:
 
 
 def authorization_granted(task: dict, action: str) -> bool:
-    """Check one action only; legacy authorization applies only to full suite."""
+    """Check one supported action's persisted authorization."""
     normalized = (task.get("authorizations") or {}).get(action)
-    if isinstance(normalized, dict):
-        return normalized.get("granted") is True
-    if action == "full_suite":
-        return (task.get("authorization") or {}).get("full_suite", {}).get(
-            "granted"
-        ) is True
-    return False
+    return isinstance(normalized, dict) and normalized.get("granted") is True
 
 
 def cmd_authorize(action: str, granted: bool) -> int:
@@ -1565,11 +1568,6 @@ def cmd_authorize(action: str, granted: bool) -> int:
     return 0
 
 
-def cmd_authorize_full_suite(granted: bool) -> int:
-    """Backward-compatible internal API."""
-    return cmd_authorize("full_suite", granted)
-
-
 def _impact():
     import yaml
 
@@ -1582,7 +1580,6 @@ def _impact():
             "interfaces": [],
             "risks": [],
             "required_tests": [],
-            "full_suite": {"recommended": False, "reason": None},
         }
     }
     return path, yaml.safe_load(path.read_text()) if path.exists() else default
@@ -1674,7 +1671,5 @@ def cmd_impact(action, value=None, reason=None, args=None):
             if value in scope["protected_user_paths"]:
                 scope["protected_user_paths"].remove(value)
             save_task(harness_dir, task)
-    elif action == "require-full-suite":
-        impact["full_suite"] = {"recommended": True, "reason": reason}
     transaction.atomic_write(path, yaml.safe_dump(document, sort_keys=False).encode())
     return 0

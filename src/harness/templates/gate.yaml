@@ -39,8 +39,5 @@ gate:
   regression:
     confirmed_finding_without_test: 0
 
-  release:
-    full_suite_required: false
-
   convergence:
     max_iterations: 5

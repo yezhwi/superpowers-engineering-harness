@@ -134,6 +134,30 @@ def make_harness(tmp_path: Path) -> Path:
     return h
 
 
+def test_gate_unions_fresh_related_test_evidence(tmp_path):
+    from harness.quality_gate import run_gate
+
+    h = make_harness(tmp_path)
+    requirements = yaml.safe_load((h / "requirements.yaml").read_text())
+    requirements["requirements"][0]["test_plan"] = {
+        "strategies": ["unit"],
+        "cases": [
+            {"id": "TC-002", "type": "regression", "strategy": "unit", "description": "A", "tests": ["tests/test_quality_gate.py"]},
+            {"id": "TC-003", "type": "regression", "strategy": "unit", "description": "B", "tests": ["tests/test_evidence.py"]},
+        ],
+    }
+    (h / "requirements.yaml").write_text(yaml.safe_dump(requirements))
+    base = json.loads((h / "evidence" / "unit-test.json").read_text())
+    for name, target in (("unit-test-a.json", "tests/test_quality_gate.py"), ("unit-test-b.json", "tests/test_evidence.py")):
+        record = {**base, "scope": "related", "covered_tests": [target], "command": f"pytest {target}"}
+        (h / "evidence" / name).write_text(json.dumps(record))
+    (h / "evidence" / "unit-test.json").unlink()
+
+    status, blockers = run_gate(h)
+
+    assert status == "PASS", blockers
+
+
 def test_standalone_quality_gate_is_disabled_without_state_write(tmp_path):
     h = make_harness(tmp_path)
     before = (h / "current-task.yaml").read_bytes()

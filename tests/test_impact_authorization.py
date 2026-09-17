@@ -1,4 +1,4 @@
-"""Impact full-suite recommendation is advisory; execution still requires authorization."""
+"""Related evidence is only execution scope."""
 
 import subprocess
 import sys
@@ -31,16 +31,15 @@ def setup(path):
     cli(path, "impact", "add-test", "tests/test_x.py::test_x")
 
 
-def test_recommended_full_suite_does_not_block_verifying(tmp_path):
+def test_related_required_tests_do_not_block_verifying(tmp_path):
     setup(tmp_path)
-    cli(tmp_path, "impact", "require-full-suite", "--reason", "state boundary")
 
     result = cli(tmp_path, "transition", "VERIFYING")
 
     assert result.returncode == 0, result.stderr
 
 
-def test_full_suite_execution_still_requires_authorization(tmp_path):
+def test_full_suite_execution_is_forbidden(tmp_path):
     setup(tmp_path)
 
     result = cli(
@@ -55,4 +54,4 @@ def test_full_suite_execution_still_requires_authorization(tmp_path):
     )
 
     assert result.returncode == 2
-    assert "FULL_SUITE_AUTHORIZATION_REQUIRED" in result.stderr
+    assert "FULL_SUITE_FORBIDDEN" in result.stderr
