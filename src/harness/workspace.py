@@ -1,6 +1,7 @@
 """Shared Git workspace facts for evidence, Gate, status, and review scope."""
 
 import hashlib
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -216,6 +217,53 @@ def control_plane_fingerprint(harness_dir: Path | None = None) -> str:
     return "sha256:" + hashlib.sha256(b"\0".join(parts)).hexdigest()
 
 
+_CONTRACT_REF = re.compile(r"^[A-Z]{2,}-[0-9]+(?::|$)")
+
+
+def is_contract_ref(value: str) -> bool:
+    """True for labels such as DEC-001 or DEC-001:orders, not repo paths."""
+    return isinstance(value, str) and bool(_CONTRACT_REF.match(value))
+
+
+def is_review_file(value: str) -> bool:
+    """True for a repository-relative path that is not a contract label."""
+    if not isinstance(value, str) or not value:
+        return False
+    if value.startswith("/") or "\\" in value or ".." in value.split("/"):
+        return False
+    return not is_contract_ref(value)
+
+
+def canonical_scope_files(files: tuple[str, ...] | list[str]) -> tuple[str, ...]:
+    """Order-insensitive, de-duplicated review file set."""
+    return tuple(sorted(set(files)))
+
+
+def project_typed_scope(
+    task: dict,
+    impact: dict,
+    *,
+    inspected_paths: tuple[str, ...] | list[str] = (),
+    direct_dependencies: tuple[str, ...] | list[str] = (),
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Split review files from contract labels. Do not mix then compare as paths."""
+    scope = task.get("scope") or {}
+    files: list[str] = []
+    refs: list[str] = []
+    for item in (
+        *(scope.get("owned_paths") or ()),
+        *(impact.get("contracts") or ()),
+        *(impact.get("direct_dependents") or ()),
+        *inspected_paths,
+        *direct_dependencies,
+    ):
+        if is_contract_ref(item):
+            refs.append(item)
+        elif is_review_file(item):
+            files.append(item)
+    return canonical_scope_files(files), canonical_scope_files(refs)
+
+
 def project_task_scope(
     task: dict,
     impact: dict,
@@ -223,18 +271,66 @@ def project_task_scope(
     inspected_paths: tuple[str, ...] | list[str] = (),
     direct_dependencies: tuple[str, ...] | list[str] = (),
 ) -> tuple[str, ...]:
-    """Project owned, contract, dependency, and inspected paths into review files.
+    """Project owned, path-like contract, dependency, and inspected paths.
 
     Protected user paths never enter this set unless they are also owned,
-    contracted, inspected, or declared as dependencies.
+    contracted, inspected, or declared as dependencies. Contract labels such
+    as ``DEC-001:`` stay in ``project_typed_scope`` refs, not files.
     """
-    scope = task.get("scope") or {}
-    included = set(scope.get("owned_paths") or ())
-    included.update(impact.get("contracts") or ())
-    included.update(impact.get("direct_dependents") or ())
-    included.update(inspected_paths)
-    included.update(direct_dependencies)
-    return tuple(sorted(included))
+    files, _refs = project_typed_scope(
+        task,
+        impact,
+        inspected_paths=inspected_paths,
+        direct_dependencies=direct_dependencies,
+    )
+    return files
+
+
+def claimed_scope_sets(review_scope: dict) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Read files/contract_refs; migrate DEC-* labels out of files."""
+    files: list[str] = []
+    refs: list[str] = list(review_scope.get("contract_refs") or [])
+    for item in review_scope.get("files") or []:
+        if is_contract_ref(item):
+            refs.append(item)
+        elif item:
+            files.append(item)
+    return canonical_scope_files(files), canonical_scope_files(refs)
+
+
+def scope_files_mismatch(claimed, expected) -> str | None:
+    """Return a DIAGNOSABILITY_SCOPE_MISMATCH message, or None if sets match."""
+    actual = set(claimed)
+    want = set(expected)
+    if actual == want:
+        return None
+    extra = sorted(actual - want)
+    missing = sorted(want - actual)
+    parts = ["DIAGNOSABILITY_SCOPE_MISMATCH"]
+    if extra:
+        parts.append("actual-only: " + ", ".join(extra))
+    if missing:
+        parts.append("expected-only: " + ", ".join(missing))
+    return "; ".join(parts)
+
+
+def scope_projection_mismatch(
+    claimed_files, expected_files, claimed_refs=(), expected_refs=()
+) -> str | None:
+    """Compare path files and contract refs as independent sets."""
+    file_msg = scope_files_mismatch(claimed_files, expected_files)
+    ref_msg = scope_files_mismatch(claimed_refs, expected_refs)
+    if not file_msg and not ref_msg:
+        return None
+    if file_msg and not ref_msg:
+        return file_msg
+    parts = ["DIAGNOSABILITY_SCOPE_MISMATCH"]
+    if file_msg:
+        parts.extend(file_msg.split("; ")[1:])
+    if ref_msg:
+        suffix = "; ".join(ref_msg.split("; ")[1:])
+        parts.append("contract_refs " + suffix if suffix else "contract_refs")
+    return "; ".join(parts)
 
 
 def review_scope(base_ref: str, repo_root: Path | None = None) -> ReviewScope:

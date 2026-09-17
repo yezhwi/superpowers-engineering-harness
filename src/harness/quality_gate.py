@@ -34,8 +34,9 @@ from .test_plan import validate_test_coverage, validate_test_plan
 from .workspace import (
     WorkspaceError,
     changed_paths_since,
+    claimed_scope_sets,
     observability_inspected_paths,
-    project_task_scope,
+    project_typed_scope,
     protected_paths_fingerprint,
     snapshot,
 )
@@ -613,17 +614,17 @@ def _evaluate_gate(
                 value == "fail" for value in review_record.get("checks", {}).values()
             ):
                 raise ValueError("invalid interface review")
-            expected_files = list(
-                project_task_scope(
-                    task,
-                    impact.get("impact") or {},
-                    inspected_paths=observability_inspected_paths(harness_dir),
-                )
+            expected_files, expected_refs = project_typed_scope(
+                task,
+                impact.get("impact") or {},
+                inspected_paths=observability_inspected_paths(harness_dir),
             )
-            recorded_files = list(
-                (review_record.get("review_scope") or {}).get("files") or []
+            recorded_files, recorded_refs = claimed_scope_sets(
+                review_record.get("review_scope") or {}
             )
-            if recorded_files != expected_files:
+            if set(recorded_files) != set(expected_files) or set(recorded_refs) != set(
+                expected_refs
+            ):
                 raise ValueError("interface review scope is stale")
             expected_contracts = {
                 item.get("contract_id") or item.get("id")
@@ -901,17 +902,17 @@ def _evaluate_gate(
                     source="complexity-review",
                 )
             else:
-                expected_files = list(
-                    project_task_scope(
-                        task,
-                        impact.get("impact") or {},
-                        inspected_paths=observability_inspected_paths(harness_dir),
-                    )
+                expected_files, expected_refs = project_typed_scope(
+                    task,
+                    impact.get("impact") or {},
+                    inspected_paths=observability_inspected_paths(harness_dir),
                 )
-                recorded_files = list(
-                    (review.get("review_scope") or {}).get("files") or []
+                recorded_files, recorded_refs = claimed_scope_sets(
+                    review.get("review_scope") or {}
                 )
-                if recorded_files != expected_files:
+                if set(recorded_files) != set(expected_files) or set(
+                    recorded_refs
+                ) != set(expected_refs):
                     block(
                         "COMPLEXITY_REVIEW_STALE",
                         "verification",

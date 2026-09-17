@@ -523,18 +523,21 @@ def cmd_review_complexity(source: Path, base_ref: str | None = None) -> int:
                 "TASK_GIT_BASELINE_REQUIRED: provide --base or create a task with base_commit"
             )
         scope = workspace.review_scope(base_ref)
+        expected_refs: tuple[str, ...] = ()
         if task.get("scope") is not None:
-            files = workspace.project_task_scope(
+            files, expected_refs = workspace.project_typed_scope(
                 task,
                 _impact()[1]["impact"],
                 inspected_paths=workspace.observability_inspected_paths(Path(".harness")),
             )
             scope = replace(scope, files=files)
         claimed_scope = review.get("review_scope")
-        if claimed_scope is not None and claimed_scope.get("files") != list(
-            scope.files
-        ):
-            raise ValueError("COMPLEXITY_REVIEW_SCOPE_MISMATCH")
+        if claimed_scope is not None:
+            claimed_files, claimed_refs = workspace.claimed_scope_sets(claimed_scope)
+            if set(claimed_files) != set(scope.files) or set(claimed_refs) != set(
+                expected_refs
+            ):
+                raise ValueError("COMPLEXITY_REVIEW_SCOPE_MISMATCH")
         paths = complexity.write_complexity_review(Path(".harness"), review, scope)
     except Exception as exc:
         print(f"INVALID COMPLEXITY REVIEW: {exc}", file=sys.stderr)

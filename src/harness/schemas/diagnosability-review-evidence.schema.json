@@ -124,6 +124,9 @@
         "files": {
           "type": "array"
         },
+        "contract_refs": {
+          "type": "array"
+        },
         "direct_dependencies": {
           "type": "array"
         }

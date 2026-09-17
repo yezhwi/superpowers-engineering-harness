@@ -9,7 +9,14 @@ from harness import source_access
 from harness.schema_resources import read_schema
 
 from .transaction import StagedArtifact, publish, stage
-from .workspace import git_head, project_task_scope, review_scope, snapshot
+from .workspace import (
+    claimed_scope_sets,
+    git_head,
+    project_typed_scope,
+    review_scope,
+    scope_projection_mismatch,
+    snapshot,
+)
 
 import yaml
 from jsonschema import ValidationError, validate
@@ -109,6 +116,7 @@ class DiagnosabilityReview:
     finding_ids: tuple[str, ...]
     direct_dependencies: tuple[str, ...]
     claimed_files: tuple[str, ...]
+    claimed_contract_refs: tuple[str, ...]
     proposals: tuple[dict, ...]
 
 
@@ -140,6 +148,7 @@ def validate_review_input(document: dict, *, task_id: str) -> DiagnosabilityRevi
         tuple(document["finding_ids"]),
         tuple(document["direct_dependencies"]),
         tuple(document["review_scope"]["files"]),
+        tuple(document["review_scope"].get("contract_refs") or []),
         proposals,
     )
 
@@ -260,16 +269,19 @@ def gate_blockers(harness_dir: Path, task: dict, *, head: str, workspace: str):
             if source_access.exists(impact_path)
             else {}
         )
-        expected_scope = project_task_scope(
+        expected_files, expected_refs = project_typed_scope(
             task,
             impact,
             inspected_paths=contract["applicability"]["inspected_paths"],
             direct_dependencies=tuple(review_scope_record.get("direct_dependencies", [])),
         )
-        if tuple(review_scope_record.get("files", [])) != expected_scope:
+        claimed_files, claimed_refs = claimed_scope_sets(review_scope_record)
+        if scope_projection_mismatch(
+            claimed_files, expected_files, claimed_refs, expected_refs
+        ):
             raise ValueError("DIAGNOSABILITY_SCOPE_STALE")
         validate_review_readiness(
-            contract, record, findings, scope_files=expected_scope
+            contract, record, findings, scope_files=expected_files
         )
         if any(value == "fail" for value in record.get("checks", {}).values()):
             raise ValueError("DIAG_REVIEW_HAS_FAILED_CHECKS")
@@ -338,6 +350,7 @@ def write_review(
                 | set(review.direct_dependencies)
             )
         )
+        refs = review.claimed_contract_refs
     else:
         impact_path = harness_dir / "impact.yaml"
         impact_doc = (
@@ -345,14 +358,17 @@ def write_review(
             if source_access.exists(impact_path)
             else {"impact": {}}
         )
-        files = project_task_scope(
+        files, refs = project_typed_scope(
             task,
             impact_doc.get("impact") or {},
             inspected_paths=contract["applicability"]["inspected_paths"],
             direct_dependencies=review.direct_dependencies,
         )
-    if review.claimed_files != files:
-        raise ValueError("DIAGNOSABILITY_SCOPE_MISMATCH")
+    mismatch = scope_projection_mismatch(
+        review.claimed_files, files, review.claimed_contract_refs, refs
+    )
+    if mismatch:
+        raise ValueError(mismatch)
     existing = [
         yaml.safe_load(source_access.read_text(item))
         for item in source_access.members(harness_dir / "findings", "*.yaml")
@@ -434,6 +450,7 @@ def write_review(
         "workspace_fingerprint_after": current.fingerprint,
         "review_scope": {
             "files": list(files),
+            "contract_refs": list(refs),
             "direct_dependencies": list(review.direct_dependencies),
         },
         "contract_required": review.contract_required,

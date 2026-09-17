@@ -168,3 +168,18 @@ def test_project_task_scope_keeps_owned_and_contract_when_also_protected():
     }
     impact = {"contracts": ["src/contract.py"]}
     assert project_task_scope(task, impact) == ("src/api.py", "src/contract.py")
+
+
+def test_project_typed_scope_separates_contract_labels_from_files():
+    from harness.workspace import claimed_scope_sets, project_typed_scope
+
+    task = {"scope": {"owned_paths": ["src/owned.py"], "protected_user_paths": []}}
+    impact = {"contracts": ["DEC-001:orders", "src/contract.py"]}
+    files, refs = project_typed_scope(task, impact)
+    assert files == ("src/contract.py", "src/owned.py")
+    assert refs == ("DEC-001:orders",)
+    migrated_files, migrated_refs = claimed_scope_sets(
+        {"files": ["src/owned.py", "DEC-001:orders", "src/contract.py"]}
+    )
+    assert migrated_files == files
+    assert migrated_refs == refs

@@ -192,6 +192,89 @@ def test_review_rejects_duplicate_diag_proposal_with_stable_code(tmp_path):
     assert "DIAG_PROPOSAL_DUPLICATE" in result.stderr
 
 
+def test_review_accepts_reordered_scope_files(tmp_path):
+    """Break caught: same files in a different YAML order fail the review."""
+    repo = make_repo(tmp_path)
+    (repo / "src/a.py").parent.mkdir(parents=True, exist_ok=True)
+    (repo / "src/a.py").write_text("a\n")
+    (repo / "src/b.py").write_text("b\n")
+    task_path = repo / ".harness" / "current-task.yaml"
+    task = yaml.safe_load(task_path.read_text())
+    task["scope"] = {
+        "owned_paths": ["src/a.py", "src/b.py"],
+        "protected_user_paths": [],
+    }
+    task_path.write_text(yaml.safe_dump(task, sort_keys=False))
+    source = review_source(tmp_path)
+    document = yaml.safe_load(source.read_text())
+    document["review_scope"]["files"] = [
+        "src/orders/refund.py",
+        "src/b.py",
+        "src/a.py",
+    ]
+    source.write_text(yaml.safe_dump(document, sort_keys=False))
+
+    result = run_cli(
+        repo, "review", "diagnosability", "--base", "HEAD", "--file", str(source)
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_review_scope_mismatch_lists_expected_and_actual_only(tmp_path):
+    repo = make_repo(tmp_path)
+    source = review_source(tmp_path)
+    document = yaml.safe_load(source.read_text())
+    document["review_scope"]["files"] = ["src/orders/refund.py", "src/extra.py"]
+    source.write_text(yaml.safe_dump(document, sort_keys=False))
+
+    result = run_cli(
+        repo, "review", "diagnosability", "--base", "HEAD", "--file", str(source)
+    )
+
+    assert result.returncode == 2
+    assert "DIAGNOSABILITY_SCOPE_MISMATCH" in result.stderr
+    assert "src/extra.py" in result.stderr
+
+
+def test_review_rejects_contract_label_in_files(tmp_path):
+    repo = make_repo(tmp_path)
+    source = review_source(tmp_path)
+    document = yaml.safe_load(source.read_text())
+    document["review_scope"]["files"] = ["src/orders/refund.py", "DEC-001:orders"]
+    source.write_text(yaml.safe_dump(document, sort_keys=False))
+
+    result = run_cli(
+        repo, "review", "diagnosability", "--base", "HEAD", "--file", str(source)
+    )
+
+    assert result.returncode == 2
+    assert "DEC-001" in result.stderr
+
+
+def test_review_accepts_contract_refs_separate_from_files(tmp_path):
+    repo = make_repo(tmp_path)
+    impact_path = repo / ".harness" / "impact.yaml"
+    impact = yaml.safe_load(impact_path.read_text()) if impact_path.exists() else {"impact": {}}
+    impact.setdefault("impact", {})["contracts"] = ["DEC-001:orders"]
+    impact_path.write_text(yaml.safe_dump(impact, sort_keys=False))
+    source = review_source(tmp_path)
+    document = yaml.safe_load(source.read_text())
+    document["review_scope"]["contract_refs"] = ["DEC-001:orders"]
+    source.write_text(yaml.safe_dump(document, sort_keys=False))
+
+    result = run_cli(
+        repo, "review", "diagnosability", "--base", "HEAD", "--file", str(source)
+    )
+
+    assert result.returncode == 0, result.stderr
+    record = json.loads(
+        (repo / ".harness/evidence/diagnosability-review.json").read_text()
+    )
+    assert "DEC-001:orders" not in record["review_scope"]["files"]
+    assert record["review_scope"]["contract_refs"] == ["DEC-001:orders"]
+
+
 def test_review_rejects_invalid_diag_proposal_with_stable_code(tmp_path):
     repo = make_repo(
         tmp_path,

@@ -7,6 +7,8 @@
 - Extend Benchmark artifacts with usage and multi-run statistics, including `tokens_per_success`, median/P90 token reporting, and agent tool/search/file-read counters. Missing data remains `INCONCLUSIVE`; estimated usage is low-confidence; known correctness or integrity failures override efficiency claims.
 - Add controlled source-access, schema-resource, workspace, and telemetry-lock boundaries with regression coverage.
 - Resolve `npm run <script> --` Vitest selectors from the package script at the command cwd; unresolvable or non-Vitest scripts fail closed with `TEST_RUNNER_UNRESOLVED`.
+- Compare diagnosability/complexity/interface review file scope as a set, and list actual-only vs expected-only paths on `DIAGNOSABILITY_SCOPE_MISMATCH`.
+- Split review scope into path `files` and `contract_refs`. `DEC-*` labels are rejected in `review_scope.files`, compared as refs, and migrated out of old artifacts instead of being treated as paths.
 
 ### Install
 
