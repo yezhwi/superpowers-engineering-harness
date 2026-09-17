@@ -4,7 +4,7 @@
 
 **Goal:** Resolve Important findings 3–7 without weakening decision freshness, FAST evidence discipline, or typed review scope boundaries.
 
-**Architecture:** Share FAST GREEN evidence resolution between verification and Light Gate. Treat historical decisions as byte-hashed metadata records until current-task ownership or explicit cross-task linkage requires full YAML construction. Tighten new review evidence schema while preserving legacy typed-scope migration on read.
+**Architecture:** Share FAST GREEN evidence resolution between verification and Light Gate. Use an atomically maintained authoritative decision index to select current-task or explicitly linked bodies without reading unrelated historical YAML. Tighten new review evidence schema while preserving legacy typed-scope migration on read.
 
 **Tech Stack:** Python 3.11, PyYAML node API, jsonschema, pytest, Ruff.
 
@@ -12,8 +12,9 @@
 
 ## Global Constraints
 
-- Keep every canonical `decisions/DEC-*.yaml` byte-hashed in Context freshness.
-- Do not deserialize or project unreferenced historical decision bodies.
+- Maintain `decisions/index.yaml` atomically with every canonical decision write.
+- Validate index membership, metadata, and content sha256 before Context uses it.
+- Do not read or project unreferenced historical decision bodies after index migration.
 - Do not skip FAST RED from `verification_mode` alone.
 - Preserve legacy `DEC-*` review-scope migration in `workspace.claimed_scope_sets()`.
 - `requires_reproduction` remains non-persisting and leaves task `CLASSIFIED`.

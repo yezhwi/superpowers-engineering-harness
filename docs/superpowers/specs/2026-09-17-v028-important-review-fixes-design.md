@@ -7,20 +7,16 @@ Resolve Important findings 3–7 from `docs/Superpowers-Engineering-Harness-v0.2
 ## Invariants
 
 1. Historical decision bodies are not deserialized or projected unless current task owns or explicitly references them.
-2. Every canonical decision remains a byte-hashed freshness input; omitted body loading does not weaken stale detection.
+2. `decisions/index.yaml` is authoritative metadata; every canonical decision remains content-bound through its indexed sha256, and index mismatch fails closed.
 3. FAST skips RED only with a valid persisted existing-implementation verification record.
 4. Contract labels and repository file paths remain separate typed fields.
 5. `requires_reproduction` does not mutate task state; task remains `CLASSIFIED` and user enters existing finding/reproduce workflow.
 
 ## Decision Source Loading
 
-Split decision processing into two phases:
+Add `decisions/index.yaml`, an authoritative metadata registry of each direct canonical decision member: ID, task ID, status, supersession links, and content sha256. Decision write paths atomically publish decision body and index together. Context/freshness reads index to select current-task and explicit dependency bodies, then reads full YAML only for that selected finite set.
 
-- Byte-read and hash every direct canonical `decisions/DEC-*.yaml` member for freshness.
-- Scan YAML nodes/events for only top-level metadata required to identify ID, task ownership, status, and cross-task references; do not construct full Python records for historical decisions.
-- Parse full YAML bodies only for current-task decisions and decisions explicitly referenced through current-decision `supersedes`/`superseded_by`, `impact.contracts` `DEC-<id>:` labels, or loaded interface-contract `decision_refs`.
-
-Unreferenced historical decisions remain omitted with a content-bound Layer 2 reference, but their body is not deserialized or projected. Duplicate IDs, malformed metadata, or missing explicit references fail closed. Collection membership and every canonical decision content hash remain in freshness versions. This does not claim zero file I/O: byte hashing remains required to detect arbitrary historical content edits.
+Index and decision collection are mutually validated: missing/extra member, duplicate ID, malformed metadata, or indexed hash/content mismatch fails closed. Existing repositories without index perform one lock-protected full migration, atomically write index, then re-read/validate it. Unreferenced historical decisions remain omitted with content-bound Layer 2 references, without YAML body reads during steady-state Context generation. Historical body modification makes index validation report `CONTEXT_STALE`.
 
 This change is decision-only. Findings, interface contracts, and evidence retain current source loading because they carry separate control semantics.
 
@@ -48,8 +44,8 @@ Use test-first changes:
 - alternate GREEN filename passes both verify-existing and Light Gate;
 - bare or malformed existing-mode record does not skip RED;
 - `DEC-*` in files is rejected and valid contract refs accepted;
-- hundreds of historical decision fixture bodies are neither fully deserialized nor serialized;
-- current, supersession, impact-contract, and interface-contract reference decision bodies remain loaded; malformed/missing dependencies fail closed;
-- historical body mutation still makes context stale.
+- hundreds of historical decision fixture bodies are neither read nor serialized after index migration;
+- current, supersession, impact-contract, and interface-contract reference decision bodies remain loaded; malformed/missing index or dependencies fail closed;
+- historical body mutation still makes Context stale through index hash mismatch.
 
 Run affected context, gate, verify-existing, diagnosability, schema suites; then full `pytest`, Ruff, and diff review.
