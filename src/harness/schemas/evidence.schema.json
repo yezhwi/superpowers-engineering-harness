@@ -96,6 +96,18 @@
       },
       "additionalProperties": false
     },
+    "execution_environment": {
+      "type": "object",
+      "required": ["transport"],
+      "properties": {
+        "transport": {"type": "string", "minLength": 1},
+        "namespace": {"type": "string", "minLength": 1},
+        "workload": {"type": "string", "minLength": 1},
+        "container": {"type": "string", "minLength": 1},
+        "cwd": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
     "test": {
       "type": "object",
       "required": ["node_id"],

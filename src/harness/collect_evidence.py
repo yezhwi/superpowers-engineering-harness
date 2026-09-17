@@ -84,6 +84,110 @@ def runtime_metadata() -> dict[str, str]:
     }
 
 
+_KUBECTL_NAMES = frozenset({"kubectl", "kubectl.exe"})
+_KUBECTL_SKIP_FLAGS = frozenset(
+    {"--context", "--kubeconfig", "--cluster", "--user"}
+)
+
+
+def _flag_value(tokens: list[str], index: int, names: tuple[str, ...]):
+    token = tokens[index]
+    for name in names:
+        if token == name and index + 1 < len(tokens):
+            return tokens[index + 1], index + 2
+        prefix = f"{name}="
+        if token.startswith(prefix) and len(token) > len(prefix):
+            return token[len(prefix) :], index + 1
+    return None, index
+
+
+def _payload_cwd(tokens: list[str]) -> str | None:
+    cwd = None
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        if (
+            Path(token).name in {"sh", "bash"}
+            and tokens[index + 1 : index + 2] == ["-lc"]
+            and index + 2 < len(tokens)
+        ):
+            try:
+                nested = shlex.split(tokens[index + 2])
+            except ValueError:
+                return cwd
+            nested_cwd = _payload_cwd(nested)
+            return nested_cwd if nested_cwd is not None else cwd
+        if token == "cd" and index + 1 < len(tokens) and tokens[index + 1] not in _SHELL_SEP:
+            cwd = tokens[index + 1]
+            index += 2
+            continue
+        index += 1
+    return cwd
+
+
+def _kubectl_exec_env(tokens: list[str], index: int) -> dict[str, str] | None:
+    index += 1
+    namespace = None
+    container = None
+    saw_exec = False
+    workload = None
+    while index < len(tokens):
+        token = tokens[index]
+        if token == "--":
+            index += 1
+            break
+        value, nxt = _flag_value(tokens, index, ("-n", "--namespace"))
+        if value is not None:
+            namespace = value
+            index = nxt
+            continue
+        value, nxt = _flag_value(tokens, index, ("-c", "--container"))
+        if value is not None:
+            container = value
+            index = nxt
+            continue
+        if token in _KUBECTL_SKIP_FLAGS and index + 1 < len(tokens):
+            index += 2
+            continue
+        if token.startswith("-"):
+            index += 1
+            continue
+        if not saw_exec:
+            if token != "exec":
+                return None
+            saw_exec = True
+            index += 1
+            continue
+        if workload is None:
+            workload = token
+            index += 1
+            continue
+        break
+    if not saw_exec or not workload:
+        return None
+    env = {"transport": "kubectl_exec", "workload": workload}
+    if namespace:
+        env["namespace"] = namespace
+    if container:
+        env["container"] = container
+    cwd = _payload_cwd(tokens[index:])
+    if cwd:
+        env["cwd"] = cwd
+    return env
+
+
+def execution_environment(command: str) -> dict[str, str] | None:
+    """Optional command provenance. Never infers image, runtime, or kube context."""
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        return None
+    for index, token in enumerate(tokens):
+        if Path(token).name in _KUBECTL_NAMES:
+            parsed = _kubectl_exec_env(tokens, index)
+            return parsed if parsed is not None else {"transport": "unknown"}
+    return None
+
 
 def workspace_fingerprint(repo_root: Path | None = None) -> str:
     """Compatibility wrapper for shared workspace snapshot fingerprint."""
@@ -601,6 +705,9 @@ def _collect(
         "stdout_tail": _tail(stdout),
         "stderr_tail": _tail(stderr),
     }
+    environment = execution_environment(command_text)
+    if environment is not None:
+        evidence["execution_environment"] = environment
     if error is not None:
         evidence["error"] = error
         evidence["error_detail"] = {

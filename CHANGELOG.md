@@ -12,6 +12,7 @@
 - Reject `harness task classify` below the path-required risk in `.harness/risk-boundaries.yaml` without persisting task state; print `RISK_ESCALATION_REQUIRED` and the classify command to rerun.
 - Derive `harness status` Build/Unit/Integration summary from the same live evidence projection as the Evidence list, including the selected record path.
 - Scope compact Layer 0 to the current task's ACCEPTED decisions. Unreferenced historical decisions are omitted as `different_task_not_referenced` and do not trigger `DECISION_OUTSIDE_SCOPE`; explicit `supersedes`/`superseded_by` cross-task ids stay Layer 2 refs.
+- Record optional `execution_environment` on collected evidence for `kubectl exec` (namespace/workload/cwd/container when present). Unparseable kubectl commands store `transport: unknown` without changing result semantics.
 
 ### Install
 
