@@ -17,6 +17,9 @@
 - Keep `TEST_RUNNER_UNRESOLVED` for unbound test selectors only; `npm run` build/lint evidence is not treated as a missing test runner. Persist `contract_refs` on complexity and interface review evidence so Gate matches typed scope.
 - Rebuild a missing decision index from existing members during `harness init`. Context freshness versions `decisions/index.yaml` and member names, not historical bodies, and selected bodies must match index id/task_id/sha256.
 - Document that `TEST_RUNNER_UNRESOLVED` applies only when binding covered tests. Context load migrates a missing decision index from existing members.
+- Forbid full-suite test execution and authorization. Harness accepts only `related` test evidence, even when user or repository instructions request a full suite.
+- Store related test evidence as append-only command/covered-test identity records. Gate unions fresh related coverage, so newly required tests can run independently.
+- Run Gate freshness preflight before `VERIFYING → REVIEWING`; stale required evidence blocks review entry. STANDARD/STRICT plans reject missing declared test target files before implementation.
 
 ### Install
 
