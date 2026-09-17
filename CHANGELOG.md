@@ -16,6 +16,7 @@
 - Add `harness task verify-existing` for already-implemented work: records `verification_mode: existing_implementation` from CLASSIFIED/PLANNED with GREEN evidence, without RED, fake findings, or tracker writes. FAST Gate skips RED only with that mode plus a valid persisted verification record.
 - Keep `TEST_RUNNER_UNRESOLVED` for unbound test selectors only; `npm run` build/lint evidence is not treated as a missing test runner. Persist `contract_refs` on complexity and interface review evidence so Gate matches typed scope.
 - Rebuild a missing decision index from existing members during `harness init`. Context freshness versions `decisions/index.yaml` and member names, not historical bodies, and selected bodies must match index id/task_id/sha256.
+- Document that `TEST_RUNNER_UNRESOLVED` applies only when binding covered tests. Context load migrates a missing decision index from existing members.
 
 ### Install
 

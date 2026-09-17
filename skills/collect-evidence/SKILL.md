@@ -51,9 +51,10 @@ harness evidence run --type unit_test --scope related \
 
 Missing files, paths outside the repository, invalid relative `cd`, and
 selectors the command did not run fail with `COVERED_TEST_NOT_EXECUTED` or
-`COVERED_TEST_PATH_INVALID`. An `npm run` script that cannot be resolved to
-pytest/`vitest run` fails with `TEST_RUNNER_UNRESOLVED`. Do not change cwd
-just to satisfy string matching.
+`COVERED_TEST_PATH_INVALID`. When `--covered-test` is set, an `npm run`
+script that cannot be resolved to pytest/`vitest run` fails with
+`TEST_RUNNER_UNRESOLVED`. Build/lint `npm run` without covered tests is not
+a missing test runner. Do not change cwd just to satisfy string matching.
 
 ## Hard Boundaries (不得违反)
 

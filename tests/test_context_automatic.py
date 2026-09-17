@@ -157,6 +157,14 @@ def test_context_loads_only_current_decision_body_from_index(harness, monkeypatc
     assert loaded and set(loaded) == {"DEC-001"}
 
 
+def test_context_migrates_missing_index_from_existing_members(harness):
+    add_core_records(harness)
+    (harness / "decisions/index.yaml").unlink()
+    document = generate_context(harness, mode="compact")
+    assert (harness / "decisions/index.yaml").is_file()
+    assert document["control"]["decisions"]
+
+
 def test_capture_ignores_unreferenced_decision_body_edit_until_reindex(harness):
     from harness import decision
     from harness.context.freshness import capture

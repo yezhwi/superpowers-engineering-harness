@@ -289,7 +289,7 @@ harness evidence run --type unit_test --scope related \
   --command "sh -lc 'cd agents-frontend && npm run test:unit -- --run src/__tests__/foo.spec.ts'"
 ```
 
-The same test run from repo root or the subproject directory stores the same canonical covered-test path. Collection rejects a canonical path that does not exist, escapes the repository, uses an invalid relative `cd`, or was not selected by the command (`COVERED_TEST_NOT_EXECUTED`, `COVERED_TEST_PATH_INVALID`). `npm run <script>` is accepted only when the cwd `package.json` script statically runs pytest or `vitest run`; otherwise collection fails with `TEST_RUNNER_UNRESOLVED`. Older evidence that stored a cwd-relative selector still binds; the next collection migrates it to the canonical path.
+The same test run from repo root or the subproject directory stores the same canonical covered-test path. Collection rejects a canonical path that does not exist, escapes the repository, uses an invalid relative `cd`, or was not selected by the command (`COVERED_TEST_NOT_EXECUTED`, `COVERED_TEST_PATH_INVALID`). When binding `--covered-test`, `npm run <script>` must statically resolve to pytest or `vitest run` or collection fails with `TEST_RUNNER_UNRESOLVED`. Build/lint `npm run` commands without covered tests are not treated as missing test runners. Older evidence that stored a cwd-relative selector still binds; the next collection migrates it to the canonical path.
 
 ### Adaptive operations
 

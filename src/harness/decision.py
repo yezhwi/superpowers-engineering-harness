@@ -121,11 +121,25 @@ def reindex(harness_dir: Path) -> list[dict]:
     return load_decision_index(harness_dir)
 
 
+def ensure_decision_index(harness_dir: Path) -> None:
+    """Rebuild a missing index from existing members before Context capture."""
+    directory = _directory(harness_dir)
+    if not source_access.exists(directory):
+        return
+    path = directory / "index.yaml"
+    if source_access.exists(path):
+        return
+    if source_access.members(directory, "DEC-*.yaml"):
+        reindex(harness_dir)
+
+
 def load_decision_index(harness_dir: Path) -> list[dict]:
     directory = _directory(harness_dir)
     if not source_access.exists(directory):
         return []
     path = directory / "index.yaml"
+    if not source_access.exists(path):
+        return []
     try:
         document = yaml.safe_load(source_access.read_text(path))
     except (OSError, yaml.YAMLError) as exc:

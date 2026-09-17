@@ -249,6 +249,9 @@ def _load_stable(harness_dir: Path, before: dict) -> AuthoritativeContext:
 def build_context(
     harness_dir: Path, *, mode: str = "full", selector: ContextSelector | None = None
 ) -> dict:
+    from harness.decision import ensure_decision_index
+
+    ensure_decision_index(harness_dir)
     before = capture(harness_dir)
     source = _load_stable(harness_dir, before)
     policy = effective_policy(source.task, source.expansions)

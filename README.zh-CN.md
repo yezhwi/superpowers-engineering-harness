@@ -292,7 +292,7 @@ harness evidence run --type unit_test --scope related \
   --command "sh -lc 'cd agents-frontend && npm run test:unit -- --run src/__tests__/foo.spec.ts'"
 ```
 
-同一测试在仓库根目录或子项目目录执行，存储相同 canonical covered-test path。canonical path 不存在、逃逸仓库、无效相对 `cd`、或 selector 未在命令中执行时，收集拒绝绑定（`COVERED_TEST_NOT_EXECUTED`、`COVERED_TEST_PATH_INVALID`）。`npm run <script>` 仅在命令 cwd 的 `package.json` 脚本可静态解析为 pytest 或 `vitest run` 时生效；否则以 `TEST_RUNNER_UNRESOLVED` 失败。旧 evidence 中的 cwd-relative selector 仍可绑定；下一次 collection 会迁移为 canonical path。
+同一测试在仓库根目录或子项目目录执行，存储相同 canonical covered-test path。canonical path 不存在、逃逸仓库、无效相对 `cd`、或 selector 未在命令中执行时，收集拒绝绑定（`COVERED_TEST_NOT_EXECUTED`、`COVERED_TEST_PATH_INVALID`）。绑定 `--covered-test` 时，`npm run <script>` 必须能静态解析为 pytest 或 `vitest run`，否则 `TEST_RUNNER_UNRESOLVED`。不带 covered-test 的 build/lint `npm run` 不按缺失测试 runner 处理。旧 evidence 中的 cwd-relative selector 仍可绑定；下一次 collection 会迁移为 canonical path。
 
 ### 自适应运行
 
