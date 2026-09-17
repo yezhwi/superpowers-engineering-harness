@@ -185,7 +185,7 @@ harness evidence run --type unit_test --scope full_suite --command "pytest"
 ### 风险自适应流程（v0.2.3）
 
 - **Q0：** 直接回答；不创建 Harness task。
-- **Q1 / FAST：** 仅限范围窄、低风险工作。必须显式分类；当前业务路径已命中 `.harness/risk-boundaries.yaml` 的 Q2/Q3 时，Q1 分类失败且不落盘。FAST 仍要求 task 级失败 RED、成功 GREEN 证据和 Light Gate，但跳过 impact、复杂度审查、requirements、invariants ceremony。`harness status` 的 Build/Unit/Integration 摘要与 Evidence 列表使用同一 live projection。
+- **Q1 / FAST：** 仅限范围窄、低风险工作。必须显式分类；当前业务路径已命中 `.harness/risk-boundaries.yaml` 的 Q2/Q3 时，Q1 分类失败且不落盘。FAST 仍要求 task 级失败 RED、成功 GREEN 证据和 Light Gate，但跳过 impact、复杂度审查、requirements、invariants ceremony。`harness status` 的 Build/Unit/Integration 摘要与 Evidence 列表使用同一 live projection。若 work item 已在目标分支实现，用 `harness task verify-existing` 记录结论，禁止伪造 RED；普通缺陷修复仍走 RED→GREEN。
 - **Q2 / STANDARD** 与 **Q3 / STRICT：** 使用现有完整 Harness 流程。风险只能升级，不能降级。
 
 ```bash

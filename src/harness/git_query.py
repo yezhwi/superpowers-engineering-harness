@@ -21,6 +21,23 @@ def _validate(args: tuple[str, ...]) -> None:
     }:
         return
     if (
+        args[0] == "rev-parse"
+        and len(args) == 3
+        and args[1] == "--verify"
+        and not args[2].startswith("-")
+    ):
+        return
+    if (
+        args[0] == "log"
+        and len(args) >= 6
+        and args[1] == "-1"
+        and args[2] == "--format=%H%x09%an%x09%aI"
+        and not args[3].startswith("-")
+        and args[4] == "--"
+        and all(not path.startswith("-") for path in args[5:])
+    ):
+        return
+    if (
         len(args) == 3
         and args[0] == "merge-base"
         and all(not ref.startswith("-") for ref in args[1:])

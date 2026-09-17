@@ -223,6 +223,26 @@
         }
       }
     },
+    "verification_mode": {
+      "enum": ["existing_implementation"]
+    },
+    "existing_verification": {
+      "type": "object",
+      "required": ["reference", "reason", "conclusion"],
+      "additionalProperties": false,
+      "properties": {
+        "reference": {"type": "string", "minLength": 1},
+        "reason": {"type": "string", "minLength": 1},
+        "conclusion": {
+          "enum": ["already_satisfied", "duplicate_request"]
+        },
+        "introducing_commit": {"type": ["string", "null"]},
+        "introducing_author": {"type": ["string", "null"]},
+        "introducing_time": {"type": ["string", "null"]},
+        "untraceable_reason": {"type": ["string", "null"]},
+        "accepted_diff_reason": {"type": ["string", "null"]}
+      }
+    },
     "findings": {
       "type": "object",
       "properties": {

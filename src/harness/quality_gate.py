@@ -250,10 +250,10 @@ def run_fast_gate(
                 f"FAST {evidence_type.replace('_', '-')} evidence invalid: {exc}",
             )
 
-    for phase, expected_success, require_current in (
-        ("red", False, False),
-        ("green", True, True),
-    ):
+    phases = [("green", True, True)]
+    if task.get("verification_mode") != "existing_implementation":
+        phases = [("red", False, False), *phases]
+    for phase, expected_success, require_current in phases:
         path = harness_dir / "evidence" / f"fast-{phase}-unit-test.json"
         try:
             record = json.loads(source_access.read_text(path))

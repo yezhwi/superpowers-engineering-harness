@@ -149,6 +149,53 @@ def _fingerprint(repo_root: Path) -> str:
     return "sha256:" + hashlib.sha256(b"\0".join(parts)).hexdigest()
 
 
+def verify_git_ref(reference: str, repo_root: Path | None = None) -> str:
+    """Resolve a non-flag git ref to a commit SHA."""
+    if not reference or reference.startswith("-"):
+        raise WorkspaceError("EXISTING_VERIFICATION_REFERENCE_INVALID")
+    return _run(_root(repo_root), "rev-parse", "--verify", reference).decode().strip()
+
+
+def name_only_diff(
+    reference: str, paths: tuple[str, ...], repo_root: Path | None = None
+) -> tuple[str, ...]:
+    """Working tree vs reference, limited to declared target paths."""
+    if not paths:
+        return ()
+    if any(not path or path.startswith("-") or ".." in path.split("/") for path in paths):
+        raise WorkspaceError("EXISTING_VERIFICATION_PATH_INVALID")
+    verify_git_ref(reference, repo_root)
+    names = (
+        _run(_root(repo_root), "diff", "--name-only", reference, "--", *paths)
+        .decode()
+        .splitlines()
+    )
+    return tuple(sorted(name for name in names if name))
+
+
+def introducing_commit(
+    reference: str, paths: tuple[str, ...], repo_root: Path | None = None
+) -> dict[str, str] | None:
+    """Last commit on reference that touched any target path."""
+    verify_git_ref(reference, repo_root)
+    root = _root(repo_root)
+    for path in paths:
+        if not path or path.startswith("-") or ".." in path.split("/"):
+            raise WorkspaceError("EXISTING_VERIFICATION_PATH_INVALID")
+        result = run_git_query(
+            root,
+            ("log", "-1", "--format=%H%x09%an%x09%aI", reference, "--", path),
+        )
+        if result.returncode:
+            raise WorkspaceError(result.stderr.decode().strip())
+        line = result.stdout.decode().strip()
+        if not line:
+            continue
+        commit, author, stamped = line.split("\t", 2)
+        return {"commit": commit, "author": author, "time": stamped}
+    return None
+
+
 def changed_paths_since(
     base_commit: str, repo_root: Path | None = None
 ) -> tuple[str, ...]:

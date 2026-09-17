@@ -303,6 +303,16 @@ def _main(argv=None) -> int:
     p_escalate = ts.add_parser("escalate")
     p_escalate.add_argument("--level", choices=["Q2", "Q3"], required=True)
     p_escalate.add_argument("--reason", required=True)
+    p_existing = ts.add_parser("verify-existing")
+    p_existing.add_argument("--reference", required=True)
+    p_existing.add_argument("--reason", required=True)
+    p_existing.add_argument(
+        "--conclusion",
+        required=True,
+        choices=["already_satisfied", "duplicate_request", "requires_reproduction"],
+    )
+    p_existing.add_argument("--accept-diff")
+    p_existing.add_argument("--untraceable-reason")
     sub.add_parser("converge", help="deterministic convergence decision")
 
     args = parser.parse_args(argv)
@@ -472,6 +482,14 @@ def _main(argv=None) -> int:
             )
         if args.task_command == "escalate":
             return controlplane.cmd_task_escalate(args.level, args.reason)
+        if args.task_command == "verify-existing":
+            return controlplane.cmd_task_verify_existing(
+                args.reference,
+                args.reason,
+                args.conclusion,
+                args.accept_diff,
+                args.untraceable_reason,
+            )
         return 2
     if args.subcommand == "converge":
         return controlplane.cmd_converge()

@@ -1225,6 +1225,40 @@ def cmd_task_classify(level: str, dimensions: dict[str, str]) -> int:
     return 0
 
 
+def cmd_task_verify_existing(
+    reference: str,
+    reason: str,
+    conclusion: str,
+    accept_diff: str | None = None,
+    untraceable_reason: str | None = None,
+) -> int:
+    from .existing_verification import ExistingVerificationError, verify_existing
+
+    harness_dir = Path(".harness")
+    try:
+        task = load_task(harness_dir)
+        record = verify_existing(
+            task,
+            harness_dir,
+            reference=reference,
+            reason=reason,
+            conclusion=conclusion,
+            accept_diff=accept_diff,
+            untraceable_reason=untraceable_reason,
+        )
+    except HarnessStateError as exc:
+        print(f"INVALID_HARNESS_STATE: {exc}", file=sys.stderr)
+        return 2
+    except ExistingVerificationError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    task["verification_mode"] = "existing_implementation"
+    task["existing_verification"] = record
+    save_task(harness_dir, task)
+    print(f"OK: existing_implementation {record['conclusion']}")
+    return 0
+
+
 def cmd_task_escalate(level: str, reason: str) -> int:
     import shutil
 
