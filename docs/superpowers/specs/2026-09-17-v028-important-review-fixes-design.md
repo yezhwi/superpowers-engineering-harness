@@ -6,8 +6,8 @@ Resolve Important findings 3–7 from `docs/Superpowers-Engineering-Harness-v0.2
 
 ## Invariants
 
-1. Historical decision bodies are read only when current task owns or explicitly references them.
-2. Every canonical decision remains a freshness input; omitted body loading does not weaken stale detection.
+1. Historical decision bodies are not deserialized or projected unless current task owns or explicitly references them.
+2. Every canonical decision remains a byte-hashed freshness input; omitted body loading does not weaken stale detection.
 3. FAST skips RED only with a valid persisted existing-implementation verification record.
 4. Contract labels and repository file paths remain separate typed fields.
 5. `requires_reproduction` does not mutate task state; task remains `CLASSIFIED` and user enters existing finding/reproduce workflow.
@@ -16,10 +16,11 @@ Resolve Important findings 3–7 from `docs/Superpowers-Engineering-Harness-v0.2
 
 Split decision processing into two phases:
 
-- Scan direct canonical `decisions/DEC-*.yaml` members for metadata required to identify task ownership, status, cross-task references, and content hashes.
+- Byte-read and hash every direct canonical `decisions/DEC-*.yaml` member for freshness.
+- Scan YAML nodes/events for only top-level metadata required to identify ID, task ownership, status, and cross-task references; do not construct full Python records for historical decisions.
 - Parse full YAML bodies only for current-task decisions and decisions explicitly referenced through supported dependency edges.
 
-Unreferenced historical decisions remain omitted with a content-bound Layer 2 reference, but their body is not deserialized or projected. Duplicate IDs, malformed metadata, or missing explicit references fail closed. Collection membership and every canonical decision content hash remain in freshness versions.
+Unreferenced historical decisions remain omitted with a content-bound Layer 2 reference, but their body is not deserialized or projected. Duplicate IDs, malformed metadata, or missing explicit references fail closed. Collection membership and every canonical decision content hash remain in freshness versions. This does not claim zero file I/O: byte hashing remains required to detect arbitrary historical content edits.
 
 This change is decision-only. Findings, interface contracts, and evidence retain current source loading because they carry separate control semantics.
 
@@ -47,7 +48,7 @@ Use test-first changes:
 - alternate GREEN filename passes both verify-existing and Light Gate;
 - bare or malformed existing-mode record does not skip RED;
 - `DEC-*` in files is rejected and valid contract refs accepted;
-- hundreds of historical decision fixture bodies are neither parsed nor serialized;
+- hundreds of historical decision fixture bodies are neither fully deserialized nor serialized;
 - current and explicit reference decision bodies remain loaded; malformed/missing dependencies fail closed;
 - historical body mutation still makes context stale.
 
