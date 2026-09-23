@@ -46,6 +46,7 @@ def test_task_new_archives_done_task(tmp_path):
 
 def test_task_new_archives_stale_alignment_freeze(tmp_path):
     h = setup(tmp_path)
+    (h / "alignment.yaml").write_text("version: 1\ntask_id: TASK-001\n")
     (h / "alignment-freeze.yaml").write_text(
         "version: 1\ntask_id: TASK-001\ncontract_hash: sha256:" + "0" * 64
         + "\ndecision_selections: {}\nboundary_refs: {interface: [], permission: [], persistence: []}\nfrozen_at: now\n"
@@ -54,8 +55,10 @@ def test_task_new_archives_stale_alignment_freeze(tmp_path):
     result = cli(tmp_path, "task", "new", "TASK-002")
 
     assert result.returncode == 0
+    assert not (h / "alignment.yaml").exists()
     assert not (h / "alignment-freeze.yaml").exists()
     archive = next((h / "history").iterdir())
+    assert (archive / "alignment.yaml").exists()
     assert (archive / "alignment-freeze.yaml").exists()
 
 

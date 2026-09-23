@@ -109,6 +109,22 @@ def test_task_recover_archives_artifacts_and_creates_fresh_task(tmp_path):
     assert list(evidence.iterdir()) == []
 
 
+def test_task_recover_archives_and_clears_stale_alignment(tmp_path):
+    repo = make_repo(tmp_path)
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-qm", "base"], cwd=repo, check=True)
+    set_task_state(repo, "IMPLEMENTING")
+    alignment = repo / ".harness/alignment.yaml"
+    alignment.write_text("version: 1\ntask_id: TASK-004\n")
+
+    result = run_cli(repo, "task", "recover", "TASK-005", "--reason", "stale")
+
+    assert result.returncode == 0, result.stderr
+    archive = next((repo / ".harness/history").glob("TASK-004-*"))
+    assert (archive / "alignment.yaml").is_file()
+    assert not alignment.exists()
+
+
 def test_resume_routes_typed_evidence_blocker_to_verifying(tmp_path):
     repo = make_repo(tmp_path)
     set_task_state(repo, "BLOCKED")

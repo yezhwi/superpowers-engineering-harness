@@ -139,6 +139,22 @@ Use Engineering Harness to fix this bug: cancelling an order twice issues two re
 
 For Pi, open new session after installing skills. Skills load at session start.
 
+### Antigravity CLI (agy)
+
+From target project root, install Harness CLI and AGY workspace skills with latest stable release:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/yezhwi/superpowers-engineering-harness/main/scripts/install-agy.sh | bash
+```
+
+Pin a release when needed:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/yezhwi/superpowers-engineering-harness/main/scripts/install-agy.sh | bash -s -- v0.2.9
+```
+
+Installer creates `.agents/skills/`, installs all Harness skills, and runs `harness init`. It refuses to overwrite existing same-name skills. Start AGY with `agy`; use `/engineering-harness` to invoke Harness explicitly in first session.
+
 ## Daily operations
 
 > **Security boundary:** `harness evidence run --command` executes shell syntax (`shell=True`) as trusted text entered directly by local Harness operator.

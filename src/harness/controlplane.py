@@ -1834,6 +1834,7 @@ def cmd_task_new(task_id: str, title: str = "") -> int:
             "gate.yaml",
             "impact.yaml",
             "observability.yaml",
+            "alignment.yaml",
             "alignment-freeze.yaml",
             "findings",
             "evidence",
@@ -1852,6 +1853,7 @@ def cmd_task_new(task_id: str, title: str = "") -> int:
             "observability.yaml",
         ):
             shutil.copy2(templates_dir() / name, staged / name)
+        (staged / "alignment.yaml").unlink(missing_ok=True)
         (staged / "alignment-freeze.yaml").unlink(missing_ok=True)
         for name in ("findings", "evidence"):
             shutil.rmtree(staged / name, ignore_errors=True)
@@ -1909,6 +1911,7 @@ def cmd_task_recover(task_id: str, title: str, reason: str) -> int:
             "gate.yaml",
             "impact.yaml",
             "observability.yaml",
+            "alignment.yaml",
             "alignment-freeze.yaml",
             "findings",
             "evidence",
@@ -1935,6 +1938,7 @@ def cmd_task_recover(task_id: str, title: str, reason: str) -> int:
             "observability.yaml",
         ):
             shutil.copy2(templates_dir() / name, staged / name)
+        (staged / "alignment.yaml").unlink(missing_ok=True)
         (staged / "alignment-freeze.yaml").unlink(missing_ok=True)
         for name in ("findings", "evidence"):
             shutil.rmtree(staged / name, ignore_errors=True)

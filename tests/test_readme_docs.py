@@ -5,6 +5,14 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 
 
+def test_readme_documents_agy_quick_start():
+    text = (REPO / "README.md").read_text(encoding="utf-8")
+    assert "Antigravity CLI (agy)" in text
+    assert "scripts/install-agy.sh" in text
+    assert "bash -s -- v0.2.9" in text
+    assert "agy" in text
+
+
 def test_root_skill_routes_diagnosability():
     text = (REPO / "SKILL.md").read_text(encoding="utf-8")
     assert "Production Diagnosability Routing" in text
