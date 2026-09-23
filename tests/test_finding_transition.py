@@ -130,6 +130,29 @@ def test_cli_enforces_full_proof_chain(tmp_path):
     assert status(h) == "CLOSED"
 
 
+def test_alignment_finding_can_complete_existing_lifecycle(tmp_path):
+    h = setup(tmp_path)
+    finding = {
+        "id": "FND-001", "category": "alignment", "task_id": "TASK-001",
+        "type": "contract_changed", "severity": "blocking", "status": "PROPOSED",
+        "detected_during": "IMPLEMENTING", "expected_hash": "sha256:" + "0" * 64,
+        "actual_hash": "sha256:" + "1" * 64,
+        "reason_code": "SCOPE_DRIFT_PERMISSION", "boundary_ref": "DEC-001",
+    }
+    (h / "findings" / "fnd-001.yaml").write_text(yaml.safe_dump(finding))
+
+    for target, args in (
+        ("REPRODUCING", ("--attempt", "reproduce")),
+        ("CONFIRMED", ("--test", "tests/test_x.py::test_x", "--evidence", "red.json")),
+        ("FIXING", ()),
+        ("FIXED", ("--evidence", "green.json")),
+        ("VERIFIED", ("--evidence", "full.json")),
+        ("CLOSED", ()),
+    ):
+        assert cli(tmp_path, "finding", "transition", "FND-001", target, *args).returncode == 0
+    assert status(h) == "CLOSED"
+
+
 def test_diag_cli_lifecycle_uses_passing_review_without_red_green(tmp_path):
     h = setup(tmp_path)
     finding = yaml.safe_load((h / "findings" / "fnd-001.yaml").read_text())

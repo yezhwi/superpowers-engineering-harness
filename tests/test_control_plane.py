@@ -28,6 +28,19 @@ def run_cli(cwd: Path, *args: str):
     )
 
 
+def test_alignment_finding_schema_accepts_closed_lifecycle_status(tmp_path):
+    finding = {
+        "id": "FND-001", "category": "alignment", "task_id": "TASK-001",
+        "type": "contract_changed", "severity": "blocking", "status": "CLOSED",
+        "detected_during": "IMPLEMENTING", "expected_hash": "sha256:" + "0" * 64,
+        "actual_hash": "sha256:" + "1" * 64,
+        "reason_code": "SCOPE_DRIFT_PERMISSION", "boundary_ref": "DEC-001",
+    }
+    quality_gate.validate_schema(
+        finding, "alignment-finding.schema.json", tmp_path / "finding.yaml"
+    )
+
+
 def test_gate_preflight_requires_release_readiness_for_ready_output(tmp_path, monkeypatch, capsys):
     harness = tmp_path / ".harness"
     harness.mkdir()
@@ -59,6 +72,204 @@ def make_repo(tmp_path: Path, **task_overrides) -> Path:
     task.update(task_overrides)
     (h / "current-task.yaml").write_text(yaml.safe_dump(task))
     return h
+
+
+def test_implementing_task_with_changed_frozen_alignment_cannot_verify(tmp_path):
+    h = make_repo(
+        tmp_path,
+        state="IMPLEMENTING",
+        risk={
+            "level": "Q2",
+            "profile": "STANDARD",
+            "dimensions": {
+                "scope": "high", "contract": "high", "data": "none",
+                "authorization": "none", "security": "none", "concurrency": "none",
+                "deployment": "none",
+            },
+            "escalation_history": [],
+            "user_changes": {"paths": [], "fingerprint": "sha256:test"},
+        },
+    )
+    alignment = {
+        "version": 1, "task_id": "TASK-001", "goal": {"summary": "original"},
+        "scope": {"in": ["x"], "out": ["y"]}, "non_goals": ["z"],
+        "boundaries": [], "constraints": [], "assumptions": [],
+        "acceptance_criteria": [], "implementation_surfaces": [], "verification": [],
+        "decision_ids": [], "interface_contract_ids": [], "open_questions": [],
+        "open_decisions": [], "open_loops": [],
+        "freeze": {"frozen": True, "frozen_at": "2026-09-18T00:00:00+00:00", "contract_hash": None},
+    }
+    from harness.alignment import contract_hash
+    alignment["freeze"]["contract_hash"] = contract_hash(alignment)
+    alignment["goal"]["summary"] = "changed"
+    (h / "alignment.yaml").write_text(yaml.safe_dump(alignment))
+    impact = yaml.safe_load((h / "impact.yaml").read_text())
+    impact["impact"]["required_tests"] = ["tests/test_control_plane.py"]
+    (h / "impact.yaml").write_text(yaml.safe_dump(impact))
+
+    result = run_cli(tmp_path, "transition", "VERIFYING")
+
+    assert result.returncode == 1
+    assert "CONTRACT_CHANGED" in result.stderr
+    assert yaml.safe_load((h / "current-task.yaml").read_text())["state"] == "IMPLEMENTING"
+    findings = list((h / "findings").glob("FND-*.yaml"))
+    assert len(findings) == 1
+    finding = yaml.safe_load(findings[0].read_text())
+    assert finding["category"] == "alignment"
+    assert finding["type"] == "contract_changed"
+    assert finding["expected_hash"] != finding["actual_hash"]
+    blocked = yaml.safe_load((h / "current-task.yaml").read_text())["gate"]["blocked_by"]
+    assert blocked[0]["code"] == "CONTRACT_CHANGED"
+    assert blocked[0]["finding_id"] == finding["id"]
+    alignment["goal"]["summary"] = "changed again"
+    (h / "alignment.yaml").write_text(yaml.safe_dump(alignment))
+    from harness.alignment import contract_hash as hash_contract
+    repeat = run_cli(tmp_path, "transition", "VERIFYING")
+    assert repeat.returncode == 1
+    findings = list((h / "findings").glob("FND-*.yaml"))
+    assert len(findings) == 1
+    updated = yaml.safe_load(findings[0].read_text())
+    assert updated["actual_hash"] == hash_contract(alignment)
+    assert updated["id"] == finding["id"]
+
+
+def test_impact_add_contract_writes_typed_record_and_protects_ref(tmp_path, monkeypatch):
+    h = make_repo(tmp_path)
+    monkeypatch.chdir(tmp_path)
+
+    assert controlplane.cmd_impact("add-contract", "DEC-001", args=type("Args", (), {"kind": "permission"})()) == 0
+    impact = yaml.safe_load((h / "impact.yaml").read_text())
+    assert impact["impact"]["contracts"] == [{"ref": "DEC-001", "kind": "permission"}]
+    assert controlplane.cmd_impact("ignore-user-path", "DEC-001") == 1
+
+
+def test_impact_legacy_contract_ref_remains_protected(tmp_path, monkeypatch):
+    h = make_repo(tmp_path)
+    impact = yaml.safe_load((h / "impact.yaml").read_text())
+    impact["impact"]["contracts"] = ["DEC-001"]
+    (h / "impact.yaml").write_text(yaml.safe_dump(impact))
+    monkeypatch.chdir(tmp_path)
+
+    assert controlplane.cmd_impact("ignore-user-path", "DEC-001") == 1
+
+
+def test_boundary_ref_adapters_keep_legacy_conservative_and_typed_explicit():
+    document = {"interface_contract_ids": ["INT-001"]}
+    impact = {"interfaces": [{"visibility": "external", "contract_id": "INT-002"}], "contracts": ["DEC-legacy", {"ref": "DEC-001", "kind": "permission"}, {"ref": "INT-003", "kind": "persistence"}]}
+
+    assert controlplane.legacy_boundary_baseline(document) == {"interface": ["INT-001"], "permission": [], "persistence": []}
+    assert controlplane.current_boundary_refs(document, impact) == {"interface": ["INT-002"], "permission": ["DEC-001"], "persistence": ["INT-003"]}
+
+
+def test_typed_contracts_normalizes_legacy_and_validates_kinds():
+    assert controlplane.typed_contracts({"contracts": ["DEC-001", {"ref": "INT-001", "kind": "permission"}]}) == [
+        {"ref": "DEC-001", "kind": "generic"},
+        {"ref": "INT-001", "kind": "permission"},
+    ]
+    with pytest.raises(ValueError, match="IMPACT_CONTRACT_KIND_INVALID"):
+        controlplane.typed_contracts({"contracts": [{"ref": "DEC-001", "kind": "prefix:permission"}]})
+
+
+def test_implementing_task_with_declared_api_drift_cannot_verify(tmp_path):
+    h = make_repo(
+        tmp_path,
+        state="IMPLEMENTING",
+        risk={
+            "level": "Q3", "profile": "STRICT",
+            "dimensions": {"scope": "high", "contract": "high", "data": "high", "authorization": "high", "security": "high", "concurrency": "none", "deployment": "none"},
+            "escalation_history": [],
+            "user_changes": {"paths": [], "fingerprint": "sha256:test"},
+        },
+    )
+    from harness.alignment import contract_hash
+    alignment = {
+        "version": 1, "task_id": "TASK-001", "goal": {"summary": "original"},
+        "scope": {"in": ["x"], "out": ["y"]}, "non_goals": ["z"], "boundaries": [], "constraints": [], "assumptions": [],
+        "acceptance_criteria": [], "implementation_surfaces": [], "verification": [], "decision_ids": [], "interface_contract_ids": [],
+        "open_questions": [], "open_decisions": [], "open_loops": [], "freeze": {"frozen": True, "frozen_at": "2026-09-18T00:00:00+00:00", "contract_hash": None},
+    }
+    alignment["freeze"]["contract_hash"] = contract_hash(alignment)
+    (h / "alignment.yaml").write_text(yaml.safe_dump(alignment))
+    # Declared boundary fact must block independently of private implementation paths.
+    impact = yaml.safe_load((h / "impact.yaml").read_text())
+    impact["impact"]["interfaces"] = [{"id": "API-001", "visibility": "external", "contract_id": "INT-001"}]
+    impact["impact"]["required_tests"] = ["tests/test_control_plane.py"]
+    (h / "impact.yaml").write_text(yaml.safe_dump(impact))
+
+    result = run_cli(tmp_path, "transition", "VERIFYING")
+
+    assert result.returncode == 1
+    assert "SCOPE_DRIFT" in result.stderr
+    finding = yaml.safe_load(next((h / "findings").glob("FND-*.yaml")).read_text())
+    assert finding["reason_code"] == "SCOPE_DRIFT_API"
+    assert finding["boundary_ref"] == "INT-001"
+    repeat = run_cli(tmp_path, "transition", "VERIFYING")
+    assert repeat.returncode == 1
+    assert len(list((h / "findings").glob("FND-*.yaml"))) == 1
+
+
+@pytest.mark.parametrize(
+    ("kind", "ref", "reason_code"),
+    [
+        ("permission", "DEC-001", "SCOPE_DRIFT_PERMISSION"),
+        ("persistence", "INT-001", "SCOPE_DRIFT_PERSISTENCE"),
+    ],
+)
+def test_implementing_task_with_typed_boundary_drift_cannot_verify(
+    tmp_path, kind, ref, reason_code
+):
+    h = make_repo(tmp_path, state="IMPLEMENTING", risk={"level": "Q3", "profile": "STRICT", "dimensions": {"scope": "high", "contract": "high", "data": "high", "authorization": "high", "security": "high", "concurrency": "none", "deployment": "none"}, "escalation_history": [], "user_changes": {"paths": [], "fingerprint": "sha256:test"}})
+    from harness.alignment import contract_hash
+    document = {"version": 1, "task_id": "TASK-001", "goal": {"summary": "x"}, "scope": {"in": ["x"], "out": ["y"]}, "non_goals": ["z"], "boundaries": [], "constraints": [], "assumptions": [], "acceptance_criteria": [], "implementation_surfaces": [], "verification": [], "decision_ids": [], "interface_contract_ids": [], "open_questions": [], "open_decisions": [], "open_loops": [], "freeze": {"frozen": True, "frozen_at": "2026-09-18T00:00:00+00:00", "contract_hash": None}}
+    document["freeze"]["contract_hash"] = contract_hash(document)
+    (h / "alignment.yaml").write_text(yaml.safe_dump(document))
+    impact = yaml.safe_load((h / "impact.yaml").read_text())
+    impact["impact"]["contracts"] = [{"ref": ref, "kind": kind}]
+    impact["impact"]["required_tests"] = ["tests/test_control_plane.py"]
+    (h / "impact.yaml").write_text(yaml.safe_dump(impact))
+
+    result = run_cli(tmp_path, "transition", "VERIFYING")
+
+    assert result.returncode == 1
+    finding = yaml.safe_load(next((h / "findings").glob("FND-*.yaml")).read_text())
+    assert finding["reason_code"] == reason_code
+    assert finding["boundary_ref"] == ref
+
+
+def test_realign_clears_internal_and_sealed_freeze(tmp_path):
+    h = make_repo(tmp_path, state="IMPLEMENTING")
+    alignment = {"version": 1, "task_id": "TASK-001", "goal": {"summary": "x"}, "scope": {"in": ["x"], "out": ["y"]}, "non_goals": ["z"], "boundaries": [], "constraints": [], "assumptions": [], "acceptance_criteria": [], "implementation_surfaces": [], "verification": [], "decision_ids": [], "interface_contract_ids": [], "open_questions": [], "open_decisions": [], "open_loops": [], "freeze": {"frozen": True, "frozen_at": "2026-09-18T00:00:00+00:00", "contract_hash": None}}
+    from harness.alignment import contract_hash
+    alignment["freeze"]["contract_hash"] = contract_hash(alignment)
+    (h / "alignment.yaml").write_text(yaml.safe_dump(alignment))
+    (h / "alignment-freeze.yaml").write_text("version: 1\ntask_id: TASK-001\ncontract_hash: sha256:" + "0" * 64 + "\ndecision_selections: {}\nboundary_refs: {interface: [], permission: [], persistence: []}\nfrozen_at: now\n")
+
+    result = run_cli(tmp_path, "transition", "SPECIFYING", "--reason", "SCOPE_DRIFT")
+
+    assert result.returncode == 0
+    assert not (h / "alignment-freeze.yaml").exists()
+    assert yaml.safe_load((h / "alignment.yaml").read_text())["freeze"]["frozen"] is False
+
+
+def test_implementing_task_realign_requires_whitelisted_reason(tmp_path):
+    h = make_repo(
+        tmp_path,
+        state="IMPLEMENTING",
+        risk={
+            "level": "Q2", "profile": "STANDARD",
+            "dimensions": {"scope": "high", "contract": "high", "data": "none", "authorization": "none", "security": "none", "concurrency": "none", "deployment": "none"},
+            "escalation_history": [],
+            "user_changes": {"paths": [], "fingerprint": "sha256:test"},
+        },
+    )
+
+    rejected = run_cli(tmp_path, "transition", "SPECIFYING")
+    accepted = run_cli(tmp_path, "transition", "SPECIFYING", "--reason", "CONTRACT_CHANGED")
+
+    assert rejected.returncode == 1
+    assert "REALIGN_REASON_REQUIRED" in rejected.stderr
+    assert accepted.returncode == 0, accepted.stderr
+    assert yaml.safe_load((h / "current-task.yaml").read_text())["state"] == "SPECIFYING"
 
 
 def test_controlplane_has_no_generic_dynamic_module_loader():
@@ -130,13 +341,27 @@ def test_resume_guard_rejects_malformed_finding_without_traceback(tmp_path):
     assert "Traceback" not in result.stderr
 
 
-def test_transition_cannot_reenter_specifying_without_risk_escalation(tmp_path):
+def test_fast_realign_requires_task_escalation(tmp_path):
+    make_repo(tmp_path, state="IMPLEMENTING", risk={
+        "level": "Q1", "profile": "FAST",
+        "dimensions": {"scope": "low", "contract": "none", "data": "none", "authorization": "none", "security": "none", "concurrency": "none", "deployment": "none"},
+        "escalation_history": [], "user_changes": {"paths": [], "fingerprint": "sha256:test"},
+    })
+
+    result = run_cli(tmp_path, "transition", "SPECIFYING", "--reason", "SCOPE_DRIFT")
+
+    assert result.returncode == 1
+    assert "RISK_ESCALATION_REQUIRED" in result.stderr
+    assert "harness task escalate Q2 --reason SCOPE_DRIFT" in result.stderr
+
+
+def test_transition_cannot_reenter_specifying_without_realign_reason(tmp_path):
     make_repo(tmp_path, state="IMPLEMENTING")
 
     result = run_cli(tmp_path, "transition", "SPECIFYING")
 
     assert result.returncode == 1
-    assert "RISK_ESCALATION_REQUIRED" in result.stderr
+    assert "REALIGN_REASON_REQUIRED" in result.stderr
 
 
 def test_transition_legal_persists_new_state(tmp_path):

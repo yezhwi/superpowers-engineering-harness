@@ -8,6 +8,7 @@ from pathlib import Path
 import yaml
 
 from .git_query import GitQueryError, run_git_query
+from .impact import ImpactContractError, typed_contracts
 
 
 class WorkspaceError(RuntimeError):
@@ -298,9 +299,13 @@ def project_typed_scope(
     scope = task.get("scope") or {}
     files: list[str] = []
     refs: list[str] = []
+    try:
+        contract_refs = [item["ref"] for item in typed_contracts(impact)]
+    except ImpactContractError as exc:
+        raise WorkspaceError(str(exc)) from exc
     for item in (
         *(scope.get("owned_paths") or ()),
-        *(impact.get("contracts") or ()),
+        *contract_refs,
         *(impact.get("direct_dependents") or ()),
         *inspected_paths,
         *direct_dependencies,

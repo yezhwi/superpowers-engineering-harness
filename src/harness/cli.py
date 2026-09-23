@@ -67,6 +67,11 @@ def _main(argv=None) -> int:
         "transition", help="validate and persist a state transition"
     )
     p_trans.add_argument("target")
+    p_trans.add_argument("--reason")
+    p_align = sub.add_parser("align", help="bootstrap and inspect alignment contracts")
+    align_sub = p_align.add_subparsers(dest="align_command", required=True)
+    for command in ("init", "check", "status", "diff"):
+        align_sub.add_parser(command)
     p_check = sub.add_parser("check", help="run Harness checks")
     check_sub = p_check.add_subparsers(dest="check_command")
     p_minimal = check_sub.add_parser(
@@ -126,6 +131,9 @@ def _main(argv=None) -> int:
     idp.add_argument("value")
     ict = ims.add_parser("add-contract")
     ict.add_argument("value")
+    ict.add_argument(
+        "--kind", choices=["generic", "permission", "persistence"], default="generic"
+    )
     irk = ims.add_parser("add-risk")
     irk.add_argument("value")
     iinterface = ims.add_parser("add-interface")
@@ -176,6 +184,8 @@ def _main(argv=None) -> int:
     benchmark_sub = p_benchmark.add_subparsers(dest="benchmark_command")
     p_benchmark_run = benchmark_sub.add_parser("run")
     p_benchmark_run.add_argument("--fixtures", required=True)
+    p_benchmark_alignment = benchmark_sub.add_parser("alignment")
+    p_benchmark_alignment.add_argument("--records", required=True)
     p_benchmark_compare = benchmark_sub.add_parser("compare")
     p_benchmark_compare.add_argument("--fixtures", required=True)
     p_benchmark_compare.add_argument("--baseline", required=True)
@@ -344,7 +354,9 @@ def _main(argv=None) -> int:
             trigger=getattr(args, "trigger", None), reason=getattr(args, "reason", None),
         )
     if args.subcommand == "transition":
-        return controlplane.cmd_transition(args.target)
+        return controlplane.cmd_transition(args.target, reason=args.reason)
+    if args.subcommand == "align":
+        return controlplane.cmd_align(args.align_command)
     if args.subcommand == "check" and args.check_command == "minimal":
         return controlplane.cmd_check_minimal(Path(args.source_file))
     if args.subcommand == "review" and args.review_command == "complexity":
@@ -416,6 +428,8 @@ def _main(argv=None) -> int:
         return controlplane.cmd_telemetry_show()
     if args.subcommand == "benchmark" and args.benchmark_command == "run":
         return controlplane.cmd_benchmark_run(Path(args.fixtures))
+    if args.subcommand == "benchmark" and args.benchmark_command == "alignment":
+        return controlplane.cmd_benchmark_alignment(Path(args.records))
     if args.subcommand == "benchmark" and args.benchmark_command == "compare":
         return controlplane.cmd_benchmark_compare(
             Path(args.fixtures), Path(args.baseline), Path(args.adaptive)

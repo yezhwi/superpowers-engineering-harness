@@ -171,12 +171,12 @@ def test_project_typed_scope_separates_contract_labels_from_files():
     from harness.workspace import claimed_scope_sets, project_typed_scope
 
     task = {"scope": {"owned_paths": ["src/owned.py"], "protected_user_paths": []}}
-    impact = {"contracts": ["DEC-001:orders", "src/contract.py"]}
+    impact = {"contracts": ["DEC-001:orders", "src/contract.py", {"ref": "DEC-002", "kind": "permission"}]}
     files, refs = project_typed_scope(task, impact)
     assert files == ("src/contract.py", "src/owned.py")
-    assert refs == ("DEC-001:orders",)
+    assert refs == ("DEC-001:orders", "DEC-002")
     migrated_files, migrated_refs = claimed_scope_sets(
         {"files": ["src/owned.py", "DEC-001:orders", "src/contract.py"]}
     )
     assert migrated_files == files
-    assert migrated_refs == refs
+    assert migrated_refs == ("DEC-001:orders",)

@@ -44,6 +44,21 @@ def test_task_new_archives_done_task(tmp_path):
     assert any((h / "history").iterdir())
 
 
+def test_task_new_archives_stale_alignment_freeze(tmp_path):
+    h = setup(tmp_path)
+    (h / "alignment-freeze.yaml").write_text(
+        "version: 1\ntask_id: TASK-001\ncontract_hash: sha256:" + "0" * 64
+        + "\ndecision_selections: {}\nboundary_refs: {interface: [], permission: [], persistence: []}\nfrozen_at: now\n"
+    )
+
+    result = cli(tmp_path, "task", "new", "TASK-002")
+
+    assert result.returncode == 0
+    assert not (h / "alignment-freeze.yaml").exists()
+    archive = next((h / "history").iterdir())
+    assert (archive / "alignment-freeze.yaml").exists()
+
+
 def test_task_new_resets_observability_contract(tmp_path):
     h = setup(tmp_path)
     (h / "observability.yaml").write_text(

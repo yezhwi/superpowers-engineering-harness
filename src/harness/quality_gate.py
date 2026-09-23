@@ -140,6 +140,8 @@ def finding_schema_name(finding: dict) -> str:
         return "interface-finding.schema.json"
     if category == "adversarial":
         return "adversarial-finding.schema.json"
+    if category == "alignment":
+        return "alignment-finding.schema.json"
     if category is None:
         raise InvalidHarnessState("MIGRATION_REQUIRED")
     raise InvalidHarnessState("FINDING_SCHEMA_UNKNOWN")

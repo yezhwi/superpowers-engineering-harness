@@ -8,6 +8,7 @@ import datetime
 from dataclasses import replace
 
 from harness import (
+    alignment,
     benchmark,
     collect_evidence,
     complexity,
@@ -17,9 +18,11 @@ from harness import (
     harness_status,
     interface_contract,
     interface_review,
+    impact as impact_domain,
     quality_gate,
     review_outcome,
     risk,
+    source_access,
     state_machine,
     telemetry,
     test_plan,
@@ -71,6 +74,163 @@ def save_task(harness_dir: Path, task: dict) -> None:
 
 def cmd_status(harness_dir: Path = Path(".harness")) -> int:
     return harness_status.main(["--harness-dir", str(harness_dir)])
+
+
+def _read_only_alignment_readiness(harness_dir: Path, task: dict, document: dict):
+    """Return closure/seal diagnostics without bootstrap or artifact mutation."""
+    requirements = yaml.safe_load(source_access.read_text(harness_dir / "requirements.yaml"))
+    decisions = decision.load_decisions(harness_dir)
+    proposed = {
+        record["id"] for record in decisions
+        if record["task_id"] == task["task"]["id"] and record["status"] == "PROPOSED"
+    }
+    issues = alignment.check_completeness(
+        document,
+        requirement_ids={record["id"] for record in requirements["requirements"]},
+        critical_requirement_ids={
+            record["id"] for record in requirements["requirements"]
+            if record["priority"] == "must"
+        },
+        proposed_decision_ids=proposed,
+    )
+    alignment.validate_freeze(document)
+    sealed = harness_dir / "alignment-freeze.yaml"
+    if not source_access.exists(sealed):
+        return [*issues, alignment.AlignmentIssue("ALIGNMENT_SEAL_MISSING")]
+    impact = yaml.safe_load(source_access.read_text(harness_dir / "impact.yaml"))
+    return [
+        *issues,
+        *alignment.sealed_freeze_drift(
+            harness_dir, document, decisions=decisions,
+            boundary_refs=current_boundary_refs(document, impact.get("impact", {})),
+        ),
+    ]
+
+
+def _alignment_next_action(issues: list[alignment.AlignmentIssue]) -> str:
+    codes = {issue.code for issue in issues}
+    if "OPEN_DECISION" in codes:
+        return "harness decision accept <id> --option <option>"
+    if codes & {"CONTRACT_CHANGED", "ALIGNMENT_SEAL_MISSING"}:
+        return "harness transition SPECIFYING --reason CONTRACT_CHANGED"
+    if "OPEN_LOOP" in codes:
+        return "clear open_loops in alignment.yaml, then harness align check"
+    return "repair alignment.yaml, then harness align check"
+
+
+def _print_alignment_blocked(issues: list[alignment.AlignmentIssue]) -> None:
+    print("ALIGNMENT_BLOCKED", file=sys.stderr)
+    for issue in issues:
+        print(f"  {issue.subject_id or 'ALIGNMENT'}: {issue.code}", file=sys.stderr)
+    print(f"Next: {_alignment_next_action(issues)}", file=sys.stderr)
+
+
+def cmd_align(command: str) -> int:
+    """Bootstrap or inspect one Alignment artifact without workflow changes."""
+    harness_dir = Path(".harness")
+    path = harness_dir / "alignment.yaml"
+    if command == "init":
+        if source_access.exists(path):
+            print("ALIGNMENT_EXISTS", file=sys.stderr)
+            return 1
+        task = load_task(harness_dir)
+        requirements = yaml.safe_load(source_access.read_text(harness_dir / "requirements.yaml"))
+        records = requirements.get("requirements", [])
+        acs = [
+            {"id": f"AC-{index:03d}", "description": record["statement"], "requirement_ids": [record["id"]]}
+            for index, record in enumerate(records, 1)
+        ]
+        document = {
+            "version": 1, "task_id": task["task"]["id"],
+            "goal": {"summary": task["task"]["title"] or "Alignment draft"},
+            "scope": {"in": ["task contract"], "out": ["unspecified"]},
+            "non_goals": [], "boundaries": [], "constraints": [], "assumptions": [],
+            "acceptance_criteria": acs, "implementation_surfaces": [], "verification": [],
+            "decision_ids": [], "interface_contract_ids": [], "open_questions": [],
+            "open_decisions": [], "open_loops": [],
+            "freeze": {"frozen": False, "frozen_at": None, "contract_hash": None},
+        }
+        transaction.atomic_write(path, yaml.safe_dump(document, sort_keys=False).encode())
+        print("ALIGNMENT_DRAFT_CREATED")
+        return 0
+    try:
+        document = alignment.load_alignment(harness_dir)
+    except alignment.AlignmentError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    if command == "status":
+        if not document["freeze"]["frozen"]:
+            print("Alignment: BLOCKED")
+            print("Freeze: UNFROZEN")
+            return 0
+        try:
+            issues = _read_only_alignment_readiness(
+                harness_dir, load_task(harness_dir), document
+            )
+        except (alignment.AlignmentError, decision.DecisionError, ValueError) as exc:
+            print("Alignment: BLOCKED")
+            print(str(exc), file=sys.stderr)
+            return 1
+        if issues:
+            print("Alignment: BLOCKED")
+            for issue in issues:
+                print(f"{issue.code}: {issue.subject_id or 'ALIGNMENT'}", file=sys.stderr)
+            return 1
+        print("Alignment: READY")
+        print("Freeze: FROZEN")
+        return 0
+    if command == "diff":
+        if not document["freeze"]["frozen"]:
+            print("ALIGNMENT_UNFROZEN", file=sys.stderr)
+            return 1
+        try:
+            decisions = decision.load_decisions(harness_dir)
+            impact = yaml.safe_load(source_access.read_text(harness_dir / "impact.yaml"))
+            issues = alignment.sealed_freeze_drift(
+                harness_dir,
+                document,
+                decisions=decisions,
+                boundary_refs=current_boundary_refs(document, impact.get("impact", {})),
+                bootstrap=False,
+            )
+        except alignment.AlignmentError as exc:
+            stored = document["freeze"].get("contract_hash")
+            if stored and stored != alignment.contract_hash(document):
+                print("CONTRACT_CHANGED", file=sys.stderr)
+                return 1
+            print(str(exc), file=sys.stderr)
+            return 1
+        except (decision.DecisionError, ValueError) as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+        current = alignment.contract_hash(document)
+        print(f"Frozen: {document['freeze']['contract_hash']}")
+        print(f"Current: {current}")
+        if any(issue.code == "CONTRACT_CHANGED" for issue in issues):
+            print("CONTRACT_CHANGED", file=sys.stderr)
+            return 1
+        if issues:
+            print("SCOPE_DRIFT", file=sys.stderr)
+            for issue in issues:
+                print(f"  {issue.subject_id or 'ALIGNMENT'}: {issue.code}", file=sys.stderr)
+            return 1
+        return 0
+    try:
+        issues = _read_only_alignment_readiness(
+            harness_dir, load_task(harness_dir), document
+        )
+    except (alignment.AlignmentError, decision.DecisionError, ValueError) as exc:
+        code = str(exc)
+        label = "CONTRACT_CHANGED" if code == "CONTRACT_CHANGED" else "ALIGNMENT_FREEZE_INVALID"
+        print("ALIGNMENT_BLOCKED", file=sys.stderr)
+        print(f"  {label}: {exc}", file=sys.stderr)
+        print("Next: repair alignment.yaml, then harness align check", file=sys.stderr)
+        return 1
+    if issues:
+        _print_alignment_blocked(issues)
+        return 1
+    print("ALIGNMENT_READY")
+    return 0
 
 
 def _decision_document(args) -> dict:
@@ -199,7 +359,99 @@ def cmd_interface(args) -> int:
     return 0
 
 
-def cmd_transition(target: str) -> int:
+def _persist_alignment_blocker(
+    harness_dir: Path, task: dict, *, code: str, message: str, finding_id: str
+) -> None:
+    """Record the routing blocker next to the alignment finding."""
+    gate = task.setdefault("gate", {})
+    blocked = gate.setdefault("blocked_by", [])
+    if any(
+        isinstance(item, dict)
+        and item.get("code") == code
+        and item.get("finding_id") == finding_id
+        for item in blocked
+    ):
+        return
+    blocked.append(
+        blocker_module.blocker_document(
+            blocker_module.GateBlocker(
+                code,
+                "implementation",
+                message,
+                finding_id=finding_id,
+                recover_to="SPECIFYING",
+            )
+        )
+    )
+    save_task(harness_dir, task)
+
+
+def _record_contract_change(
+    harness_dir: Path, task: dict, document: dict, *, reason_code: str, boundary_ref: str
+) -> None:
+    """Persist one auditable contract-change proposal for current task."""
+    directory = harness_dir / "findings"
+    paths = list(source_access.members(directory, "FND-*.yaml"))
+    existing = [yaml.safe_load(source_access.read_text(path)) for path in paths]
+    expected_hash = document["freeze"]["contract_hash"]
+    actual_hash = alignment.contract_hash(document)
+    open_finding = next(
+        (
+            item
+            for item in existing
+            if isinstance(item, dict)
+            and item.get("category") == "alignment"
+            and item.get("status") not in {"CLOSED", "REJECTED"}
+            and item.get("task_id") == document["task_id"]
+            and item.get("reason_code") == reason_code
+            and item.get("boundary_ref") == boundary_ref
+        ),
+        None,
+    )
+    if open_finding is not None:
+        open_finding["expected_hash"] = expected_hash
+        open_finding["actual_hash"] = actual_hash
+        path = directory / f"{open_finding['id']}.yaml"
+        quality_gate.validate_schema(open_finding, "alignment-finding.schema.json", path)
+        transaction.atomic_write(path, yaml.safe_dump(open_finding, sort_keys=False).encode())
+        _persist_alignment_blocker(
+            harness_dir,
+            task,
+            code=reason_code,
+            message=f"{reason_code} {boundary_ref}",
+            finding_id=open_finding["id"],
+        )
+        return
+    existing_ids = [int(path.stem.removeprefix("FND-")) for path in paths]
+    finding = {
+        "id": f"FND-{max(existing_ids, default=0) + 1:03d}",
+        "category": "alignment",
+        "task_id": document["task_id"],
+        "type": "contract_changed",
+        "severity": "blocking",
+        "status": "PROPOSED",
+        "detected_during": "IMPLEMENTING",
+        "expected_hash": expected_hash,
+        "actual_hash": actual_hash,
+        "reason_code": reason_code,
+        "boundary_ref": boundary_ref,
+    }
+    quality_gate.validate_schema(
+        finding, "alignment-finding.schema.json", directory / f"{finding['id']}.yaml"
+    )
+    transaction.atomic_write(
+        directory / f"{finding['id']}.yaml", yaml.safe_dump(finding, sort_keys=False).encode()
+    )
+    _persist_alignment_blocker(
+        harness_dir,
+        task,
+        code=reason_code,
+        message=f"{reason_code} {boundary_ref}",
+        finding_id=finding["id"],
+    )
+
+
+def cmd_transition(target: str, *, reason: str | None = None) -> int:
     harness_dir = Path(".harness")
     task = load_task(harness_dir)
     current = task.get("state")
@@ -226,6 +478,49 @@ def cmd_transition(target: str) -> int:
     except Exception as exc:
         print(f"INVALID_HARNESS_STATE: {exc}", file=sys.stderr)
         return 2
+    if current == "IMPLEMENTING" and target == "VERIFYING" and profile in {"STANDARD", "STRICT"}:
+        try:
+            document = alignment.load_alignment(harness_dir)
+            alignment.validate_freeze(document)
+            impact = yaml.safe_load(source_access.read_text(harness_dir / "impact.yaml"))
+            decisions = decision.load_decisions(harness_dir)
+            current_refs = current_boundary_refs(document, impact.get("impact", {}))
+            sealed_path = harness_dir / "alignment-freeze.yaml"
+            if not sealed_path.exists():
+                alignment.validate_sealed_freeze(
+                    harness_dir, document, decisions=decisions,
+                    boundary_refs=legacy_boundary_baseline(document),
+                )
+            drift = alignment.sealed_freeze_drift(
+                harness_dir, document, decisions=decisions, boundary_refs=current_refs
+            )
+            if drift:
+                for issue in drift:
+                    _record_contract_change(
+                        harness_dir, task, document,
+                        reason_code=issue.code,
+                        boundary_ref=issue.subject_id or "alignment.yaml",
+                    )
+                print(
+                    "CONTRACT_CHANGED" if drift[0].code == "CONTRACT_CHANGED" else "SCOPE_DRIFT",
+                    file=sys.stderr,
+                )
+                return 1
+        except alignment.AlignmentError:
+            try:
+                document = alignment.load_alignment(harness_dir)
+                if document["freeze"]["contract_hash"]:
+                    _record_contract_change(
+                        harness_dir, task, document,
+                        reason_code="CONTRACT_CHANGED", boundary_ref="alignment.yaml",
+                    )
+            except alignment.AlignmentError:
+                pass
+            print("CONTRACT_CHANGED", file=sys.stderr)
+            return 1
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
     if current == "CREATED" and target != "CLASSIFIED":
         print("TASK_CLASSIFICATION_REQUIRED", file=sys.stderr)
         return 1
@@ -235,12 +530,49 @@ def cmd_transition(target: str) -> int:
     ):
         print("PROFILE_ENTRY_STATE_REQUIRED", file=sys.stderr)
         return 1
+    if current == "CLASSIFIED" and profile == "FAST" and target == "IMPLEMENTING":
+        proposed = [
+            record
+            for record in decision.load_decisions(harness_dir)
+            if record["task_id"] == task["task"]["id"] and record["status"] == "PROPOSED"
+        ]
+        if proposed:
+            print("OPEN_DECISION", file=sys.stderr)
+            return 1
+        alignment_path = harness_dir / "alignment.yaml"
+        if not source_access.exists(alignment_path):
+            document = {
+                "version": 1,
+                "task_id": task["task"]["id"],
+                "goal": {"summary": task["task"]["title"] or "FAST task"},
+                "scope": {"in": ["bounded change"], "out": ["unrelated behavior"]},
+                "non_goals": ["full alignment"],
+                "boundaries": [], "constraints": [], "assumptions": [],
+                "acceptance_criteria": [{"id": "AC-001", "description": "bounded change works", "requirement_ids": []}],
+                "implementation_surfaces": [{"id": "SURFACE-001", "acceptance_criteria": ["AC-001"], "paths": [], "seam": "bounded change"}],
+                "verification": [{"id": "VER-001", "acceptance_criteria": ["AC-001"], "method": "test", "expected_evidence": "FAST verification evidence"}],
+                "decision_ids": [], "interface_contract_ids": [], "open_questions": [], "open_decisions": [], "open_loops": [],
+                "freeze": {"frozen": False, "frozen_at": None, "contract_hash": None},
+            }
+            transaction.atomic_write(alignment_path, yaml.safe_dump(document, sort_keys=False).encode())
     if current == "BLOCKED":
         print("RESUME_REQUIRED: use harness resume", file=sys.stderr)
         return 1
     if current == "IMPLEMENTING" and target == "SPECIFYING":
-        print("RISK_ESCALATION_REQUIRED: use harness task escalate", file=sys.stderr)
-        return 1
+        allowed_realign_reasons = {
+            "CONTRACT_CHANGED",
+            "SCOPE_DRIFT",
+            "NEW_REQUIRED_DECISION",
+        }
+        if reason not in allowed_realign_reasons:
+            print("REALIGN_REASON_REQUIRED", file=sys.stderr)
+            return 1
+        if profile == "FAST":
+            print("RISK_ESCALATION_REQUIRED", file=sys.stderr)
+            print(
+                f"harness task escalate Q2 --reason {reason}", file=sys.stderr
+            )
+            return 1
     if current == "REPRODUCING" and target == "REVIEWING":
         try:
             fixed = [
@@ -275,10 +607,8 @@ def cmd_transition(target: str) -> int:
     if current == "PLANNED" and target == "IMPLEMENTING":
         decision_path = harness_dir / "evidence" / "minimal-implementation.yaml"
         try:
-            import yaml
-
-            decision = yaml.safe_load(decision_path.read_text(encoding="utf-8"))
-            complexity.validate_minimal_decision(decision)
+            minimal_decision = yaml.safe_load(decision_path.read_text(encoding="utf-8"))
+            complexity.validate_minimal_decision(minimal_decision)
         except Exception as exc:
             print(f"MINIMAL_IMPLEMENTATION_REQUIRED: {exc}", file=sys.stderr)
             return 1
@@ -306,6 +636,55 @@ def cmd_transition(target: str) -> int:
                 for issue in issues:
                     subject = issue.requirement_id or issue.invariant_id or "TEST_PLAN"
                     print(f"  {subject}: {issue.code}", file=sys.stderr)
+                return 1
+            try:
+                alignment_document = alignment.load_alignment(harness_dir)
+                requirement_ids = {
+                    record["id"] for record in requirements["requirements"]
+                }
+                critical_requirement_ids = {
+                    record["id"]
+                    for record in requirements["requirements"]
+                    if record["priority"] == "must"
+                }
+                proposed_decision_ids = {
+                    record["id"]
+                    for record in decision.load_decisions(harness_dir)
+                    if record["task_id"] == task["task"]["id"]
+                    and record["status"] == "PROPOSED"
+                }
+                alignment_issues = alignment.check_completeness(
+                    alignment_document,
+                    requirement_ids=requirement_ids,
+                    critical_requirement_ids=critical_requirement_ids,
+                    proposed_decision_ids=proposed_decision_ids,
+                )
+            except (alignment.AlignmentError, decision.DecisionError) as exc:
+                print("ALIGNMENT_BLOCKED", file=sys.stderr)
+                print(f"  ALIGNMENT_INVALID: {exc}", file=sys.stderr)
+                return 1
+            if alignment_issues:
+                print("ALIGNMENT_BLOCKED", file=sys.stderr)
+                for issue in alignment_issues:
+                    subject = issue.subject_id or "ALIGNMENT"
+                    print(f"  {subject}: {issue.code}", file=sys.stderr)
+                return 1
+            try:
+                alignment.validate_freeze(alignment_document)
+                impact = yaml.safe_load(source_access.read_text(harness_dir / "impact.yaml"))
+                alignment.validate_sealed_freeze(
+                    harness_dir,
+                    alignment_document,
+                    decisions=decision.load_decisions(harness_dir),
+                    boundary_refs=current_boundary_refs(
+                        alignment_document, impact.get("impact", {})
+                    ),
+                )
+            except (alignment.AlignmentError, decision.DecisionError, ValueError) as exc:
+                print("ALIGNMENT_BLOCKED", file=sys.stderr)
+                code = str(exc)
+                label = "CONTRACT_CHANGED" if code == "CONTRACT_CHANGED" else "ALIGNMENT_FREEZE_INVALID"
+                print(f"  {label}: {exc}", file=sys.stderr)
                 return 1
     if current == "VERIFYING" and target == "GATING" and profile != "FAST":
         print(
@@ -356,6 +735,20 @@ def cmd_transition(target: str) -> int:
     except state_machine.InvalidTransition as exc:
         print(exc)
         return 1
+    if current == "IMPLEMENTING" and target == "SPECIFYING":
+        try:
+            document = alignment.load_alignment(harness_dir)
+        except alignment.AlignmentError:
+            document = None  # SPECIFYING is recovery point for malformed drafts.
+        if document is not None:
+            document["freeze"] = {
+                "frozen": False, "frozen_at": None, "contract_hash": None
+            }
+            transaction.atomic_write(
+                harness_dir / "alignment.yaml",
+                yaml.safe_dump(document, sort_keys=False).encode(),
+            )
+        (harness_dir / "alignment-freeze.yaml").unlink(missing_ok=True)
     task["state"] = target
     save_task(harness_dir, task)
     print(f"OK: {current} -> {target}")
@@ -690,6 +1083,34 @@ def cmd_benchmark_corpus_validate(corpus: Path) -> int:
         print(str(exc), file=sys.stderr)
         return 2
     print(f"BENCHMARK_CORPUS_VALID: {len(rows)}")
+    return 0
+
+
+def cmd_benchmark_alignment(records: Path) -> int:
+    """Report alignment metrics from explicitly supplied persisted records only."""
+    try:
+        document = yaml.safe_load(records.read_text())
+    except (OSError, yaml.YAMLError) as exc:
+        print(f"BENCHMARK_ALIGNMENT_INVALID: {exc}", file=sys.stderr)
+        return 2
+    if not isinstance(document, dict):
+        print("BENCHMARK_ALIGNMENT_INVALID", file=sys.stderr)
+        return 2
+    required = ("tasks", "alignments", "findings")
+    if any(name not in document for name in required):
+        print(yaml.safe_dump({"status": "INCONCLUSIVE"}, sort_keys=False))
+        return 0
+    if not all(isinstance(document[name], list) for name in required):
+        print("BENCHMARK_ALIGNMENT_INVALID", file=sys.stderr)
+        return 2
+    try:
+        report = benchmark.benchmark(
+            tasks=document["tasks"], alignments=document["alignments"], findings=document["findings"]
+        )
+    except (KeyError, TypeError):
+        print("BENCHMARK_ALIGNMENT_INVALID", file=sys.stderr)
+        return 2
+    print(yaml.safe_dump(report, sort_keys=False))
     return 0
 
 
@@ -1413,6 +1834,7 @@ def cmd_task_new(task_id: str, title: str = "") -> int:
             "gate.yaml",
             "impact.yaml",
             "observability.yaml",
+            "alignment-freeze.yaml",
             "findings",
             "evidence",
         ):
@@ -1430,6 +1852,7 @@ def cmd_task_new(task_id: str, title: str = "") -> int:
             "observability.yaml",
         ):
             shutil.copy2(templates_dir() / name, staged / name)
+        (staged / "alignment-freeze.yaml").unlink(missing_ok=True)
         for name in ("findings", "evidence"):
             shutil.rmtree(staged / name, ignore_errors=True)
             (staged / name).mkdir()
@@ -1486,6 +1909,7 @@ def cmd_task_recover(task_id: str, title: str, reason: str) -> int:
             "gate.yaml",
             "impact.yaml",
             "observability.yaml",
+            "alignment-freeze.yaml",
             "findings",
             "evidence",
         ):
@@ -1511,6 +1935,7 @@ def cmd_task_recover(task_id: str, title: str, reason: str) -> int:
             "observability.yaml",
         ):
             shutil.copy2(templates_dir() / name, staged / name)
+        (staged / "alignment-freeze.yaml").unlink(missing_ok=True)
         for name in ("findings", "evidence"):
             shutil.rmtree(staged / name, ignore_errors=True)
             (staged / name).mkdir()
@@ -1566,6 +1991,26 @@ def cmd_authorize(action: str, granted: bool) -> int:
     }
     save_task(harness_dir, task)
     return 0
+
+
+def legacy_boundary_baseline(document: dict) -> dict[str, list[str]]:
+    """Conservative migration baseline for legacy in-document freezes."""
+    return {"interface": list(document["interface_contract_ids"]), "permission": [], "persistence": []}
+
+
+def current_boundary_refs(document: dict, impact: dict) -> dict[str, list[str]]:
+    """Canonical declared boundaries; typed kind is sole classification source."""
+    contracts = typed_contracts(impact)
+    return {
+        "interface": sorted({item["contract_id"] for item in impact.get("interfaces", []) if item.get("visibility") == "external" and item.get("contract_id")}),
+        "permission": sorted(item["ref"] for item in contracts if item["kind"] == "permission"),
+        "persistence": sorted(item["ref"] for item in contracts if item["kind"] == "persistence"),
+    }
+
+
+def typed_contracts(impact: dict) -> list[dict[str, str]]:
+    """Compatibility wrapper for canonical impact normalization."""
+    return impact_domain.typed_contracts(impact)
 
 
 def _impact():
@@ -1626,7 +2071,7 @@ def cmd_impact(action, value=None, reason=None, args=None):
                 owned.append(value)
             if value in protected:
                 protected.remove(value)
-        elif value in owned or value in (impact.get("contracts") or []):
+        elif value in owned or value in {item["ref"] for item in typed_contracts(impact)}:
             print("PROTECTED_PATH_OWNED", file=sys.stderr)
             return 1
         elif value not in protected:
@@ -1663,7 +2108,10 @@ def cmd_impact(action, value=None, reason=None, args=None):
         "add-risk": "risks",
     }.get(action)
     if key:
-        if value not in impact[key]:
+        if action == "add-contract":
+            if value not in {item["ref"] for item in typed_contracts(impact)}:
+                impact[key].append({"ref": value, "kind": args.kind})
+        elif value not in impact[key]:
             impact[key].append(value)
         if action == "add-change":
             if value not in scope["owned_paths"]:
