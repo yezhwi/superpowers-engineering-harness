@@ -1,0 +1,32 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "alignment.schema.json",
+  "title": "Engineering Harness Alignment Contract",
+  "type": "object",
+  "required": ["version", "task_id", "goal", "scope", "non_goals", "boundaries", "constraints", "assumptions", "acceptance_criteria", "implementation_surfaces", "verification", "decision_ids", "interface_contract_ids", "open_questions", "open_decisions", "open_loops", "freeze"],
+  "properties": {
+    "version": {"const": 1},
+    "task_id": {"type": "string", "pattern": "^TASK-[0-9]+$"},
+    "goal": {"type": "object", "required": ["summary"], "properties": {"summary": {"type": "string"}}, "additionalProperties": false},
+    "scope": {"type": "object", "required": ["in", "out"], "properties": {"in": {"$ref": "#/definitions/strings"}, "out": {"$ref": "#/definitions/strings"}}, "additionalProperties": false},
+    "non_goals": {"$ref": "#/definitions/strings"},
+    "boundaries": {"$ref": "#/definitions/strings"},
+    "constraints": {"$ref": "#/definitions/strings"},
+    "assumptions": {"$ref": "#/definitions/strings"},
+    "acceptance_criteria": {"type": "array", "items": {"type": "object", "required": ["id", "description", "requirement_ids"], "properties": {"id": {"type": "string", "pattern": "^AC-[0-9]+$"}, "description": {"type": "string", "minLength": 1}, "requirement_ids": {"$ref": "#/definitions/requirementIds"}}, "additionalProperties": false}},
+    "implementation_surfaces": {"type": "array", "items": {"type": "object", "required": ["id", "acceptance_criteria", "paths", "seam"], "properties": {"id": {"type": "string", "pattern": "^SURFACE-[0-9]+$"}, "acceptance_criteria": {"$ref": "#/definitions/acIds"}, "paths": {"$ref": "#/definitions/strings"}, "seam": {"type": "string", "minLength": 1}}, "additionalProperties": false}},
+    "verification": {"type": "array", "items": {"type": "object", "required": ["id", "acceptance_criteria", "method", "expected_evidence"], "properties": {"id": {"type": "string", "pattern": "^VER-[0-9]+$"}, "acceptance_criteria": {"$ref": "#/definitions/acIds"}, "method": {"type": "string", "minLength": 1}, "expected_evidence": {"type": "string"}}, "additionalProperties": false}},
+    "decision_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^DEC-[0-9]+$"}},
+    "interface_contract_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^INT-[0-9]+$"}},
+    "open_questions": {"$ref": "#/definitions/strings"},
+    "open_decisions": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^DEC-[0-9]+$"}},
+    "open_loops": {"$ref": "#/definitions/strings"},
+    "freeze": {"type": "object", "required": ["frozen", "frozen_at", "contract_hash"], "properties": {"frozen": {"type": "boolean"}, "frozen_at": {"type": ["string", "null"]}, "contract_hash": {"type": ["string", "null"], "pattern": "^sha256:[a-f0-9]{64}$"}}, "additionalProperties": false}
+  },
+  "definitions": {
+    "strings": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "requirementIds": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^REQ-[0-9]+$"}},
+    "acIds": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^AC-[0-9]+$"}}
+  },
+  "additionalProperties": false
+}

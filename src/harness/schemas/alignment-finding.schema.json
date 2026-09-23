@@ -1,0 +1,29 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "alignment-finding.schema.json",
+  "title": "Engineering Harness Alignment Finding",
+  "type": "object",
+  "required": ["id", "category", "task_id", "type", "severity", "status", "detected_during", "expected_hash", "actual_hash", "reason_code", "boundary_ref"],
+  "properties": {
+    "id": {"type": "string", "pattern": "^FND-[0-9]+$"},
+    "category": {"const": "alignment"},
+    "task_id": {"type": "string", "pattern": "^TASK-[0-9]+$"},
+    "type": {"const": "contract_changed"},
+    "severity": {"const": "blocking"},
+    "status": {"enum": ["PROPOSED", "REPRODUCING", "CONFIRMED", "FIXING", "FIXED", "VERIFIED", "CLOSED", "REJECTED"]},
+    "detected_during": {"const": "IMPLEMENTING"},
+    "expected_hash": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "actual_hash": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "reason_code": {"enum": ["CONTRACT_CHANGED", "SCOPE_DRIFT_API", "SCOPE_DRIFT_PERMISSION", "SCOPE_DRIFT_PERSISTENCE"]},
+    "boundary_ref": {"type": "string", "minLength": 1},
+    "attempts": {"type": "array", "items": {"type": "string"}},
+    "confirmed_at": {"type": "string"},
+    "test": {"type": "string"},
+    "regression_test": {"type": "object", "required": ["path"], "properties": {"path": {"type": "string"}, "red_evidence": {"type": "string"}, "green_evidence": {"type": "string"}}, "additionalProperties": true},
+    "evidence": {"type": "string"},
+    "verified_at": {"type": "string"},
+    "rejection_reason": {"type": "string"},
+    "closure": {"type": "object"}
+  },
+  "additionalProperties": false
+}

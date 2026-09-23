@@ -1,0 +1,23 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["version", "task_id", "contract_hash", "decision_selections", "boundary_refs", "frozen_at"],
+  "properties": {
+    "version": {"const": 1},
+    "task_id": {"type": "string", "pattern": "^TASK-[0-9]+$"},
+    "contract_hash": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "decision_selections": {"type": "object", "additionalProperties": {"type": "string", "minLength": 1}},
+    "boundary_refs": {
+      "type": "object",
+      "required": ["interface", "permission", "persistence"],
+      "properties": {
+        "interface": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^INT-[0-9]+$"}},
+        "permission": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^DEC-[0-9]+$"}},
+        "persistence": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^(DEC|INT)-[0-9]+$"}}
+      },
+      "additionalProperties": false
+    },
+    "frozen_at": {"type": "string", "minLength": 1}
+  },
+  "additionalProperties": false
+}

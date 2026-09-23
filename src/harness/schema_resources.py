@@ -7,6 +7,9 @@ from pathlib import Path
 
 SCHEMA_NAMES = (
     "adversarial-finding.schema.json",
+    "alignment.schema.json",
+    "alignment-finding.schema.json",
+    "alignment-freeze.schema.json",
     "complexity-finding.schema.json",
     "context.schema.json",
     "decision.schema.json",
