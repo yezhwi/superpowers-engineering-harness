@@ -9,6 +9,36 @@ import yaml
 from harness.telemetry import TelemetryError, normalize_usage
 
 INCONCLUSIVE = "INCONCLUSIVE"
+
+
+def benchmark(*, tasks: list[dict], alignments: list[dict], findings: list[dict]) -> dict:
+    """Aggregate alignment control-plane metrics from supplied persisted records."""
+    completed = {task["id"] for task in tasks if task.get("state") == "DONE"}
+    alignment_by_task = {item.get("task_id"): item for item in alignments}
+    drift = {
+        finding.get("task_id") for finding in findings
+        if finding.get("task_id") in completed
+        and finding.get("category") == "alignment"
+    }
+    questions = {
+        task_id for task_id in completed
+        if alignment_by_task.get(task_id, {}).get("open_questions")
+    }
+    rework = {
+        task["id"] for task in tasks if task.get("id") in completed
+        and any(
+            previous in {"VERIFYING", "REVIEWING"} and current == "IMPLEMENTING"
+            for previous, current in zip(task.get("history", []), task.get("history", [])[1:])
+        )
+    }
+    denominator = len(completed)
+    rate = lambda count: count / denominator if denominator else None
+    return {
+        "completed_tasks": denominator,
+        "drift": {"count": len(drift), "rate": rate(len(drift))},
+        "questions": {"count": len(questions), "rate": rate(len(questions))},
+        "rework": {"count": len(rework), "rate": rate(len(rework))},
+    }
 _COUNTER_METRICS = {"token_estimate", "tool_calls", "search_rounds", "file_reads"}
 _AGENT_FIELDS = _COUNTER_METRICS
 

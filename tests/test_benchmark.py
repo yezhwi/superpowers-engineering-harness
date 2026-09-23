@@ -997,3 +997,34 @@ def test_integrity_failure_survives_malformed_run_correctness(tmp_path):
 
     assert report["fixtures"][0]["adaptive"] is None
     assert report["experiment"] == {"status": "FAIL", "confidence": "high"}
+
+
+def test_alignment_benchmark_reports_exact_rates_from_persisted_records():
+    from harness.benchmark import benchmark
+
+    report = benchmark(
+        tasks=[
+            {"id": "TASK-001", "state": "DONE", "history": ["CLASSIFIED", "IMPLEMENTING", "DONE"]},
+            {"id": "TASK-002", "state": "DONE", "history": ["CLASSIFIED", "IMPLEMENTING", "VERIFYING", "IMPLEMENTING", "DONE"]},
+        ],
+        alignments=[{"task_id": "TASK-001", "open_questions": ["Q-001"]}],
+        findings=[{"task_id": "TASK-001", "category": "alignment"}],
+    )
+
+    assert report == {
+        "completed_tasks": 2,
+        "drift": {"count": 1, "rate": 0.5},
+        "questions": {"count": 1, "rate": 0.5},
+        "rework": {"count": 1, "rate": 0.5},
+    }
+
+
+def test_alignment_benchmark_empty_completed_denominator_uses_null_rates():
+    from harness.benchmark import benchmark
+
+    assert benchmark(tasks=[], alignments=[], findings=[]) == {
+        "completed_tasks": 0,
+        "drift": {"count": 0, "rate": None},
+        "questions": {"count": 0, "rate": None},
+        "rework": {"count": 0, "rate": None},
+    }
