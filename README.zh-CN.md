@@ -143,6 +143,22 @@ Use Engineering Harness to fix this bug: cancelling an order twice issues two re
 
 Pi 安装 Skills 后需新开会话。Skills 在会话启动时加载。
 
+### Antigravity CLI（agy）
+
+在目标项目根目录执行，安装最新稳定版 Harness CLI 和 AGY workspace skills：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/yezhwi/superpowers-engineering-harness/main/scripts/install-agy.sh | bash
+```
+
+需要固定版本时：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/yezhwi/superpowers-engineering-harness/main/scripts/install-agy.sh | bash -s -- v0.2.9
+```
+
+安装器创建 `.agents/skills/`、安装全部 Harness skills，并运行 `harness init`。遇到已有同名 skill 时拒绝覆盖。使用 `agy` 启动 AGY；首次会话可用 `/engineering-harness` 显式调用 Harness。
+
 ## 日常使用
 
 > **安全边界：** `harness evidence run --command` 以本地 Harness 操作者直接输入、受信任 shell 文本执行（`shell=True`）。

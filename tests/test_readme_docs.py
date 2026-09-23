@@ -5,12 +5,24 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 
 
-def test_readme_documents_agy_quick_start():
-    text = (REPO / "README.md").read_text(encoding="utf-8")
-    assert "Antigravity CLI (agy)" in text
-    assert "scripts/install-agy.sh" in text
-    assert "bash -s -- v0.2.9" in text
-    assert "agy" in text
+def test_readmes_document_agy_quick_start():
+    for name, heading in (
+        ("README.md", "Antigravity CLI (agy)"),
+        ("README.zh-CN.md", "Antigravity CLI（agy）"),
+    ):
+        text = (REPO / name).read_text(encoding="utf-8")
+        assert heading in text
+        assert "scripts/install-agy.sh" in text
+        assert "bash -s -- v0.2.9" in text
+        assert "agy" in text
+
+
+def test_changelog_keeps_agy_installer_out_of_v029_release_notes():
+    text = (REPO / "CHANGELOG.md").read_text(encoding="utf-8")
+    unreleased, released = text.split("## 0.2.9", maxsplit=1)
+    assert "## Unreleased" in unreleased
+    assert "AGY" in unreleased
+    assert "AGY" not in released.split("## 0.2.8", maxsplit=1)[0]
 
 
 def test_root_skill_routes_diagnosability():

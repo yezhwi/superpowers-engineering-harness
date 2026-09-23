@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Add one-command AGY workspace installer. It resolves latest stable release by default, accepts an explicit tag, installs Harness skills under `.agents/skills/`, and refuses to overwrite existing same-name skills.
+- Archive and clear stale `alignment.yaml` during task replacement/recovery so prior-task Alignment cannot block a replacement task.
+
 ## 0.2.9
 
 - Add pre-implementation Alignment artifacts, closure checks, frozen contract hashes, and STANDARD/STRICT entry guards. Contract change and declared API, permission, or persistence boundary drift fail closed with auditable diagnostic Findings.
