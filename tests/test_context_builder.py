@@ -93,6 +93,163 @@ def load_and_build(root):
     return source, build_control_core(source)
 
 
+def _frozen_alignment(task_id="TASK-028"):
+    from harness.alignment import contract_hash
+    from test_alignment import complete_alignment
+
+    document = complete_alignment()
+    document["task_id"] = task_id
+    document["decision_ids"] = []
+    document["freeze"] = {
+        "frozen": True,
+        "frozen_at": "2026-09-18T00:00:00+00:00",
+        "contract_hash": None,
+    }
+    document["freeze"]["contract_hash"] = contract_hash(document)
+    return document
+
+
+def _write_matching_seal(harness, document):
+    from harness.alignment import validate_sealed_freeze
+
+    validate_sealed_freeze(
+        harness,
+        document,
+        decisions=[],
+        boundary_refs={"interface": [], "permission": [], "persistence": []},
+    )
+
+
+def test_opt_in_alignment_summary_is_reference_only(harness):
+    from harness.context.integrity import _omitted
+
+    task = yaml.safe_load((harness / "current-task.yaml").read_text())
+    task["alignment"] = {"required": True}
+    write_yaml(harness / "current-task.yaml", task)
+    document = _frozen_alignment()
+    write_yaml(harness / "alignment.yaml", document)
+    _write_matching_seal(harness, document)
+
+    source, core = load_and_build(harness)
+
+    assert core["alignment"]["frozen"] is True
+    assert core["alignment"]["contract_hash"] == document["freeze"]["contract_hash"]
+    assert core["alignment"]["ref"] == ".harness/alignment.yaml"
+    assert core["alignment"]["seal"]["ref"] == ".harness/alignment-freeze.yaml"
+    assert "acceptance_criteria" not in core["alignment"]
+    assert any(
+        row["id"] == "alignment.yaml" and row["reason"] == "body_not_inlined"
+        for row in _omitted(source)
+    )
+
+
+def test_existing_alignment_is_loaded_without_manual_task_flag(harness):
+    document = _frozen_alignment()
+    write_yaml(harness / "alignment.yaml", document)
+    _write_matching_seal(harness, document)
+
+    _, core = load_and_build(harness)
+
+    assert core["alignment"]["ref"] == ".harness/alignment.yaml"
+    assert core["alignment"]["seal"]["sha256"].startswith("sha256:")
+
+
+def test_context_rejects_stored_hash_without_a_seal(harness):
+    from harness.context.model import ContextBuildError
+    from harness.context.source import FileContextSource
+
+    document = _frozen_alignment()
+    document["freeze"]["contract_hash"] = "sha256:" + "0" * 64
+    write_yaml(harness / "alignment.yaml", document)
+
+    with pytest.raises(ContextBuildError, match="alignment sealed mismatch: CONTRACT_CHANGED"):
+        FileContextSource(harness).load()
+
+
+def test_context_rejects_frozen_alignment_when_seal_is_missing(harness):
+    from harness.context.model import ContextBuildError
+    from harness.context.source import FileContextSource
+
+    write_yaml(harness / "alignment.yaml", _frozen_alignment())
+
+    with pytest.raises(ContextBuildError, match="alignment sealed mismatch: CONTRACT_CHANGED"):
+        FileContextSource(harness).load()
+
+
+def test_context_rejects_alignment_sealed_hash_mismatch(harness):
+    from harness.context.model import ContextBuildError
+    from harness.context.source import FileContextSource
+
+    document = _frozen_alignment()
+    write_yaml(harness / "alignment.yaml", document)
+    write_yaml(harness / "alignment-freeze.yaml", {
+        "version": 1, "task_id": "TASK-028", "contract_hash": "sha256:" + "1" * 64,
+        "decision_selections": {}, "boundary_refs": {"interface": [], "permission": [], "persistence": []}, "frozen_at": "2026-09-18T00:00:00+00:00",
+    })
+
+    with pytest.raises(ContextBuildError, match="alignment sealed mismatch: CONTRACT_CHANGED"):
+        FileContextSource(harness).load()
+
+
+def test_qualified_decision_contract_ref_resolves_to_decision_id(harness):
+    from test_decision import proposal
+
+    record = decision.propose(harness, proposal())
+    decision.accept(harness, record["id"], "redis", "accepted_recommendation")
+    impact = yaml.safe_load((harness / "impact.yaml").read_text())
+    impact["impact"]["contracts"] = [f"{record['id']}:orders"]
+    write_yaml(harness / "impact.yaml", impact)
+
+    source, _ = load_and_build(harness)
+
+    assert record["id"] in {item["id"] for item in source.decisions}
+
+
+def test_cross_task_sealed_decision_does_not_false_contract_change(harness):
+    from harness.alignment import contract_hash, validate_sealed_freeze
+    from harness.decision import reindex
+    from test_decision import proposal
+
+    record = decision.propose(harness, proposal())
+    decision.accept(harness, record["id"], "redis", "accepted_recommendation")
+    body = yaml.safe_load((harness / "decisions" / f"{record['id']}.yaml").read_text())
+    body["task_id"] = "TASK-999"
+    write_yaml(harness / "decisions" / f"{record['id']}.yaml", body)
+    reindex(harness)
+    document = _frozen_alignment()
+    document["decision_ids"] = [record["id"]]
+    document["freeze"]["contract_hash"] = contract_hash(document)
+    write_yaml(harness / "alignment.yaml", document)
+    validate_sealed_freeze(
+        harness,
+        document,
+        decisions=decision.load_decisions(harness),
+        boundary_refs={"interface": [], "permission": [], "persistence": []},
+    )
+
+    from harness.context.integrity import build_context
+
+    source, core = load_and_build(harness)
+    built = build_context(harness)
+
+    assert core["alignment"]["frozen"] is True
+    assert built["control"]["alignment"]["frozen"] is True
+    assert record["id"] in {item["id"] for item in source.decisions}
+    assert record["id"] not in {item["id"] for item in core["decisions"]}
+
+
+def test_opt_in_missing_alignment_fails_closed(harness):
+    from harness.context.model import ContextBuildError
+    from harness.context.source import FileContextSource
+
+    task = yaml.safe_load((harness / "current-task.yaml").read_text())
+    task["alignment"] = {"required": True}
+    write_yaml(harness / "current-task.yaml", task)
+
+    with pytest.raises(ContextBuildError, match="CONTEXT_SCHEMA_INVALID"):
+        FileContextSource(harness).load()
+
+
 def test_core_keeps_must_statement_invariant_scope_and_authorizations(harness):
     must = {
         "id": "REQ-001",
@@ -188,6 +345,48 @@ def test_live_blocked_gate_is_projected_without_mutation(harness):
     assert after == before
 
 
+def test_typed_permission_contract_is_control_ref_not_file_path(harness):
+    from harness import decision
+
+    decision.propose(harness, {
+        "topic": "permission", "question": "q", "context": ["c"],
+        "options": [{"id": "allow", "description": "d"}],
+        "recommendation": {"option": "allow", "reasons": ["r"], "tradeoffs": []},
+        "decision_reason": ["r"], "scope": ["src/local.py"], "constraints": [],
+    })
+    write_yaml(harness / "impact.yaml", {"impact": {"contracts": [{"ref": "DEC-001", "kind": "permission"}]}})
+
+    _, core = load_and_build(harness)
+
+    projection = core["contracts"]["impact"]
+    assert len(projection) == 1
+    assert projection[0]["contract_ref"] == "DEC-001"
+    assert projection[0]["kind"] == "permission"
+    assert projection[0]["ref"] == ".harness/impact.yaml"
+
+
+def test_typed_permission_contract_is_excluded_from_file_selection_and_freshness(harness):
+    from harness import decision
+    from harness.context.freshness import capture
+    from harness.context.selector import DeterministicSelector
+    from harness.context.source import FileContextSource
+
+    decision.propose(harness, {
+        "topic": "permission", "question": "q", "context": ["c"],
+        "options": [{"id": "allow", "description": "d"}],
+        "recommendation": {"option": "allow", "reasons": ["r"], "tradeoffs": []},
+        "decision_reason": ["r"], "scope": ["src/local.py"], "constraints": [],
+    })
+    write_yaml(harness / "impact.yaml", {"impact": {"contracts": [{"ref": "DEC-001", "kind": "permission"}]}})
+    source = FileContextSource(harness).load()
+
+    selection = DeterministicSelector().select(source, "LOCAL")
+    snapshot = capture(harness)
+
+    assert "DEC-001" not in selection.working["files"]
+    assert "DEC-001" not in snapshot["files"]
+
+
 def test_contracts_and_observability_use_hashed_source_refs(harness):
     declared = interface_contract.declare(harness, contract())
     write_yaml(
@@ -205,7 +404,8 @@ def test_contracts_and_observability_use_hashed_source_refs(harness):
         ).hexdigest()
     )
     assert "inputs" not in ref  # no duplicated contract body in Layer 0
-    assert core["contracts"]["impact"][0]["path"] == "docs/future-api.yaml"
+    assert core["contracts"]["impact"][0]["contract_ref"] == "docs/future-api.yaml"
+    assert core["contracts"]["impact"][0]["kind"] == "generic"
     assert core["contracts"]["impact"][0]["ref"] == ".harness/impact.yaml"
     assert core["observability"]["required"] is False
     assert (

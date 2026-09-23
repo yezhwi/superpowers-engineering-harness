@@ -12,6 +12,7 @@ import yaml
 from test_context_builder import write_yaml
 from test_context_integrity import add_core_records as add_records
 
+from harness import decision
 from harness.context.model import ContextBuildError
 
 harness = test_context_builder.harness
@@ -25,6 +26,7 @@ def add_core_records(root):
     record = yaml.safe_load(path.read_text())
     record["scope"] = ["src/local.py"]
     write_yaml(path, record)
+    decision.reindex(root)
 
 
 def run_cli(cwd, *args):

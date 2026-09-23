@@ -6,9 +6,11 @@ from pathlib import Path
 import yaml
 
 from harness import (
+    alignment,
     decision,
     diagnosability,
     interface_contract,
+    impact as impact_domain,
     quality_gate,
     source_access,
     workspace,
@@ -17,6 +19,12 @@ from harness.evidence_validator import EvidenceStatus, project_evidence
 from harness.repository import RepositoryNotFoundError, find_git_root
 
 from .model import AuthoritativeContext, ContextBuildError
+
+def _decision_ref_id(ref: str) -> str | None:
+    """Reduce DEC-001 and DEC-001:orders to the decision file id."""
+    token = ref.split(":", 1)[0]
+    return token if token.startswith("DEC-") else None
+
 
 ARTIFACT_PATTERNS = {
     "decisions": "DEC-*.yaml",
@@ -148,6 +156,20 @@ class FileContextSource:
                 "classified task required; run task classify first",
             )
         fast = task["risk"]["profile"] == "FAST"
+        alignment_document = None
+        if (task.get("alignment") or {}).get("required") or source_access.exists(
+            self.harness_dir / "alignment.yaml"
+        ):
+            try:
+                alignment_document = alignment.load_alignment(self.harness_dir)
+            except alignment.AlignmentError as exc:
+                raise ContextBuildError("CONTEXT_SCHEMA_INVALID", str(exc)) from exc
+            if alignment_document["task_id"] != task["task"]["id"]:
+                raise ContextBuildError("CONTEXT_SCHEMA_INVALID", "alignment task mismatch")
+            self._reference("alignment.yaml")
+            self._document(
+                "alignment-freeze.yaml", "alignment-freeze.schema.json", optional=True
+            )
         requirements = self._document(
             "requirements.yaml", "requirement.schema.json", optional=fast
         )
@@ -221,30 +243,29 @@ class FileContextSource:
             lambda: interface_contract.load_interface_contracts(self.harness_dir),
         )
         impact = self._document("impact.yaml", optional=True)
+        value = (impact or {}).get("impact", {})
         if impact is not None:
             value = impact.get("impact")
-            if (
-                not isinstance(value, dict)
-                or not isinstance(value.get("contracts", []), list)
-                or not all(
-                    isinstance(path, str) and path
-                    for path in value.get("contracts", [])
-                )
-            ):
-                raise ContextBuildError(
-                    "CONTEXT_SCHEMA_INVALID", "invalid impact contracts"
-                )
+            if not isinstance(value, dict):
+                raise ContextBuildError("CONTEXT_SCHEMA_INVALID", "invalid impact contracts")
+            try:
+                impact_domain.typed_contracts(value)
+            except impact_domain.ImpactContractError as exc:
+                raise ContextBuildError("CONTEXT_SCHEMA_INVALID", str(exc)) from exc
         contract_refs = {
-            ref
+            _decision_ref_id(ref) or ref
             for interface in interfaces
             for ref in interface.get("decision_refs", [])
             if isinstance(ref, str)
         }
         contract_refs.update(
-            value.split(":", 1)[0]
-            for value in (impact or {}).get("impact", {}).get("contracts", [])
-            if isinstance(value, str) and value.startswith("DEC-") and ":" in value
+            decision_id
+            for item in impact_domain.typed_contracts((impact or {}).get("impact", {}))
+            for decision_id in [_decision_ref_id(item["ref"])]
+            if decision_id
         )
+        if alignment_document is not None:
+            contract_refs.update(alignment_document.get("decision_ids") or [])
         missing = contract_refs - known
         if missing:
             raise ContextBuildError(
@@ -256,6 +277,47 @@ class FileContextSource:
             load_decision_body(decision_id)
             for decision_id in sorted(contract_refs - loaded)
         )
+        if alignment_document is not None and alignment_document["freeze"]["frozen"]:
+            if (
+                alignment_document["freeze"]["contract_hash"]
+                != alignment.contract_hash(alignment_document)
+            ):
+                raise ContextBuildError(
+                    "CONTEXT_SCHEMA_INVALID",
+                    "alignment sealed mismatch: CONTRACT_CHANGED",
+                )
+            impact_body = value if isinstance(value, dict) else {}
+            boundary_refs = {
+                "interface": sorted({
+                    item["contract_id"]
+                    for item in impact_body.get("interfaces", [])
+                    if isinstance(item, dict) and item.get("visibility") == "external"
+                    and item.get("contract_id")
+                }),
+                "permission": sorted(
+                    item["ref"] for item in impact_domain.typed_contracts(impact_body)
+                    if item["kind"] == "permission"
+                ),
+                "persistence": sorted(
+                    item["ref"] for item in impact_domain.typed_contracts(impact_body)
+                    if item["kind"] == "persistence"
+                ),
+            }
+            try:
+                drift = alignment.sealed_freeze_drift(
+                    self.harness_dir,
+                    alignment_document,
+                    decisions=decisions,
+                    boundary_refs=boundary_refs,
+                    bootstrap=False,
+                )
+            except alignment.AlignmentError as exc:
+                raise ContextBuildError("CONTEXT_SCHEMA_INVALID", str(exc)) from exc
+            if drift:
+                raise ContextBuildError(
+                    "CONTEXT_SCHEMA_INVALID",
+                    f"alignment sealed mismatch: {drift[0].code}",
+                )
         observability = self._document("observability.yaml", optional=True)
         if observability is not None:
             try:
@@ -316,6 +378,7 @@ class FileContextSource:
             interface_contracts=interfaces,
             impact=impact,
             observability=observability,
+            alignment=alignment_document,
             evidence=evidence,
             references=self.references.copy(),
             workspace=current,

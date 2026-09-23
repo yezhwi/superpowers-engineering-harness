@@ -12,7 +12,7 @@
     "policy": {"enum": ["LOCAL", "BOUNDED", "EXPANDED"]},
     "control": {
       "type": "object",
-      "required": ["task", "requirements", "invariants", "decisions", "findings", "blockers", "scope", "authorizations", "constraints", "contracts", "observability", "evidence", "gate"],
+      "required": ["task", "requirements", "invariants", "decisions", "findings", "blockers", "scope", "authorizations", "constraints", "contracts", "observability", "alignment", "evidence", "gate"],
       "additionalProperties": false,
       "properties": {
         "task": {"type": "object", "required": ["id", "state", "risk"], "additionalProperties": false, "properties": {"id": {"type": "string"}, "state": {"type": "string"}, "risk": {"type": "object"}}},
@@ -26,6 +26,7 @@
         "constraints": {"type": "object"},
         "contracts": {"type": "object"},
         "observability": {"type": ["object", "null"]},
+        "alignment": {"type": ["object", "null"]},
         "evidence": {"$ref": "#/definitions/records"},
         "gate": {"type": "object"}
       }

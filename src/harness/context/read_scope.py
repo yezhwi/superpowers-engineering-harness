@@ -10,6 +10,9 @@ from harness.source_access import source_scope
 def context_read_scope(harness_dir: Path, versions: dict):
     root = harness_dir.absolute().parent
     allowed = {harness_dir / name for name in versions["files"]}
+    allowed.update(
+        {harness_dir / name for name in ("alignment.yaml", "alignment-freeze.yaml")}
+    )
     allowed.update(root / name for name in versions["declared_files"])
     rules = [
         (harness_dir / directory, pattern)

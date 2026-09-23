@@ -28,6 +28,7 @@ class AuthoritativeContext:
     interface_contracts: list[dict]
     impact: dict | None
     observability: dict | None
+    alignment: dict | None
     evidence: list[dict]
     references: dict[str, dict | None]
     workspace: WorkspaceSnapshot
@@ -51,5 +52,6 @@ class ControlCore(TypedDict):
     constraints: dict
     contracts: dict
     observability: dict | None
+    alignment: dict | None
     evidence: list[dict]
     gate: dict

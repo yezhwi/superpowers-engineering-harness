@@ -43,6 +43,8 @@ def _omitted(source: AuthoritativeContext) -> list[dict]:
     ]
     if source.observability is not None:
         names.append("observability.yaml")
+    if source.alignment is not None and source.references.get("alignment.yaml"):
+        names.append("alignment.yaml")
     return [
         {"id": name, "reason": "body_not_inlined", **source.references[name]}
         for name in sorted(names)

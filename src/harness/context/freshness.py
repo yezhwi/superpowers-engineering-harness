@@ -7,7 +7,7 @@ from pathlib import Path
 
 import yaml
 
-from harness import source_access
+from harness import impact as impact_domain, source_access
 from harness.schema_resources import schema_versions
 from harness.source_access import source_scope
 from harness.workspace import WorkspaceError, snapshot
@@ -91,12 +91,10 @@ def _declared_paths(harness_dir: Path) -> set[str]:
                 (document.get("scope"), ("owned_paths", "protected_user_paths"))
             ]
         elif name == "impact.yaml":
-            containers = [
-                (
-                    document.get("impact"),
-                    ("changed", "direct_dependents", "contracts", "required_tests"),
-                )
-            ]
+            impact = document.get("impact")
+            if isinstance(impact, dict):
+                result.update(impact_domain.contract_paths(impact))
+            containers = [(impact, ("changed", "direct_dependents", "required_tests"))]
         else:
             containers = [(document.get("applicability"), ("inspected_paths",))]
         for container, keys in containers:
@@ -197,7 +195,10 @@ def bootstrap_scope(harness_dir: Path):
     member rules authorize only canonical immediate members used by discovery.
     """
     root = harness_dir.absolute().parent
-    allowed = [harness_dir / name for name in ROOT_FILES]
+    allowed = [
+        harness_dir / name
+        for name in (*ROOT_FILES, "alignment.yaml", "alignment-freeze.yaml")
+    ]
     allowed.extend(harness_dir / directory for directory in ARTIFACT_DIRS)
     rules = [
         (harness_dir / directory, "*.yaml") for directory in ("decisions", "findings")
@@ -210,7 +211,10 @@ def bootstrap_scope(harness_dir: Path):
 def version_scope(harness_dir: Path, discovered: set[str], protected: set[str]):
     """Freeze known control members before bytes/version collection."""
     root = harness_dir.absolute().parent
-    allowed = [harness_dir / name for name in ROOT_FILES]
+    allowed = [
+        harness_dir / name
+        for name in (*ROOT_FILES, "alignment.yaml", "alignment-freeze.yaml")
+    ]
     for directory, pattern in ARTIFACT_PATTERNS.items():
         path = harness_dir / directory
         allowed.append(path)
@@ -254,7 +258,13 @@ def _capture_versions(
 ) -> dict:
     files = {}
     try:
-        for name in ROOT_FILES:
+        alignment_files = tuple(
+            name
+            for name in ("alignment.yaml", "alignment-freeze.yaml")
+            if source_access.exists(harness_dir / name)
+        )
+        root_files = ROOT_FILES + alignment_files
+        for name in root_files:
             path = contained_path(root, f"{harness_dir.name}/{name}")
             files[name] = file_version(path)
         for directory in ARTIFACT_DIRS:

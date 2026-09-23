@@ -3,6 +3,8 @@
 from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import PurePosixPath, PureWindowsPath
+
+from harness import impact as impact_domain
 from typing import Protocol
 
 from harness.quality_gate import OPEN_FINDING_STATUSES
@@ -222,8 +224,10 @@ class DeterministicSelector:
         impact = (source.impact or {}).get("impact", {})
         add("files", _strings(impact, "changed"), "impact.yaml")
         add("tests", _strings(impact, "required_tests"), "impact.yaml")
-        for key in ("direct_dependents", "contracts"):
-            add("files", _strings(impact, key), "impact.yaml", policy != "LOCAL")
+        add("files", _strings(impact, "direct_dependents"), "impact.yaml", policy != "LOCAL")
+        add(
+            "files", impact_domain.contract_paths(impact), "impact.yaml", policy != "LOCAL"
+        )
         for group, records in (
             ("requirements", source.requirements),
             ("invariants", source.invariants),

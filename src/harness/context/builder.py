@@ -2,6 +2,8 @@
 
 from copy import deepcopy
 
+from harness import impact as impact_domain
+
 from harness.blockers import blocker_document
 from harness.quality_gate import OPEN_FINDING_STATUSES
 
@@ -33,6 +35,21 @@ def cross_task_decision_ids(records: list[dict], task_id: str) -> set[str]:
     return referenced
 
 
+def _alignment_summary(source: AuthoritativeContext) -> dict | None:
+    """Layer 0 keeps the freeze pointer; the envelope is omitted separately."""
+    if source.alignment is None:
+        return None
+    summary = {
+        **source.references["alignment.yaml"],
+        "frozen": source.alignment["freeze"]["frozen"],
+        "contract_hash": source.alignment["freeze"]["contract_hash"],
+    }
+    seal = source.references.get("alignment-freeze.yaml")
+    if seal:
+        summary["seal"] = seal
+    return summary
+
+
 def build_control_core(source: AuthoritativeContext) -> ControlCore:
     """Project validated source records; final Context Integrity is a later step.
 
@@ -49,8 +66,10 @@ def build_control_core(source: AuthoritativeContext) -> ControlCore:
         for record in source.interface_contracts
     ]
     impact_contracts = [
-        {"path": path, **source.references["impact.yaml"]}
-        for path in (source.impact or {}).get("impact", {}).get("contracts", [])
+        {"contract_ref": record["ref"], "kind": record["kind"], **source.references["impact.yaml"]}
+        for record in impact_domain.typed_contracts(
+            (source.impact or {}).get("impact", {})
+        )
     ]
     observability = None
     if source.observability is not None:
@@ -80,6 +99,7 @@ def build_control_core(source: AuthoritativeContext) -> ControlCore:
             "constraints": task["risk"]["dimensions"],
             "contracts": {"interfaces": interfaces, "impact": impact_contracts},
             "observability": observability,
+            "alignment": _alignment_summary(source),
             "evidence": source.evidence,
             "gate": {"status": source.gate.status, "blocked_by": blockers},
         }
