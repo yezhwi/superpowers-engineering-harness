@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Add one-command AGY workspace installer. It resolves latest stable release by default, accepts an explicit tag, installs Harness skills under `.agents/skills/`, and refuses to overwrite existing same-name skills.
+- Add one-command AGY global installer. It resolves latest stable release by default, accepts an explicit tag, updates Harness-owned skills under `~/.gemini/antigravity-cli/skills/`, and preserves unrelated skills. Project initialization remains explicit through `harness init` in each Git repository.
 - Archive and clear stale `alignment.yaml` during task replacement/recovery so prior-task Alignment cannot block a replacement task.
 
 ## 0.2.9

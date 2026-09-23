@@ -145,7 +145,7 @@ Pi 安装 Skills 后需新开会话。Skills 在会话启动时加载。
 
 ### Antigravity CLI（agy）
 
-在目标项目根目录执行，安装最新稳定版 Harness CLI 和 AGY workspace skills：
+在任意目录执行一次，安装最新稳定版 Harness CLI 和 AGY 全局 skills：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/yezhwi/superpowers-engineering-harness/main/scripts/install-agy.sh | bash
@@ -157,7 +157,7 @@ curl -fsSL https://raw.githubusercontent.com/yezhwi/superpowers-engineering-harn
 curl -fsSL https://raw.githubusercontent.com/yezhwi/superpowers-engineering-harness/main/scripts/install-agy.sh | bash -s -- v0.2.9
 ```
 
-安装器创建 `.agents/skills/`、安装全部 Harness skills，并运行 `harness init`。遇到已有同名 skill 时拒绝覆盖。使用 `agy` 启动 AGY；首次会话可用 `/engineering-harness` 显式调用 Harness。
+安装器更新 `~/.gemini/antigravity-cli/skills/` 下 Harness 自己的 skills，保留无关全局 skills；不会初始化项目。每个 Git 项目中单独运行一次 `harness init`，再用 `agy` 启动 AGY；首次会话可用 `/engineering-harness` 显式调用 Harness。
 
 ## 日常使用
 

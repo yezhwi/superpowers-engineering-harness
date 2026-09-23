@@ -141,7 +141,7 @@ For Pi, open new session after installing skills. Skills load at session start.
 
 ### Antigravity CLI (agy)
 
-From target project root, install Harness CLI and AGY workspace skills with latest stable release:
+Install Harness CLI and AGY global skills once, from any directory, with latest stable release:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/yezhwi/superpowers-engineering-harness/main/scripts/install-agy.sh | bash
@@ -153,7 +153,7 @@ Pin a release when needed:
 curl -fsSL https://raw.githubusercontent.com/yezhwi/superpowers-engineering-harness/main/scripts/install-agy.sh | bash -s -- v0.2.9
 ```
 
-Installer creates `.agents/skills/`, installs all Harness skills, and runs `harness init`. It refuses to overwrite existing same-name skills. Start AGY with `agy`; use `/engineering-harness` to invoke Harness explicitly in first session.
+Installer updates Harness-owned skills under `~/.gemini/antigravity-cli/skills/` and preserves unrelated global skills. It does not initialize a project. In each Git project, run `harness init` once, then start AGY with `agy`; use `/engineering-harness` to invoke Harness explicitly in first session.
 
 ## Daily operations
 
