@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.9
+
+- Add pre-implementation Alignment artifacts, closure checks, frozen contract hashes, and STANDARD/STRICT entry guards. Contract change and declared API, permission, or persistence boundary drift fail closed with auditable diagnostic Findings.
+- Add opt-in Alignment Context Layer 0 references, typed impact contract boundaries with legacy generic compatibility, and deterministic persisted-record drift, question, and rework benchmark metrics.
+- Alignment control remains deterministic: no LLM semantic judgment, source-text inference, external telemetry claim, tag, publish, or push.
+
+### Install
+
+```bash
+pi install git:github.com/yezhwi/superpowers-engineering-harness@v0.2.9
+```
+
 ## 0.2.8
 
 - Add validated derived Context: compact/full projection, task-bound expansion, source freshness, and fail-closed Integrity checks. Context Evidence records generated context, not agent consumption, and does not become product Gate evidence.

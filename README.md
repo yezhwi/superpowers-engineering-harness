@@ -1,8 +1,8 @@
-# Superpowers Engineering Harness v0.2.8
+# Superpowers Engineering Harness v0.2.9
 
 [简体中文](README.zh-CN.md)
 
-`v0.2.8 current release`; v0.2.7 risk-adaptive workflow, task ownership, review recovery, evidence, Gate, Decision, and Interface safeguards remain available. v0.2.8 adds validated derived Context with fail-closed integrity, task-bound usage reporting, and multi-run Benchmark reporting. Benchmark efficiency claims require complete runtime data; missing metrics remain `INCONCLUSIVE`, and known correctness or integrity failures take precedence. See [v0.2.8 implementation contract](docs/Superpowers-Engineering-Harness-v0.2.8-Implementation-Contract.md).
+`v0.2.9 current release`; v0.2.7/v0.2.8 safeguards remain available. v0.2.9 adds structured Alignment closure and freeze before Q2/Q3 implementation, deterministic contract/boundary drift diagnostics, opt-in Alignment Context Layer 0 references, and explicit-record alignment benchmark metrics. It does not infer code semantics, attest agent behavior, or collect external telemetry. See [v0.2.9 implementation contract](docs/Superpowers-Engineering-Harness-v0.2.9-Implementation-Contract.md).
 
 **Routing:** Q0 answers without task; Q1 / FAST uses RED/fix/GREEN/Light Gate; Q2 / STANDARD and Q3 / STRICT use full contract/review/Gate workflow.
 
@@ -48,6 +48,9 @@ v0.2.7  Task Ownership + Review Convergence + Gate Readiness
         + product freshness / canonical covered tests
   ↓
 v0.2.8  Derived Context + Integrity + Host Usage + Multi-run Benchmark
+  ↓
+v0.2.9  Pre-implementation Alignment closure and freeze
+        + contract / boundary drift diagnostics
 ```
 
 ## Engineering Quality
@@ -324,9 +327,12 @@ Compare recorded baseline/adaptive artifacts:
 
 ```bash
 harness benchmark compare --fixtures benchmarks/fixtures --baseline baseline-artifacts --adaptive adaptive-artifacts
+
+# v0.2.9 Alignment metrics from explicit persisted records
+harness benchmark alignment --records alignment-records.yaml
 ```
 
-Stdout lists historical `overall:` separately from v0.2.8 `experiment:`. Missing usage or incomplete runs make experiment `INCONCLUSIVE`; that is not an efficiency pass even when overall is `CORRECTNESS_PRESERVED`. Comparison requires every fixture-required correctness field to be true in both artifacts. Missing proof is `INCONCLUSIVE`, not correctness preserved. Harness does not run or attest external agent runs, tokens, or tool calls.
+Stdout lists historical `overall:` separately from v0.2.9 `experiment:`. Missing usage or incomplete runs make experiment `INCONCLUSIVE`; that is not an efficiency pass even when overall is `CORRECTNESS_PRESERVED`. Comparison requires every fixture-required correctness field to be true in both artifacts. Missing proof is `INCONCLUSIVE`, not correctness preserved. Harness does not run or attest external agent runs, tokens, or tool calls.
 
 ### Automatic orchestration
 

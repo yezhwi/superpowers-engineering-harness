@@ -11,7 +11,7 @@ REPO = Path(__file__).resolve().parent.parent
 
 
 def test_current_release_metadata_is_publishable():
-    expected = "0.2.8"
+    expected = "0.2.9"
     assert (
         tomllib.loads((REPO / "pyproject.toml").read_text())["project"]["version"]
         == expected

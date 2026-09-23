@@ -1,8 +1,8 @@
-# Superpowers Engineering Harness v0.2.8
+# Superpowers Engineering Harness v0.2.9
 
 [English](README.md)
 
-`v0.2.8 current release`；v0.2.7 的 risk-adaptive workflow、Task Ownership、review recovery、evidence、Gate、Decision 和 Interface safeguard 均保留。v0.2.8 新增经过校验的派生 Context 与 fail-closed Integrity、task-bound usage 上报和 multi-run Benchmark 报告。Benchmark 效率结论要求完整 runtime 数据；缺失 metric 保持 `INCONCLUSIVE`，已知 correctness 或 integrity 失败优先。见 [v0.2.8 实现契约](docs/Superpowers-Engineering-Harness-v0.2.8-Implementation-Contract.md)。
+`v0.2.9 current release`；v0.2.7/v0.2.8 的 risk-adaptive safeguard 均保留。v0.2.9 在 Q2/Q3 Implementation 前新增结构化 Alignment 闭环与冻结、确定性的合同/边界漂移诊断、opt-in Alignment Context Layer 0 引用，以及显式 records 的 alignment Benchmark 指标。它不推断代码语义、不证明 Agent 行为、不采集 external telemetry。见 [v0.2.9 实现契约](docs/Superpowers-Engineering-Harness-v0.2.9-Implementation-Contract.md)。
 
 **Routing：** Q0 直接回答、不创建 task；Q1 / FAST 使用 RED/fix/GREEN/Light Gate；Q2 / STANDARD 与 Q3 / STRICT 使用完整 contract/review/Gate 流程。
 
@@ -52,6 +52,9 @@ v0.2.7  Task Ownership + Review Convergence + Gate Readiness
         + product freshness / canonical covered tests
   ↓
 v0.2.8  Derived Context + Integrity + Host Usage + Multi-run Benchmark
+  ↓
+v0.2.9  实现前 Alignment 闭环与冻结
+        + 合同 / 边界漂移诊断
 ```
 
 ## Engineering Quality
@@ -327,9 +330,12 @@ harness context explain --json     # 解释已保存的选择结果
 
 ```bash
 harness benchmark compare --fixtures benchmarks/fixtures --baseline baseline-artifacts --adaptive adaptive-artifacts
+
+# v0.2.9：从显式持久化 records 输出 Alignment 指标
+harness benchmark alignment --records alignment-records.yaml
 ```
 
-stdout 分别列出历史 `overall:` 与 v0.2.8 `experiment:`。缺 usage 或不完整 runs 时 experiment 为 `INCONCLUSIVE`；即使 overall 是 `CORRECTNESS_PRESERVED`，也不表示效率已通过。每个 fixture-required correctness 字段必须在两侧均为 true。缺少 proof 为 `INCONCLUSIVE`，不能声称 correctness preserved。Harness 不运行或证明 external agent runs、tokens、tool calls。
+stdout 分别列出历史 `overall:` 与 v0.2.9 `experiment:`。缺 usage 或不完整 runs 时 experiment 为 `INCONCLUSIVE`；即使 overall 是 `CORRECTNESS_PRESERVED`，也不表示效率已通过。每个 fixture-required correctness 字段必须在两侧均为 true。缺少 proof 为 `INCONCLUSIVE`，不能声称 correctness preserved。Harness 不运行或证明 external agent runs、tokens、tool calls。
 
 ### 自动编排
 
