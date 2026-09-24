@@ -54,7 +54,14 @@ Blocker dispatch from `harness resume`:
 
 `DECISION: ESCALATED` from `harness gate`, or any human/skill escalation trigger,
 immediately stops autonomous execution. No `SPECIFYING`, `IMPLEMENTING`, or
-evidence-collection resume is permitted.
+evidence-collection resume is permitted. `DIRECTIVE: NONE` on `CONVERGED` or
+`ESCALATED` ends the loop. It is not permission to resume. An unrecognized
+`DIRECTIVE` is not permission to resume, and a free-text `Next:` line is not
+a command.
+
+Do not retry a command that failed because a credential is unavailable,
+authorization was denied, or an external side effect was refused. Escalate
+immediately.
 
 Precedence is strictly fixed: `USER_AUTHORITY_REQUIRED` > `REPEATED_REGRESSION` > `NO_PROGRESS` > `MAX_ITERATIONS`.
 

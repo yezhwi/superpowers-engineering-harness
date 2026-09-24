@@ -207,6 +207,7 @@ def test_standard_planned_to_implementing_rejects_missing_alignment(tmp_path):
 
     assert result.returncode == 1
     assert "ALIGNMENT_BLOCKED" in result.stderr
+    assert "POLICY: USER_AUTHORITY_REQUIRED" not in result.stderr
     assert yaml.safe_load((repo / ".harness/current-task.yaml").read_text())["state"] == "PLANNED"
 
 
@@ -222,6 +223,11 @@ def test_standard_entry_rejects_persisted_proposed_decision_not_listed_in_alignm
     assert result.returncode == 1
     assert "ALIGNMENT_BLOCKED" in result.stderr
     assert "OPEN_DECISION" in result.stderr
+    assert "POLICY: USER_AUTHORITY_REQUIRED" in result.stderr
+    assert "DIRECTIVE: HALT_AND_WAIT" in result.stderr
+    assert "DECISION_UNRESOLVED" not in result.stderr
+    assert "STATUS: REJECTED" not in result.stderr
+    assert "BLOCKER:" not in result.stderr
 
 
 def test_standard_planned_to_implementing_rejects_open_alignment_decision(tmp_path):
@@ -235,6 +241,8 @@ def test_standard_planned_to_implementing_rejects_open_alignment_decision(tmp_pa
     assert result.returncode == 1
     assert "ALIGNMENT_BLOCKED" in result.stderr
     assert "OPEN_DECISION" in result.stderr
+    assert "POLICY: USER_AUTHORITY_REQUIRED" in result.stderr
+    assert "DIRECTIVE: HALT_AND_WAIT" in result.stderr
 
 
 def test_standard_planned_to_implementing_accepts_complete_alignment(tmp_path):
@@ -291,6 +299,37 @@ def test_standard_planned_to_implementing_rejects_unfrozen_alignment(tmp_path):
     assert result.returncode == 1
     assert "ALIGNMENT_BLOCKED" in result.stderr
     assert "ALIGNMENT_FREEZE_INVALID" in result.stderr
+    assert "POLICY: USER_AUTHORITY_REQUIRED" not in result.stderr
+    assert "DIRECTIVE: HALT_AND_WAIT" not in result.stderr
+
+
+def test_standard_entry_live_contract_change_halts(tmp_path):
+    repo = standard_repo_in_state(tmp_path)
+    write_minimal_decision(repo)
+    write_documents(repo, valid=True)
+    write_alignment(repo, frozen=True)
+    from harness.alignment import contract_hash, validate_sealed_freeze
+
+    harness = repo / ".harness"
+    document = yaml.safe_load((harness / "alignment.yaml").read_text())
+    validate_sealed_freeze(
+        harness,
+        document,
+        decisions=[],
+        boundary_refs={"interface": [], "permission": [], "persistence": []},
+    )
+    document["goal"]["summary"] = "rewritten after the seal"
+    document["freeze"]["contract_hash"] = contract_hash(document)
+    (harness / "alignment.yaml").write_text(yaml.safe_dump(document))
+
+    result = cli(repo, "transition", "IMPLEMENTING")
+
+    assert result.returncode == 1
+    assert "POLICY: USER_AUTHORITY_REQUIRED" in result.stderr
+    assert "DIRECTIVE: HALT_AND_WAIT" in result.stderr
+    assert "CONTRACT_CHANGED" in result.stderr
+    assert "STATUS: REJECTED" not in result.stderr
+    assert yaml.safe_load((harness / "current-task.yaml").read_text())["state"] == "PLANNED"
 
 
 def test_fast_entry_creates_lightweight_alignment(tmp_path):

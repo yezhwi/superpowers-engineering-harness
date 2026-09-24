@@ -96,7 +96,7 @@ def _read_only_alignment_readiness(harness_dir: Path, task: dict, document: dict
     alignment.validate_freeze(document)
     sealed = harness_dir / "alignment-freeze.yaml"
     if not source_access.exists(sealed):
-        return [*issues, alignment.AlignmentIssue("ALIGNMENT_SEAL_MISSING")]
+        return [*issues, alignment.AlignmentIssue("CONTRACT_CHANGED", "alignment.yaml")]
     impact = yaml.safe_load(source_access.read_text(harness_dir / "impact.yaml"))
     return [
         *issues,
@@ -111,25 +111,32 @@ def _alignment_next_action(issues: list[alignment.AlignmentIssue]) -> str:
     codes = {issue.code for issue in issues}
     if any(blocker_module.is_user_authority_blocker(code) for code in codes) or "OPEN_DECISION" in codes:
         return "stop and wait: USER_AUTHORITY_REQUIRED"
-    if "ALIGNMENT_SEAL_MISSING" in codes:
-        return "harness align freeze to seal alignment baseline"
     if "OPEN_LOOP" in codes:
         return "clear open_loops in alignment.yaml, then harness align check"
     return "repair alignment.yaml, then harness align check"
 
 
-def _print_authority_halt(code: str, subject: str) -> None:
-    """Tell the Agent to stop; this is not a Gate convergence decision."""
-    print("STATUS: REJECTED", file=sys.stderr)
-    print(f"BLOCKER: {code} subject={subject}", file=sys.stderr)
+def _print_authority_halt(code: str) -> None:
+    """Stop signal for the agent. Not a Gate convergence decision."""
     print("POLICY: USER_AUTHORITY_REQUIRED", file=sys.stderr)
     print("DIRECTIVE: HALT_AND_WAIT", file=sys.stderr)
+    print(code, file=sys.stderr)
+
+
+def _print_preflight_failure(blockers) -> None:
+    authority = next(
+        (item for item in blockers if blocker_module.is_user_authority_blocker(item.code)),
+        None,
+    )
+    if authority is not None:
+        _print_authority_halt(authority.code)
+        return
+    print("GATE_PREFLIGHT_MISSING_EVIDENCE", file=sys.stderr)
+    for blocker in blockers:
+        print(f"- {blocker.code}: {blocker.message}", file=sys.stderr)
 
 
 def _print_alignment_blocked(issues: list[alignment.AlignmentIssue]) -> None:
-    print("ALIGNMENT_BLOCKED", file=sys.stderr)
-    for issue in issues:
-        print(f"  {issue.subject_id or 'ALIGNMENT'}: {issue.code}", file=sys.stderr)
     authority = next(
         (
             issue for issue in issues
@@ -139,9 +146,11 @@ def _print_alignment_blocked(issues: list[alignment.AlignmentIssue]) -> None:
         None,
     )
     if authority:
-        code = "DECISION_UNRESOLVED" if authority.code == "OPEN_DECISION" else authority.code
-        _print_authority_halt(code, authority.subject_id or "alignment.yaml")
-    else:
+        _print_authority_halt(authority.code)
+    print("ALIGNMENT_BLOCKED", file=sys.stderr)
+    for issue in issues:
+        print(f"  {issue.subject_id or 'ALIGNMENT'}: {issue.code}", file=sys.stderr)
+    if authority is None:
         print(f"Next: {_alignment_next_action(issues)}", file=sys.stderr)
 
 
@@ -188,11 +197,11 @@ def cmd_align(command: str) -> int:
                 harness_dir, load_task(harness_dir), document
             )
         except (alignment.AlignmentError, decision.DecisionError, ValueError) as exc:
-            print("Alignment: BLOCKED")
-            print(str(exc), file=sys.stderr)
             frozen_hash = document["freeze"].get("contract_hash")
             if frozen_hash and frozen_hash != alignment.contract_hash(document):
-                _print_authority_halt("CONTRACT_CHANGED", "alignment.yaml")
+                _print_authority_halt("CONTRACT_CHANGED")
+            print("Alignment: BLOCKED")
+            print(str(exc), file=sys.stderr)
             return 1
         if issues:
             print("Alignment: BLOCKED")
@@ -218,8 +227,7 @@ def cmd_align(command: str) -> int:
         except alignment.AlignmentError as exc:
             stored = document["freeze"].get("contract_hash")
             if stored and stored != alignment.contract_hash(document):
-                print("CONTRACT_CHANGED", file=sys.stderr)
-                _print_authority_halt("CONTRACT_CHANGED", "alignment.yaml")
+                _print_authority_halt("CONTRACT_CHANGED")
                 return 1
             print(str(exc), file=sys.stderr)
             return 1
@@ -230,7 +238,6 @@ def cmd_align(command: str) -> int:
         print(f"Frozen: {document['freeze']['contract_hash']}")
         print(f"Current: {current}")
         if issues:
-            print("CONTRACT_CHANGED" if any(issue.code == "CONTRACT_CHANGED" for issue in issues) else "SCOPE_DRIFT", file=sys.stderr)
             _print_alignment_blocked(issues)
             return 1
         return 0
@@ -244,11 +251,11 @@ def cmd_align(command: str) -> int:
         frozen_hash = document["freeze"].get("contract_hash")
         changed = bool(frozen_hash and frozen_hash != alignment.contract_hash(document))
         label = "CONTRACT_CHANGED" if changed or code == "CONTRACT_CHANGED" else "ALIGNMENT_FREEZE_INVALID"
+        if label == "CONTRACT_CHANGED":
+            _print_authority_halt(label)
         print("ALIGNMENT_BLOCKED", file=sys.stderr)
         print(f"  {label}: {exc}", file=sys.stderr)
-        if label == "CONTRACT_CHANGED":
-            _print_authority_halt(label, "alignment.yaml")
-        else:
+        if label != "CONTRACT_CHANGED":
             print("Next: repair alignment.yaml, then harness align check", file=sys.stderr)
         return 1
     if issues:
@@ -443,13 +450,14 @@ def cmd_transition(target: str, *, reason: str | None = None) -> int:
     if target == "GATING" and current != "REVIEWING":
         try:
             status, blockers = quality_gate.run_gate(harness_dir, allow_preflight=True)
+        except quality_gate.AlignmentRepairRequired as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
         except Exception as exc:
             print(f"GATE_PREFLIGHT_INVALID: {exc}", file=sys.stderr)
             return 2
         if status != "PASS":
-            print("GATE_PREFLIGHT_MISSING_EVIDENCE", file=sys.stderr)
-            for blocker in blockers:
-                print(f"- {blocker.code}: {blocker.message}", file=sys.stderr)
+            _print_preflight_failure(blockers)
             return 1
     if target not in state_machine.STATES:
         print(f"unknown target state: {target!r}", file=sys.stderr)
@@ -485,24 +493,39 @@ def cmd_transition(target: str, *, reason: str | None = None) -> int:
                         reason_code=issue.code,
                         boundary_ref=issue.subject_id or "alignment.yaml",
                     )
+                _print_authority_halt(drift[0].code)
                 print(
                     "CONTRACT_CHANGED" if drift[0].code == "CONTRACT_CHANGED" else "SCOPE_DRIFT",
                     file=sys.stderr,
                 )
-                _print_authority_halt(drift[0].code, drift[0].subject_id or "alignment.yaml")
                 return 1
-        except alignment.AlignmentError:
+        except alignment.AlignmentError as exc:
             try:
                 document = alignment.load_alignment(harness_dir)
-                if document["freeze"]["contract_hash"]:
-                    _record_contract_change(
-                        harness_dir, task, document,
-                        reason_code="CONTRACT_CHANGED", boundary_ref="alignment.yaml",
-                    )
-            except (alignment.AlignmentError, KeyError):
-                pass
-            print("CONTRACT_CHANGED", file=sys.stderr)
-            _print_authority_halt("CONTRACT_CHANGED", "alignment.yaml")
+                freeze = document["freeze"]
+            except (alignment.AlignmentError, KeyError, TypeError):
+                document = None
+                freeze = {}
+            unfrozen = not (
+                freeze.get("frozen") and freeze.get("frozen_at")
+            )
+            if unfrozen:
+                print("ALIGNMENT_FREEZE_INVALID", file=sys.stderr)
+                print(str(exc), file=sys.stderr)
+                return 1
+            stored = freeze.get("contract_hash")
+            changed = bool(stored and stored != alignment.contract_hash(document))
+            if changed or str(exc) == "CONTRACT_CHANGED":
+                _record_contract_change(
+                    harness_dir, task, document,
+                    reason_code="CONTRACT_CHANGED", boundary_ref="alignment.yaml",
+                )
+                _print_authority_halt("CONTRACT_CHANGED")
+            elif blocker_module.is_user_authority_blocker(str(exc)):
+                _print_authority_halt(str(exc))
+            else:
+                print("ALIGNMENT_FREEZE_INVALID", file=sys.stderr)
+                print(str(exc), file=sys.stderr)
             return 1
         except ValueError as exc:
             print(str(exc), file=sys.stderr)
@@ -524,7 +547,7 @@ def cmd_transition(target: str, *, reason: str | None = None) -> int:
         ]
         if proposed:
             print("OPEN_DECISION", file=sys.stderr)
-            _print_authority_halt("DECISION_UNRESOLVED", proposed[0]["id"])
+            _print_authority_halt("OPEN_DECISION")
             return 1
         alignment_path = harness_dir / "alignment.yaml"
         if not source_access.exists(alignment_path):
@@ -585,6 +608,9 @@ def cmd_transition(target: str, *, reason: str | None = None) -> int:
     if current == "CONVERGED" and target == "DONE":
         try:
             status, _ = quality_gate.run_gate(harness_dir, allow_converged=True)
+        except quality_gate.AlignmentRepairRequired as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
         except quality_gate.gate_command_errors() as exc:
             print(f"INVALID_HARNESS_STATE: {exc}", file=sys.stderr)
             return 2
@@ -651,6 +677,16 @@ def cmd_transition(target: str, *, reason: str | None = None) -> int:
                 print(f"  ALIGNMENT_INVALID: {exc}", file=sys.stderr)
                 return 1
             if alignment_issues:
+                authority = next(
+                    (
+                        issue for issue in alignment_issues
+                        if issue.code == "OPEN_DECISION"
+                        or blocker_module.is_user_authority_blocker(issue.code)
+                    ),
+                    None,
+                )
+                if authority:
+                    _print_authority_halt(authority.code)
                 print("ALIGNMENT_BLOCKED", file=sys.stderr)
                 for issue in alignment_issues:
                     subject = issue.subject_id or "ALIGNMENT"
@@ -668,10 +704,14 @@ def cmd_transition(target: str, *, reason: str | None = None) -> int:
                     ),
                 )
             except (alignment.AlignmentError, decision.DecisionError, ValueError) as exc:
-                print("ALIGNMENT_BLOCKED", file=sys.stderr)
                 code = str(exc)
-                label = "CONTRACT_CHANGED" if code == "CONTRACT_CHANGED" else "ALIGNMENT_FREEZE_INVALID"
-                print(f"  {label}: {exc}", file=sys.stderr)
+                if blocker_module.is_user_authority_blocker(code):
+                    _print_authority_halt(code)
+                    print("ALIGNMENT_BLOCKED", file=sys.stderr)
+                    print(f"  {code}: {exc}", file=sys.stderr)
+                    return 1
+                print("ALIGNMENT_BLOCKED", file=sys.stderr)
+                print(f"  ALIGNMENT_FREEZE_INVALID: {exc}", file=sys.stderr)
                 return 1
     if current == "VERIFYING" and target == "GATING" and profile != "FAST":
         print(
@@ -682,13 +722,14 @@ def cmd_transition(target: str, *, reason: str | None = None) -> int:
     if current == "VERIFYING" and target == "REVIEWING" and profile != "FAST":
         try:
             status, blockers = quality_gate.run_gate(harness_dir, allow_preflight=True)
+        except quality_gate.AlignmentRepairRequired as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
         except Exception as exc:
             print(f"GATE_PREFLIGHT_INVALID: {exc}", file=sys.stderr)
             return 2
         if status != "PASS":
-            print("GATE_PREFLIGHT_MISSING_EVIDENCE", file=sys.stderr)
-            for blocker in blockers:
-                print(f"- {blocker.code}: {blocker.message}", file=sys.stderr)
+            _print_preflight_failure(blockers)
             return 1
         review_path = harness_dir / "evidence" / "complexity-review.json"
         try:
@@ -820,7 +861,8 @@ def cmd_review_outcome(outcome: str, reason_code: str, finding_ids: list[str]) -
         try:
             open_findings = [
                 finding["id"] for finding in _findings(harness_dir)
-                if finding.get("status") not in {"VERIFIED", "CLOSED", "REJECTED"}
+                if finding.get("category") != "alignment"
+                and finding.get("status") not in {"VERIFIED", "CLOSED", "REJECTED"}
             ]
             if open_findings:
                 print("OPEN_FINDINGS_BLOCK_PASS", file=sys.stderr)
@@ -837,13 +879,14 @@ def cmd_review_outcome(outcome: str, reason_code: str, finding_ids: list[str]) -
                     quality_gate._load_yaml(path), schema, path
                 )
             status, blockers = quality_gate.run_gate(harness_dir, allow_preflight=True)
+        except quality_gate.AlignmentRepairRequired as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
         except quality_gate.gate_command_errors() as exc:
             print(f"GATE_PREFLIGHT_INVALID: {exc}", file=sys.stderr)
             return 2
         if status != "PASS":
-            print("GATE_PREFLIGHT_MISSING_EVIDENCE", file=sys.stderr)
-            for blocker in blockers:
-                print(f"- {blocker.code}: {blocker.message}", file=sys.stderr)
+            _print_preflight_failure(blockers)
             return 1
     task["review"] = {
         "outcome": outcome,
@@ -1210,6 +1253,9 @@ def cmd_gate_preflight() -> int:
     """Run Gate assessment without changing task state."""
     try:
         assessment = quality_gate.assess_gate(Path(".harness"), allow_preflight=True)
+    except quality_gate.AlignmentRepairRequired as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
     except Exception as exc:
         print(f"GATE_PREFLIGHT_INVALID: {exc}", file=sys.stderr)
         return 2
@@ -1297,12 +1343,16 @@ def _cmd_gate_convergence() -> int:
 
     if current != "GATING":
         print(
-            f"converge requires state GATING, current is {current!r}", file=sys.stderr
+            f"harness gate requires state GATING, current is {current!r}",
+            file=sys.stderr,
         )
         return 1
 
     try:
         assessment = quality_gate.assess_gate(harness_dir)
+    except quality_gate.AlignmentRepairRequired as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
     except quality_gate.gate_command_errors() as exc:
         print(f"INVALID_HARNESS_STATE: {exc}", file=sys.stderr)
         return 2
@@ -1316,7 +1366,8 @@ def _cmd_gate_convergence() -> int:
                 (
                     f.get("id")
                     for f in _findings(harness_dir)
-                    if f.get("verified_at")
+                    if f.get("category") != "alignment"
+                    and f.get("verified_at")
                     and f.get("status") in {
                         "PROPOSED", "REPRODUCING", "CONFIRMED", "FIXING", "FIXED"
                     }
@@ -1345,6 +1396,7 @@ def _cmd_gate_convergence() -> int:
         task.pop("convergence", None)
         save_task(harness_dir, task)
         print("DECISION: CONVERGED (gate PASS)")
+        print("DIRECTIVE: NONE")
         return 0
 
     current_fp = blocker_module.compute_blocker_fingerprint(blockers)
@@ -1373,6 +1425,7 @@ def _cmd_gate_convergence() -> int:
         save_task(harness_dir, task)
         print("DECISION: ESCALATED")
         print("REASON: USER_AUTHORITY_REQUIRED")
+        print("DIRECTIVE: NONE")
         for blocker in blockers:
             print(f"  blocker: {blocker.message}")
         return 0
@@ -1389,6 +1442,7 @@ def _cmd_gate_convergence() -> int:
         save_task(harness_dir, task)
         print("DECISION: ESCALATED")
         print(f"REASON: REPEATED_REGRESSION ({reopened} was VERIFIED, now open again)")
+        print("DIRECTIVE: NONE")
         for blocker in blockers:
             print(f"  blocker: {blocker.message}")
         return 0
@@ -1405,6 +1459,7 @@ def _cmd_gate_convergence() -> int:
         save_task(harness_dir, task)
         print("DECISION: ESCALATED")
         print("REASON: NO_PROGRESS")
+        print("DIRECTIVE: NONE")
         print(f"  prior fingerprint: {prev_fp}")
         for blocker in blockers:
             print(f"  blocker: {blocker.message}")
@@ -1422,6 +1477,7 @@ def _cmd_gate_convergence() -> int:
         save_task(harness_dir, task)
         print("DECISION: ESCALATED")
         print("REASON: MAX_ITERATIONS")
+        print("DIRECTIVE: NONE")
         for blocker in blockers:
             print(f"  blocker: {blocker.message}")
         return 0

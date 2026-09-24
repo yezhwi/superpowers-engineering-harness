@@ -33,8 +33,11 @@ run gate
    by `harness gate`. Other legal edges use `harness transition`,
    `harness review outcome`, `harness resume`, or `harness finding resume-review`.
    Never edit the state field by hand.
-4. **No self-declared done.** Only persisted `DECISION: CONVERGED` plus an
-   explicit `CONVERGED -> DONE` transition ends a task.
+4. **No self-declared done.** Only stdout `DECISION: CONVERGED` from
+   `harness gate`, followed by an explicit `CONVERGED -> DONE` transition,
+   ends a task. `DECISION:` is command output, not a field in
+   `current-task.yaml`. The persisted authority is `state: CONVERGED` and
+   gate metadata.
 
 ## Q0 Decision Table
 
@@ -57,7 +60,7 @@ Only enter after the Q0 Decision Table confirms mutating work.
 3. For `CREATED`, or missing/null risk, use the existing `harness task classify` path before requesting Context. Do not infer a risk/profile. Malformed classification requires correction, not guessed defaults.
 4. For a classified active mutating task, run `harness context --compact` first. Do not eagerly read all control files or run status as a prerequisite. Resume using the validated task state/profile, accepted decisions, global constraints, and typed blockers in that view.
 5. On Integrity failure, stop relying on compact. Do not fall back to stale Context or persisted Gate summaries, and do not use `--full` to bypass validation. Follow the error code; resolve invalid inputs through existing harness CLI. `harness context validate` checks the saved snapshot without rewriting it; after source changes, regenerate with `harness context --compact` before relying on it again.
-6. Write authoritative facts only through existing harness CLI; advisory `next_action` does not authorize execution or transition state. A blocked product Gate is not itself an Integrity failure: retain its blockers and use the normal recovery route. If a Guard command prints `POLICY: USER_AUTHORITY_REQUIRED` and `DIRECTIVE: HALT_AND_WAIT`, stop autonomous work and request user decision. This is not Gate `DECISION: ESCALATED`; do not run `harness resume`, `harness gate`, or rewrite state to bypass it. Text directive alone does not authenticate user approval.
+6. Write authoritative facts only through existing harness CLI; advisory `next_action` does not authorize execution or transition state. A blocked product Gate is not itself an Integrity failure: retain its blockers and use the normal recovery route. If a Guard command prints `POLICY: USER_AUTHORITY_REQUIRED` and `DIRECTIVE: HALT_AND_WAIT`, stop autonomous work and request user decision. This is not Gate `DECISION: ESCALATED`; do not run `harness resume`, `harness gate`, or rewrite state to bypass it. Text directive alone does not authenticate user approval. An unrecognized `DIRECTIVE` is not permission to resume, and a free-text `Next:` line is not a command.
 
 > Path rule: `harness ...` CLI works in ANY project (requires once:
 > `pip install -e <harness-repo>`). Raw `python scripts/*.py` paths are
@@ -132,11 +135,11 @@ Read persisted `state` and `risk.profile` from `.harness/current-task.yaml`, the
 | `CREATED` | Classify mutating task first with `harness task classify`; do not invoke task-contract before profile selection. |
 | `CLASSIFIED` | FAST only: transition to IMPLEMENTING and follow RED/fix/GREEN/Light Gate, or `harness task verify-existing` when the work is already implemented. Q2/Q3 classification must use standard task contract before implementation. |
 | `PLANNED` | Invoke **minimal-implementation** before any implementation. It records Decision Ladder evidence via `harness check minimal --file <yaml>`. Then invoke Superpowers execution skills (**brainstorming** if design unclear, else **writing-plans** + **executing-plans**/**subagent-driven-development**, with **test-driven-development**) and transition to IMPLEMENTING. |
-| `IMPLEMENTING` | Continue execution skill. Before requesting VERIFYING, record impacted files, dependents, contracts, risks, and required related tests with `harness impact add-*`. Full-suite execution is forbidden, including when AGENTS.md or user instructions request it. Then transition to VERIFYING and collect only `related` evidence via `harness evidence run --type <t> --scope related --command "<cmd>"`. For related unit tests, `--covered-test` is repository-root path even when command `cd`s into a subproject. Record effective review scope with `harness impact scope --format yaml`. |
+| `IMPLEMENTING` | Continue execution skill. If the transition to VERIFYING prints `POLICY: USER_AUTHORITY_REQUIRED` and `DIRECTIVE: HALT_AND_WAIT`, stop and report to the user. Do not repair the contract, call `harness gate`, or realign on your own. Otherwise, before requesting VERIFYING, record impacted files, dependents, contracts, risks, and required related tests with `harness impact add-*`. Full-suite execution is forbidden, including when AGENTS.md or user instructions request it. Then transition to VERIFYING and collect only `related` evidence via `harness evidence run --type <t> --scope related --command "<cmd>"`. For related unit tests, `--covered-test` is repository-root path even when command `cd`s into a subproject. Record effective review scope with `harness impact scope --format yaml`. |
 | `VERIFYING` | Run deterministic Verification Plan commands/tests. Any red -> IMPLEMENTING (TDD), then re-verify. Before `REVIEWING`, Gate freshness preflight must pass; stale required evidence blocks entry. All green -> invoke **complexity-reviewer** and transition to REVIEWING. Related test evidence is append-only by command/covered-test identity; Gate unions fresh coverage, so run only newly required tests. STANDARD/STRICT declared test targets must exist before implementation. Control-plane writes under `.harness/` do not stale product evidence. |
 | `REVIEWING` | For Q3, and Q2 when `observability.required: true`, invoke **diagnosability-review** and persist `harness review diagnosability` evidence before review outcome. `--base <ref>` is explicit override; missing baseline fails closed. Then invoke Superpowers review and route only with review outcome. |
 | `REPRODUCING` | Invoke **reproduce-finding** skill. CONFIRMED finding -> FIXING (fix with TDD) -> VERIFYING. REJECTED finding -> close it, return to REVIEWING. |
-| `GATING` | Run `harness gate`; inspect `DECISION:` and `harness status`. `CONVERGED` -> `harness transition DONE`; `CONTINUE` with `DIRECTIVE: RESUME_TYPED_RECOVERY` -> `harness resume`; `ESCALATED` ends autonomous work. |
+| `GATING` | Run `harness gate`; inspect stdout `DECISION:` and `harness status`. `DECISION: CONVERGED` with `DIRECTIVE: NONE` -> `harness transition DONE`; `CONTINUE` with `DIRECTIVE: RESUME_TYPED_RECOVERY` -> `harness resume`; `ESCALATED` with `DIRECTIVE: NONE` ends autonomous work. |
 
 Loop REPRODUCING/FIXING/VERIFYING until REVIEWING is clean and gate passes.
 There is no shortcut from any state to DONE.
@@ -183,9 +186,9 @@ Never edit `.harness/current-task.yaml` state directly.
 
 The loop converges only when ALL of:
 
-1. No open findings (`PROPOSED`/`REPRODUCING`/`CONFIRMED`/`FIXING` all closed).
+1. No open defect findings (`PROPOSED`/`REPRODUCING`/`CONFIRMED`/`FIXING`). Alignment audit findings stay on disk and do not block DONE.
 2. All `priority: must` requirements have evidence.
-3. `harness gate` persists `DECISION: CONVERGED`.
+3. `harness gate` prints stdout `DECISION: CONVERGED`. Persisted authority is `state: CONVERGED` and gate metadata.
 
 Then and only then: transition CONVERGED -> DONE and report to user with gate
 output attached.

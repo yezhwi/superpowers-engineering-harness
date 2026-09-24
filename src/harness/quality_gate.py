@@ -56,6 +56,98 @@ OPEN_FINDING_STATUSES = {
 }
 
 
+def _boundary_for_drift(subject_id: str | None) -> str:
+    return subject_id or "alignment.yaml"
+
+
+def _reproduced_alignment_finding(
+    findings: list, task_id: str, code: str, boundary: str
+) -> str | None:
+    """Attach an audit id only when this assessment reproduces that record."""
+    for item in findings:
+        if item.get("category") != "alignment" or item.get("task_id") != task_id:
+            continue
+        if item.get("status") not in OPEN_FINDING_STATUSES:
+            continue
+        if item.get("reason_code") != code or item.get("boundary_ref") != boundary:
+            continue
+        return item.get("id")
+    return None
+
+
+def _block_live_drift(findings: list, task_id: str, block, code: str, boundary: str) -> None:
+    identity = {}
+    finding_id = _reproduced_alignment_finding(findings, task_id, code, boundary)
+    if finding_id:
+        identity["finding_id"] = finding_id
+    block(code, "implementation", f"{code}: sealed alignment drift", **identity)
+
+
+class AlignmentRepairRequired(Exception):
+    """Repairable alignment state. Exit 1, no Gate write and no halt."""
+
+
+def _append_live_alignment_drift(harness_dir: Path, task: dict, findings: list, block) -> None:
+    """Escalate only drift computed from this assessment."""
+    from harness import alignment, source_access
+    from harness.decision import DecisionError, load_decisions
+    from harness.impact import ImpactContractError
+
+    path = harness_dir / "alignment.yaml"
+    profile = (task.get("risk") or {}).get("profile")
+    if not source_access.exists(path):
+        if profile in {"STANDARD", "STRICT"}:
+            raise InvalidHarnessState("ALIGNMENT_MISSING")
+        return
+    try:
+        document = alignment.load_alignment(harness_dir)
+    except alignment.AlignmentError as exc:
+        raise InvalidHarnessState(f"ALIGNMENT_INVALID: {exc}") from exc
+    freeze = document["freeze"]
+    stored = freeze.get("contract_hash")
+    if not (freeze.get("frozen") and freeze.get("frozen_at") and stored):
+        if profile in {"STANDARD", "STRICT"}:
+            raise AlignmentRepairRequired("ALIGNMENT_FREEZE_INVALID")
+        return
+    if stored != alignment.contract_hash(document):
+        _block_live_drift(findings, task["task"]["id"], block, "CONTRACT_CHANGED", "alignment.yaml")
+        return
+    try:
+        alignment.validate_freeze(document)
+    except alignment.AlignmentError as exc:
+        raise InvalidHarnessState(f"ALIGNMENT_FREEZE_INVALID: {exc}") from exc
+    try:
+        from harness.controlplane import current_boundary_refs
+
+        impact_document = {}
+        impact_path = harness_dir / "impact.yaml"
+        if source_access.exists(impact_path):
+            loaded = yaml.safe_load(source_access.read_text(impact_path)) or {}
+            if not isinstance(loaded, dict):
+                raise InvalidHarnessState("IMPACT_CONTRACT_INVALID")
+            impact_document = loaded.get("impact") or {}
+        try:
+            decisions = load_decisions(harness_dir)
+        except DecisionError as exc:
+            raise InvalidHarnessState(f"DECISION_REFERENCE_INVALID: {exc}") from exc
+        issues = alignment.sealed_freeze_drift(
+            harness_dir,
+            document,
+            decisions=decisions,
+            boundary_refs=current_boundary_refs(document, impact_document),
+            bootstrap=False,
+        )
+    except alignment.AlignmentError as exc:
+        raise InvalidHarnessState(f"ALIGNMENT_FREEZE_INVALID: {exc}") from exc
+    except (ImpactContractError, AttributeError, TypeError) as exc:
+        raise InvalidHarnessState(f"IMPACT_CONTRACT_INVALID: {exc}") from exc
+    for issue in issues:
+        _block_live_drift(
+            findings, task["task"]["id"], block, issue.code,
+            _boundary_for_drift(issue.subject_id),
+        )
+
+
 class InvalidHarnessState(Exception):
     pass
 
@@ -289,7 +381,44 @@ def run_fast_gate(
                 "FAST_REGRESSION_EVIDENCE_MISSING",
                 f"FAST {phase} regression evidence invalid: {exc}",
             )
+    _append_fast_authority(task, harness_dir, blockers)
     return ("PASS" if not blockers else "BLOCKED"), blockers
+
+
+def _append_fast_authority(task: dict, harness_dir: Path, blockers: list[GateBlocker]) -> None:
+    """Q1 Gate sees the same current-assessment authority facts as the full Gate."""
+    from harness.decision import DecisionError, load_decisions
+
+    try:
+        records = load_decisions(harness_dir)
+    except DecisionError as exc:
+        raise InvalidHarnessState(f"DECISION_REFERENCE_INVALID: {exc}") from exc
+    task_id = (task.get("task") or {}).get("id")
+    for record in records:
+        if record.get("task_id") == task_id and record.get("status") == "PROPOSED":
+            blockers.append(
+                GateBlocker(
+                    "DECISION_UNRESOLVED",
+                    "harness",
+                    f"{record['id']} is still PROPOSED",
+                    recover_to=RECOVERY_POLICY.get("DECISION_UNRESOLVED"),
+                )
+            )
+
+    def block(code: str, category: str, message: str, **identity) -> None:
+        blockers.append(
+            GateBlocker(
+                code,
+                category,
+                message,
+                recover_to=RECOVERY_POLICY.get(code),
+                **identity,
+            )
+        )
+
+    _append_live_alignment_drift(
+        harness_dir, task, load_findings(harness_dir / "findings"), block
+    )
 
 
 def _evaluate_gate(
@@ -922,11 +1051,14 @@ def _evaluate_gate(
                     source="complexity-review",
                 )
             else:
-                expected_files, expected_refs = project_typed_scope(
-                    task,
-                    impact.get("impact") or {},
-                    inspected_paths=observability_inspected_paths(harness_dir),
-                )
+                try:
+                    expected_files, expected_refs = project_typed_scope(
+                        task,
+                        impact.get("impact") or {},
+                        inspected_paths=observability_inspected_paths(harness_dir),
+                    )
+                except WorkspaceError as exc:
+                    raise InvalidHarnessState(f"IMPACT_CONTRACT_INVALID: {exc}") from exc
                 recorded_files, recorded_refs = claimed_scope_sets(
                     review.get("review_scope") or {}
                 )
@@ -976,15 +1108,7 @@ def _evaluate_gate(
     def is_open(f):
         return f.get("status") in OPEN_FINDING_STATUSES
 
-    for f in findings:
-        if f.get("category") == "alignment" and is_open(f):
-            code = f.get("reason_code") or "CONTRACT_CHANGED"
-            block(
-                code,
-                "implementation",
-                f"{code}: alignment finding {f['id']} is open",
-                finding_id=f["id"],
-            )
+    _append_live_alignment_drift(harness_dir, task, findings, block)
 
     open_critical = [
         f

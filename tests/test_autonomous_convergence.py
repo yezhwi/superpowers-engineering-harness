@@ -242,7 +242,7 @@ def test_repeated_gate_from_blocked_fails_and_never_increments_count(tmp_path):
     # Calling gate again while state is BLOCKED must fail (exit 1) and never increment count
     second = run_cli(tmp_path, "gate")
     assert second.returncode == 1
-    assert "converge requires state GATING" in second.stderr
+    assert "harness gate requires state GATING" in second.stderr
 
     task_after = yaml.safe_load((h / "current-task.yaml").read_text())
     assert task_after["convergence"]["count"] == 1
@@ -336,6 +336,43 @@ def test_schema_rejects_malformed_convergence_metadata(tmp_path, malformed_conve
 # -----------------------------------------------------------------------------
 
 
+def _seal_alignment(h: Path, *, summary: str = "original goal") -> dict:
+    from harness.alignment import contract_hash, validate_sealed_freeze
+
+    document = {
+        "version": 1,
+        "task_id": "TASK-001",
+        "goal": {"summary": summary},
+        "scope": {"in": ["feature"], "out": ["unrelated"]},
+        "non_goals": ["everything else"],
+        "boundaries": [],
+        "constraints": [],
+        "assumptions": [],
+        "acceptance_criteria": [],
+        "implementation_surfaces": [],
+        "verification": [],
+        "decision_ids": [],
+        "interface_contract_ids": [],
+        "open_questions": [],
+        "open_decisions": [],
+        "open_loops": [],
+        "freeze": {
+            "frozen": True,
+            "frozen_at": "2026-09-18T00:00:00+00:00",
+            "contract_hash": None,
+        },
+    }
+    document["freeze"]["contract_hash"] = contract_hash(document)
+    (h / "alignment.yaml").write_text(yaml.safe_dump(document))
+    validate_sealed_freeze(
+        h,
+        document,
+        decisions=[],
+        boundary_refs={"interface": [], "permission": [], "persistence": []},
+    )
+    return document
+
+
 @pytest.mark.parametrize(
     "code",
     [
@@ -347,6 +384,8 @@ def test_schema_rejects_malformed_convergence_metadata(tmp_path, malformed_conve
     ],
 )
 def test_user_authority_codes_immediately_escalate_without_repair(tmp_path, code):
+    from harness.alignment import contract_hash
+
     h = make_repo(tmp_path, state="GATING")
     # Also unlink an evidence file to create a simultaneous evidence blocker
     (h / "evidence" / "unit-test.json").unlink()
@@ -367,27 +406,22 @@ def test_user_authority_codes_immediately_escalate_without_repair(tmp_path, code
             },
         )
     else:
-        # Inject user authority blocker into gate
-        # For alignment codes:
-        finding_dir = h / "findings"
-        finding_dir.mkdir(parents=True, exist_ok=True)
-        (finding_dir / "fnd-0100.yaml").write_text(
-            yaml.safe_dump(
-                {
-                    "id": "FND-0100",
-                    "category": "alignment",
-                    "task_id": "TASK-001",
-                    "type": "contract_changed",
-                    "severity": "blocking",
-                    "status": "PROPOSED",
-                    "detected_during": "IMPLEMENTING",
-                    "reason_code": code,
-                    "boundary_ref": "test",
-                    "expected_hash": "sha256:" + "0" * 64,
-                    "actual_hash": "sha256:" + "1" * 64,
-                }
-            )
-        )
+        document = _seal_alignment(h)
+        if code == "CONTRACT_CHANGED":
+            document["goal"]["summary"] = "changed goal"
+            document["freeze"]["contract_hash"] = contract_hash(document)
+            (h / "alignment.yaml").write_text(yaml.safe_dump(document))
+        else:
+            impact = yaml.safe_load((h / "impact.yaml").read_text())
+            if code == "SCOPE_DRIFT_API":
+                impact["impact"]["interfaces"] = [
+                    {"contract_id": "INT-001", "visibility": "external"}
+                ]
+            elif code == "SCOPE_DRIFT_PERMISSION":
+                impact["impact"]["contracts"] = [{"kind": "permission", "ref": "DEC-001"}]
+            else:
+                impact["impact"]["contracts"] = [{"kind": "persistence", "ref": "INT-002"}]
+            (h / "impact.yaml").write_text(yaml.safe_dump(impact))
 
     result = run_cli(tmp_path, "gate")
     assert result.returncode == 0, result.stdout + result.stderr
@@ -400,6 +434,265 @@ def test_user_authority_codes_immediately_escalate_without_repair(tmp_path, code
     # Verify select_recovery never selects VERIFYING when user authority blocker is present
     blockers = [GateBlocker(code, "harness", "reason"), GateBlocker("EVIDENCE_MISSING", "verification", "ev")]
     assert select_recovery(blockers) is None
+    assert "DIRECTIVE: NONE" in result.stdout
+    assert "RESUME_TYPED_RECOVERY" not in result.stdout
+
+
+def test_injected_alignment_finding_without_live_drift_converges(tmp_path):
+    h = make_repo(tmp_path, state="GATING")
+    _seal_alignment(h)
+    finding_dir = h / "findings"
+    finding_dir.mkdir(parents=True, exist_ok=True)
+    (finding_dir / "fnd-0100.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "id": "FND-0100",
+                "category": "alignment",
+                "task_id": "TASK-001",
+                "type": "contract_changed",
+                "severity": "blocking",
+                "status": "PROPOSED",
+                "detected_during": "IMPLEMENTING",
+                "reason_code": "CONTRACT_CHANGED",
+                "boundary_ref": "alignment.yaml",
+                "expected_hash": "sha256:" + "0" * 64,
+                "actual_hash": "sha256:" + "1" * 64,
+            }
+        )
+    )
+
+    result = run_cli(tmp_path, "gate")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "DECISION: CONVERGED" in result.stdout
+    assert "DIRECTIVE: NONE" in result.stdout
+    assert "USER_AUTHORITY_REQUIRED" not in result.stdout
+    task = yaml.safe_load((h / "current-task.yaml").read_text())
+    assert task["state"] == "CONVERGED"
+    assert "convergence" not in task
+    assert (finding_dir / "fnd-0100.yaml").exists()
+
+
+def test_unfrozen_verify_transition_stays_repairable(tmp_path):
+    h = make_repo(tmp_path, state="IMPLEMENTING")
+    task = yaml.safe_load((h / "current-task.yaml").read_text())
+    task["risk"] = {
+        "level": "Q2",
+        "profile": "STANDARD",
+        "dimensions": {
+            "scope": "high",
+            "contract": "high",
+            "data": "none",
+            "authorization": "none",
+            "security": "none",
+            "concurrency": "none",
+            "deployment": "none",
+        },
+        "escalation_history": [],
+        "user_changes": {"paths": [], "fingerprint": "sha256:test"},
+    }
+    (h / "current-task.yaml").write_text(yaml.safe_dump(task))
+    document = _seal_alignment(h)
+    document["freeze"] = {"frozen": False, "frozen_at": None, "contract_hash": None}
+    (h / "alignment.yaml").write_text(yaml.safe_dump(document))
+    before = (h / "current-task.yaml").read_bytes()
+
+    result = run_cli(tmp_path, "transition", "VERIFYING")
+
+    assert result.returncode == 1
+    assert "ALIGNMENT_FREEZE_INVALID" in result.stderr
+    assert "POLICY: USER_AUTHORITY_REQUIRED" not in result.stderr
+    assert "DIRECTIVE: HALT_AND_WAIT" not in result.stderr
+    assert "STATUS: REJECTED" not in result.stderr
+    assert (h / "current-task.yaml").read_bytes() == before
+    assert list((h / "findings").glob("FND-*.yaml")) == []
+
+
+_STANDARD_RISK = {
+    "level": "Q2",
+    "profile": "STANDARD",
+    "dimensions": {
+        "scope": "high",
+        "contract": "high",
+        "data": "none",
+        "authorization": "none",
+        "security": "none",
+        "concurrency": "none",
+        "deployment": "none",
+    },
+    "escalation_history": [],
+    "user_changes": {"paths": [], "fingerprint": "sha256:test"},
+}
+
+
+def test_corrupt_decision_does_not_escalate_as_contract_change(tmp_path):
+    h = make_repo(tmp_path, state="GATING")
+    _seal_alignment(h)
+    seal = yaml.safe_load((h / "alignment-freeze.yaml").read_text())
+    seal["decision_selections"] = {"DEC-001": "opt1"}
+    (h / "alignment-freeze.yaml").write_text(yaml.safe_dump(seal))
+    decisions = h / "decisions"
+    decisions.mkdir(exist_ok=True)
+    (decisions / "DEC-001.yaml").write_text("[\n")
+    before = (h / "current-task.yaml").read_bytes()
+
+    result = run_cli(tmp_path, "gate")
+
+    assert result.returncode == 2, result.stdout + result.stderr
+    assert "INVALID_HARNESS_STATE" in result.stderr
+    assert "DECISION:" not in result.stdout
+    assert "USER_AUTHORITY_REQUIRED" not in result.stdout
+    assert (h / "current-task.yaml").read_bytes() == before
+
+
+def test_malformed_impact_contract_fails_closed(tmp_path):
+    h = make_repo(tmp_path, state="GATING")
+    _seal_alignment(h)
+    impact = yaml.safe_load((h / "impact.yaml").read_text())
+    impact["impact"]["contracts"] = [{"ref": "DEC-001", "kind": "nope"}]
+    (h / "impact.yaml").write_text(yaml.safe_dump(impact))
+    before = (h / "current-task.yaml").read_bytes()
+
+    result = run_cli(tmp_path, "gate")
+
+    assert result.returncode == 2, result.stdout + result.stderr
+    assert "IMPACT_CONTRACT_INVALID" in result.stderr
+    assert "DECISION:" not in result.stdout
+    assert (h / "current-task.yaml").read_bytes() == before
+
+
+def test_unfrozen_standard_gate_stays_repairable(tmp_path):
+    h = make_repo(tmp_path, state="GATING")
+    task = yaml.safe_load((h / "current-task.yaml").read_text())
+    task["risk"] = _STANDARD_RISK
+    (h / "current-task.yaml").write_text(yaml.safe_dump(task))
+    document = _seal_alignment(h)
+    document["freeze"] = {"frozen": False, "frozen_at": None, "contract_hash": None}
+    (h / "alignment.yaml").write_text(yaml.safe_dump(document))
+    before = (h / "current-task.yaml").read_bytes()
+
+    result = run_cli(tmp_path, "gate")
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "ALIGNMENT_FREEZE_INVALID" in result.stderr
+    assert "POLICY: USER_AUTHORITY_REQUIRED" not in result.stderr
+    assert "DECISION:" not in result.stdout
+    assert (h / "current-task.yaml").read_bytes() == before
+
+
+def test_missing_seal_halts_without_reseal_command(tmp_path):
+    h = make_repo(tmp_path, state="IMPLEMENTING")
+    _seal_alignment(h)
+    (h / "alignment-freeze.yaml").unlink()
+
+    result = run_cli(tmp_path, "align", "check")
+
+    assert result.returncode == 1, result.stderr
+    assert "POLICY: USER_AUTHORITY_REQUIRED" in result.stderr
+    assert "DIRECTIVE: HALT_AND_WAIT" in result.stderr
+    assert "CONTRACT_CHANGED" in result.stderr
+    assert "align freeze" not in result.stderr
+    assert not (h / "alignment-freeze.yaml").exists()
+
+
+def test_alignment_audit_with_verified_at_does_not_count_as_regression(tmp_path):
+    h = make_repo(tmp_path, state="GATING")
+    _seal_alignment(h)
+    (h / "evidence" / "unit-test.json").unlink()
+    (h / "findings").mkdir(exist_ok=True)
+    (h / "findings" / "fnd-0100.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "id": "FND-0100",
+                "category": "alignment",
+                "task_id": "TASK-001",
+                "type": "contract_changed",
+                "severity": "blocking",
+                "status": "PROPOSED",
+                "detected_during": "IMPLEMENTING",
+                "reason_code": "CONTRACT_CHANGED",
+                "boundary_ref": "alignment.yaml",
+                "expected_hash": "sha256:" + "0" * 64,
+                "actual_hash": "sha256:" + "1" * 64,
+                "verified_at": "2026-01-01T00:00:00+00:00",
+            }
+        )
+    )
+
+    result = run_cli(tmp_path, "gate")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "DECISION: CONTINUE" in result.stdout
+    assert "REPEATED_REGRESSION" not in result.stdout
+    assert "USER_AUTHORITY_REQUIRED" not in result.stdout
+
+
+def test_fast_gate_escalates_proposed_decision(tmp_path):
+    from harness import decision
+
+    h = make_repo(tmp_path, state="GATING")
+    base = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], cwd=tmp_path, text=True
+    ).strip()
+    task = yaml.safe_load((h / "current-task.yaml").read_text())
+    task.setdefault("git", {})["base_commit"] = base
+    task["risk"] = {
+        "level": "Q1",
+        "profile": "FAST",
+        "dimensions": {
+            "scope": "low",
+            "contract": "none",
+            "data": "none",
+            "authorization": "none",
+            "security": "none",
+            "concurrency": "none",
+            "deployment": "none",
+        },
+        "escalation_history": [],
+        "user_changes": {"paths": [], "fingerprint": "sha256:test"},
+    }
+    (h / "current-task.yaml").write_text(yaml.safe_dump(task))
+    decision.propose(
+        h,
+        {
+            "topic": "test-topic",
+            "question": "test-question",
+            "context": ["test-context"],
+            "options": [{"id": "opt1", "description": "desc1"}],
+            "recommendation": {"option": "opt1", "reasons": ["r"], "tradeoffs": ["t"]},
+            "scope": ["internal"],
+            "constraints": [],
+        },
+    )
+
+    result = run_cli(tmp_path, "gate")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "DECISION: ESCALATED" in result.stdout
+    assert "REASON: USER_AUTHORITY_REQUIRED" in result.stdout
+
+
+def test_verify_preflight_halts_on_live_contract_change(tmp_path):
+    from harness.alignment import contract_hash
+
+    h = make_repo(tmp_path, state="VERIFYING")
+    task = yaml.safe_load((h / "current-task.yaml").read_text())
+    task["risk"] = _STANDARD_RISK
+    (h / "current-task.yaml").write_text(yaml.safe_dump(task))
+    document = _seal_alignment(h)
+    document["goal"]["summary"] = "changed after seal"
+    document["freeze"]["contract_hash"] = contract_hash(document)
+    (h / "alignment.yaml").write_text(yaml.safe_dump(document))
+    before = (h / "current-task.yaml").read_bytes()
+
+    result = run_cli(tmp_path, "transition", "REVIEWING")
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "POLICY: USER_AUTHORITY_REQUIRED" in result.stderr
+    assert "DIRECTIVE: HALT_AND_WAIT" in result.stderr
+    assert "GATE_PREFLIGHT_MISSING_EVIDENCE" not in result.stderr
+    assert (h / "current-task.yaml").read_bytes() == before
+    assert yaml.safe_load((h / "current-task.yaml").read_text())["state"] == "VERIFYING"
 
 
 # -----------------------------------------------------------------------------
@@ -600,7 +893,7 @@ def test_real_drift_workflow_fails_and_preserves_implementing(tmp_path):
     # 2. Gate requires GATING; calling gate while IMPLEMENTING must fail with exit 1
     gate_result = run_cli(tmp_path, "gate")
     assert gate_result.returncode == 1
-    assert "converge requires state GATING" in gate_result.stderr
+    assert "harness gate requires state GATING" in gate_result.stderr
 
 
 @pytest.mark.parametrize(
@@ -896,15 +1189,32 @@ def test_architecture_single_convergence_authority_invariant():
     decision_emitters = set()
     convergence_mutators = set()
 
+    def writes_convergence(subnode: ast.AST) -> bool:
+        if (
+            isinstance(subnode, ast.Subscript)
+            and isinstance(subnode.slice, ast.Constant)
+            and subnode.slice.value == "convergence"
+            and isinstance(subnode.ctx, (ast.Store, ast.Del))
+        ):
+            return True
+        if (
+            isinstance(subnode, ast.Call)
+            and isinstance(subnode.func, ast.Attribute)
+            and subnode.func.attr in {"pop", "setdefault"}
+            and subnode.args
+            and isinstance(subnode.args[0], ast.Constant)
+            and subnode.args[0].value == "convergence"
+        ):
+            return True
+        return False
+
     for node in ast.walk(tree):
         if isinstance(node, ast.FunctionDef):
             for subnode in ast.walk(node):
                 if isinstance(subnode, ast.Constant) and isinstance(subnode.value, str) and "DECISION:" in subnode.value:
                     decision_emitters.add(node.name)
-                if isinstance(subnode, ast.Subscript):
-                    if isinstance(subnode.slice, ast.Constant) and subnode.slice.value == "convergence":
-                        # Check if it's in a write/delete context or reading
-                        convergence_mutators.add(node.name)
+                if writes_convergence(subnode):
+                    convergence_mutators.add(node.name)
 
     # harness gate convergence is the sole convergence authority
     assert decision_emitters == {"_cmd_gate_convergence"}

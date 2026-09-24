@@ -189,7 +189,7 @@ def test_align_diff_detects_accepted_option_change(tmp_path):
 
 
 def test_align_check_prints_blocked_open_loop_and_next_action(tmp_path):
-    from harness.alignment import contract_hash
+    from harness.alignment import contract_hash, validate_sealed_freeze
     from test_alignment import complete_alignment
 
     path = repo(tmp_path)
@@ -203,7 +203,14 @@ def test_align_check_prints_blocked_open_loop_and_next_action(tmp_path):
         "contract_hash": None,
     }
     document["freeze"]["contract_hash"] = contract_hash(document)
-    (path / ".harness/alignment.yaml").write_text(yaml.safe_dump(document))
+    harness = path / ".harness"
+    (harness / "alignment.yaml").write_text(yaml.safe_dump(document))
+    validate_sealed_freeze(
+        harness,
+        document,
+        decisions=[],
+        boundary_refs={"interface": [], "permission": [], "persistence": []},
+    )
 
     result = cli(path, "align", "check")
 
