@@ -23,7 +23,8 @@ def agy_environment(tmp_path):
     home = tmp_path / "home"
     skills_root = home / ".gemini" / "antigravity-cli" / "skills"
     source = tmp_path / "harness-source"
-    shutil.copytree(ROOT / "skills", source / "skills")
+    shutil.copytree(ROOT / "skills", source / "skills", symlinks=True)
+    shutil.copy2(ROOT / "SKILL.md", source / "SKILL.md")
     (source / "pyproject.toml").write_text("[build-system]\nrequires = []\n")
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
@@ -44,7 +45,13 @@ def test_installer_uses_latest_release_and_installs_global_skills(agy_environmen
     assert result.returncode == 0, result.stderr
     assert "git clone --depth 1 --branch v9.9.9" in log.read_text()
     assert not "harness init" in log.read_text()
-    assert (skills_root / "engineering-harness" / "SKILL.md").is_file()
+    assert all(
+        (skill / "SKILL.md").is_file() and not (skill / "SKILL.md").is_symlink()
+        for skill in skills_root.iterdir()
+    )
+    assert "name: engineering-harness" in (
+        skills_root / "engineering-harness" / "SKILL.md"
+    ).read_text()
     assert (skills_root / "quality-gate" / "SKILL.md").is_file()
 
 
@@ -57,6 +64,18 @@ def test_installer_accepts_explicit_version_without_latest_lookup(agy_environmen
     calls = log.read_text()
     assert "git clone --depth 1 --branch v0.2.9" in calls
     assert not calls.startswith("-fsSL")
+
+
+def test_installer_rejects_broken_source_manifest_before_install(agy_environment):
+    cwd, skills_root, log, env = agy_environment
+    (Path(env["AGY_TEST_SOURCE"]) / "SKILL.md").unlink()
+
+    result = subprocess.run([INSTALLER, "v0.2.9"], cwd=cwd, env=env, text=True, capture_output=True)
+
+    assert result.returncode != 0
+    assert "SKILL.md" in result.stderr
+    assert "pip install" not in log.read_text()
+    assert not skills_root.exists()
 
 
 def test_installer_replaces_harness_skills_and_preserves_unrelated_skills(agy_environment):

@@ -32,14 +32,31 @@ print(value)
   )"
 fi
 
-source_dir="$(mktemp -d)"
-trap 'rm -rf "$source_dir"' EXIT
-source_dir="$source_dir/harness"
+temp_dir="$(mktemp -d)"
+trap 'rm -rf "$temp_dir"' EXIT
+source_dir="$temp_dir/harness"
 git clone --depth 1 --branch "$version" "$REPOSITORY" "$source_dir"
+
+staged_skills="$temp_dir/skills"
+mkdir "$staged_skills"
+for skill in "$source_dir"/skills/*; do
+  name="$(basename "$skill")"
+  if [ ! -f "$skill/SKILL.md" ]; then
+    echo "Missing or unreadable skill manifest: $skill/SKILL.md" >&2
+    exit 1
+  fi
+  cp -R "$skill" "$staged_skills/$name"
+  rm -f "$staged_skills/$name/SKILL.md"
+  cp "$skill/SKILL.md" "$staged_skills/$name/SKILL.md"
+  if [ ! -f "$staged_skills/$name/SKILL.md" ] || [ -L "$staged_skills/$name/SKILL.md" ]; then
+    echo "Invalid staged skill manifest: $name/SKILL.md" >&2
+    exit 1
+  fi
+done
 
 "$PYTHON_BIN" -m pip install "$source_dir"
 mkdir -p "$SKILLS_DIR"
-for skill in "$source_dir"/skills/*; do
+for skill in "$staged_skills"/*; do
   name="$(basename "$skill")"
   rm -rf "$SKILLS_DIR/$name"
   cp -R "$skill" "$SKILLS_DIR/$name"
