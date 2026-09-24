@@ -976,10 +976,30 @@ def _evaluate_gate(
     def is_open(f):
         return f.get("status") in OPEN_FINDING_STATUSES
 
+    for f in findings:
+        if f.get("category") == "alignment" and is_open(f):
+            code = f.get("reason_code") or "CONTRACT_CHANGED"
+            block(
+                code,
+                "implementation",
+                f"{code}: alignment finding {f['id']} is open",
+                finding_id=f["id"],
+            )
+
     open_critical = [
-        f for f in findings if is_open(f) and f.get("severity") == "critical"
+        f
+        for f in findings
+        if is_open(f)
+        and f.get("severity") == "critical"
+        and f.get("category") != "alignment"
     ]
-    open_major = [f for f in findings if is_open(f) and f.get("severity") == "major"]
+    open_major = [
+        f
+        for f in findings
+        if is_open(f)
+        and f.get("severity") == "major"
+        and f.get("category") != "alignment"
+    ]
     for f in open_critical[critical_allowed:]:
         block(
             "FINDING_OPEN",

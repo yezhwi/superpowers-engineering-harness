@@ -294,6 +294,21 @@
         }
       }
     },
+    "convergence": {
+      "type": "object",
+      "required": ["fingerprint", "count"],
+      "properties": {
+        "fingerprint": {
+          "type": "string",
+          "minLength": 1
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false
+    },
     "review": {
       "type": "object",
       "required": ["outcome", "reason_code", "message", "finding_ids"],

@@ -30,10 +30,11 @@ harness finding resume-review FND-001
 
 | Exit | Meaning | Action |
 |---|---|---|
-| 0 | Command completed | Read `DECISION:` and then `harness status`. `CONVERGED` permits `harness transition DONE`; `CONTINUE` requires `harness resume`; `ESCALATED` ends autonomous work. |
+| 0 | Command completed | Read `DECISION:` and then `harness status`. `CONVERGED` permits `harness transition DONE`; `CONTINUE` with `DIRECTIVE: RESUME_TYPED_RECOVERY` requires `harness resume`; `ESCALATED` ends autonomous work. |
 | 1 | Invalid invocation/state | Fix reported CLI precondition. Do not edit state or blockers yourself. |
+| 2 | Invalid Harness data | Stop; report invalid input. Gate does not write task on validation error. |
 
-`harness gate` persists `gate.blocked_by` and task state itself. Never copy blockers or transition Gate states manually.
+`harness gate` persists `gate.blocked_by` and task state itself. Never copy blockers or transition Gate states manually. Guard `POLICY: USER_AUTHORITY_REQUIRED` / `DIRECTIVE: HALT_AND_WAIT` is not Gate `DECISION:`; stop and request user decision without calling `harness resume` or advancing task.
 
 ## Hard Boundaries (不得违反)
 

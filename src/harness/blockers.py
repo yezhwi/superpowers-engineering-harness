@@ -1,13 +1,31 @@
 """Typed Gate blockers and deterministic recovery selection."""
 
-from dataclasses import asdict, dataclass
+import hashlib
+import json
 import re
+from collections.abc import Sequence
+from dataclasses import asdict, dataclass
 from typing import Literal
-
 
 BlockerCategory = Literal[
     "verification", "implementation", "defect", "harness", "convergence"
 ]
+
+
+USER_AUTHORITY_BLOCKER_CODES = frozenset(
+    {
+        "CONTRACT_CHANGED",
+        "SCOPE_DRIFT_API",
+        "SCOPE_DRIFT_PERMISSION",
+        "SCOPE_DRIFT_PERSISTENCE",
+        "DECISION_UNRESOLVED",
+    }
+)
+
+
+def is_user_authority_blocker(code: str) -> bool:
+    """Return True when autonomous recovery requires user authority."""
+    return code in USER_AUTHORITY_BLOCKER_CODES or code.startswith("SCOPE_DRIFT_")
 
 
 @dataclass(frozen=True)
@@ -47,10 +65,11 @@ RECOVERY_POLICY = {
     "DIAGNOSABILITY_REVIEW_STALE": "VERIFYING",
     "FINDING_OPEN": "REPRODUCING",
     "IMPLEMENTATION_INCOMPLETE": "IMPLEMENTING",
-    "CONTRACT_CHANGED": "SPECIFYING",
-    "SCOPE_DRIFT_API": "SPECIFYING",
-    "SCOPE_DRIFT_PERMISSION": "SPECIFYING",
-    "SCOPE_DRIFT_PERSISTENCE": "SPECIFYING",
+    "CONTRACT_CHANGED": "ESCALATED",
+    "SCOPE_DRIFT_API": "ESCALATED",
+    "SCOPE_DRIFT_PERMISSION": "ESCALATED",
+    "SCOPE_DRIFT_PERSISTENCE": "ESCALATED",
+    "DECISION_UNRESOLVED": "ESCALATED",
     "TEST_PLAN_INCOMPLETE": "IMPLEMENTING",
     "TEST_BINDING_MISSING": "IMPLEMENTING",
     "TEST_EVIDENCE_MISSING": "VERIFYING",
@@ -110,5 +129,53 @@ def select_recovery(blockers: list[GateBlocker]) -> str | None:
     """Return highest-priority permitted recovery target, never a guess."""
     if not blockers:
         return None
+    if any(is_user_authority_blocker(item.code) for item in blockers):
+        return None  # User decisions belong to the Guard or Gate, never resume.
     blocker = min(blockers, key=lambda item: _PRIORITY[item.category])
-    return RECOVERY_POLICY.get(blocker.code)
+    target = RECOVERY_POLICY.get(blocker.code)
+    return None if target == "ESCALATED" else target
+
+
+def compute_blocker_fingerprint(blockers: Sequence[GateBlocker | dict]) -> str:
+    """Deterministic hash of sorted blocker identity fields."""
+    records = []
+    for item in blockers:
+        if isinstance(item, GateBlocker):
+            code = item.code or ""
+            category = item.category or ""
+            source = item.source or ""
+            req_id = item.requirement_id or ""
+            inv_id = item.invariant_id or ""
+            fnd_id = item.finding_id or ""
+        elif isinstance(item, dict):
+            code = str(item.get("code") or "")
+            category = str(item.get("category") or "")
+            source = str(item.get("source") or "")
+            req_id = str(item.get("requirement_id") or "")
+            inv_id = str(item.get("invariant_id") or "")
+            fnd_id = str(item.get("finding_id") or "")
+        else:
+            continue
+        records.append(
+            {
+                "code": code,
+                "category": category,
+                "source": source,
+                "requirement_id": req_id,
+                "invariant_id": inv_id,
+                "finding_id": fnd_id,
+            }
+        )
+
+    records.sort(
+        key=lambda r: (
+            r["code"],
+            r["category"],
+            r["source"],
+            r["requirement_id"],
+            r["invariant_id"],
+            r["finding_id"],
+        )
+    )
+    encoded = json.dumps(records, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    return "sha256:" + hashlib.sha256(encoded).hexdigest()

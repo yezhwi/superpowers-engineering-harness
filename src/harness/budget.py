@@ -1,5 +1,7 @@
 """Soft budgets for Harness-observable FAST evidence actions."""
 
+from __future__ import annotations
+
 import hashlib
 
 LIMITS = {"test": 2, "build": 1, "retry": 1}

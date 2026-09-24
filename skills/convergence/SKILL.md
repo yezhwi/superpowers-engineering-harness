@@ -1,12 +1,12 @@
 ---
 name: convergence
-description: "Use when `harness gate` has printed DECISION: CONVERGED, CONTINUE, or ESCALATED and the loop must finish, resume, or stop. Applies v0.1 escalation rules with no scoring."
+description: "Use when `harness gate` has printed DECISION: CONVERGED, CONTINUE, or ESCALATED and the loop must finish, resume, or stop. Applies autonomous convergence policy rules with no scoring."
 ---
 
 # Convergence Skill
 
-Decide whether the harness loop continues. v0.1 uses fixed rules only — no
-scoring, no model confidence.
+Decide whether the harness loop continues based on `harness gate` deterministic
+evaluations. Uses fixed rules only — no scoring, no model confidence.
 
 ## Workflow Commands
 
@@ -32,27 +32,37 @@ Never `harness transition CONVERGED`. Only `harness gate` may enter CONVERGED.
 
 ### Continue
 
-All three hold:
+A printed `DECISION: CONTINUE` with `DIRECTIVE: RESUME_TYPED_RECOVERY` from `harness gate` grants autonomous permission
+to resume via typed recovery, repair within bounds, and rerun `harness gate`
+without prompting the user to continue.
 
 ```text
-Gate BLOCKED
-+ 存在明确可处理 blocker（每个 blocker 有明确的下一状态）
-+ iteration < max_iterations
-→ increment iteration, leave BLOCKED / return to appropriate state
+harness gate prints DECISION: CONTINUE (transitioned GATING -> BLOCKED, iteration incremented)
+→ run harness resume
+→ repair within bounded scope
+→ collect fresh evidence
+→ run harness gate
 ```
 
-Blocker dispatch:
+Do not ask the user for permission when `DECISION: CONTINUE` is emitted.
 
+Blocker dispatch from `harness resume`:
 - open finding → REPRODUCING (via reproduce-finding)
 - unverified requirement / red verification → IMPLEMENTING
 
 ### Escalate
 
-Any one holds → transition to ESCALATED:
+`DECISION: ESCALATED` from `harness gate`, or any human/skill escalation trigger,
+immediately stops autonomous execution. No `SPECIFYING`, `IMPLEMENTING`, or
+evidence-collection resume is permitted.
+
+Precedence is strictly fixed: `USER_AUTHORITY_REQUIRED` > `REPEATED_REGRESSION` > `NO_PROGRESS` > `MAX_ITERATIONS`.
 
 ```text
-iteration >= max_iterations                          -> detected by harness gate
-same finding VERIFIED then open again (regression)   -> detected by harness gate
+user authority required by current Gate blockers      -> detected by harness gate (USER_AUTHORITY_REQUIRED)
+same finding VERIFIED then open again (regression)   -> detected by harness gate (REPEATED_REGRESSION)
+identical blocker fingerprint repeated (no progress) -> detected by harness gate (NO_PROGRESS)
+iteration >= max_iterations                          -> detected by harness gate (MAX_ITERATIONS)
 same invariant repeatedly violated                   -> human/skill declares
 test suite unstable                                  -> human/skill declares
 architecture defect suspected                        -> human/skill declares
@@ -63,16 +73,25 @@ Output exactly one reason code:
 
 ```text
 SPEC_AMBIGUITY | ARCHITECTURE_DEFECT | REPEATED_REGRESSION |
-UNSTABLE_TEST  | REVIEW_DISAGREEMENT  | MAX_ITERATIONS
+UNSTABLE_TEST  | REVIEW_DISAGREEMENT  | MAX_ITERATIONS     |
+NO_PROGRESS    | USER_AUTHORITY_REQUIRED
 ```
 
-Code-detected codes (MAX_ITERATIONS, REPEATED_REGRESSION) are emitted by
-`harness gate`. For the others YOU must declare them explicitly to the
-user with evidence - never silently retry past a judgment-call blocker.
+Code-detected codes (`USER_AUTHORITY_REQUIRED`, `REPEATED_REGRESSION`, `NO_PROGRESS`, `MAX_ITERATIONS`) are emitted by
+`harness gate` only during GATING. Guard contract drift or unresolved decision instead emits
+`POLICY: USER_AUTHORITY_REQUIRED` / `DIRECTIVE: HALT_AND_WAIT` and preserves task state. Stop without calling `harness gate` or `harness resume`; report blocker to user. Text directive is guidance, not authenticated approval. When Gate emits `DECISION: ESCALATED`, stop and report reason + blockers.
+For the others YOU must declare them explicitly to the user with evidence — never silently retry past a judgment-call blocker.
 
 ## Hard Boundaries
 
 1. DONE only via CONVERGED → DONE, and CONVERGED only after `DECISION: CONVERGED`.
-2. ESCALATED ends the autonomous loop. Report reason + full status to user;
-   do not silently retry.
-3. Never reset `iteration` to dodge `max_iterations`.
+2. ESCALATED ends the autonomous loop immediately. Report reason + full status to user;
+   never route to `SPECIFYING`, never retry evidence collection, and do not silently continue.
+3. When `DECISION: CONTINUE` is printed, resume and rerun `harness gate` autonomously;
+   do not halt to ask user for confirmation.
+4. Autonomous operations must NEVER execute:
+   - git commit, git tag, or git push
+   - package publishing or release deployment
+   - granting Harness authorizations (`harness auth grant ...`)
+   - accepting Decision records on behalf of user
+5. Never reset `iteration` to dodge `max_iterations`.

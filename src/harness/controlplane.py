@@ -109,20 +109,40 @@ def _read_only_alignment_readiness(harness_dir: Path, task: dict, document: dict
 
 def _alignment_next_action(issues: list[alignment.AlignmentIssue]) -> str:
     codes = {issue.code for issue in issues}
-    if "OPEN_DECISION" in codes:
-        return "harness decision accept <id> --option <option>"
-    if codes & {"CONTRACT_CHANGED", "ALIGNMENT_SEAL_MISSING"}:
-        return "harness transition SPECIFYING --reason CONTRACT_CHANGED"
+    if any(blocker_module.is_user_authority_blocker(code) for code in codes) or "OPEN_DECISION" in codes:
+        return "stop and wait: USER_AUTHORITY_REQUIRED"
+    if "ALIGNMENT_SEAL_MISSING" in codes:
+        return "harness align freeze to seal alignment baseline"
     if "OPEN_LOOP" in codes:
         return "clear open_loops in alignment.yaml, then harness align check"
     return "repair alignment.yaml, then harness align check"
+
+
+def _print_authority_halt(code: str, subject: str) -> None:
+    """Tell the Agent to stop; this is not a Gate convergence decision."""
+    print("STATUS: REJECTED", file=sys.stderr)
+    print(f"BLOCKER: {code} subject={subject}", file=sys.stderr)
+    print("POLICY: USER_AUTHORITY_REQUIRED", file=sys.stderr)
+    print("DIRECTIVE: HALT_AND_WAIT", file=sys.stderr)
 
 
 def _print_alignment_blocked(issues: list[alignment.AlignmentIssue]) -> None:
     print("ALIGNMENT_BLOCKED", file=sys.stderr)
     for issue in issues:
         print(f"  {issue.subject_id or 'ALIGNMENT'}: {issue.code}", file=sys.stderr)
-    print(f"Next: {_alignment_next_action(issues)}", file=sys.stderr)
+    authority = next(
+        (
+            issue for issue in issues
+            if issue.code == "OPEN_DECISION"
+            or blocker_module.is_user_authority_blocker(issue.code)
+        ),
+        None,
+    )
+    if authority:
+        code = "DECISION_UNRESOLVED" if authority.code == "OPEN_DECISION" else authority.code
+        _print_authority_halt(code, authority.subject_id or "alignment.yaml")
+    else:
+        print(f"Next: {_alignment_next_action(issues)}", file=sys.stderr)
 
 
 def cmd_align(command: str) -> int:
@@ -170,11 +190,13 @@ def cmd_align(command: str) -> int:
         except (alignment.AlignmentError, decision.DecisionError, ValueError) as exc:
             print("Alignment: BLOCKED")
             print(str(exc), file=sys.stderr)
+            frozen_hash = document["freeze"].get("contract_hash")
+            if frozen_hash and frozen_hash != alignment.contract_hash(document):
+                _print_authority_halt("CONTRACT_CHANGED", "alignment.yaml")
             return 1
         if issues:
             print("Alignment: BLOCKED")
-            for issue in issues:
-                print(f"{issue.code}: {issue.subject_id or 'ALIGNMENT'}", file=sys.stderr)
+            _print_alignment_blocked(issues)
             return 1
         print("Alignment: READY")
         print("Freeze: FROZEN")
@@ -197,6 +219,7 @@ def cmd_align(command: str) -> int:
             stored = document["freeze"].get("contract_hash")
             if stored and stored != alignment.contract_hash(document):
                 print("CONTRACT_CHANGED", file=sys.stderr)
+                _print_authority_halt("CONTRACT_CHANGED", "alignment.yaml")
                 return 1
             print(str(exc), file=sys.stderr)
             return 1
@@ -206,25 +229,27 @@ def cmd_align(command: str) -> int:
         current = alignment.contract_hash(document)
         print(f"Frozen: {document['freeze']['contract_hash']}")
         print(f"Current: {current}")
-        if any(issue.code == "CONTRACT_CHANGED" for issue in issues):
-            print("CONTRACT_CHANGED", file=sys.stderr)
-            return 1
         if issues:
-            print("SCOPE_DRIFT", file=sys.stderr)
-            for issue in issues:
-                print(f"  {issue.subject_id or 'ALIGNMENT'}: {issue.code}", file=sys.stderr)
+            print("CONTRACT_CHANGED" if any(issue.code == "CONTRACT_CHANGED" for issue in issues) else "SCOPE_DRIFT", file=sys.stderr)
+            _print_alignment_blocked(issues)
             return 1
         return 0
+    task = load_task(harness_dir)
     try:
         issues = _read_only_alignment_readiness(
-            harness_dir, load_task(harness_dir), document
+            harness_dir, task, document
         )
     except (alignment.AlignmentError, decision.DecisionError, ValueError) as exc:
         code = str(exc)
-        label = "CONTRACT_CHANGED" if code == "CONTRACT_CHANGED" else "ALIGNMENT_FREEZE_INVALID"
+        frozen_hash = document["freeze"].get("contract_hash")
+        changed = bool(frozen_hash and frozen_hash != alignment.contract_hash(document))
+        label = "CONTRACT_CHANGED" if changed or code == "CONTRACT_CHANGED" else "ALIGNMENT_FREEZE_INVALID"
         print("ALIGNMENT_BLOCKED", file=sys.stderr)
         print(f"  {label}: {exc}", file=sys.stderr)
-        print("Next: repair alignment.yaml, then harness align check", file=sys.stderr)
+        if label == "CONTRACT_CHANGED":
+            _print_authority_halt(label, "alignment.yaml")
+        else:
+            print("Next: repair alignment.yaml, then harness align check", file=sys.stderr)
         return 1
     if issues:
         _print_alignment_blocked(issues)
@@ -359,33 +384,6 @@ def cmd_interface(args) -> int:
     return 0
 
 
-def _persist_alignment_blocker(
-    harness_dir: Path, task: dict, *, code: str, message: str, finding_id: str
-) -> None:
-    """Record the routing blocker next to the alignment finding."""
-    gate = task.setdefault("gate", {})
-    blocked = gate.setdefault("blocked_by", [])
-    if any(
-        isinstance(item, dict)
-        and item.get("code") == code
-        and item.get("finding_id") == finding_id
-        for item in blocked
-    ):
-        return
-    blocked.append(
-        blocker_module.blocker_document(
-            blocker_module.GateBlocker(
-                code,
-                "implementation",
-                message,
-                finding_id=finding_id,
-                recover_to="SPECIFYING",
-            )
-        )
-    )
-    save_task(harness_dir, task)
-
-
 def _record_contract_change(
     harness_dir: Path, task: dict, document: dict, *, reason_code: str, boundary_ref: str
 ) -> None:
@@ -414,13 +412,6 @@ def _record_contract_change(
         path = directory / f"{open_finding['id']}.yaml"
         quality_gate.validate_schema(open_finding, "alignment-finding.schema.json", path)
         transaction.atomic_write(path, yaml.safe_dump(open_finding, sort_keys=False).encode())
-        _persist_alignment_blocker(
-            harness_dir,
-            task,
-            code=reason_code,
-            message=f"{reason_code} {boundary_ref}",
-            finding_id=open_finding["id"],
-        )
         return
     existing_ids = [int(path.stem.removeprefix("FND-")) for path in paths]
     finding = {
@@ -441,13 +432,6 @@ def _record_contract_change(
     )
     transaction.atomic_write(
         directory / f"{finding['id']}.yaml", yaml.safe_dump(finding, sort_keys=False).encode()
-    )
-    _persist_alignment_blocker(
-        harness_dir,
-        task,
-        code=reason_code,
-        message=f"{reason_code} {boundary_ref}",
-        finding_id=finding["id"],
     )
 
 
@@ -505,6 +489,7 @@ def cmd_transition(target: str, *, reason: str | None = None) -> int:
                     "CONTRACT_CHANGED" if drift[0].code == "CONTRACT_CHANGED" else "SCOPE_DRIFT",
                     file=sys.stderr,
                 )
+                _print_authority_halt(drift[0].code, drift[0].subject_id or "alignment.yaml")
                 return 1
         except alignment.AlignmentError:
             try:
@@ -514,9 +499,10 @@ def cmd_transition(target: str, *, reason: str | None = None) -> int:
                         harness_dir, task, document,
                         reason_code="CONTRACT_CHANGED", boundary_ref="alignment.yaml",
                     )
-            except alignment.AlignmentError:
+            except (alignment.AlignmentError, KeyError):
                 pass
             print("CONTRACT_CHANGED", file=sys.stderr)
+            _print_authority_halt("CONTRACT_CHANGED", "alignment.yaml")
             return 1
         except ValueError as exc:
             print(str(exc), file=sys.stderr)
@@ -538,6 +524,7 @@ def cmd_transition(target: str, *, reason: str | None = None) -> int:
         ]
         if proposed:
             print("OPEN_DECISION", file=sys.stderr)
+            _print_authority_halt("DECISION_UNRESOLVED", proposed[0]["id"])
             return 1
         alignment_path = harness_dir / "alignment.yaml"
         if not source_access.exists(alignment_path):
@@ -1289,15 +1276,21 @@ def cmd_finding_show(finding_id: str) -> int:
     return 1
 
 
-def _cmd_gate_convergence() -> int:
-    """Deterministic convergence decision (convergence skill v0.1 rules).
+def _load_convergence_metadata(task: dict) -> tuple[str | None, int]:
+    meta = task.get("convergence")
+    if meta is None:
+        return None, 0
+    if not isinstance(meta, dict):
+        raise HarnessStateError("CONVERGENCE_METADATA_INVALID")
+    fp = meta.get("fingerprint")
+    count = meta.get("count")
+    if not isinstance(fp, str) or not fp or not isinstance(count, int) or count < 1:
+        raise HarnessStateError("CONVERGENCE_METADATA_INVALID")
+    return fp, count
 
-    PASS     (Gate status PASS)     -> GATING  -> CONVERGED
-    ESCALATE (blocked, no budget)   -> via BLOCKED -> ESCALATED,
-                                        reason MAX_ITERATIONS
-    CONTINUE (blocked, budget left) -> GATING  -> BLOCKED, iteration += 1
-    Non-GATING state or invalid harness -> exit 1.
-    """
+
+def _cmd_gate_convergence() -> int:
+    """Deterministic convergence decision per autonomous convergence policy."""
     harness_dir = Path(".harness")
     task = load_task(harness_dir)
     current = task.get("state")
@@ -1315,50 +1308,106 @@ def _cmd_gate_convergence() -> int:
         return 2
 
     status, blockers = assessment.status, list(assessment.blockers)
-    quality_gate.write_back(harness_dir, assessment)
-    task = load_task(harness_dir)
-    blocker_documents = [
-        blocker_module.blocker_document(blocker) for blocker in blockers
-    ]
+    try:
+        prev_fp, prev_count = _load_convergence_metadata(task)
+        reopened = None
+        if status != "PASS":
+            reopened = next(
+                (
+                    f.get("id")
+                    for f in _findings(harness_dir)
+                    if f.get("verified_at")
+                    and f.get("status") in {
+                        "PROPOSED", "REPRODUCING", "CONFIRMED", "FIXING", "FIXED"
+                    }
+                ),
+                None,
+            )
+    except HarnessStateError as exc:
+        print(f"INVALID_HARNESS_STATE: {exc}", file=sys.stderr)
+        return 2
+    blocker_documents = [blocker_module.blocker_document(b) for b in blockers]
+    task.setdefault("gate", {}).update(
+        {
+            "status": assessment.status,
+            "blocked_by": blocker_documents,
+            "quality": assessment.quality,
+            "release_readiness": assessment.release_readiness,
+        }
+    )
+    task.setdefault("git", {})["head"] = quality_gate.git_head()
 
     if status == "PASS":
         state_machine.require_legal("GATING", "CONVERGED")
         task["state"] = "CONVERGED"
         task.setdefault("gate", {}).update({"status": "PASS", "blocked_by": []})
+        # PASS deletes convergence tracking; zero count is not persisted.
+        task.pop("convergence", None)
         save_task(harness_dir, task)
         print("DECISION: CONVERGED (gate PASS)")
         return 0
 
-    # Deterministic escalation beyond max_iterations: a finding that was
-    # already VERIFIED (has verified_at) but is open again means the bug
-    # regressed - fixing it again is unlikely to converge.
-    def _reopened_regression() -> str | None:
-        for f in _findings(harness_dir):
-            if f.get("verified_at") and f.get("status") in (
-                "PROPOSED",
-                "REPRODUCING",
-                "CONFIRMED",
-                "FIXING",
-                "FIXED",
-            ):
-                return f.get("id")
-        return None
+    current_fp = blocker_module.compute_blocker_fingerprint(blockers)
+    if prev_fp is None:
+        new_fp = current_fp
+        new_count = 1
+    elif prev_fp == current_fp:
+        new_fp = current_fp
+        new_count = prev_count + 1
+    else:
+        new_fp = current_fp
+        new_count = 1
 
     iteration = int(task.get("iteration", 0))
     max_iterations = int(task.get("max_iterations", 5))
-    reopened = _reopened_regression()
+
+    if any(blocker_module.is_user_authority_blocker(b.code) for b in blockers):
+        state_machine.require_legal("GATING", "BLOCKED")
+        state_machine.require_legal("BLOCKED", "ESCALATED")
+        task["state"] = "ESCALATED"
+        task["iteration"] = iteration + 1
+        task["convergence"] = {"fingerprint": new_fp, "count": new_count}
+        task.setdefault("gate", {}).update(
+            {"status": "BLOCKED", "blocked_by": blocker_documents}
+        )
+        save_task(harness_dir, task)
+        print("DECISION: ESCALATED")
+        print("REASON: USER_AUTHORITY_REQUIRED")
+        for blocker in blockers:
+            print(f"  blocker: {blocker.message}")
+        return 0
 
     if reopened:
         state_machine.require_legal("GATING", "BLOCKED")
         state_machine.require_legal("BLOCKED", "ESCALATED")
         task["state"] = "ESCALATED"
         task["iteration"] = iteration + 1
+        task["convergence"] = {"fingerprint": new_fp, "count": new_count}
         task.setdefault("gate", {}).update(
             {"status": "BLOCKED", "blocked_by": blocker_documents}
         )
         save_task(harness_dir, task)
         print("DECISION: ESCALATED")
         print(f"REASON: REPEATED_REGRESSION ({reopened} was VERIFIED, now open again)")
+        for blocker in blockers:
+            print(f"  blocker: {blocker.message}")
+        return 0
+
+    if new_count >= 2:
+        state_machine.require_legal("GATING", "BLOCKED")
+        state_machine.require_legal("BLOCKED", "ESCALATED")
+        task["state"] = "ESCALATED"
+        task["iteration"] = iteration + 1
+        task["convergence"] = {"fingerprint": new_fp, "count": new_count}
+        task.setdefault("gate", {}).update(
+            {"status": "BLOCKED", "blocked_by": blocker_documents}
+        )
+        save_task(harness_dir, task)
+        print("DECISION: ESCALATED")
+        print("REASON: NO_PROGRESS")
+        print(f"  prior fingerprint: {prev_fp}")
+        for blocker in blockers:
+            print(f"  blocker: {blocker.message}")
         return 0
 
     if iteration >= max_iterations:
@@ -1366,6 +1415,7 @@ def _cmd_gate_convergence() -> int:
         state_machine.require_legal("BLOCKED", "ESCALATED")
         task["state"] = "ESCALATED"
         task["iteration"] = iteration + 1
+        task["convergence"] = {"fingerprint": new_fp, "count": new_count}
         task.setdefault("gate", {}).update(
             {"status": "BLOCKED", "blocked_by": blocker_documents}
         )
@@ -1379,6 +1429,7 @@ def _cmd_gate_convergence() -> int:
     state_machine.require_legal("GATING", "BLOCKED")
     task["state"] = "BLOCKED"
     task["iteration"] = iteration + 1
+    task["convergence"] = {"fingerprint": new_fp, "count": new_count}
     task.setdefault("gate", {}).update(
         {"status": "BLOCKED", "blocked_by": blocker_documents}
     )
@@ -1386,6 +1437,7 @@ def _cmd_gate_convergence() -> int:
     print(f"DECISION: CONTINUE (iteration {task['iteration']} / {max_iterations})")
     for blocker in blockers:
         print(f"  blocker: {blocker.message}")
+    print("DIRECTIVE: RESUME_TYPED_RECOVERY")
     return 0
 
 

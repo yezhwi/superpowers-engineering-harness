@@ -143,6 +143,14 @@ def test_converged_to_done_is_the_only_path_to_done():
     assert entries_into_done == ["CONVERGED"]
 
 
+def test_implementing_cannot_arbitrarily_escalate_or_block():
+    assert is_legal("IMPLEMENTING", "BLOCKED") is False
+    assert is_legal("IMPLEMENTING", "ESCALATED") is False
+    entries_into_escalated = [c for (c, t) in TRANSITIONS if t == "ESCALATED"]
+    assert entries_into_escalated == ["BLOCKED"]
+
+
+
 # ---------------------------------------------------------------------------
 # 4. Unknown states and self-transitions rejected
 # ---------------------------------------------------------------------------

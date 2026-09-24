@@ -111,6 +111,8 @@ def test_implementing_task_with_changed_frozen_alignment_cannot_verify(tmp_path)
 
     assert result.returncode == 1
     assert "CONTRACT_CHANGED" in result.stderr
+    assert "POLICY: USER_AUTHORITY_REQUIRED" in result.stderr
+    assert "DIRECTIVE: HALT_AND_WAIT" in result.stderr
     assert yaml.safe_load((h / "current-task.yaml").read_text())["state"] == "IMPLEMENTING"
     findings = list((h / "findings").glob("FND-*.yaml"))
     assert len(findings) == 1
@@ -118,9 +120,16 @@ def test_implementing_task_with_changed_frozen_alignment_cannot_verify(tmp_path)
     assert finding["category"] == "alignment"
     assert finding["type"] == "contract_changed"
     assert finding["expected_hash"] != finding["actual_hash"]
-    blocked = yaml.safe_load((h / "current-task.yaml").read_text())["gate"]["blocked_by"]
-    assert blocked[0]["code"] == "CONTRACT_CHANGED"
-    assert blocked[0]["finding_id"] == finding["id"]
+    # Guard Findings are audit records, never cached Gate results.
+    assert not yaml.safe_load((h / "current-task.yaml").read_text())["gate"]["blocked_by"]
+    task_before_inspection = (h / "current-task.yaml").read_bytes()
+    for command in ("check", "status", "diff"):
+        inspection = run_cli(tmp_path, "align", command)
+        assert inspection.returncode == 1
+        assert "POLICY: USER_AUTHORITY_REQUIRED" in inspection.stderr
+        assert "DIRECTIVE: HALT_AND_WAIT" in inspection.stderr
+        assert "DECISION:" not in inspection.stdout
+        assert (h / "current-task.yaml").read_bytes() == task_before_inspection
     alignment["goal"]["summary"] = "changed again"
     (h / "alignment.yaml").write_text(yaml.safe_dump(alignment))
     from harness.alignment import contract_hash as hash_contract
