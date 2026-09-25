@@ -70,7 +70,7 @@ def _main(argv=None) -> int:
     p_trans.add_argument("--reason")
     p_align = sub.add_parser("align", help="bootstrap and inspect alignment contracts")
     align_sub = p_align.add_subparsers(dest="align_command", required=True)
-    for command in ("init", "check", "status", "diff"):
+    for command in ("init", "freeze", "check", "status", "diff"):
         align_sub.add_parser(command)
     p_check = sub.add_parser("check", help="run Harness checks")
     check_sub = p_check.add_subparsers(dest="check_command")

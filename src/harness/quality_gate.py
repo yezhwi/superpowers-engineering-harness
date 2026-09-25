@@ -61,7 +61,8 @@ def _boundary_for_drift(subject_id: str | None) -> str:
 
 
 def _reproduced_alignment_finding(
-    findings: list, task_id: str, code: str, boundary: str
+    findings: list, task_id: str, code: str, boundary: str,
+    expected_hash: str, actual_hash: str, direction: tuple[bool, bool] | None,
 ) -> str | None:
     """Attach an audit id only when this assessment reproduces that record."""
     for item in findings:
@@ -71,13 +72,28 @@ def _reproduced_alignment_finding(
             continue
         if item.get("reason_code") != code or item.get("boundary_ref") != boundary:
             continue
+        if item.get("expected_hash") != expected_hash or item.get("actual_hash") != actual_hash:
+            continue
+        if direction is not None and (
+            item.get("expected_boundary_present"), item.get("actual_boundary_present")
+        ) != direction:
+            continue
         return item.get("id")
     return None
 
 
-def _block_live_drift(findings: list, task_id: str, block, code: str, boundary: str) -> None:
+def _block_live_drift(
+    findings: list, task_id: str, block, code: str, boundary: str,
+    expected_hash: str, actual_hash: str,
+    direction: tuple[bool, bool] | None = None,
+) -> None:
     identity = {}
-    finding_id = _reproduced_alignment_finding(findings, task_id, code, boundary)
+    # A seal-only mismatch has no hash evidence for matching the old event.
+    finding_id = None if code == "CONTRACT_CHANGED" and expected_hash == actual_hash else (
+        _reproduced_alignment_finding(
+            findings, task_id, code, boundary, expected_hash, actual_hash, direction
+        )
+    )
     if finding_id:
         identity["finding_id"] = finding_id
     block(code, "implementation", f"{code}: sealed alignment drift", **identity)
@@ -110,7 +126,10 @@ def _append_live_alignment_drift(harness_dir: Path, task: dict, findings: list, 
             raise AlignmentRepairRequired("ALIGNMENT_FREEZE_INVALID")
         return
     if stored != alignment.contract_hash(document):
-        _block_live_drift(findings, task["task"]["id"], block, "CONTRACT_CHANGED", "alignment.yaml")
+        _block_live_drift(
+            findings, task["task"]["id"], block, "CONTRACT_CHANGED", "alignment.yaml",
+            stored, alignment.contract_hash(document),
+        )
         return
     try:
         alignment.validate_freeze(document)
@@ -141,10 +160,25 @@ def _append_live_alignment_drift(harness_dir: Path, task: dict, findings: list, 
         raise InvalidHarnessState(f"ALIGNMENT_FREEZE_INVALID: {exc}") from exc
     except (ImpactContractError, AttributeError, TypeError) as exc:
         raise InvalidHarnessState(f"IMPACT_CONTRACT_INVALID: {exc}") from exc
+    kinds = {"SCOPE_DRIFT_API": "interface", "SCOPE_DRIFT_PERMISSION": "permission", "SCOPE_DRIFT_PERSISTENCE": "persistence"}
+    try:
+        sealed_refs = (
+            yaml.safe_load(source_access.read_text(harness_dir / "alignment-freeze.yaml"))["boundary_refs"]
+            if any(issue.code in kinds for issue in issues) else {}
+        )
+        current_refs = current_boundary_refs(document, impact_document)
+    except (OSError, yaml.YAMLError, KeyError, TypeError, ImpactContractError) as exc:
+        raise InvalidHarnessState(f"ALIGNMENT_FREEZE_INVALID: {exc}") from exc
     for issue in issues:
+        kind = kinds.get(issue.code)
+        direction = (
+            (issue.subject_id in sealed_refs[kind], issue.subject_id in current_refs[kind])
+            if kind else None
+        )
         _block_live_drift(
             findings, task["task"]["id"], block, issue.code,
             _boundary_for_drift(issue.subject_id),
+            stored, alignment.contract_hash(document), direction,
         )
 
 

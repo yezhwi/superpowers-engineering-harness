@@ -56,43 +56,68 @@ def load_task(harness_dir: Path) -> dict:
     return data
 
 
-def save_task(harness_dir: Path, task: dict) -> None:
+def save_task(
+    harness_dir: Path, task: dict, *, tolerate_post_commit_telemetry: bool = False
+) -> None:
     """Persist atomically: write temp file then rename."""
     import yaml
 
     from .telemetry_lock import telemetry_lock
 
-    with telemetry_lock(harness_dir):
-        path = harness_dir / "current-task.yaml"
-        tmp = path.with_suffix(".yaml.tmp")
-        tmp.write_text(
-            yaml.safe_dump(task, sort_keys=False, allow_unicode=True), encoding="utf-8"
-        )
-        tmp.replace(path)
-        telemetry.update_telemetry(harness_dir, task)
+    committed = False
+    try:
+        with telemetry_lock(harness_dir):
+            path = harness_dir / "current-task.yaml"
+            tmp = path.with_suffix(".yaml.tmp")
+            tmp.write_text(
+                yaml.safe_dump(task, sort_keys=False, allow_unicode=True), encoding="utf-8"
+            )
+            tmp.replace(path)
+            committed = True
+            try:
+                telemetry.update_telemetry(harness_dir, task)
+            except (OSError, telemetry.TelemetryError):
+                if not tolerate_post_commit_telemetry:
+                    raise
+                print("TELEMETRY_UPDATE_FAILED: task committed", file=sys.stderr)
+    except OSError:
+        if not committed or not tolerate_post_commit_telemetry:
+            raise
+        # Unlock/close can fail after Gate task commit too.
+        print("TELEMETRY_UPDATE_FAILED: task committed", file=sys.stderr)
 
 
 def cmd_status(harness_dir: Path = Path(".harness")) -> int:
     return harness_status.main(["--harness-dir", str(harness_dir)])
 
 
-def _read_only_alignment_readiness(harness_dir: Path, task: dict, document: dict):
-    """Return closure/seal diagnostics without bootstrap or artifact mutation."""
+def _alignment_completeness_issues(
+    harness_dir: Path, task: dict, document: dict
+) -> list[alignment.AlignmentIssue]:
+    """Return closure diagnostics from canonical task, requirement, and Decision facts."""
     requirements = yaml.safe_load(source_access.read_text(harness_dir / "requirements.yaml"))
     decisions = decision.load_decisions(harness_dir)
     proposed = {
-        record["id"] for record in decisions
+        record["id"]
+        for record in decisions
         if record["task_id"] == task["task"]["id"] and record["status"] == "PROPOSED"
     }
-    issues = alignment.check_completeness(
+    return alignment.check_completeness(
         document,
         requirement_ids={record["id"] for record in requirements["requirements"]},
         critical_requirement_ids={
-            record["id"] for record in requirements["requirements"]
+            record["id"]
+            for record in requirements["requirements"]
             if record["priority"] == "must"
         },
         proposed_decision_ids=proposed,
     )
+
+
+def _read_only_alignment_readiness(harness_dir: Path, task: dict, document: dict):
+    """Return closure/seal diagnostics without bootstrap or artifact mutation."""
+    issues = _alignment_completeness_issues(harness_dir, task, document)
+    decisions = decision.load_decisions(harness_dir)
     alignment.validate_freeze(document)
     sealed = harness_dir / "alignment-freeze.yaml"
     if not source_access.exists(sealed):
@@ -134,6 +159,14 @@ def _print_preflight_failure(blockers) -> None:
     print("GATE_PREFLIGHT_MISSING_EVIDENCE", file=sys.stderr)
     for blocker in blockers:
         print(f"- {blocker.code}: {blocker.message}", file=sys.stderr)
+
+
+def _print_alignment_freeze_blocked(issues: list[alignment.AlignmentIssue]) -> None:
+    """Print freeze rejection diagnostics without Guard directives."""
+    print("ALIGNMENT_BLOCKED", file=sys.stderr)
+    for issue in issues:
+        print(f"  {issue.subject_id or 'ALIGNMENT'}: {issue.code}", file=sys.stderr)
+    print(f"Next: {_alignment_next_action(issues)}", file=sys.stderr)
 
 
 def _print_alignment_blocked(issues: list[alignment.AlignmentIssue]) -> None:
@@ -187,6 +220,43 @@ def cmd_align(command: str) -> int:
     except alignment.AlignmentError as exc:
         print(str(exc), file=sys.stderr)
         return 1
+    if command == "freeze":
+        sealed_path = harness_dir / "alignment-freeze.yaml"
+        if document["freeze"]["frozen"] or source_access.exists(sealed_path):
+            print("ALIGNMENT_ALREADY_FROZEN", file=sys.stderr)
+            return 1
+        try:
+            task = load_task(harness_dir)
+            decisions = decision.load_decisions(harness_dir)
+            issues = _alignment_completeness_issues(harness_dir, task, document)
+            if issues:
+                _print_alignment_freeze_blocked(issues)
+                return 1
+            impact = yaml.safe_load(source_access.read_text(harness_dir / "impact.yaml"))
+            document["freeze"] = {
+                "frozen": True,
+                "frozen_at": datetime.datetime.now(datetime.UTC).isoformat(),
+                "contract_hash": None,
+            }
+            document["freeze"]["contract_hash"] = alignment.contract_hash(document)
+            boundary_refs = current_boundary_refs(document, impact.get("impact", {}))
+            record = alignment.freeze_record(
+                document, decisions=decisions, boundary_refs=boundary_refs
+            )
+            quality_gate.validate_schema(record, "alignment-freeze.schema.json", sealed_path)
+            staged = transaction.stage(harness_dir, [
+                transaction.StagedArtifact("alignment.yaml", yaml.safe_dump(document, sort_keys=False).encode()),
+                transaction.StagedArtifact("alignment-freeze.yaml", yaml.safe_dump(record, sort_keys=False).encode()),
+            ])
+            transaction.publish(harness_dir, staged, replace_paths=frozenset({"alignment.yaml"}))
+        except (alignment.AlignmentError, decision.DecisionError, ValueError, KeyError, TypeError) as exc:
+            print(f"ALIGNMENT_FREEZE_INVALID: {exc}", file=sys.stderr)
+            return 2
+        except OSError as exc:
+            print(f"ALIGNMENT_FREEZE_FAILED: {exc}", file=sys.stderr)
+            return 2
+        print("ALIGNMENT_FROZEN")
+        return 0
     if command == "status":
         if not document["freeze"]["frozen"]:
             print("Alignment: BLOCKED")
@@ -400,6 +470,16 @@ def _record_contract_change(
     existing = [yaml.safe_load(source_access.read_text(path)) for path in paths]
     expected_hash = document["freeze"]["contract_hash"]
     actual_hash = alignment.contract_hash(document)
+    kinds = {"SCOPE_DRIFT_API": "interface", "SCOPE_DRIFT_PERMISSION": "permission", "SCOPE_DRIFT_PERSISTENCE": "persistence"}
+    kind = kinds.get(reason_code)
+    direction = None
+    if kind:
+        sealed = yaml.safe_load(source_access.read_text(harness_dir / "alignment-freeze.yaml"))
+        impact = yaml.safe_load(source_access.read_text(harness_dir / "impact.yaml"))
+        direction = (
+            boundary_ref in sealed["boundary_refs"][kind],
+            boundary_ref in current_boundary_refs(document, impact.get("impact", {}))[kind],
+        )
     open_finding = next(
         (
             item
@@ -410,15 +490,15 @@ def _record_contract_change(
             and item.get("task_id") == document["task_id"]
             and item.get("reason_code") == reason_code
             and item.get("boundary_ref") == boundary_ref
+            and item.get("expected_hash") == expected_hash
+            and item.get("actual_hash") == actual_hash
+            and (direction is None or (
+                item.get("expected_boundary_present"), item.get("actual_boundary_present")
+            ) == direction)
         ),
         None,
     )
     if open_finding is not None:
-        open_finding["expected_hash"] = expected_hash
-        open_finding["actual_hash"] = actual_hash
-        path = directory / f"{open_finding['id']}.yaml"
-        quality_gate.validate_schema(open_finding, "alignment-finding.schema.json", path)
-        transaction.atomic_write(path, yaml.safe_dump(open_finding, sort_keys=False).encode())
         return
     existing_ids = [int(path.stem.removeprefix("FND-")) for path in paths]
     finding = {
@@ -434,6 +514,8 @@ def _record_contract_change(
         "reason_code": reason_code,
         "boundary_ref": boundary_ref,
     }
+    if direction is not None:
+        finding["expected_boundary_present"], finding["actual_boundary_present"] = direction
     quality_gate.validate_schema(
         finding, "alignment-finding.schema.json", directory / f"{finding['id']}.yaml"
     )
@@ -1276,7 +1358,13 @@ def cmd_gate_preflight() -> int:
 
 def cmd_gate() -> int:
     """Evaluate Gate once and apply its deterministic convergence decision."""
-    return _cmd_gate_convergence()
+    try:
+        return _cmd_gate_convergence()
+    except OSError:
+        # A failed task replacement never emits a decision. Post-commit
+        # telemetry failures are handled separately by save_task.
+        print("GATE_IO_FAILED: no decision emitted; inspect persisted task", file=sys.stderr)
+        return 2
 
 
 def _findings(harness_dir: Path) -> list:
@@ -1394,7 +1482,7 @@ def _cmd_gate_convergence() -> int:
         task.setdefault("gate", {}).update({"status": "PASS", "blocked_by": []})
         # PASS deletes convergence tracking; zero count is not persisted.
         task.pop("convergence", None)
-        save_task(harness_dir, task)
+        save_task(harness_dir, task, tolerate_post_commit_telemetry=True)
         print("DECISION: CONVERGED (gate PASS)")
         print("DIRECTIVE: NONE")
         return 0
@@ -1422,7 +1510,7 @@ def _cmd_gate_convergence() -> int:
         task.setdefault("gate", {}).update(
             {"status": "BLOCKED", "blocked_by": blocker_documents}
         )
-        save_task(harness_dir, task)
+        save_task(harness_dir, task, tolerate_post_commit_telemetry=True)
         print("DECISION: ESCALATED")
         print("REASON: USER_AUTHORITY_REQUIRED")
         print("DIRECTIVE: NONE")
@@ -1439,7 +1527,7 @@ def _cmd_gate_convergence() -> int:
         task.setdefault("gate", {}).update(
             {"status": "BLOCKED", "blocked_by": blocker_documents}
         )
-        save_task(harness_dir, task)
+        save_task(harness_dir, task, tolerate_post_commit_telemetry=True)
         print("DECISION: ESCALATED")
         print(f"REASON: REPEATED_REGRESSION ({reopened} was VERIFIED, now open again)")
         print("DIRECTIVE: NONE")
@@ -1456,7 +1544,7 @@ def _cmd_gate_convergence() -> int:
         task.setdefault("gate", {}).update(
             {"status": "BLOCKED", "blocked_by": blocker_documents}
         )
-        save_task(harness_dir, task)
+        save_task(harness_dir, task, tolerate_post_commit_telemetry=True)
         print("DECISION: ESCALATED")
         print("REASON: NO_PROGRESS")
         print("DIRECTIVE: NONE")
@@ -1474,7 +1562,7 @@ def _cmd_gate_convergence() -> int:
         task.setdefault("gate", {}).update(
             {"status": "BLOCKED", "blocked_by": blocker_documents}
         )
-        save_task(harness_dir, task)
+        save_task(harness_dir, task, tolerate_post_commit_telemetry=True)
         print("DECISION: ESCALATED")
         print("REASON: MAX_ITERATIONS")
         print("DIRECTIVE: NONE")
@@ -1489,7 +1577,7 @@ def _cmd_gate_convergence() -> int:
     task.setdefault("gate", {}).update(
         {"status": "BLOCKED", "blocked_by": blocker_documents}
     )
-    save_task(harness_dir, task)
+    save_task(harness_dir, task, tolerate_post_commit_telemetry=True)
     print(f"DECISION: CONTINUE (iteration {task['iteration']} / {max_iterations})")
     for blocker in blockers:
         print(f"  blocker: {blocker.message}")

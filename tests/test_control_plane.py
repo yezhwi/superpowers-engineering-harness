@@ -28,6 +28,31 @@ def run_cli(cwd: Path, *args: str):
     )
 
 
+def test_alignment_completeness_helper_uses_current_task_proposed_decisions(tmp_path):
+    from test_alignment import complete_alignment
+
+    harness = make_repo(tmp_path)
+    task_path = harness / "current-task.yaml"
+    task = yaml.safe_load(task_path.read_text())
+    task["task"]["id"] = "TASK-001"
+    task_path.write_text(yaml.safe_dump(task))
+    document = complete_alignment()
+    document["task_id"] = "TASK-001"
+    from test_decision import proposal
+
+    controlplane.decision.propose(harness, proposal())
+
+    issues = controlplane._alignment_completeness_issues(
+        harness,
+        yaml.safe_load((harness / "current-task.yaml").read_text()),
+        document,
+    )
+
+    assert [(issue.code, issue.subject_id) for issue in issues] == [
+        ("OPEN_DECISION", "DEC-001")
+    ]
+
+
 def test_alignment_finding_schema_accepts_closed_lifecycle_status(tmp_path):
     finding = {
         "id": "FND-001", "category": "alignment", "task_id": "TASK-001",
@@ -136,10 +161,10 @@ def test_implementing_task_with_changed_frozen_alignment_cannot_verify(tmp_path)
     repeat = run_cli(tmp_path, "transition", "VERIFYING")
     assert repeat.returncode == 1
     findings = list((h / "findings").glob("FND-*.yaml"))
-    assert len(findings) == 1
-    updated = yaml.safe_load(findings[0].read_text())
-    assert updated["actual_hash"] == hash_contract(alignment)
-    assert updated["id"] == finding["id"]
+    assert len(findings) == 2
+    records = {record["id"]: record for record in (yaml.safe_load(path.read_text()) for path in findings)}
+    assert records[finding["id"]] == finding
+    assert next(record for record in records.values() if record["id"] != finding["id"])["actual_hash"] == hash_contract(alignment)
 
 
 def test_impact_add_contract_writes_typed_record_and_protects_ref(tmp_path, monkeypatch):

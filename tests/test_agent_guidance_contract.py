@@ -1,13 +1,15 @@
 """Counterexamples for Guard/Gate separation and convergence write safety."""
 
 import ast
+import importlib
 import inspect
+from contextlib import contextmanager
 
 import pytest
 import yaml
 from test_autonomous_convergence import _seal_alignment, make_repo, run_cli
 
-from harness import controlplane
+from harness import alignment, controlplane
 from harness.blockers import GateBlocker, select_recovery
 
 
@@ -119,6 +121,72 @@ def test_invalid_convergence_metadata_rejects_gate_without_writes(tmp_path):
     assert "DECISION:" not in result.stdout
 
 
+def test_non_gate_task_save_propagates_telemetry_failure(tmp_path, monkeypatch):
+    harness_dir = make_repo(tmp_path, state="IMPLEMENTING")
+    task = yaml.safe_load((harness_dir / "current-task.yaml").read_text())
+
+    def fail_telemetry(*_args):
+        raise OSError("telemetry disk full")
+
+    monkeypatch.setattr(controlplane.telemetry, "update_telemetry", fail_telemetry)
+    with pytest.raises(OSError, match="telemetry disk full"):
+        controlplane.save_task(harness_dir, task)
+
+
+def test_gate_telemetry_failure_after_commit_reports_decision(tmp_path, monkeypatch, capsys):
+    harness_dir = make_repo(tmp_path, state="GATING")
+    monkeypatch.chdir(tmp_path)
+
+    def fail_telemetry(*_args):
+        raise OSError("telemetry disk full")
+
+    monkeypatch.setattr(controlplane.telemetry, "update_telemetry", fail_telemetry)
+    result = controlplane.cmd_gate()
+    captured = capsys.readouterr()
+
+    assert result == 0
+    assert "DECISION: CONVERGED" in captured.out
+    assert "TELEMETRY_UPDATE_FAILED" in captured.err
+    assert yaml.safe_load((harness_dir / "current-task.yaml").read_text())["state"] == "CONVERGED"
+
+
+def test_lock_release_failure_after_commit_keeps_gate_decision(tmp_path, monkeypatch, capsys):
+    harness_dir = make_repo(tmp_path, state="GATING")
+    monkeypatch.chdir(tmp_path)
+
+    @contextmanager
+    def failed_lock(_harness_dir):
+        yield
+        raise OSError("unlock failed")
+
+    monkeypatch.setattr(importlib.import_module("harness.telemetry_lock"), "telemetry_lock", failed_lock)
+    assert controlplane.cmd_gate() == 0
+    captured = capsys.readouterr()
+    assert "DECISION: CONVERGED" in captured.out
+    assert "TELEMETRY_UPDATE_FAILED" in captured.err
+    assert yaml.safe_load((harness_dir / "current-task.yaml").read_text())["state"] == "CONVERGED"
+
+
+def test_task_rename_failure_does_not_emit_gate_decision(tmp_path, monkeypatch, capsys):
+    harness_dir = make_repo(tmp_path, state="GATING")
+    task_path = harness_dir / "current-task.yaml"
+    before = task_path.read_bytes()
+    monkeypatch.chdir(tmp_path)
+    original_replace = controlplane.Path.replace
+
+    def fail_task_replace(path, target):
+        if path.name == "current-task.yaml.tmp":
+            raise OSError("task disk full")
+        return original_replace(path, target)
+
+    monkeypatch.setattr(controlplane.Path, "replace", fail_task_replace)
+    assert controlplane.cmd_gate() == 2
+    captured = capsys.readouterr()
+    assert "GATE_IO_FAILED" in captured.err
+    assert "DECISION:" not in captured.out
+    assert task_path.read_bytes() == before
+
+
 def test_continue_directive_only_on_continue(tmp_path):
     harness_dir = make_repo(tmp_path, state="GATING")
     (harness_dir / "evidence" / "unit-test.json").unlink()
@@ -127,7 +195,31 @@ def test_continue_directive_only_on_continue(tmp_path):
 
     assert result.returncode == 0
     assert "DECISION: CONTINUE" in result.stdout
+    assert result.stdout.count("DIRECTIVE:") == 1
     assert "DIRECTIVE: RESUME_TYPED_RECOVERY" in result.stdout
+
+
+def test_converged_directive_is_none(tmp_path):
+    make_repo(tmp_path, state="GATING")
+    result = run_cli(tmp_path, "gate")
+    assert result.returncode == 0
+    assert "DECISION: CONVERGED" in result.stdout
+    assert result.stdout.count("DIRECTIVE:") == 1
+    assert "DIRECTIVE: NONE" in result.stdout
+
+
+def test_escalated_directive_is_none(tmp_path):
+    harness_dir = make_repo(tmp_path, state="GATING")
+    task_path = harness_dir / "current-task.yaml"
+    task = yaml.safe_load(task_path.read_text())
+    task["iteration"] = task["max_iterations"]
+    task_path.write_text(yaml.safe_dump(task))
+    (harness_dir / "evidence" / "unit-test.json").unlink()
+    result = run_cli(tmp_path, "gate")
+    assert result.returncode == 0
+    assert "DECISION: ESCALATED" in result.stdout
+    assert result.stdout.count("DIRECTIVE:") == 1
+    assert "DIRECTIVE: NONE" in result.stdout
 
 
 def _standard_task(harness_dir):
@@ -210,8 +302,8 @@ def test_live_drift_attaches_matching_current_task_audit_finding(tmp_path):
             "id": "FND-009", "category": "alignment", "task_id": "TASK-001",
             "type": "contract_changed", "severity": "blocking", "status": "PROPOSED",
             "detected_during": "IMPLEMENTING", "reason_code": "CONTRACT_CHANGED",
-            "boundary_ref": "alignment.yaml", "expected_hash": "sha256:" + "0" * 64,
-            "actual_hash": "sha256:" + "1" * 64,
+            "boundary_ref": "alignment.yaml", "expected_hash": document["freeze"]["contract_hash"],
+            "actual_hash": alignment.contract_hash(document),
         })
     )
 
@@ -221,6 +313,142 @@ def test_live_drift_attaches_matching_current_task_audit_finding(tmp_path):
     assert "DECISION: ESCALATED" in result.stdout
     blockers = yaml.safe_load((harness_dir / "current-task.yaml").read_text())["gate"]["blocked_by"]
     assert next(b for b in blockers if b["code"] == "CONTRACT_CHANGED")["finding_id"] == "FND-009"
+
+
+def test_new_hash_drift_creates_new_audit_record_without_overwriting_old(tmp_path):
+    harness_dir = make_repo(tmp_path, state="IMPLEMENTING")
+    document = _seal_alignment(harness_dir)
+    task = yaml.safe_load((harness_dir / "current-task.yaml").read_text())
+    document["goal"]["summary"] = "first change"
+    controlplane._record_contract_change(
+        harness_dir, task, document, reason_code="CONTRACT_CHANGED", boundary_ref="alignment.yaml"
+    )
+    first = yaml.safe_load((harness_dir / "findings" / "FND-001.yaml").read_text())
+    document["goal"]["summary"] = "second change"
+    controlplane._record_contract_change(
+        harness_dir, task, document, reason_code="CONTRACT_CHANGED", boundary_ref="alignment.yaml"
+    )
+    second = yaml.safe_load((harness_dir / "findings" / "FND-002.yaml").read_text())
+    assert first["actual_hash"] != second["actual_hash"]
+    assert yaml.safe_load((harness_dir / "findings" / "FND-001.yaml").read_text()) == first
+
+
+def test_missing_seal_does_not_link_unprovable_same_hash_finding(tmp_path):
+    harness_dir = make_repo(tmp_path, state="GATING")
+    document = _seal_alignment(harness_dir)
+    (harness_dir / "alignment-freeze.yaml").unlink()
+    (harness_dir / "findings" / "FND-009.yaml").write_text(yaml.safe_dump({
+        "id": "FND-009", "category": "alignment", "task_id": "TASK-001",
+        "type": "contract_changed", "severity": "blocking", "status": "PROPOSED",
+        "detected_during": "IMPLEMENTING", "reason_code": "CONTRACT_CHANGED",
+        "boundary_ref": "alignment.yaml", "expected_hash": document["freeze"]["contract_hash"],
+        "actual_hash": document["freeze"]["contract_hash"],
+    }))
+    result = run_cli(tmp_path, "gate")
+    assert result.returncode == 0, result.stderr
+    blockers = yaml.safe_load((harness_dir / "current-task.yaml").read_text())["gate"]["blocked_by"]
+    assert next(b for b in blockers if b["code"] == "CONTRACT_CHANGED")["finding_id"] is None
+
+
+def test_live_drift_does_not_attach_stale_hash_audit_finding(tmp_path):
+    harness_dir = make_repo(tmp_path, state="GATING")
+    document = _seal_alignment(harness_dir)
+    document["goal"]["summary"] = "different change"
+    (harness_dir / "alignment.yaml").write_text(yaml.safe_dump(document))
+    (harness_dir / "findings" / "FND-009.yaml").write_text(
+        yaml.safe_dump({
+            "id": "FND-009", "category": "alignment", "task_id": "TASK-001",
+            "type": "contract_changed", "severity": "blocking", "status": "PROPOSED",
+            "detected_during": "IMPLEMENTING", "reason_code": "CONTRACT_CHANGED",
+            "boundary_ref": "alignment.yaml", "expected_hash": document["freeze"]["contract_hash"],
+            "actual_hash": "sha256:" + "1" * 64,
+        })
+    )
+    result = run_cli(tmp_path, "gate")
+    assert result.returncode == 0, result.stderr
+    blockers = yaml.safe_load((harness_dir / "current-task.yaml").read_text())["gate"]["blocked_by"]
+    assert next(b for b in blockers if b["code"] == "CONTRACT_CHANGED")["finding_id"] is None
+
+
+@pytest.mark.parametrize("record_direction, expected_id", [(False, "FND-009"), (True, None)])
+def test_scope_drift_finding_requires_matching_boundary_direction(tmp_path, record_direction, expected_id):
+    harness_dir = make_repo(tmp_path, state="GATING")
+    document = _seal_alignment(harness_dir)
+    impact_path = harness_dir / "impact.yaml"
+    impact = yaml.safe_load(impact_path.read_text())
+    impact["impact"]["contracts"] = [{"kind": "permission", "ref": "DEC-001"}]
+    impact_path.write_text(yaml.safe_dump(impact))
+    (harness_dir / "findings" / "FND-009.yaml").write_text(yaml.safe_dump({
+        "id": "FND-009", "category": "alignment", "task_id": "TASK-001",
+        "type": "contract_changed", "severity": "blocking", "status": "PROPOSED",
+        "detected_during": "IMPLEMENTING", "reason_code": "SCOPE_DRIFT_PERMISSION",
+        "boundary_ref": "DEC-001", "expected_hash": document["freeze"]["contract_hash"],
+        "actual_hash": alignment.contract_hash(document),
+        "expected_boundary_present": record_direction,
+        "actual_boundary_present": not record_direction,
+    }))
+
+    result = run_cli(tmp_path, "gate")
+    assert result.returncode == 0, result.stderr
+    blockers = yaml.safe_load((harness_dir / "current-task.yaml").read_text())["gate"]["blocked_by"]
+    assert next(b for b in blockers if b["code"] == "SCOPE_DRIFT_PERMISSION")["finding_id"] == expected_id
+
+
+def test_scope_drift_secondary_freeze_read_is_typed_invalid_state(tmp_path, monkeypatch, capsys):
+    harness_dir = make_repo(tmp_path, state="GATING")
+    _seal_alignment(harness_dir)
+    impact = yaml.safe_load((harness_dir / "impact.yaml").read_text())
+    impact["impact"]["contracts"] = [{"kind": "permission", "ref": "DEC-001"}]
+    (harness_dir / "impact.yaml").write_text(yaml.safe_dump(impact))
+    monkeypatch.chdir(tmp_path)
+    real_read = controlplane.source_access.read_text
+    reads = 0
+
+    def corrupt_second_freeze_read(path):
+        nonlocal reads
+        if str(path).endswith("alignment-freeze.yaml"):
+            reads += 1
+            if reads == 2:
+                return "not: [valid"
+        return real_read(path)
+
+    monkeypatch.setattr(controlplane.source_access, "read_text", corrupt_second_freeze_read)
+    assert controlplane.cmd_gate() == 2
+    assert "INVALID_HARNESS_STATE" in capsys.readouterr().err
+
+
+def test_contract_changed_finding_with_scope_direction_is_invalid(tmp_path):
+    harness_dir = make_repo(tmp_path, state="GATING")
+    document = _seal_alignment(harness_dir)
+    document["goal"]["summary"] = "changed"
+    (harness_dir / "alignment.yaml").write_text(yaml.safe_dump(document))
+    (harness_dir / "findings" / "FND-009.yaml").write_text(yaml.safe_dump({
+        "id": "FND-009", "category": "alignment", "task_id": "TASK-001",
+        "type": "contract_changed", "severity": "blocking", "status": "PROPOSED",
+        "detected_during": "IMPLEMENTING", "reason_code": "CONTRACT_CHANGED",
+        "boundary_ref": "alignment.yaml", "expected_hash": document["freeze"]["contract_hash"],
+        "actual_hash": alignment.contract_hash(document),
+        "expected_boundary_present": False, "actual_boundary_present": True,
+    }))
+    result = run_cli(tmp_path, "gate")
+    assert result.returncode == 2
+    assert "DECISION:" not in result.stdout
+
+
+def test_scope_finding_with_partial_direction_is_invalid(tmp_path):
+    harness_dir = make_repo(tmp_path, state="GATING")
+    document = _seal_alignment(harness_dir)
+    (harness_dir / "findings" / "FND-009.yaml").write_text(yaml.safe_dump({
+        "id": "FND-009", "category": "alignment", "task_id": "TASK-001",
+        "type": "contract_changed", "severity": "blocking", "status": "PROPOSED",
+        "detected_during": "IMPLEMENTING", "reason_code": "SCOPE_DRIFT_PERMISSION",
+        "boundary_ref": "DEC-001", "expected_hash": document["freeze"]["contract_hash"],
+        "actual_hash": alignment.contract_hash(document),
+        "expected_boundary_present": False,
+    }))
+    result = run_cli(tmp_path, "gate")
+    assert result.returncode == 2
+    assert "DECISION:" not in result.stdout
 
 
 def test_live_drift_does_not_attach_other_tasks_audit_finding(tmp_path):

@@ -16,6 +16,8 @@
     "actual_hash": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
     "reason_code": {"enum": ["CONTRACT_CHANGED", "SCOPE_DRIFT_API", "SCOPE_DRIFT_PERMISSION", "SCOPE_DRIFT_PERSISTENCE"]},
     "boundary_ref": {"type": "string", "minLength": 1},
+    "expected_boundary_present": {"type": "boolean"},
+    "actual_boundary_present": {"type": "boolean"},
     "attempts": {"type": "array", "items": {"type": "string"}},
     "confirmed_at": {"type": "string"},
     "test": {"type": "string"},
@@ -25,5 +27,18 @@
     "rejection_reason": {"type": "string"},
     "closure": {"type": "object"}
   },
+  "dependencies": {
+    "expected_boundary_present": ["actual_boundary_present"],
+    "actual_boundary_present": ["expected_boundary_present"]
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"reason_code": {"const": "CONTRACT_CHANGED"}}},
+      "then": {"not": {"anyOf": [
+        {"required": ["expected_boundary_present"]},
+        {"required": ["actual_boundary_present"]}
+      ]}}
+    }
+  ],
   "additionalProperties": false
 }

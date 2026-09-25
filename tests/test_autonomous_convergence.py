@@ -986,6 +986,9 @@ def test_scope_drift_codes_reject_and_preserve_implementing(tmp_path, boundary_k
     assert not task_final["gate"]["blocked_by"]
     assert "POLICY: USER_AUTHORITY_REQUIRED" in trans_result.stderr
     assert "DIRECTIVE: HALT_AND_WAIT" in trans_result.stderr
+    finding = yaml.safe_load(next((h / "findings").glob("FND-*.yaml")).read_text())
+    assert finding["expected_boundary_present"] is False
+    assert finding["actual_boundary_present"] is True
 
 
 def test_open_decision_align_check_stops_and_is_read_only(tmp_path):

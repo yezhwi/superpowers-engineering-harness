@@ -1,8 +1,8 @@
 """Validated, reference-only Alignment contract artifacts."""
 
-from dataclasses import dataclass
 import hashlib
 import json
+from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
@@ -91,6 +91,27 @@ def classify_scope_drift(
     return issues
 
 
+def freeze_record(
+    document: dict, *, decisions: list[dict], boundary_refs: dict
+) -> dict:
+    """Project current frozen Alignment facts into its immutable seal."""
+    selections = {
+        item["id"]: item["selected"]["option"]
+        for item in decisions
+        if item.get("status") == "ACCEPTED"
+        and item.get("selected")
+        and item["id"] in document["decision_ids"]
+    }
+    return {
+        "version": 1,
+        "task_id": document["task_id"],
+        "contract_hash": contract_hash(document),
+        "decision_selections": selections,
+        "boundary_refs": boundary_refs,
+        "frozen_at": document["freeze"]["frozen_at"],
+    }
+
+
 def sealed_freeze_drift(
     harness_dir: Path,
     document: dict,
@@ -105,12 +126,9 @@ def sealed_freeze_drift(
     instead of a new baseline written during inspection.
     """
     validate_freeze(document)
-    selections = {
-        item["id"]: item["selected"]["option"] for item in decisions
-        if item.get("status") == "ACCEPTED" and item.get("selected")
-        and item["id"] in document["decision_ids"]
-    }
-    record = {"version": 1, "task_id": document["task_id"], "contract_hash": contract_hash(document), "decision_selections": selections, "boundary_refs": boundary_refs, "frozen_at": document["freeze"]["frozen_at"]}
+    record = freeze_record(
+        document, decisions=decisions, boundary_refs=boundary_refs
+    )
     try:
         validate(record, read_schema("alignment-freeze.schema.json"))
     except ValidationError as exc:

@@ -43,6 +43,111 @@ def test_align_init_creates_draft_once_and_refuses_overwrite(tmp_path):
     assert artifact.read_bytes() == before
 
 
+def test_align_freeze_seals_complete_draft_without_task_transition(tmp_path):
+    from test_alignment import complete_alignment
+
+    path = repo(tmp_path)
+    harness = path / ".harness"
+    document = complete_alignment()
+    document["task_id"] = "TASK-001"
+    (harness / "alignment.yaml").write_text(yaml.safe_dump(document))
+    before_task = (harness / "current-task.yaml").read_bytes()
+
+    result = cli(path, "align", "freeze")
+
+    assert result.returncode == 0, result.stderr
+    sealed = yaml.safe_load((harness / "alignment.yaml").read_text())
+    assert sealed["freeze"]["frozen"] is True
+    assert (harness / "alignment-freeze.yaml").is_file()
+    assert (harness / "current-task.yaml").read_bytes() == before_task
+
+
+def test_align_freeze_rejects_proposed_decision_without_directive(tmp_path):
+    from test_alignment import complete_alignment
+
+    path = repo(tmp_path)
+    harness = path / ".harness"
+    document = complete_alignment()
+    document["task_id"] = "TASK-001"
+    (harness / "alignment.yaml").write_text(yaml.safe_dump(document))
+    assert cli(
+        path,
+        "decision",
+        "propose",
+        "--topic",
+        "scope",
+        "--question",
+        "choose",
+        "--context",
+        "x",
+        "--option",
+        "a=A",
+        "--recommend",
+        "a",
+        "--reason",
+        "x",
+    ).returncode == 0
+
+    result = cli(path, "align", "freeze")
+
+    assert result.returncode == 1
+    assert "OPEN_DECISION" in result.stderr
+    assert "DIRECTIVE:" not in result.stderr
+
+
+def test_align_freeze_rejects_incomplete_draft_without_changing_artifacts(tmp_path):
+    from test_alignment import complete_alignment
+
+    path = repo(tmp_path)
+    harness = path / ".harness"
+    document = complete_alignment()
+    document["task_id"] = "TASK-001"
+    document["open_loops"] = ["LOOP-001"]
+    alignment_path = harness / "alignment.yaml"
+    alignment_path.write_text(yaml.safe_dump(document))
+    before_alignment = alignment_path.read_bytes()
+    before_task = (harness / "current-task.yaml").read_bytes()
+
+    result = cli(path, "align", "freeze")
+
+    assert result.returncode == 1
+    assert "OPEN_LOOP" in result.stderr
+    assert alignment_path.read_bytes() == before_alignment
+    assert not (harness / "alignment-freeze.yaml").exists()
+    assert (harness / "current-task.yaml").read_bytes() == before_task
+
+
+def test_align_freeze_rolls_back_first_artifact_when_second_publish_fails(tmp_path, monkeypatch, capsys):
+    from test_alignment import complete_alignment
+
+    from harness import controlplane
+
+    path = repo(tmp_path)
+    harness = path / ".harness"
+    document = complete_alignment()
+    document["task_id"] = "TASK-001"
+    alignment_path = harness / "alignment.yaml"
+    alignment_path.write_text(yaml.safe_dump(document))
+    before_alignment = alignment_path.read_bytes()
+    before_task = (harness / "current-task.yaml").read_bytes()
+    original_replace = Path.replace
+
+    def fail_second_publish(source, target):
+        if target.name == "alignment-freeze.yaml":
+            raise OSError("injected second publish failure")
+        return original_replace(source, target)
+
+    monkeypatch.chdir(path)
+    monkeypatch.setattr(Path, "replace", fail_second_publish)
+
+    assert controlplane.cmd_align("freeze") == 2
+
+    assert "ALIGNMENT_FREEZE_FAILED" in capsys.readouterr().err
+    assert alignment_path.read_bytes() == before_alignment
+    assert not (harness / "alignment-freeze.yaml").exists()
+    assert (harness / "current-task.yaml").read_bytes() == before_task
+
+
 def test_align_check_rejects_unfrozen_draft(tmp_path):
     path = repo(tmp_path)
     assert cli(path, "align", "init").returncode == 0

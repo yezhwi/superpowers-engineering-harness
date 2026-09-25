@@ -44,7 +44,7 @@ harness gate prints DECISION: CONTINUE (transitioned GATING -> BLOCKED, iteratio
 → run harness gate
 ```
 
-Do not ask the user for permission when `DECISION: CONTINUE` is emitted.
+Only `DECISION: CONTINUE` **with** `DIRECTIVE: RESUME_TYPED_RECOVERY` permits resume. If directive is absent, unknown, or conflicts with decision, stop and inspect persisted task; do not follow `Next:` or call `harness resume`. This is not a request for routine continue permission.
 
 Blocker dispatch from `harness resume`:
 - open finding → REPRODUCING (via reproduce-finding)
@@ -94,8 +94,7 @@ For the others YOU must declare them explicitly to the user with evidence — ne
 1. DONE only via CONVERGED → DONE, and CONVERGED only after `DECISION: CONVERGED`.
 2. ESCALATED ends the autonomous loop immediately. Report reason + full status to user;
    never route to `SPECIFYING`, never retry evidence collection, and do not silently continue.
-3. When `DECISION: CONTINUE` is printed, resume and rerun `harness gate` autonomously;
-   do not halt to ask user for confirmation.
+3. When `DECISION: CONTINUE` and `DIRECTIVE: RESUME_TYPED_RECOVERY` both appear on a successful Gate call, resume and rerun `harness gate` autonomously. Otherwise stop and inspect persisted task; never infer permission from `DECISION:` alone.
 4. Autonomous operations must NEVER execute:
    - git commit, git tag, or git push
    - package publishing or release deployment

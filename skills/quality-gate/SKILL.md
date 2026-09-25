@@ -34,7 +34,7 @@ harness finding resume-review FND-001
 | 1 | Invalid invocation/state, or a repairable alignment rejection | Fix a reported CLI precondition only when stderr has no `DIRECTIVE: HALT_AND_WAIT`. User-authority stderr means stop. `ALIGNMENT_FREEZE_INVALID` is repairable and is not a halt. An unrecognized `DIRECTIVE` is not permission to resume, and a free-text `Next:` line is not a command. |
 | 2 | Invalid Harness data | Stop; report invalid input. Gate does not write task on validation error. |
 
-`harness gate` persists `gate.blocked_by` and task state itself. Never copy blockers or transition Gate states manually. Guard `POLICY: USER_AUTHORITY_REQUIRED` / `DIRECTIVE: HALT_AND_WAIT` is not Gate `DECISION:`; stop and request user decision without calling `harness resume` or advancing task.
+On exit `0`, a missing, unknown, duplicate, or decision-conflicting `DIRECTIVE:` is not permission to resume or transition; stop and inspect persisted task. `harness gate` persists `gate.blocked_by` and task state itself. Never copy blockers or transition Gate states manually. Guard `POLICY: USER_AUTHORITY_REQUIRED` / `DIRECTIVE: HALT_AND_WAIT` is not Gate `DECISION:`; stop and request user decision without calling `harness resume` or advancing task.
 
 ## Hard Boundaries (不得违反)
 
