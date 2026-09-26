@@ -22,6 +22,10 @@ from jsonschema import ValidationError, validate
 
 from .blockers import RECOVERY_POLICY, GateBlocker, blocker_document
 from .evidence_validator import EvidenceValidationError, validate_evidence
+from .existing_verification import (
+    green_unit_test_evidence,
+    has_existing_verification,
+)
 from .paths import EvidenceReferenceError, evidence_path
 from .risk_boundaries import (
     RiskBoundaryPolicyError,
@@ -377,11 +381,6 @@ def run_fast_gate(
                 "FAST_REPOSITORY_VERIFICATION_MISSING",
                 f"FAST {evidence_type.replace('_', '-')} evidence invalid: {exc}",
             )
-
-    from .existing_verification import (
-        green_unit_test_evidence,
-        has_existing_verification,
-    )
 
     existing = has_existing_verification(task)
     phases = [("green", True, True)]

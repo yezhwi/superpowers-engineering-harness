@@ -49,6 +49,46 @@ def bundle_bytes(root):
     }
 
 
+def test_fast_context_allows_existing_verification_import(harness):
+    from importlib.util import cache_from_source
+
+    from harness import existing_verification
+    from harness.context.store import generate_context
+
+    cache = Path(cache_from_source(existing_verification.__file__))
+    cached_bytes = cache.read_bytes() if cache.exists() else None
+    cache.unlink(missing_ok=True)
+    sys.modules.pop("harness.existing_verification", None)
+    try:
+        document = generate_context(harness, mode="compact")
+    finally:
+        if cached_bytes is None:
+            cache.unlink(missing_ok=True)
+        else:
+            cache.write_bytes(cached_bytes)
+
+    assert document["mode"] == "compact"
+    assert (harness / "context/current.yaml").exists()
+
+
+def test_fast_context_preserves_source_scope(harness, monkeypatch):
+    from harness import quality_gate
+    from harness.context.store import generate_context
+
+    undeclared = harness.parent / "undeclared.txt"
+    undeclared.write_text("private")
+    original = quality_gate.run_fast_gate
+
+    def reads_undeclared(*args, **kwargs):
+        undeclared.read_text()
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(quality_gate, "run_fast_gate", reads_undeclared)
+
+    with pytest.raises(ContextBuildError, match="CONTEXT_REFERENCE_BROKEN"):
+        generate_context(harness, mode="compact")
+
+
 @pytest.mark.parametrize(
     "flags,mode",
     [

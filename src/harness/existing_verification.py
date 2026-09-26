@@ -6,7 +6,6 @@ import json
 from pathlib import Path
 
 from .evidence_validator import EvidenceValidationError, validate_evidence
-from .quality_gate import fast_verification_policy
 from .risk_boundaries import business_paths
 from .workspace import (
     WorkspaceError,
@@ -78,6 +77,7 @@ def green_unit_test_evidence(
 
 def require_green_evidence(harness_dir: Path) -> None:
     from harness import source_access
+    from .quality_gate import fast_verification_policy
 
     current = snapshot()
     required = [
