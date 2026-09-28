@@ -1171,8 +1171,8 @@ def cmd_review_interface(source: Path, base_ref: str | None = None) -> int:
     harness_dir = Path(".harness")
     try:
         task = load_task(harness_dir)
-        if task.get("state") != "REVIEWING":
-            raise ValueError("review requires state REVIEWING")
+        if task.get("state") not in {"VERIFYING", "REVIEWING"}:
+            raise ValueError("review requires state VERIFYING or REVIEWING")
         path = interface_review.write_review(
             harness_dir,
             source,

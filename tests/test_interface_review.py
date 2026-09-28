@@ -1,3 +1,4 @@
+import pytest
 import yaml
 
 from harness.quality_gate import validate_schema
@@ -114,8 +115,11 @@ def test_interface_review_publish_failure_leaves_no_canonical_artifacts(tmp_path
     assert not (tmp_path / ".harness/evidence/interface-review.json").exists()
 
 
-def test_interface_review_persists_contract_bound_review_evidence(tmp_path):
-    """Break caught: interface review is not persisted against reviewed contract."""
+@pytest.mark.parametrize("review_state", ["VERIFYING", "REVIEWING"])
+def test_interface_review_persists_contract_bound_review_evidence(
+    tmp_path, review_state
+):
+    """Review evidence is producible before and during review preflight."""
     setup(tmp_path)
     assert (
         cli(
@@ -143,7 +147,7 @@ def test_interface_review_persists_contract_bound_review_evidence(tmp_path):
     )
     task_path = tmp_path / ".harness" / "current-task.yaml"
     task = yaml.safe_load(task_path.read_text())
-    task["state"] = "REVIEWING"
+    task["state"] = review_state
     task_path.write_text(yaml.safe_dump(task))
     source = tmp_path / "interface-review.yaml"
     source.write_text(
