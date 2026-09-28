@@ -22,6 +22,15 @@ import yaml
 from evidence_factory import write_evidence
 
 REPO = Path(__file__).resolve().parent.parent
+SAFE_DIMENSIONS = {
+    "scope": "low",
+    "contract": "none",
+    "data": "none",
+    "authorization": "none",
+    "security": "none",
+    "concurrency": "none",
+    "deployment": "none",
+}
 
 HEAD = subprocess.run(
     ["git", "rev-parse", "HEAD"], capture_output=True, text=True, cwd=REPO
@@ -134,13 +143,23 @@ def make_harness(tmp_path: Path) -> Path:
     return h
 
 
-def test_enabled_gate_emits_plan_item_unreconciled_blocker(tmp_path):
+def test_enabled_gate_emits_plan_item_unreconciled_blocker(tmp_path, monkeypatch):
+    from harness import quality_gate
     from harness.plan_reconciliation import plan_fingerprint
     from harness.quality_gate import run_gate
+
+    monkeypatch.setattr(quality_gate, "_append_live_alignment_drift", lambda *args: None)
 
     h = make_harness(tmp_path)
     task_path = h / "current-task.yaml"
     task = yaml.safe_load(task_path.read_text())
+    task["risk"] = {
+        "level": "Q2",
+        "profile": "STANDARD",
+        "dimensions": SAFE_DIMENSIONS,
+        "escalation_history": [],
+        "user_changes": {"paths": [], "fingerprint": "sha256:" + "0" * 64},
+    }
     task["plan_reconciliation"] = {"enabled": True, "mode": "final"}
     task_path.write_text(yaml.safe_dump(task))
     plan = {"version": 1, "items": [{"id": "P-001", "intent": "finish"}]}
@@ -157,6 +176,34 @@ def test_enabled_gate_emits_plan_item_unreconciled_blocker(tmp_path):
     assert [(blocker.code, blocker.source, blocker.recover_to) for blocker in blockers if blocker.code.startswith("PLAN_")] == [
         ("PLAN_ITEM_UNRECONCILED", "P-001", "IMPLEMENTING")
     ]
+
+
+def test_fast_gate_ignores_ad_hoc_enablement_and_malformed_plan(tmp_path):
+    from harness.quality_gate import run_gate
+
+    h = make_harness(tmp_path)
+    task_path = h / "current-task.yaml"
+    task = yaml.safe_load(task_path.read_text())
+    task["risk"] = {
+        "level": "Q1",
+        "profile": "FAST",
+        "dimensions": SAFE_DIMENSIONS,
+        "escalation_history": [],
+        "user_changes": {"paths": [], "fingerprint": "sha256:" + "0" * 64},
+    }
+    task["plan_reconciliation"] = {"enabled": True, "mode": "task_and_final"}
+    task["git"] = {"head": HEAD, "base_commit": HEAD}
+    from harness.workspace import protected_paths_fingerprint
+
+    task["risk"]["user_changes"]["fingerprint"] = protected_paths_fingerprint(())
+    task_path.write_text(yaml.safe_dump(task))
+    (h / "plan.yaml").write_text("[")
+    (h / "plan-execution.yaml").write_text("[")
+
+    status, blockers = run_gate(h)
+
+    assert status in {"PASS", "BLOCKED"}
+    assert not [blocker for blocker in blockers if blocker.code.startswith("PLAN_")]
 
 
 def test_gate_unions_fresh_related_test_evidence(tmp_path):

@@ -922,3 +922,140 @@ def test_plan_mutation_complete_rejects_modified_protected_surface_without_write
         )
 
     assert tree_bytes(tmp_path) == before
+
+
+def verification_plan() -> dict:
+    return {
+        "version": 1,
+        "items": [{"id": "P-001", "intent": "first", "surfaces": ["src/first.py"]}],
+    }
+
+
+def complete_execution(document: dict) -> dict:
+    from harness.plan_reconciliation import plan_fingerprint
+
+    receipt = {
+        "head": "a" * 40,
+        "workspace": "sha256:" + "b" * 64,
+        "evidence": [],
+        "surface_refs": ["src/first.py"],
+    }
+    return {
+        "version": 2,
+        "plan": {"path": ".harness/plan.yaml", "fingerprint": plan_fingerprint(document)},
+        "sequence": 2,
+        "transitions": [
+            {"sequence": 1, "item": "P-001", "from": "PENDING", "to": "IN_PROGRESS", "action": "BEGIN"},
+            {
+                "sequence": 2,
+                "item": "P-001",
+                "from": "IN_PROGRESS",
+                "to": "COMPLETE",
+                "action": "RECONCILE",
+                "evidence_refs": [],
+                "surface_refs": ["src/first.py"],
+                "proof_receipt": receipt,
+            },
+        ],
+        "items": {"P-001": {"status": "COMPLETE", "surface_refs": ["src/first.py"]}},
+    }
+
+
+def test_plan_verification_entry_accepts_terminal_history_without_current_proof_reads(
+    tmp_path, monkeypatch
+):
+    from harness import plan_reconciliation
+    from harness.plan_reconciliation import assess_plan_verification_entry_documents
+
+    harness_dir = tmp_path / ".harness"
+    harness_dir.mkdir()
+    document = verification_plan()
+    execution = complete_execution(document)
+    monkeypatch.setattr(
+        plan_reconciliation,
+        "workspace_snapshot",
+        lambda *args, **kwargs: pytest.fail("verification entry read current workspace"),
+    )
+    monkeypatch.setattr(
+        plan_reconciliation,
+        "changed_paths_since",
+        lambda *args, **kwargs: pytest.fail("verification entry checked current surfaces"),
+    )
+
+    blockers = assess_plan_verification_entry_documents(
+        harness_dir, task(), document, execution
+    )
+
+    assert blockers == []
+
+
+def test_plan_verification_entry_rejects_nonterminal_and_invalid_replay(tmp_path):
+    from harness.plan_reconciliation import assess_plan_verification_entry_documents
+
+    harness_dir = tmp_path / ".harness"
+    harness_dir.mkdir()
+    document = verification_plan()
+    nonterminal = complete_execution(document)
+    nonterminal["sequence"] = 1
+    nonterminal["transitions"] = nonterminal["transitions"][:1]
+    nonterminal["items"] = {"P-001": {"status": "IN_PROGRESS"}}
+    invalid = complete_execution(document)
+    invalid["transitions"][1] = {**invalid["transitions"][0], "sequence": 2}
+    invalid["items"] = {"P-001": {"status": "IN_PROGRESS"}}
+
+    nonterminal_blockers = assess_plan_verification_entry_documents(
+        harness_dir, task(), document, nonterminal
+    )
+    invalid_blockers = assess_plan_verification_entry_documents(
+        harness_dir, task(), document, invalid
+    )
+
+    assert [blocker.code for blocker in nonterminal_blockers] == [
+        "PLAN_ITEM_UNRECONCILED"
+    ]
+    assert [blocker.code for blocker in invalid_blockers] == ["PLAN_SEQUENCE_INVALID"]
+
+
+def test_plan_verification_entry_rejects_decision_no_longer_accepted(tmp_path):
+    import hashlib
+
+    from harness.plan_reconciliation import (
+        assess_plan_verification_entry_documents,
+        plan_fingerprint,
+    )
+
+    harness_dir = tmp_path / ".harness"
+    harness_dir.mkdir()
+    document = verification_plan()
+    decision_bytes = write_decision(harness_dir, status="REJECTED")
+    receipt = {
+        "decision_id": "DEC-031",
+        "sha256": "sha256:" + hashlib.sha256(decision_bytes).hexdigest(),
+        "task_id": "TASK-062",
+        "status": "ACCEPTED",
+    }
+    execution = {
+        "version": 2,
+        "plan": {"path": ".harness/plan.yaml", "fingerprint": plan_fingerprint(document)},
+        "sequence": 2,
+        "transitions": [
+            {"sequence": 1, "item": "P-001", "from": "PENDING", "to": "IN_PROGRESS", "action": "BEGIN"},
+            {
+                "sequence": 2,
+                "item": "P-001",
+                "from": "IN_PROGRESS",
+                "to": "SKIPPED",
+                "action": "RECONCILE",
+                "reason": "removed",
+                "decision_id": "DEC-031",
+                "decision_receipt": receipt,
+            },
+        ],
+        "items": {"P-001": {"status": "SKIPPED", "reason": "removed", "decision_id": "DEC-031"}},
+    }
+
+    blockers = assess_plan_verification_entry_documents(
+        harness_dir, task(), document, execution
+    )
+
+    assert [blocker.code for blocker in blockers] == ["PLAN_DISPOSITION_INVALID"]

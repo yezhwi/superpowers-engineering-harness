@@ -501,6 +501,7 @@ def _validate_p0_projection(
     head: str,
     workspace: str,
     latest_proof_receipts: dict[str, dict] | None = None,
+    check_proof: bool = True,
 ) -> list[GateBlocker]:
     """Return existing final-state blockers for one explicit item projection."""
     plan_ids = {item["id"] for item in plan["items"]}
@@ -537,16 +538,16 @@ def _validate_p0_projection(
     qualified_cases = _qualified_cases(harness_dir)
     user_changes = (task.get("risk") or {}).get("user_changes", {})
     protected = set(user_changes.get("paths", []))
-    protected_changed = bool(protected) and (
+    protected_changed = check_proof and bool(protected) and (
         protected_paths_fingerprint(tuple(sorted(protected)))
         != user_changes.get("fingerprint")
     )
     changed_surfaces = (
         set(changed_paths_since(task.get("git", {}).get("base_commit", "HEAD")))
-        if any(item.get("surfaces", []) for item in plan["items"])
+        if check_proof and any(item.get("surfaces", []) for item in plan["items"])
         else set()
     )
-    if not protected_changed:
+    if check_proof and not protected_changed:
         changed_surfaces -= protected
 
     blockers: list[GateBlocker] = []
@@ -630,7 +631,8 @@ def _validate_p0_projection(
                 )
             )
         elif (
-            record["status"] == "COMPLETE"
+            check_proof
+            and record["status"] == "COMPLETE"
             and latest_proof_receipts is not None
             and not _latest_receipt_matches(
                 harness_dir,
@@ -650,7 +652,8 @@ def _validate_p0_projection(
                 )
             )
         elif (
-            record["status"] == "COMPLETE"
+            check_proof
+            and record["status"] == "COMPLETE"
             and item.get("test_case_refs", [])
             and not record.get("evidence_refs", [])
         ):
@@ -664,7 +667,8 @@ def _validate_p0_projection(
                 )
             )
         elif (
-            record["status"] == "COMPLETE"
+            check_proof
+            and record["status"] == "COMPLETE"
             and item.get("test_case_refs", [])
             and not _fresh_item_evidence(
                 harness_dir, record["evidence_refs"], head, workspace
@@ -680,7 +684,8 @@ def _validate_p0_projection(
                 )
             )
         elif (
-            record["status"] == "COMPLETE"
+            check_proof
+            and record["status"] == "COMPLETE"
             and item.get("test_case_refs", [])
             and not _manual_cases_are_covered(
                 harness_dir,
@@ -701,7 +706,8 @@ def _validate_p0_projection(
                 )
             )
         elif (
-            record["status"] == "COMPLETE"
+            check_proof
+            and record["status"] == "COMPLETE"
             and item.get("test_case_refs", [])
             and not _automated_cases_are_covered(
                 harness_dir,
@@ -722,7 +728,8 @@ def _validate_p0_projection(
                 )
             )
         elif (
-            record["status"] == "COMPLETE"
+            check_proof
+            and record["status"] == "COMPLETE"
             and item.get("surfaces", [])
             and not record.get("surface_refs", [])
         ):
@@ -750,7 +757,8 @@ def _validate_p0_projection(
                 )
             )
         elif (
-            record["status"] == "COMPLETE"
+            check_proof
+            and record["status"] == "COMPLETE"
             and item.get("surfaces", [])
             and not set(record["surface_refs"]).issubset(changed_surfaces)
         ):
@@ -918,6 +926,61 @@ def assess_plan_reconciliation_documents(
         )
     )
     return PlanAssessment(final, final, projection, replay)
+
+
+def assess_plan_verification_entry_documents(
+    harness_dir: Path,
+    task: dict,
+    plan: dict | None,
+    execution: dict | None,
+) -> list[GateBlocker]:
+    """Require trusted terminal Q3 history without current final-proof checks."""
+    configuration = effective_plan_reconciliation(task)
+    task_level = (
+        configuration.get("enabled") is True
+        and configuration.get("mode") == "task_and_final"
+        and (task.get("risk") or {}).get("profile") == "STRICT"
+    )
+    if not task_level:
+        return []
+    early = _artifact_early_blockers(plan, execution)
+    if early:
+        return early
+    assert plan is not None and execution is not None
+    if execution["version"] != 2:
+        return [
+            _task_level_blocker(
+                "PLAN_TASK_LEVEL_REQUIRED",
+                "task-level plan execution history requires execution v2",
+            )
+        ]
+    replay = replay_plan_execution(plan, execution)
+    if replay.issues:
+        return [
+            _task_level_blocker(
+                "PLAN_SEQUENCE_INVALID",
+                f"plan execution journal cannot replay: {replay.issues[0].code}",
+            )
+        ]
+    return _validate_p0_projection(
+        harness_dir,
+        task,
+        plan,
+        replay.items,
+        head="",
+        workspace="",
+        check_proof=False,
+    )
+
+
+def validate_plan_verification_entry(
+    harness_dir: Path, task: dict
+) -> list[GateBlocker]:
+    """Load once and assess task-level readiness to enter verification."""
+    plan, execution = load_plan_artifacts(harness_dir, optional=True)
+    return assess_plan_verification_entry_documents(
+        harness_dir, task, plan, execution
+    )
 
 
 def validate_plan_reconciliation_documents(

@@ -324,6 +324,195 @@ def test_standard_planned_to_implementing_accepts_complete_alignment(tmp_path):
     assert result.returncode == 0, result.stderr
 
 
+def q3_entry_repo(tmp_path: Path) -> Path:
+    repo = standard_repo_in_state(tmp_path)
+    task_path = repo / ".harness/current-task.yaml"
+    task = yaml.safe_load(task_path.read_text())
+    task["risk"]["level"] = "Q3"
+    task["risk"]["profile"] = "STRICT"
+    task["plan_reconciliation"] = {"enabled": True, "mode": "task_and_final"}
+    task_path.write_text(yaml.safe_dump(task, sort_keys=False))
+    write_minimal_decision(repo)
+    write_documents(repo, valid=True)
+    write_alignment(repo, frozen=True)
+    return repo
+
+
+def write_entry_execution(repo: Path, *, version=2, transitions=None, items=None):
+    from harness.plan_reconciliation import plan_fingerprint
+
+    plan = {
+        "version": 1,
+        "items": [
+            {"id": "P-001", "intent": "entry", "surfaces": ["src/first.py"]}
+        ],
+    }
+    execution = {
+        "version": version,
+        "plan": {
+            "path": ".harness/plan.yaml",
+            "fingerprint": plan_fingerprint(plan),
+        },
+        "items": items or {},
+    }
+    if version == 2:
+        execution["sequence"] = len(transitions or [])
+        execution["transitions"] = transitions or []
+    (repo / ".harness/plan.yaml").write_text(yaml.safe_dump(plan, sort_keys=False))
+    (repo / ".harness/plan-execution.yaml").write_text(
+        yaml.safe_dump(execution, sort_keys=False)
+    )
+
+
+def test_q3_strict_entry_accepts_fresh_empty_v2(tmp_path):
+    repo = q3_entry_repo(tmp_path)
+    write_entry_execution(repo)
+
+    result = cli(repo, "transition", "IMPLEMENTING")
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_q3_strict_entry_requires_execution_v2(tmp_path):
+    repo = q3_entry_repo(tmp_path)
+    write_entry_execution(repo, version=1)
+
+    result = cli(repo, "transition", "IMPLEMENTING")
+
+    assert result.returncode == 1
+    assert "PLAN_TASK_LEVEL_REQUIRED" in result.stderr
+
+
+def test_q3_strict_entry_rejects_nonempty_v2(tmp_path):
+    repo = q3_entry_repo(tmp_path)
+    transition = {
+        "sequence": 1,
+        "item": "P-001",
+        "from": "PENDING",
+        "to": "IN_PROGRESS",
+        "action": "BEGIN",
+    }
+    write_entry_execution(
+        repo,
+        transitions=[transition],
+        items={"P-001": {"status": "IN_PROGRESS"}},
+    )
+
+    result = cli(repo, "transition", "IMPLEMENTING")
+
+    assert result.returncode == 1
+    assert "PLAN_SEQUENCE_INVALID" in result.stderr
+
+
+def test_q3_strict_entry_rejects_replay_invalid_v2(tmp_path):
+    repo = q3_entry_repo(tmp_path)
+    transitions = [
+        {
+            "sequence": sequence,
+            "item": "P-001",
+            "from": "PENDING",
+            "to": "IN_PROGRESS",
+            "action": "BEGIN",
+        }
+        for sequence in (1, 2)
+    ]
+    write_entry_execution(
+        repo,
+        transitions=transitions,
+        items={"P-001": {"status": "IN_PROGRESS"}},
+    )
+
+    result = cli(repo, "transition", "IMPLEMENTING")
+
+    assert result.returncode == 1
+    assert "PLAN_SEQUENCE_INVALID" in result.stderr
+
+
+def test_q2_entry_rejects_execution_v2_with_disposition_code(tmp_path):
+    repo = standard_repo_in_state(tmp_path)
+    write_minimal_decision(repo)
+    write_documents(repo, valid=True)
+    write_alignment(repo, frozen=True)
+    write_entry_execution(repo)
+
+    result = cli(repo, "transition", "IMPLEMENTING")
+
+    assert result.returncode == 1
+    assert "PLAN_DISPOSITION_INVALID" in result.stderr
+    assert "PLAN_SEQUENCE_INVALID" not in result.stderr
+
+
+def q3_implementing_repo(tmp_path: Path, *, terminal: bool) -> Path:
+    repo = q3_entry_repo(tmp_path)
+    task_path = repo / ".harness/current-task.yaml"
+    task = yaml.safe_load(task_path.read_text())
+    task["state"] = "IMPLEMENTING"
+    task_path.write_text(yaml.safe_dump(task, sort_keys=False))
+    impact_path = repo / ".harness/impact.yaml"
+    impact = yaml.safe_load(impact_path.read_text())
+    impact["impact"]["required_tests"] = ["tests/test_test_plan_transition.py"]
+    impact_path.write_text(yaml.safe_dump(impact, sort_keys=False))
+    begin = {
+        "sequence": 1,
+        "item": "P-001",
+        "from": "PENDING",
+        "to": "IN_PROGRESS",
+        "action": "BEGIN",
+    }
+    if not terminal:
+        write_entry_execution(
+            repo,
+            transitions=[begin],
+            items={"P-001": {"status": "IN_PROGRESS"}},
+        )
+        return repo
+    receipt = {
+        "head": "a" * 40,
+        "workspace": "sha256:" + "b" * 64,
+        "evidence": [],
+        "surface_refs": ["src/first.py"],
+    }
+    complete = {
+        "sequence": 2,
+        "item": "P-001",
+        "from": "IN_PROGRESS",
+        "to": "COMPLETE",
+        "action": "RECONCILE",
+        "evidence_refs": [],
+        "surface_refs": ["src/first.py"],
+        "proof_receipt": receipt,
+    }
+    write_entry_execution(
+        repo,
+        transitions=[begin, complete],
+        items={
+            "P-001": {"status": "COMPLETE", "surface_refs": ["src/first.py"]}
+        },
+    )
+    return repo
+
+
+def test_q3_verification_entry_accepts_terminal_history_with_stale_proof(tmp_path):
+    repo = q3_implementing_repo(tmp_path, terminal=True)
+
+    result = cli(repo, "transition", "VERIFYING")
+
+    assert result.returncode == 0, result.stderr
+    task = yaml.safe_load((repo / ".harness/current-task.yaml").read_text())
+    assert task["state"] == "VERIFYING"
+
+
+def test_q3_verification_entry_rejects_active_item_without_state_change(tmp_path):
+    repo = q3_implementing_repo(tmp_path, terminal=False)
+
+    result = cli(repo, "transition", "VERIFYING")
+
+    assert result.returncode == 1
+    assert "PLAN_ITEM_UNRECONCILED" in result.stderr
+    task = yaml.safe_load((repo / ".harness/current-task.yaml").read_text())
+    assert task["state"] == "IMPLEMENTING"
+
+
 @pytest.mark.parametrize(
     ("kind", "ref", "reason_code"),
     [

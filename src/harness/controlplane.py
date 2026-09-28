@@ -766,6 +766,24 @@ def cmd_transition(target: str, *, reason: str | None = None) -> int:
         except ValueError as exc:
             print(str(exc), file=sys.stderr)
             return 2
+        if profile == "STRICT":
+            try:
+                plan_blockers = plan_reconciliation.validate_plan_verification_entry(
+                    harness_dir, task
+                )
+            except (
+                plan_reconciliation.PlanArtifactError,
+                decision.DecisionError,
+                ValueError,
+            ) as exc:
+                print(f"INVALID_HARNESS_STATE: {exc}", file=sys.stderr)
+                return 2
+            if plan_blockers:
+                print("PLAN_RECONCILIATION_BLOCKED", file=sys.stderr)
+                for blocker in plan_blockers:
+                    source = blocker.source or "PLAN"
+                    print(f"  {source}: {blocker.code}", file=sys.stderr)
+                return 1
     if current == "CREATED" and target != "CLASSIFIED":
         print("TASK_CLASSIFICATION_REQUIRED", file=sys.stderr)
         return 1
@@ -949,10 +967,10 @@ def cmd_transition(target: str, *, reason: str | None = None) -> int:
                 print("ALIGNMENT_BLOCKED", file=sys.stderr)
                 print(f"  ALIGNMENT_FREEZE_INVALID: {exc}", file=sys.stderr)
                 return 1
-            if (task.get("plan_reconciliation") or {}).get("enabled"):
+            if plan_reconciliation.effective_plan_reconciliation(task)["enabled"]:
                 try:
                     plan_issues = plan_reconciliation.validate_plan_initialization(
-                        harness_dir
+                        harness_dir, task
                     )
                 except plan_reconciliation.PlanArtifactError as exc:
                     print(f"INVALID_HARNESS_STATE: {exc}", file=sys.stderr)
