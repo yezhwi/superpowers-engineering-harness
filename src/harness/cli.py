@@ -48,6 +48,10 @@ def _main(argv=None) -> int:
     sub.add_parser("init", help="initialize .harness/ at the git repo root")
     p_status = sub.add_parser("status", help="render unified persisted-state view")
     p_status.add_argument("--harness-dir", default=".harness")
+    p_plan = sub.add_parser("plan", help="inspect canonical implementation plan")
+    plan_sub = p_plan.add_subparsers(dest="plan_command", required=True)
+    p_plan_status = plan_sub.add_parser("status", help="report read-only plan status")
+    p_plan_status.add_argument("--json", dest="plan_json", action="store_true")
     p_context = sub.add_parser("context", help="generate a validated derived Context")
     context_mode = p_context.add_mutually_exclusive_group()
     context_mode.add_argument("--compact", dest="context_mode", action="store_const", const="compact")
@@ -348,6 +352,8 @@ def _main(argv=None) -> int:
         return 0
     if args.subcommand == "status":
         return controlplane.cmd_status(Path(args.harness_dir).resolve())
+    if args.subcommand == "plan" and args.plan_command == "status":
+        return controlplane.cmd_plan_status(args.plan_json)
     if args.subcommand == "context":
         return controlplane.cmd_context(
             args.context_command, args.context_mode or "compact", args.context_json,

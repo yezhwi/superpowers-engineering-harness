@@ -92,6 +92,109 @@ def cmd_status(harness_dir: Path = Path(".harness")) -> int:
     return harness_status.main(["--harness-dir", str(harness_dir)])
 
 
+def _render_plan_status(report: dict) -> str:
+    if not report["enabled"]:
+        return "Plan Execution\n\nStatus: disabled"
+
+    artifact = report["plan"]
+    plan_state = "present" if artifact["present"] else "missing"
+    execution_state = "present" if artifact["execution_present"] else "missing"
+    if artifact["fingerprint_fresh"] is True:
+        freshness = "fresh"
+    elif artifact["fingerprint_fresh"] is False:
+        freshness = "stale"
+    else:
+        freshness = "unavailable"
+    lines = [
+        "Plan Execution",
+        "",
+        f"Mode: {report['mode']}",
+        (
+            f"Artifacts: plan {plan_state}, execution {execution_state}, "
+            f"fingerprint {freshness}"
+        ),
+    ]
+    progress = report["progress"]
+    if progress is None:
+        lines.append("Progress: unavailable")
+    else:
+        lines.extend(
+            [
+                f"Progress: {progress['reconciled']} / {progress['total']} reconciled",
+                "",
+                *(
+                    f"{status:<15}{progress['statuses'][status]}"
+                    for status in (
+                        "COMPLETE",
+                        "SKIPPED",
+                        "SUPERSEDED",
+                        "PENDING",
+                        "IN_PROGRESS",
+                        "BLOCKED",
+                    )
+                ),
+            ]
+        )
+    lines.extend(
+        [
+            "",
+            f"Next: {report['next_plan_item'] or '-'}",
+            f"Final: {report['final_status'].upper()}",
+        ]
+    )
+    if report["blockers"]:
+        lines.extend(["", "Blockers:"])
+        for blocker in report["blockers"]:
+            source = f" [{blocker['source']}]" if blocker["source"] else ""
+            lines.append(f"  {blocker['code']}{source} {blocker['message']}")
+    return "\n".join(lines)
+
+
+def cmd_plan_status(json_output: bool) -> int:
+    harness_dir = Path(".harness")
+    try:
+        task = load_task(harness_dir)
+        quality_gate.validate_schema(
+            task, "task.schema.json", harness_dir / "current-task.yaml"
+        )
+        report = plan_reconciliation.effective_plan_reconciliation(task)
+        if report["enabled"]:
+            plan, execution = plan_reconciliation.load_plan_artifacts(
+                harness_dir, optional=True
+            )
+            current = workspace.snapshot()
+            blockers = plan_reconciliation.validate_plan_reconciliation_documents(
+                harness_dir,
+                task,
+                plan,
+                execution,
+                head=current.head,
+                workspace=current.fingerprint,
+            )
+            report = plan_reconciliation.plan_status_report(
+                task, plan, execution, blockers
+            )
+    except (
+        HarnessStateError,
+        OSError,
+        yaml.YAMLError,
+        quality_gate.InvalidHarnessState,
+        plan_reconciliation.PlanArtifactError,
+        decision.DecisionError,
+        evidence_validator.EvidenceValidationError,
+        EvidenceReferenceError,
+        source_access.ContextBuildError,
+        workspace.WorkspaceError,
+    ) as exc:
+        print(f"INVALID_HARNESS_STATE: {exc}", file=sys.stderr)
+        return 2
+    if json_output:
+        print(json.dumps(report, indent=2, ensure_ascii=False, allow_nan=False))
+    else:
+        print(_render_plan_status(report))
+    return 0
+
+
 def _alignment_completeness_issues(
     harness_dir: Path, task: dict, document: dict
 ) -> list[alignment.AlignmentIssue]:
