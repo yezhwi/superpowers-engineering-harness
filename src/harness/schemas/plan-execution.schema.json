@@ -1,1 +1,269 @@
-{"$schema":"http://json-schema.org/draft-07/schema#","title":"Harness Plan Execution","type":"object","required":["version","plan","items"],"properties":{"version":{"const":1},"plan":{"type":"object","required":["path","fingerprint"],"properties":{"path":{"const":".harness/plan.yaml"},"fingerprint":{"type":"string","pattern":"^sha256:[0-9a-f]{64}$"}},"additionalProperties":false},"items":{"type":"object","additionalProperties":{"type":"object","required":["status"],"properties":{"status":{"enum":["PENDING","IN_PROGRESS","COMPLETE","SKIPPED","SUPERSEDED","BLOCKED"]},"reason":{"type":"string","minLength":1},"evidence_refs":{"type":"array","items":{"type":"string"}},"surface_refs":{"type":"array","items":{"type":"string","minLength":1,"pattern":"^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$"}},"superseded_by":{"type":"array","items":{"type":"string","pattern":"^P-[0-9]+$"}},"decision_id":{"type":"string","pattern":"^DEC-[0-9]+$"}},"additionalProperties":false}}},"additionalProperties":false}
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "plan-execution.schema.json",
+  "title": "Harness Plan Execution",
+  "oneOf": [
+    {"$ref": "#/definitions/executionV1"},
+    {"$ref": "#/definitions/executionV2"}
+  ],
+  "definitions": {
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "planIdentity": {
+      "type": "object",
+      "required": ["path", "fingerprint"],
+      "properties": {
+        "path": {"const": ".harness/plan.yaml"},
+        "fingerprint": {"$ref": "#/definitions/fingerprint"}
+      },
+      "additionalProperties": false
+    },
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$"
+    },
+    "reference": {
+      "type": "string",
+      "minLength": 1
+    },
+    "itemId": {
+      "type": "string",
+      "pattern": "^P-[0-9]+$"
+    },
+    "decisionId": {
+      "type": "string",
+      "pattern": "^DEC-[0-9]+$"
+    },
+    "taskId": {
+      "type": "string",
+      "pattern": "^TASK-[0-9]+$"
+    },
+    "status": {
+      "enum": ["PENDING", "IN_PROGRESS", "COMPLETE", "SKIPPED", "SUPERSEDED", "BLOCKED"]
+    },
+    "v1Item": {
+      "type": "object",
+      "required": ["status"],
+      "properties": {
+        "status": {"$ref": "#/definitions/status"},
+        "reason": {"type": "string", "minLength": 1},
+        "evidence_refs": {"type": "array", "items": {"type": "string"}},
+        "surface_refs": {"type": "array", "items": {"$ref": "#/definitions/path"}},
+        "superseded_by": {"type": "array", "items": {"$ref": "#/definitions/itemId"}},
+        "decision_id": {"$ref": "#/definitions/decisionId"}
+      },
+      "additionalProperties": false
+    },
+    "executionV1": {
+      "type": "object",
+      "required": ["version", "plan", "items"],
+      "properties": {
+        "version": {"const": 1},
+        "plan": {"$ref": "#/definitions/planIdentity"},
+        "items": {
+          "type": "object",
+          "additionalProperties": {"$ref": "#/definitions/v1Item"}
+        }
+      },
+      "additionalProperties": false
+    },
+    "evidenceReceipt": {
+      "type": "object",
+      "required": ["ref", "sha256", "type", "exit_code", "commit", "workspace_fingerprint"],
+      "properties": {
+        "ref": {"$ref": "#/definitions/reference"},
+        "sha256": {"$ref": "#/definitions/fingerprint"},
+        "type": {
+          "enum": ["build", "lint", "typecheck", "unit_test", "integration_test", "contract_test", "security", "review", "diagnosability_review", "custom"]
+        },
+        "exit_code": {"type": "integer"},
+        "commit": {"type": "string", "minLength": 1},
+        "workspace_fingerprint": {"$ref": "#/definitions/fingerprint"}
+      },
+      "additionalProperties": false
+    },
+    "proofReceipt": {
+      "type": "object",
+      "required": ["head", "workspace", "evidence", "surface_refs"],
+      "properties": {
+        "head": {"type": "string", "minLength": 1},
+        "workspace": {"$ref": "#/definitions/fingerprint"},
+        "evidence": {
+          "type": "array",
+          "items": {"$ref": "#/definitions/evidenceReceipt"}
+        },
+        "surface_refs": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "#/definitions/path"}
+        }
+      },
+      "additionalProperties": false
+    },
+    "decisionReceipt": {
+      "type": "object",
+      "required": ["decision_id", "sha256", "task_id", "status"],
+      "properties": {
+        "decision_id": {"$ref": "#/definitions/decisionId"},
+        "sha256": {"$ref": "#/definitions/fingerprint"},
+        "task_id": {"$ref": "#/definitions/taskId"},
+        "status": {"const": "ACCEPTED"}
+      },
+      "additionalProperties": false
+    },
+    "projectedItem": {
+      "type": "object",
+      "required": ["status"],
+      "properties": {
+        "status": {"enum": ["IN_PROGRESS", "COMPLETE", "SKIPPED", "SUPERSEDED", "BLOCKED"]},
+        "reason": {"type": "string", "minLength": 1},
+        "evidence_refs": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "#/definitions/reference"}
+        },
+        "surface_refs": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "#/definitions/path"}
+        },
+        "superseded_by": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/definitions/itemId"}
+        },
+        "decision_id": {"$ref": "#/definitions/decisionId"}
+      },
+      "additionalProperties": false
+    },
+    "beginTransition": {
+      "type": "object",
+      "required": ["sequence", "item", "from", "to", "action"],
+      "properties": {
+        "sequence": {"type": "integer", "minimum": 1},
+        "item": {"$ref": "#/definitions/itemId"},
+        "from": {"const": "PENDING"},
+        "to": {"const": "IN_PROGRESS"},
+        "action": {"const": "BEGIN"}
+      },
+      "additionalProperties": false
+    },
+    "blockTransition": {
+      "type": "object",
+      "required": ["sequence", "item", "from", "to", "action", "reason"],
+      "properties": {
+        "sequence": {"type": "integer", "minimum": 1},
+        "item": {"$ref": "#/definitions/itemId"},
+        "from": {"const": "IN_PROGRESS"},
+        "to": {"const": "BLOCKED"},
+        "action": {"const": "BLOCK"},
+        "reason": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
+    "resumeTransition": {
+      "type": "object",
+      "required": ["sequence", "item", "from", "to", "action"],
+      "properties": {
+        "sequence": {"type": "integer", "minimum": 1},
+        "item": {"$ref": "#/definitions/itemId"},
+        "from": {"const": "BLOCKED"},
+        "to": {"const": "IN_PROGRESS"},
+        "action": {"const": "RESUME"}
+      },
+      "additionalProperties": false
+    },
+    "completeTransition": {
+      "type": "object",
+      "required": ["sequence", "item", "from", "to", "action", "evidence_refs", "surface_refs", "proof_receipt"],
+      "properties": {
+        "sequence": {"type": "integer", "minimum": 1},
+        "item": {"$ref": "#/definitions/itemId"},
+        "from": {"const": "IN_PROGRESS"},
+        "to": {"const": "COMPLETE"},
+        "action": {"const": "RECONCILE"},
+        "evidence_refs": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/definitions/reference"}},
+        "surface_refs": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/definitions/path"}},
+        "proof_receipt": {"$ref": "#/definitions/proofReceipt"}
+      },
+      "additionalProperties": false
+    },
+    "skippedTransition": {
+      "type": "object",
+      "required": ["sequence", "item", "from", "to", "action", "reason", "decision_id", "decision_receipt"],
+      "properties": {
+        "sequence": {"type": "integer", "minimum": 1},
+        "item": {"$ref": "#/definitions/itemId"},
+        "from": {"const": "IN_PROGRESS"},
+        "to": {"const": "SKIPPED"},
+        "action": {"const": "RECONCILE"},
+        "reason": {"type": "string", "minLength": 1},
+        "decision_id": {"$ref": "#/definitions/decisionId"},
+        "decision_receipt": {"$ref": "#/definitions/decisionReceipt"}
+      },
+      "additionalProperties": false
+    },
+    "supersededTransition": {
+      "type": "object",
+      "required": ["sequence", "item", "from", "to", "action", "reason", "decision_id", "superseded_by", "decision_receipt"],
+      "properties": {
+        "sequence": {"type": "integer", "minimum": 1},
+        "item": {"$ref": "#/definitions/itemId"},
+        "from": {"const": "IN_PROGRESS"},
+        "to": {"const": "SUPERSEDED"},
+        "action": {"const": "RECONCILE"},
+        "reason": {"type": "string", "minLength": 1},
+        "decision_id": {"$ref": "#/definitions/decisionId"},
+        "superseded_by": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/definitions/itemId"}},
+        "decision_receipt": {"$ref": "#/definitions/decisionReceipt"}
+      },
+      "additionalProperties": false
+    },
+    "refreshProofTransition": {
+      "type": "object",
+      "required": ["sequence", "item", "from", "to", "action", "evidence_refs", "surface_refs", "proof_receipt"],
+      "properties": {
+        "sequence": {"type": "integer", "minimum": 1},
+        "item": {"$ref": "#/definitions/itemId"},
+        "from": {"const": "COMPLETE"},
+        "to": {"const": "COMPLETE"},
+        "action": {"const": "REFRESH_PROOF"},
+        "evidence_refs": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/definitions/reference"}},
+        "surface_refs": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/definitions/path"}},
+        "proof_receipt": {"$ref": "#/definitions/proofReceipt"}
+      },
+      "additionalProperties": false
+    },
+    "transition": {
+      "oneOf": [
+        {"$ref": "#/definitions/beginTransition"},
+        {"$ref": "#/definitions/blockTransition"},
+        {"$ref": "#/definitions/resumeTransition"},
+        {"$ref": "#/definitions/completeTransition"},
+        {"$ref": "#/definitions/skippedTransition"},
+        {"$ref": "#/definitions/supersededTransition"},
+        {"$ref": "#/definitions/refreshProofTransition"}
+      ]
+    },
+    "executionV2": {
+      "type": "object",
+      "required": ["version", "plan", "sequence", "transitions", "items"],
+      "properties": {
+        "version": {"const": 2},
+        "plan": {"$ref": "#/definitions/planIdentity"},
+        "sequence": {"type": "integer", "minimum": 0},
+        "transitions": {"type": "array", "items": {"$ref": "#/definitions/transition"}},
+        "items": {
+          "type": "object",
+          "propertyNames": {"$ref": "#/definitions/itemId"},
+          "additionalProperties": {"$ref": "#/definitions/projectedItem"}
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}
