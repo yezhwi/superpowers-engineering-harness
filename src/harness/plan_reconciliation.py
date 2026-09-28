@@ -3,6 +3,7 @@
 import hashlib
 import json
 from collections.abc import Iterable
+from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -13,9 +14,17 @@ from .blockers import GateBlocker
 from .collect_evidence import command_covers_test, record_covers_test
 from .evidence_validator import EvidenceStatus, project_evidence
 from .paths import EvidenceReferenceError, evidence_path
-from .plan_execution import ReplayResult, replay_plan_execution
+from .plan_execution import (
+    PlanExecutionError,
+    ReplayResult,
+    append_plan_transition,
+    replay_plan_execution,
+)
 from .schema_resources import read_schema
+from .telemetry_lock import telemetry_lock
+from .transaction import atomic_write
 from .workspace import changed_paths_since, protected_paths_fingerprint
+from .workspace import snapshot as workspace_snapshot
 
 _OPTIONAL_ITEM_LISTS = (
     "requirement_refs",
@@ -43,6 +52,26 @@ def plan_fingerprint(plan: dict) -> str:
 
 class PlanArtifactError(ValueError):
     """Canonical plan artifact is unreadable or schema-invalid."""
+
+
+class PlanMutationError(ValueError):
+    """Stable task-level Plan mutation refusal."""
+
+    def __init__(self, code: str):
+        self.code = code
+        super().__init__(code)
+
+
+@dataclass(frozen=True)
+class PlanMutationRequest:
+    action: str
+    item_id: str | None = None
+    disposition: str | None = None
+    reason: str | None = None
+    evidence_refs: tuple[str, ...] = ()
+    surface_refs: tuple[str, ...] = ()
+    decision_id: str | None = None
+    replacements: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -911,3 +940,367 @@ def validate_plan_reconciliation_documents(
             workspace=workspace,
         ).blockers
     )
+
+
+_IMPLEMENTATION_ACTIONS = frozenset({"BEGIN", "BLOCK", "RESUME", "RECONCILE"})
+
+
+def _mutation_state_allowed(task: dict, action: str) -> bool:
+    state = task.get("state")
+    if action in _IMPLEMENTATION_ACTIONS:
+        return state == "IMPLEMENTING"
+    if action == "REFRESH_PROOF":
+        return state in {"IMPLEMENTING", "VERIFYING"}
+    if action == "UPGRADE_EXECUTION":
+        return state in {"SPECIFYING", "PLANNED", "IMPLEMENTING"}
+    return False
+
+
+def _normalize_mutation_request(
+    plan: dict, request: PlanMutationRequest
+) -> PlanMutationRequest:
+    plan_order = {item["id"]: index for index, item in enumerate(plan["items"])}
+    replacements = tuple(
+        sorted(set(request.replacements), key=lambda item_id: plan_order.get(item_id, len(plan_order)))
+    )
+    return PlanMutationRequest(
+        action=request.action,
+        item_id=request.item_id,
+        disposition=request.disposition,
+        reason=request.reason,
+        evidence_refs=tuple(sorted(set(request.evidence_refs))),
+        surface_refs=tuple(sorted(set(request.surface_refs))),
+        decision_id=request.decision_id,
+        replacements=replacements,
+    )
+
+
+def _raise_artifact_issue(plan: dict | None, execution: dict | None) -> None:
+    early = _artifact_early_blockers(plan, execution)
+    if early:
+        raise PlanMutationError(early[0].code)
+
+
+def _upgrade_execution(plan: dict, execution: dict) -> dict | None:
+    if execution["version"] == 2:
+        replay = replay_plan_execution(plan, execution)
+        if replay.issues:
+            raise PlanMutationError("PLAN_SEQUENCE_INVALID")
+        if execution["sequence"] == 0 and not execution["transitions"] and not execution["items"]:
+            return None
+        raise PlanMutationError("PLAN_TASK_LEVEL_REQUIRED")
+    plan_ids = {item["id"] for item in plan["items"]}
+    if set(execution["items"]) - plan_ids:
+        raise PlanMutationError("PLAN_DISPOSITION_INVALID")
+    if any(record["status"] != "PENDING" for record in execution["items"].values()):
+        raise PlanMutationError("PLAN_TASK_LEVEL_REQUIRED")
+    return {
+        "version": 2,
+        "plan": deepcopy(execution["plan"]),
+        "sequence": 0,
+        "transitions": [],
+        "items": {},
+    }
+
+
+def _exact_transition_retry(
+    execution: dict, request: PlanMutationRequest, transition: dict
+) -> bool:
+    if not execution["transitions"]:
+        return False
+    latest = execution["transitions"][-1]
+    comparable = {key: value for key, value in latest.items() if key != "sequence"}
+    return comparable == transition and latest.get("item") == request.item_id
+
+
+def _evidence_receipts(
+    harness_dir: Path,
+    references: tuple[str, ...],
+    *,
+    head: str,
+    workspace: str,
+) -> list[dict]:
+    from harness import source_access
+
+    receipts: list[dict] = []
+    for reference in references:
+        try:
+            path = evidence_path(harness_dir, reference)
+            projection = project_evidence(path, head, workspace)
+            if projection.status is EvidenceStatus.INVALID:
+                raise PlanArtifactError(f"PLAN_SOURCE_INVALID: {path}")
+            if projection.status is not EvidenceStatus.FRESH or projection.record is None:
+                raise PlanMutationError("PLAN_PROOF_MISSING")
+            content = source_access.read_bytes(path)
+        except (OSError, EvidenceReferenceError) as exc:
+            raise PlanMutationError("PLAN_PROOF_MISSING") from exc
+        record = projection.record
+        receipts.append(
+            {
+                "ref": reference,
+                "sha256": "sha256:" + hashlib.sha256(content).hexdigest(),
+                "type": record["type"],
+                "exit_code": record["exit_code"],
+                "commit": record["commit"],
+                "workspace_fingerprint": record["workspace_fingerprint"],
+            }
+        )
+    return receipts
+
+
+def _proof_transition_payload(
+    harness_dir: Path,
+    task: dict,
+    plan: dict,
+    replay: ReplayResult,
+    request: PlanMutationRequest,
+    *,
+    action: str,
+) -> dict:
+    before = workspace_snapshot(harness_dir.parent)
+    evidence = _evidence_receipts(
+        harness_dir,
+        request.evidence_refs,
+        head=before.head,
+        workspace=before.fingerprint,
+    )
+    record = {"status": "COMPLETE"}
+    if request.evidence_refs:
+        record["evidence_refs"] = list(request.evidence_refs)
+    if request.surface_refs:
+        record["surface_refs"] = list(request.surface_refs)
+    blockers = _validate_p0_projection(
+        harness_dir,
+        task,
+        plan,
+        {**replay.items, request.item_id: record},
+        head=before.head,
+        workspace=before.fingerprint,
+    )
+    target_blockers = [blocker for blocker in blockers if blocker.source == request.item_id]
+    if target_blockers:
+        raise PlanMutationError(target_blockers[0].code)
+    after = workspace_snapshot(harness_dir.parent)
+    if (after.head, after.fingerprint) != (before.head, before.fingerprint):
+        raise PlanMutationError("PLAN_PROOF_MISSING")
+    return {
+        "item": request.item_id,
+        "from": "COMPLETE" if action == "REFRESH_PROOF" else "IN_PROGRESS",
+        "to": "COMPLETE",
+        "action": action,
+        "evidence_refs": list(request.evidence_refs),
+        "surface_refs": list(request.surface_refs),
+        "proof_receipt": {
+            "head": before.head,
+            "workspace": before.fingerprint,
+            "evidence": evidence,
+            "surface_refs": list(request.surface_refs),
+        },
+    }
+
+
+def _decision_receipt(
+    harness_dir: Path, task: dict, decision_id: str | None
+) -> dict:
+    from harness import source_access
+    from harness.decision import DecisionError, load_decision
+
+    if not decision_id:
+        raise PlanMutationError("PLAN_DISPOSITION_INVALID")
+    try:
+        record = load_decision(harness_dir, decision_id)
+        content = source_access.read_bytes(harness_dir / "decisions" / f"{decision_id}.yaml")
+    except DecisionError as exc:
+        if str(exc) == "DECISION_NOT_FOUND":
+            raise PlanMutationError("PLAN_DISPOSITION_INVALID") from exc
+        raise
+    except OSError as exc:
+        raise PlanMutationError("PLAN_DISPOSITION_INVALID") from exc
+    if (
+        record.get("task_id") != task.get("task", {}).get("id")
+        or record.get("status") != "ACCEPTED"
+    ):
+        raise PlanMutationError("PLAN_DISPOSITION_INVALID")
+    return {
+        "decision_id": decision_id,
+        "sha256": "sha256:" + hashlib.sha256(content).hexdigest(),
+        "task_id": record["task_id"],
+        "status": "ACCEPTED",
+    }
+
+
+def _lifecycle_transition(
+    harness_dir: Path,
+    task: dict,
+    plan: dict,
+    execution: dict,
+    replay: ReplayResult,
+    request: PlanMutationRequest,
+) -> dict:
+    item_id = request.item_id
+    if not item_id or item_id not in {item["id"] for item in plan["items"]}:
+        raise PlanMutationError("PLAN_SEQUENCE_INVALID")
+    status = replay.items.get(item_id, {}).get("status", "PENDING")
+
+    if request.action == "BEGIN":
+        transition = {
+            "item": item_id,
+            "from": "PENDING",
+            "to": "IN_PROGRESS",
+            "action": "BEGIN",
+        }
+        if status == "IN_PROGRESS" and _exact_transition_retry(execution, request, transition):
+            raise PlanMutationError("PLAN_EXACT_RETRY")
+        if status != "PENDING" or replay.next_item != item_id or replay.active_item is not None:
+            raise PlanMutationError("PLAN_SEQUENCE_INVALID")
+        return transition
+
+    if request.action == "BLOCK":
+        reason = request.reason
+        if not isinstance(reason, str) or not reason.strip():
+            raise PlanMutationError("PLAN_DISPOSITION_INVALID")
+        transition = {
+            "item": item_id,
+            "from": "IN_PROGRESS",
+            "to": "BLOCKED",
+            "action": "BLOCK",
+            "reason": reason,
+        }
+        if status == "BLOCKED" and _exact_transition_retry(execution, request, transition):
+            raise PlanMutationError("PLAN_EXACT_RETRY")
+        if status != "IN_PROGRESS" or replay.active_item != item_id:
+            raise PlanMutationError("PLAN_SEQUENCE_INVALID")
+        return transition
+
+    if request.action == "RESUME":
+        transition = {
+            "item": item_id,
+            "from": "BLOCKED",
+            "to": "IN_PROGRESS",
+            "action": "RESUME",
+        }
+        if status == "IN_PROGRESS" and _exact_transition_retry(execution, request, transition):
+            raise PlanMutationError("PLAN_EXACT_RETRY")
+        if status != "BLOCKED" or replay.active_item != item_id:
+            raise PlanMutationError("PLAN_SEQUENCE_INVALID")
+        return transition
+
+    if request.action == "RECONCILE":
+        if request.disposition == "COMPLETE":
+            transition = _proof_transition_payload(
+                harness_dir,
+                task,
+                plan,
+                replay,
+                request,
+                action="RECONCILE",
+            )
+        elif request.disposition in {"SKIPPED", "SUPERSEDED"}:
+            if not isinstance(request.reason, str) or not request.reason.strip():
+                raise PlanMutationError("PLAN_DISPOSITION_INVALID")
+            receipt = _decision_receipt(harness_dir, task, request.decision_id)
+            transition = {
+                "item": item_id,
+                "from": "IN_PROGRESS",
+                "to": request.disposition,
+                "action": "RECONCILE",
+                "reason": request.reason,
+                "decision_id": request.decision_id,
+                "decision_receipt": receipt,
+            }
+            if request.disposition == "SUPERSEDED":
+                plan_ids = {item["id"] for item in plan["items"]}
+                if (
+                    not request.replacements
+                    or item_id in request.replacements
+                    or any(value not in plan_ids for value in request.replacements)
+                ):
+                    raise PlanMutationError("PLAN_DISPOSITION_INVALID")
+                transition["superseded_by"] = list(request.replacements)
+        else:
+            raise PlanMutationError("PLAN_DISPOSITION_INVALID")
+        if status in {"COMPLETE", "SKIPPED", "SUPERSEDED"}:
+            if _exact_transition_retry(execution, request, transition):
+                raise PlanMutationError("PLAN_EXACT_RETRY")
+            raise PlanMutationError("PLAN_DISPOSITION_INVALID")
+        if status != "IN_PROGRESS" or replay.active_item != item_id:
+            raise PlanMutationError("PLAN_SEQUENCE_INVALID")
+        return transition
+
+    if request.action == "REFRESH_PROOF":
+        if status != "COMPLETE":
+            raise PlanMutationError("PLAN_SEQUENCE_INVALID")
+        transition = _proof_transition_payload(
+            harness_dir,
+            task,
+            plan,
+            replay,
+            request,
+            action="REFRESH_PROOF",
+        )
+        if _exact_transition_retry(execution, request, transition):
+            raise PlanMutationError("PLAN_EXACT_RETRY")
+        return transition
+
+    raise PlanMutationError("PLAN_DISPOSITION_INVALID")
+
+
+def mutate_plan_execution(
+    harness_dir: Path,
+    task: dict,
+    request: PlanMutationRequest,
+) -> bool:
+    """Apply one authorized task-level mutation under canonical Harness lock."""
+    configuration = effective_plan_reconciliation(task)
+    if not (
+        configuration.get("enabled") is True
+        and configuration.get("mode") == "task_and_final"
+        and (task.get("risk") or {}).get("profile") == "STRICT"
+    ):
+        raise PlanMutationError("PLAN_TASK_LEVEL_DISABLED")
+    if not _mutation_state_allowed(task, request.action):
+        raise PlanMutationError("PLAN_MUTATION_NOT_ALLOWED")
+
+    with telemetry_lock(harness_dir):
+        plan, execution = load_plan_artifacts(harness_dir, optional=True)
+        _raise_artifact_issue(plan, execution)
+        assert plan is not None and execution is not None
+        normalized = _normalize_mutation_request(plan, request)
+
+        if normalized.action == "UPGRADE_EXECUTION":
+            candidate = _upgrade_execution(plan, execution)
+            if candidate is None:
+                return False
+        else:
+            if execution["version"] != 2:
+                raise PlanMutationError("PLAN_TASK_LEVEL_REQUIRED")
+            replay = replay_plan_execution(plan, execution)
+            if replay.issues:
+                raise PlanMutationError("PLAN_SEQUENCE_INVALID")
+            try:
+                transition = _lifecycle_transition(
+                    harness_dir,
+                    task,
+                    plan,
+                    execution,
+                    replay,
+                    normalized,
+                )
+            except PlanMutationError as exc:
+                if exc.code == "PLAN_EXACT_RETRY":
+                    return False
+                raise
+            try:
+                candidate = append_plan_transition(plan, execution, transition)
+            except PlanExecutionError as exc:
+                raise PlanMutationError("PLAN_SEQUENCE_INVALID") from exc
+            if _supersession_issue(plan, candidate["items"]):
+                raise PlanMutationError("PLAN_DISPOSITION_INVALID")
+
+        try:
+            validate(candidate, read_schema("plan-execution.schema.json"))
+        except ValidationError as exc:
+            raise PlanMutationError("PLAN_DISPOSITION_INVALID") from exc
+        content = yaml.safe_dump(candidate, sort_keys=False).encode()
+        atomic_write(harness_dir / "plan-execution.yaml", content)
+        return True
