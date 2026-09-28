@@ -1805,6 +1805,15 @@ def cmd_task_migrate_id(task_id: str) -> int:
     return 0
 
 
+def _plan_reconciliation_config(level: str) -> dict:
+    if level == "Q1":
+        return {"enabled": False}
+    return {
+        "enabled": True,
+        "mode": "task_and_final" if level == "Q3" else "final",
+    }
+
+
 def cmd_task_classify(level: str, dimensions: dict[str, str]) -> int:
     harness_dir = Path(".harness")
     task = load_task(harness_dir)
@@ -1851,10 +1860,7 @@ def cmd_task_classify(level: str, dimensions: dict[str, str]) -> int:
         task["scope"] = {"owned_paths": [], "protected_user_paths": list(user_changes)}
         head = workspace.git_head()
         task["git"] = workspace.git_baseline(head)
-        task["plan_reconciliation"] = {
-            "enabled": level != "Q1",
-            "mode": "task_and_final" if level == "Q3" else "final" if level == "Q2" else "disabled",
-        }
+        task["plan_reconciliation"] = _plan_reconciliation_config(level)
         task["risk"] = {
             "level": level,
             "profile": profile,
@@ -1951,10 +1957,7 @@ def cmd_task_escalate(level: str, reason: str) -> int:
         )
         staged_risk["level"] = level
         staged_risk["profile"] = risk.PROFILES[level]
-        staged_task["plan_reconciliation"] = {
-            "enabled": level != "Q1",
-            "mode": "task_and_final" if level == "Q3" else "final" if level == "Q2" else "disabled",
-        }
+        staged_task["plan_reconciliation"] = _plan_reconciliation_config(level)
         save_task(staged, staged_task)
         publish_replacement(harness_dir, staged)
     except Exception as exc:

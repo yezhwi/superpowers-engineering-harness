@@ -141,6 +141,19 @@ def test_standard_profile_retains_complexity_requirement(tmp_path):
     assert "COMPLEXITY_REVIEW_REQUIRED" in result.stderr
 
 
+def test_q1_classification_persists_disabled_plan_reconciliation_without_mode(tmp_path):
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    assert run_cli(tmp_path, "init").returncode == 0
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-qm", "base"], cwd=tmp_path, check=True)
+    flags = [item for pair in SAFE.items() for item in (f"--{pair[0]}", pair[1])]
+
+    assert run_cli(tmp_path, "task", "classify", "--level", "Q1", *flags).returncode == 0
+
+    task = yaml.safe_load((tmp_path / ".harness/current-task.yaml").read_text())
+    assert task["plan_reconciliation"] == {"enabled": False}
+
+
 def test_fast_implementation_escalation_restarts_standard_contract(tmp_path):
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
     assert run_cli(tmp_path, "init").returncode == 0

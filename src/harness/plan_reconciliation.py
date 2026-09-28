@@ -55,6 +55,10 @@ def _load_yaml(path: Path, schema_name: str) -> tuple[dict | None, PlanIssue | N
         validate(document, read_schema(schema_name))
     except (OSError, yaml.YAMLError, ValidationError, ValueError) as exc:
         raise PlanArtifactError(f"PLAN_SCHEMA_INVALID: {path}") from exc
+    if schema_name == "plan.schema.json":
+        item_ids = [item["id"] for item in document["items"]]
+        if len(item_ids) != len(set(item_ids)):
+            raise PlanArtifactError("PLAN_ITEM_ID_DUPLICATE")
     return document, None
 
 

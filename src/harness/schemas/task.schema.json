@@ -71,11 +71,18 @@
     },
     "plan_reconciliation": {
       "type": "object",
-      "required": ["enabled", "mode"],
+      "required": ["enabled"],
       "properties": {
         "enabled": {"type": "boolean"},
-        "mode": {"enum": ["disabled", "final", "task_and_final"]}
+        "mode": {"enum": ["final", "task_and_final"]}
       },
+      "allOf": [
+        {
+          "if": {"properties": {"enabled": {"const": true}}},
+          "then": {"required": ["mode"]},
+          "else": {"not": {"required": ["mode"]}}
+        }
+      ],
       "additionalProperties": false
     },
     "scope": {

@@ -606,6 +606,34 @@ def test_final_plan_reconciliation_rejects_unaccepted_decision_reference(tmp_pat
     assert [blocker.code for blocker in blockers] == ["PLAN_DISPOSITION_INVALID"]
 
 
+def test_plan_initialization_rejects_duplicate_item_ids(tmp_path):
+    from harness.plan_reconciliation import (
+        PlanArtifactError,
+        plan_fingerprint,
+        validate_plan_initialization,
+    )
+
+    harness_dir = tmp_path / ".harness"
+    harness_dir.mkdir()
+    plan = {
+        "version": 1,
+        "items": [
+            {"id": "P-001", "intent": "first"},
+            {"id": "P-001", "intent": "different"},
+        ],
+    }
+    (harness_dir / "plan.yaml").write_text(yaml.safe_dump(plan))
+    execution = {
+        "version": 1,
+        "plan": {"path": ".harness/plan.yaml", "fingerprint": plan_fingerprint(plan)},
+        "items": {},
+    }
+    (harness_dir / "plan-execution.yaml").write_text(yaml.safe_dump(execution))
+
+    with pytest.raises(PlanArtifactError, match="PLAN_ITEM_ID_DUPLICATE"):
+        validate_plan_initialization(harness_dir)
+
+
 @pytest.mark.parametrize("surface", ["", "/tmp/escape", "docs/../secret"])
 def test_plan_schema_rejects_non_repository_relative_surface(surface):
     if jsonschema is None:
