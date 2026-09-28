@@ -13,6 +13,7 @@ from .blockers import GateBlocker
 from .collect_evidence import command_covers_test, record_covers_test
 from .evidence_validator import EvidenceStatus, project_evidence
 from .paths import EvidenceReferenceError, evidence_path
+from .plan_execution import ReplayResult, replay_plan_execution
 from .schema_resources import read_schema
 from .workspace import changed_paths_since, protected_paths_fingerprint
 
@@ -48,6 +49,14 @@ class PlanArtifactError(ValueError):
 class PlanIssue:
     code: str
     message: str
+
+
+@dataclass(frozen=True)
+class PlanAssessment:
+    blockers: tuple[GateBlocker, ...]
+    final_blockers: tuple[GateBlocker, ...]
+    projection: dict[str, dict] | None
+    replay: ReplayResult | None
 
 
 def effective_plan_reconciliation(task: dict) -> dict:
@@ -118,10 +127,54 @@ def _plan_initialization_issues(
     return []
 
 
-def validate_plan_initialization(harness_dir: Path) -> list[PlanIssue]:
+def validate_plan_initialization(
+    harness_dir: Path, task: dict | None = None
+) -> list[PlanIssue]:
     """Validate artifacts needed before enabled task implementation begins."""
+    if task is not None and not effective_plan_reconciliation(task)["enabled"]:
+        return []
     plan, execution = load_plan_artifacts(harness_dir, optional=True)
-    return _plan_initialization_issues(plan, execution)
+    issues = _plan_initialization_issues(plan, execution)
+    if issues:
+        return issues
+    assert plan is not None and execution is not None
+    configuration = effective_plan_reconciliation(task or {})
+    task_level = (
+        configuration.get("enabled") is True
+        and configuration.get("mode") == "task_and_final"
+        and ((task or {}).get("risk") or {}).get("profile") == "STRICT"
+    )
+    if task_level:
+        if execution["version"] != 2:
+            return [
+                PlanIssue(
+                    "PLAN_TASK_LEVEL_REQUIRED",
+                    "task-level plan execution history requires execution v2",
+                )
+            ]
+        replay = replay_plan_execution(plan, execution)
+        if replay.issues:
+            return [
+                PlanIssue(
+                    "PLAN_SEQUENCE_INVALID",
+                    f"plan execution journal cannot replay: {replay.issues[0].code}",
+                )
+            ]
+        if execution["sequence"] != 0 or execution["transitions"] or execution["items"]:
+            return [
+                PlanIssue(
+                    "PLAN_SEQUENCE_INVALID",
+                    "task-level implementation entry requires empty execution v2",
+                )
+            ]
+    elif task is not None and execution["version"] != 1:
+        return [
+            PlanIssue(
+                "PLAN_DISPOSITION_INVALID",
+                "final-only task requires plan execution v1",
+            )
+        ]
+    return []
 
 
 def plan_context_summary(
@@ -255,6 +308,44 @@ def _fresh_item_evidence(harness_dir: Path, references: list[str], head: str, wo
         return False
 
 
+def _latest_receipt_matches(
+    harness_dir: Path,
+    record: dict,
+    receipt: dict | None,
+    *,
+    head: str,
+    workspace: str,
+) -> bool:
+    """Require current proof identity to match latest accepted v2 receipt."""
+    from harness import source_access
+
+    if (
+        not isinstance(receipt, dict)
+        or receipt.get("head") != head
+        or receipt.get("workspace") != workspace
+        or receipt.get("surface_refs") != record.get("surface_refs", [])
+    ):
+        return False
+    evidence_refs = record.get("evidence_refs", [])
+    evidence_receipts = receipt.get("evidence")
+    if (
+        not isinstance(evidence_receipts, list)
+        or [entry.get("ref") for entry in evidence_receipts] != evidence_refs
+    ):
+        return False
+    try:
+        for entry in evidence_receipts:
+            content = source_access.read_bytes(
+                evidence_path(harness_dir, entry["ref"])
+            )
+            digest = "sha256:" + hashlib.sha256(content).hexdigest()
+            if digest != entry.get("sha256"):
+                return False
+    except (OSError, KeyError, TypeError, EvidenceReferenceError):
+        return False
+    return True
+
+
 def _qualified_cases(harness_dir: Path) -> dict[str, dict]:
     from harness import source_access
 
@@ -333,10 +424,10 @@ def _automated_cases_are_covered(
     return True
 
 
-def _supersession_issue(plan: dict, execution: dict) -> tuple[str, str] | None:
+def _supersession_issue(plan: dict, items: dict) -> tuple[str, str] | None:
     plan_ids = {item["id"] for item in plan["items"]}
     graph: dict[str, list[str]] = {}
-    for item_id, record in execution["items"].items():
+    for item_id, record in items.items():
         if record["status"] != "SUPERSEDED":
             continue
         replacements = record.get("superseded_by")
@@ -372,22 +463,29 @@ def validate_plan_reconciliation(
     )
 
 
-def validate_plan_reconciliation_documents(
+def _validate_p0_projection(
     harness_dir: Path,
     task: dict,
-    plan: dict | None,
-    execution: dict | None,
+    plan: dict,
+    items: dict[str, dict],
     *,
     head: str,
     workspace: str,
+    latest_proof_receipts: dict[str, dict] | None = None,
 ) -> list[GateBlocker]:
-    """Return P0 blockers from one already-loaded plan/execution pair."""
-    issues = _plan_initialization_issues(plan, execution)
-    if issues:
-        return [_blocker(issue) for issue in issues]
-    assert plan is not None and execution is not None
+    """Return existing final-state blockers for one explicit item projection."""
+    plan_ids = {item["id"] for item in plan["items"]}
+    if unknown := set(items) - plan_ids:
+        return [
+            GateBlocker(
+                "PLAN_DISPOSITION_INVALID",
+                "implementation",
+                f"execution item is absent from plan: {min(unknown)}",
+                recover_to="IMPLEMENTING",
+            )
+        ]
 
-    if supersession := _supersession_issue(plan, execution):
+    if supersession := _supersession_issue(plan, items):
         item_id, message = supersession
         return [
             GateBlocker(
@@ -425,7 +523,7 @@ def validate_plan_reconciliation_documents(
     blockers: list[GateBlocker] = []
     for item in plan["items"]:
         item_id = item["id"]
-        record = execution["items"].get(item_id)
+        record = items.get(item_id)
         if record is None or record["status"] in {"PENDING", "IN_PROGRESS", "BLOCKED"}:
             blockers.append(
                 GateBlocker(
@@ -500,6 +598,26 @@ def validate_plan_reconciliation_documents(
                     f"qualified test case is absent from parent: {invalid_case_ref}",
                     source=item_id,
                     recover_to="IMPLEMENTING",
+                )
+            )
+        elif (
+            record["status"] == "COMPLETE"
+            and latest_proof_receipts is not None
+            and not _latest_receipt_matches(
+                harness_dir,
+                record,
+                latest_proof_receipts.get(item_id),
+                head=head,
+                workspace=workspace,
+            )
+        ):
+            blockers.append(
+                GateBlocker(
+                    "PLAN_PROOF_MISSING",
+                    "verification",
+                    "current proof does not match latest accepted receipt",
+                    source=item_id,
+                    recover_to="VERIFYING",
                 )
             )
         elif (
@@ -649,3 +767,147 @@ def validate_plan_reconciliation_documents(
                 )
             )
     return blockers
+
+
+def _artifact_early_blockers(
+    plan: dict | None, execution: dict | None
+) -> tuple[GateBlocker, ...]:
+    if plan is None or execution is None:
+        return (
+            _blocker(
+                PlanIssue("PLAN_REQUIRED", "enabled task requires plan artifacts")
+            ),
+        )
+    if execution["plan"]["fingerprint"] != plan_fingerprint(plan):
+        return (
+            _blocker(
+                PlanIssue(
+                    "PLAN_STALE",
+                    "plan fingerprint does not match canonical plan",
+                )
+            ),
+        )
+    return ()
+
+
+def _mode_blocker(message: str) -> GateBlocker:
+    return GateBlocker(
+        "PLAN_DISPOSITION_INVALID",
+        "implementation",
+        message,
+        recover_to="IMPLEMENTING",
+    )
+
+
+def _task_level_blocker(code: str, message: str) -> GateBlocker:
+    return GateBlocker(
+        code,
+        "implementation",
+        message,
+        source=None,
+        recover_to="IMPLEMENTING",
+    )
+
+
+def assess_plan_reconciliation_documents(
+    harness_dir: Path,
+    task: dict,
+    plan: dict | None,
+    execution: dict | None,
+    *,
+    head: str,
+    workspace: str,
+) -> PlanAssessment:
+    """Assess public task-level trust and independent P0 final state."""
+    early = _artifact_early_blockers(plan, execution)
+    if early:
+        return PlanAssessment(early, early, None, None)
+    assert plan is not None and execution is not None
+
+    configuration = effective_plan_reconciliation(task)
+    task_level = (
+        configuration.get("enabled") is True
+        and configuration.get("mode") == "task_and_final"
+        and (task.get("risk") or {}).get("profile") == "STRICT"
+    )
+
+    if not task_level and execution["version"] != 1:
+        blocker = _mode_blocker("final-only task requires plan execution v1")
+        return PlanAssessment((blocker,), (blocker,), None, None)
+
+    if task_level and execution["version"] == 1:
+        final = tuple(
+            _validate_p0_projection(
+                harness_dir,
+                task,
+                plan,
+                execution["items"],
+                head=head,
+                workspace=workspace,
+            )
+        )
+        blocker = _task_level_blocker(
+            "PLAN_TASK_LEVEL_REQUIRED",
+            "task-level plan execution history requires execution v2",
+        )
+        return PlanAssessment((blocker,), final, None, None)
+
+    if task_level:
+        replay = replay_plan_execution(plan, execution)
+        if replay.issues:
+            final = tuple(
+                _validate_p0_projection(
+                    harness_dir,
+                    task,
+                    plan,
+                    execution["items"],
+                    head=head,
+                    workspace=workspace,
+                )
+            )
+            blocker = _task_level_blocker(
+                "PLAN_SEQUENCE_INVALID",
+                f"plan execution journal cannot replay: {replay.issues[0].code}",
+            )
+            return PlanAssessment((blocker,), final, None, replay)
+        projection = replay.items
+    else:
+        replay = None
+        projection = execution["items"]
+
+    final = tuple(
+        _validate_p0_projection(
+            harness_dir,
+            task,
+            plan,
+            projection,
+            head=head,
+            workspace=workspace,
+            latest_proof_receipts=(
+                replay.latest_proof_receipts if replay is not None else None
+            ),
+        )
+    )
+    return PlanAssessment(final, final, projection, replay)
+
+
+def validate_plan_reconciliation_documents(
+    harness_dir: Path,
+    task: dict,
+    plan: dict | None,
+    execution: dict | None,
+    *,
+    head: str,
+    workspace: str,
+) -> list[GateBlocker]:
+    """Return public blockers from one already-loaded plan assessment."""
+    return list(
+        assess_plan_reconciliation_documents(
+            harness_dir,
+            task,
+            plan,
+            execution,
+            head=head,
+            workspace=workspace,
+        ).blockers
+    )

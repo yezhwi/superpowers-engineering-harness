@@ -1216,3 +1216,517 @@ def _load(path):
     import json
 
     return json.loads(path.read_text())
+
+
+def _plan_assessment_task(profile: str, mode: str) -> dict:
+    return {
+        "task": {"id": "TASK-062"},
+        "risk": {"profile": profile, "user_changes": {"paths": [], "fingerprint": "sha256:" + "0" * 64}},
+        "git": {"base_commit": "HEAD"},
+        "plan_reconciliation": {"enabled": True, "mode": mode},
+    }
+
+
+def _execution_v1(plan: dict, items: dict | None = None) -> dict:
+    from harness.plan_reconciliation import plan_fingerprint
+
+    return {
+        "version": 1,
+        "plan": {"path": ".harness/plan.yaml", "fingerprint": plan_fingerprint(plan)},
+        "items": items or {},
+    }
+
+
+def _execution_v2(
+    plan: dict,
+    *,
+    sequence: int = 0,
+    transitions: list[dict] | None = None,
+    items: dict | None = None,
+) -> dict:
+    from harness.plan_reconciliation import plan_fingerprint
+
+    return {
+        "version": 2,
+        "plan": {"path": ".harness/plan.yaml", "fingerprint": plan_fingerprint(plan)},
+        "sequence": sequence,
+        "transitions": transitions or [],
+        "items": items or {},
+    }
+
+
+@pytest.mark.parametrize(
+    ("task", "plan", "execution", "expected", "final_expected"),
+    [
+        (
+            _plan_assessment_task("STRICT", "task_and_final"),
+            None,
+            None,
+            "PLAN_REQUIRED",
+            "PLAN_REQUIRED",
+        ),
+        (
+            _plan_assessment_task("STRICT", "task_and_final"),
+            {"version": 1, "items": []},
+            {
+                "version": 2,
+                "plan": {"path": ".harness/plan.yaml", "fingerprint": "sha256:" + "0" * 64},
+                "sequence": 0,
+                "transitions": [],
+                "items": {},
+            },
+            "PLAN_STALE",
+            "PLAN_STALE",
+        ),
+        (
+            _plan_assessment_task("STANDARD", "final"),
+            {"version": 1, "items": []},
+            _execution_v2({"version": 1, "items": []}, sequence=1),
+            "PLAN_DISPOSITION_INVALID",
+            "PLAN_DISPOSITION_INVALID",
+        ),
+        (
+            _plan_assessment_task("STRICT", "task_and_final"),
+            {"version": 1, "items": []},
+            _execution_v1({"version": 1, "items": []}),
+            "PLAN_TASK_LEVEL_REQUIRED",
+            None,
+        ),
+        (
+            _plan_assessment_task("STRICT", "task_and_final"),
+            {"version": 1, "items": []},
+            _execution_v2({"version": 1, "items": []}, sequence=1),
+            "PLAN_SEQUENCE_INVALID",
+            None,
+        ),
+        (
+            _plan_assessment_task("STRICT", "task_and_final"),
+            {"version": 1, "items": [{"id": "P-001", "intent": "work"}]},
+            _execution_v2({"version": 1, "items": [{"id": "P-001", "intent": "work"}]}),
+            "PLAN_ITEM_UNRECONCILED",
+            "PLAN_ITEM_UNRECONCILED",
+        ),
+    ],
+)
+def test_plan_assessment_preserves_task_level_early_return_precedence(
+    tmp_path, task, plan, execution, expected, final_expected
+):
+    from harness.plan_reconciliation import assess_plan_reconciliation_documents
+
+    harness_dir = tmp_path / ".harness"
+    harness_dir.mkdir()
+    assessment = assess_plan_reconciliation_documents(
+        harness_dir,
+        task,
+        plan,
+        execution,
+        head="head",
+        workspace="sha256:" + "f" * 64,
+    )
+
+    assert [blocker.code for blocker in assessment.blockers] == [expected]
+    assert [blocker.code for blocker in assessment.final_blockers] == (
+        [] if final_expected is None else [final_expected]
+    )
+    if expected in {"PLAN_TASK_LEVEL_REQUIRED", "PLAN_SEQUENCE_INVALID"}:
+        blocker = assessment.blockers[0]
+        assert (blocker.category, blocker.source, blocker.recover_to) == (
+            "implementation",
+            None,
+            "IMPLEMENTING",
+        )
+        assert assessment.projection is None
+
+
+def test_plan_task_level_blockers_have_implementing_recovery_policy():
+    from harness.blockers import RECOVERY_POLICY
+
+    assert RECOVERY_POLICY["PLAN_TASK_LEVEL_REQUIRED"] == "IMPLEMENTING"
+    assert RECOVERY_POLICY["PLAN_SEQUENCE_INVALID"] == "IMPLEMENTING"
+
+
+def test_validate_plan_reconciliation_documents_delegates_public_assessment(tmp_path):
+    from harness.plan_reconciliation import validate_plan_reconciliation_documents
+
+    plan = {"version": 1, "items": []}
+    blockers = validate_plan_reconciliation_documents(
+        tmp_path,
+        _plan_assessment_task("STRICT", "task_and_final"),
+        plan,
+        _execution_v1(plan),
+        head="head",
+        workspace="sha256:" + "f" * 64,
+    )
+
+    assert [blocker.code for blocker in blockers] == ["PLAN_TASK_LEVEL_REQUIRED"]
+
+
+def _q3_begin() -> dict:
+    return {
+        "sequence": 1,
+        "item": "P-001",
+        "from": "PENDING",
+        "to": "IN_PROGRESS",
+        "action": "BEGIN",
+    }
+
+
+def _q3_decision_receipt() -> dict:
+    return {
+        "decision_id": "DEC-031",
+        "sha256": "sha256:" + "d" * 64,
+        "task_id": "TASK-062",
+        "status": "ACCEPTED",
+    }
+
+
+def _q3_proof_receipt(
+    *, head: str, workspace: str, evidence: list[dict] | None = None
+) -> dict:
+    return {
+        "head": head,
+        "workspace": workspace,
+        "evidence": evidence or [],
+        "surface_refs": [],
+    }
+
+
+def test_q3_replay_valid_nonterminal_uses_existing_p0_blocker(tmp_path):
+    from harness.plan_reconciliation import assess_plan_reconciliation_documents
+
+    plan = {"version": 1, "items": [{"id": "P-001", "intent": "work"}]}
+    execution = _execution_v2(
+        plan,
+        sequence=1,
+        transitions=[_q3_begin()],
+        items={"P-001": {"status": "IN_PROGRESS"}},
+    )
+
+    assessment = assess_plan_reconciliation_documents(
+        tmp_path,
+        _plan_assessment_task("STRICT", "task_and_final"),
+        plan,
+        execution,
+        head="head",
+        workspace="sha256:" + "f" * 64,
+    )
+
+    assert [blocker.code for blocker in assessment.blockers] == [
+        "PLAN_ITEM_UNRECONCILED"
+    ]
+    assert assessment.projection == {"P-001": {"status": "IN_PROGRESS"}}
+
+
+def test_q3_replay_valid_skip_requires_current_accepted_decision(tmp_path):
+    from harness.plan_reconciliation import assess_plan_reconciliation_documents
+
+    plan = {"version": 1, "items": [{"id": "P-001", "intent": "work"}]}
+    skip = {
+        "sequence": 2,
+        "item": "P-001",
+        "from": "IN_PROGRESS",
+        "to": "SKIPPED",
+        "action": "RECONCILE",
+        "reason": "removed",
+        "decision_id": "DEC-031",
+        "decision_receipt": _q3_decision_receipt(),
+    }
+    items = {
+        "P-001": {
+            "status": "SKIPPED",
+            "reason": "removed",
+            "decision_id": "DEC-031",
+        }
+    }
+    execution = _execution_v2(
+        plan, sequence=2, transitions=[_q3_begin(), skip], items=items
+    )
+
+    assessment = assess_plan_reconciliation_documents(
+        tmp_path,
+        _plan_assessment_task("STRICT", "task_and_final"),
+        plan,
+        execution,
+        head="head",
+        workspace="sha256:" + "f" * 64,
+    )
+
+    assert [blocker.code for blocker in assessment.blockers] == [
+        "PLAN_DISPOSITION_INVALID"
+    ]
+
+
+def test_q3_replay_valid_complete_requires_latest_receipt_current_workspace(
+    tmp_path, monkeypatch
+):
+    from harness import plan_reconciliation
+
+    workspace = "sha256:" + "f" * 64
+    plan = {
+        "version": 1,
+        "items": [
+            {"id": "P-001", "intent": "surface", "surfaces": ["src/example.py"]}
+        ],
+    }
+    receipt = _q3_proof_receipt(head="old-head", workspace=workspace)
+    receipt["surface_refs"] = ["src/example.py"]
+    complete = {
+        "sequence": 2,
+        "item": "P-001",
+        "from": "IN_PROGRESS",
+        "to": "COMPLETE",
+        "action": "RECONCILE",
+        "evidence_refs": [],
+        "surface_refs": ["src/example.py"],
+        "proof_receipt": receipt,
+    }
+    items = {
+        "P-001": {"status": "COMPLETE", "surface_refs": ["src/example.py"]}
+    }
+    execution = _execution_v2(
+        plan, sequence=2, transitions=[_q3_begin(), complete], items=items
+    )
+    monkeypatch.setattr(
+        plan_reconciliation, "changed_paths_since", lambda base: ("src/example.py",)
+    )
+
+    assessment = plan_reconciliation.assess_plan_reconciliation_documents(
+        tmp_path,
+        _plan_assessment_task("STRICT", "task_and_final"),
+        plan,
+        execution,
+        head="current-head",
+        workspace=workspace,
+    )
+
+    assert [blocker.code for blocker in assessment.blockers] == [
+        "PLAN_PROOF_MISSING"
+    ]
+
+
+def test_q3_replay_valid_complete_requires_latest_receipt_evidence_bytes(tmp_path):
+    import hashlib
+    import json
+
+    from harness.plan_reconciliation import assess_plan_reconciliation_documents
+
+    harness_dir = tmp_path / ".harness"
+    evidence_dir = harness_dir / "evidence"
+    evidence_dir.mkdir(parents=True)
+    workspace = "sha256:" + "f" * 64
+    evidence = {
+        "type": "unit_test",
+        "timestamp": "2026-01-01T00:00:00+00:00",
+        "command": "pytest tests/test_task_contract.py",
+        "exit_code": 0,
+        "commit": "head",
+        "workspace_fingerprint": workspace,
+        "workspace_fingerprint_after": workspace,
+        "covered_test_cases": ["TC-001"],
+    }
+    evidence_bytes = json.dumps(evidence).encode()
+    (evidence_dir / "unit.json").write_bytes(evidence_bytes)
+    (harness_dir / "requirements.yaml").write_text(
+        yaml.safe_dump(
+            _requirements_with_cases(
+                [{"id": "TC-001", "strategy": "manual", "tests": []}]
+            )
+        )
+    )
+    (harness_dir / "invariants.yaml").write_text(yaml.safe_dump({"invariants": []}))
+    plan = {
+        "version": 1,
+        "items": [
+            {
+                "id": "P-001",
+                "intent": "test",
+                "test_case_refs": ["REQ-001/TC-001"],
+            }
+        ],
+    }
+    receipt_entry = {
+        "ref": "unit",
+        "sha256": "sha256:" + hashlib.sha256(b"different").hexdigest(),
+        "type": "unit_test",
+        "exit_code": 0,
+        "commit": "head",
+        "workspace_fingerprint": workspace,
+    }
+    complete = {
+        "sequence": 2,
+        "item": "P-001",
+        "from": "IN_PROGRESS",
+        "to": "COMPLETE",
+        "action": "RECONCILE",
+        "evidence_refs": ["unit"],
+        "surface_refs": [],
+        "proof_receipt": _q3_proof_receipt(
+            head="head", workspace=workspace, evidence=[receipt_entry]
+        ),
+    }
+    items = {
+        "P-001": {"status": "COMPLETE", "evidence_refs": ["unit"]}
+    }
+    execution = _execution_v2(
+        plan, sequence=2, transitions=[_q3_begin(), complete], items=items
+    )
+
+    assessment = assess_plan_reconciliation_documents(
+        harness_dir,
+        _plan_assessment_task("STRICT", "task_and_final"),
+        plan,
+        execution,
+        head="head",
+        workspace=workspace,
+    )
+
+    assert [blocker.code for blocker in assessment.blockers] == [
+        "PLAN_PROOF_MISSING"
+    ]
+
+
+def test_task_aware_plan_initialization_requires_empty_q3_v2(tmp_path):
+    from harness.plan_reconciliation import (
+        plan_fingerprint,
+        validate_plan_initialization,
+    )
+
+    harness_dir = tmp_path / ".harness"
+    harness_dir.mkdir()
+    plan = {"version": 1, "items": [{"id": "P-001", "intent": "work"}]}
+    (harness_dir / "plan.yaml").write_text(yaml.safe_dump(plan))
+    (harness_dir / "plan-execution.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "version": 1,
+                "plan": {
+                    "path": ".harness/plan.yaml",
+                    "fingerprint": plan_fingerprint(plan),
+                },
+                "items": {"P-001": {"status": "PENDING"}},
+            }
+        )
+    )
+
+    issues = validate_plan_initialization(
+        harness_dir, _plan_assessment_task("STRICT", "task_and_final")
+    )
+
+    assert [issue.code for issue in issues] == ["PLAN_TASK_LEVEL_REQUIRED"]
+
+
+def test_task_aware_plan_initialization_accepts_q2_v1_and_empty_q3_v2(tmp_path):
+    from harness.plan_reconciliation import (
+        plan_fingerprint,
+        validate_plan_initialization,
+    )
+
+    harness_dir = tmp_path / ".harness"
+    harness_dir.mkdir()
+    plan = {"version": 1, "items": [{"id": "P-001", "intent": "work"}]}
+    (harness_dir / "plan.yaml").write_text(yaml.safe_dump(plan))
+    v1 = {
+        "version": 1,
+        "plan": {"path": ".harness/plan.yaml", "fingerprint": plan_fingerprint(plan)},
+        "items": {"P-001": {"status": "PENDING"}},
+    }
+    (harness_dir / "plan-execution.yaml").write_text(yaml.safe_dump(v1))
+
+    assert validate_plan_initialization(
+        harness_dir, _plan_assessment_task("STANDARD", "final")
+    ) == []
+
+    empty = _execution_v2(plan)
+    (harness_dir / "plan-execution.yaml").write_text(yaml.safe_dump(empty))
+    assert validate_plan_initialization(
+        harness_dir, _plan_assessment_task("STRICT", "task_and_final")
+    ) == []
+
+
+def test_task_aware_plan_initialization_rejects_q2_v2_and_progressed_q3_v2(tmp_path):
+    from harness.plan_reconciliation import validate_plan_initialization
+
+    harness_dir = tmp_path / ".harness"
+    harness_dir.mkdir()
+    plan = {"version": 1, "items": [{"id": "P-001", "intent": "work"}]}
+    (harness_dir / "plan.yaml").write_text(yaml.safe_dump(plan))
+    empty = _execution_v2(plan)
+    (harness_dir / "plan-execution.yaml").write_text(yaml.safe_dump(empty))
+
+    assert [
+        issue.code
+        for issue in validate_plan_initialization(
+            harness_dir, _plan_assessment_task("STANDARD", "final")
+        )
+    ] == ["PLAN_DISPOSITION_INVALID"]
+
+    progressed = _execution_v2(
+        plan,
+        sequence=1,
+        transitions=[_q3_begin()],
+        items={"P-001": {"status": "IN_PROGRESS"}},
+    )
+    (harness_dir / "plan-execution.yaml").write_text(yaml.safe_dump(progressed))
+    assert [
+        issue.code
+        for issue in validate_plan_initialization(
+            harness_dir, _plan_assessment_task("STRICT", "task_and_final")
+        )
+    ] == ["PLAN_SEQUENCE_INVALID"]
+
+
+def test_task_aware_plan_initialization_disabled_does_not_read_plan_files(tmp_path):
+    from harness.plan_reconciliation import validate_plan_initialization
+
+    harness_dir = tmp_path / ".harness"
+    harness_dir.mkdir()
+    (harness_dir / "plan.yaml").write_text("[")
+    (harness_dir / "plan-execution.yaml").write_text("[")
+    task = _plan_assessment_task("FAST", "task_and_final")
+
+    assert validate_plan_initialization(harness_dir, task) == []
+
+
+def test_q3_replay_valid_current_surface_receipt_can_pass_p0(tmp_path, monkeypatch):
+    from harness import plan_reconciliation
+
+    workspace = "sha256:" + "f" * 64
+    plan = {
+        "version": 1,
+        "items": [
+            {"id": "P-001", "intent": "surface", "surfaces": ["src/example.py"]}
+        ],
+    }
+    receipt = _q3_proof_receipt(head="head", workspace=workspace)
+    receipt["surface_refs"] = ["src/example.py"]
+    complete = {
+        "sequence": 2,
+        "item": "P-001",
+        "from": "IN_PROGRESS",
+        "to": "COMPLETE",
+        "action": "RECONCILE",
+        "evidence_refs": [],
+        "surface_refs": ["src/example.py"],
+        "proof_receipt": receipt,
+    }
+    items = {
+        "P-001": {"status": "COMPLETE", "surface_refs": ["src/example.py"]}
+    }
+    execution = _execution_v2(
+        plan, sequence=2, transitions=[_q3_begin(), complete], items=items
+    )
+    monkeypatch.setattr(
+        plan_reconciliation, "changed_paths_since", lambda base: ("src/example.py",)
+    )
+
+    assessment = plan_reconciliation.assess_plan_reconciliation_documents(
+        tmp_path,
+        _plan_assessment_task("STRICT", "task_and_final"),
+        plan,
+        execution,
+        head="head",
+        workspace=workspace,
+    )
+
+    assert assessment.blockers == ()
+    assert assessment.final_blockers == ()
