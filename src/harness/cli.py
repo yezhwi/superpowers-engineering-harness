@@ -52,6 +52,44 @@ def _main(argv=None) -> int:
     plan_sub = p_plan.add_subparsers(dest="plan_command", required=True)
     p_plan_status = plan_sub.add_parser("status", help="report read-only plan status")
     p_plan_status.add_argument("--json", dest="plan_json", action="store_true")
+    p_plan_begin = plan_sub.add_parser("begin", help="begin canonical next Plan Item")
+    p_plan_begin.add_argument("item_id")
+    p_plan_block = plan_sub.add_parser("block", help="block active Plan Item")
+    p_plan_block.add_argument("item_id")
+    p_plan_block.add_argument("--reason", required=True)
+    p_plan_resume = plan_sub.add_parser("resume", help="resume blocked Plan Item")
+    p_plan_resume.add_argument("item_id")
+    p_plan_reconcile = plan_sub.add_parser(
+        "reconcile", help="record terminal Plan Item disposition"
+    )
+    p_plan_reconcile.add_argument("item_id")
+    disposition = p_plan_reconcile.add_mutually_exclusive_group(required=True)
+    disposition.add_argument(
+        "--complete", dest="plan_disposition", action="store_const", const="COMPLETE"
+    )
+    disposition.add_argument(
+        "--skipped", dest="plan_disposition", action="store_const", const="SKIPPED"
+    )
+    disposition.add_argument(
+        "--superseded",
+        dest="plan_disposition",
+        action="store_const",
+        const="SUPERSEDED",
+    )
+    p_plan_reconcile.add_argument("--reason")
+    p_plan_reconcile.add_argument("--decision", dest="decision_id")
+    p_plan_reconcile.add_argument("--replacement", action="append", default=[])
+    p_plan_reconcile.add_argument("--evidence", action="append", default=[])
+    p_plan_reconcile.add_argument("--surface", action="append", default=[])
+    p_plan_refresh = plan_sub.add_parser(
+        "refresh-proof", help="refresh COMPLETE item proof"
+    )
+    p_plan_refresh.add_argument("item_id")
+    p_plan_refresh.add_argument("--evidence", action="append", default=[])
+    p_plan_refresh.add_argument("--surface", action="append", default=[])
+    plan_sub.add_parser(
+        "upgrade-execution", help="upgrade all-pending Q3 execution to v2"
+    )
     p_context = sub.add_parser("context", help="generate a validated derived Context")
     context_mode = p_context.add_mutually_exclusive_group()
     context_mode.add_argument("--compact", dest="context_mode", action="store_const", const="compact")
@@ -329,6 +367,28 @@ def _main(argv=None) -> int:
     args = parser.parse_args(argv)
     if args.subcommand == "context" and args.context_command and args.context_mode:
         parser.error("Context mode flags apply only to generation")
+    if args.subcommand == "plan" and args.plan_command == "reconcile":
+        disposition = args.plan_disposition
+        has_proof = bool(args.evidence or args.surface)
+        has_decision = bool(args.reason or args.decision_id or args.replacement)
+        if disposition == "COMPLETE" and has_decision:
+            parser.error("--complete accepts only --evidence and --surface")
+        if disposition == "SKIPPED" and (
+            not args.reason
+            or not args.decision_id
+            or has_proof
+            or args.replacement
+        ):
+            parser.error("--skipped requires --reason and --decision only")
+        if disposition == "SUPERSEDED" and (
+            not args.reason
+            or not args.decision_id
+            or not args.replacement
+            or has_proof
+        ):
+            parser.error(
+                "--superseded requires --reason, --decision, and --replacement only"
+            )
 
     invocation_dir = Path.cwd()
     for attribute in ("source_file", "fixtures", "baseline", "adaptive", "corpus"):
@@ -354,6 +414,8 @@ def _main(argv=None) -> int:
         return controlplane.cmd_status(Path(args.harness_dir).resolve())
     if args.subcommand == "plan" and args.plan_command == "status":
         return controlplane.cmd_plan_status(args.plan_json)
+    if args.subcommand == "plan":
+        return controlplane.cmd_plan_mutation(args)
     if args.subcommand == "context":
         return controlplane.cmd_context(
             args.context_command, args.context_mode or "compact", args.context_json,

@@ -195,6 +195,56 @@ def cmd_plan_status(json_output: bool) -> int:
     return 0
 
 
+def cmd_plan_mutation(args) -> int:
+    harness_dir = Path(".harness")
+    disposition = getattr(args, "plan_disposition", None)
+    action = {
+        "begin": "BEGIN",
+        "block": "BLOCK",
+        "resume": "RESUME",
+        "reconcile": "RECONCILE",
+        "refresh-proof": "REFRESH_PROOF",
+        "upgrade-execution": "UPGRADE_EXECUTION",
+    }[args.plan_command]
+    request = plan_reconciliation.PlanMutationRequest(
+        action=action,
+        item_id=getattr(args, "item_id", None),
+        disposition=disposition,
+        reason=getattr(args, "reason", None),
+        evidence_refs=tuple(getattr(args, "evidence", ())),
+        surface_refs=tuple(getattr(args, "surface", ())),
+        decision_id=getattr(args, "decision_id", None),
+        replacements=tuple(getattr(args, "replacement", ())),
+    )
+    try:
+        task = load_task(harness_dir)
+        quality_gate.validate_schema(
+            task, "task.schema.json", harness_dir / "current-task.yaml"
+        )
+        changed = plan_reconciliation.mutate_plan_execution(
+            harness_dir, task, request
+        )
+    except plan_reconciliation.PlanMutationError as exc:
+        print(exc.code, file=sys.stderr)
+        return 1
+    except (
+        HarnessStateError,
+        OSError,
+        yaml.YAMLError,
+        quality_gate.InvalidHarnessState,
+        plan_reconciliation.PlanArtifactError,
+        decision.DecisionError,
+        evidence_validator.EvidenceValidationError,
+        EvidenceReferenceError,
+        source_access.ContextBuildError,
+        workspace.WorkspaceError,
+    ) as exc:
+        print(f"INVALID_HARNESS_STATE: {exc}", file=sys.stderr)
+        return 2
+    print("PLAN_EXECUTION_UPDATED" if changed else "PLAN_EXECUTION_UNCHANGED")
+    return 0
+
+
 def _alignment_completeness_issues(
     harness_dir: Path, task: dict, document: dict
 ) -> list[alignment.AlignmentIssue]:
