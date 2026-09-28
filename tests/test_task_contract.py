@@ -840,6 +840,203 @@ def test_effective_plan_reconciliation_respects_profile_boundary(
     assert effective_plan_reconciliation(task) == expected
 
 
+def test_plan_status_report_projects_disabled_shape_without_inspecting_documents():
+    from harness.plan_reconciliation import plan_status_report
+
+    task = {
+        "risk": {"profile": "FAST"},
+        "plan_reconciliation": {"enabled": True, "mode": "final"},
+    }
+
+    assert plan_status_report(task, {"invalid": object()}, {"invalid": object()}, []) == {
+        "enabled": False
+    }
+
+
+def test_plan_status_report_projects_missing_artifacts_without_bodies():
+    import json
+
+    from harness.blockers import GateBlocker
+    from harness.plan_reconciliation import plan_status_report
+
+    task = {
+        "risk": {"profile": "STANDARD"},
+        "plan_reconciliation": {"enabled": True, "mode": "final"},
+    }
+    blocker = GateBlocker(
+        "PLAN_REQUIRED",
+        "implementation",
+        "enabled task requires plan artifacts",
+        recover_to="IMPLEMENTING",
+    )
+
+    report = plan_status_report(task, None, None, [blocker])
+
+    assert report == {
+        "enabled": True,
+        "mode": "final",
+        "plan": {
+            "present": False,
+            "execution_present": False,
+            "fingerprint": None,
+            "execution_fingerprint": None,
+            "fingerprint_fresh": None,
+        },
+        "progress": None,
+        "next_plan_item": None,
+        "final_status": "blocked",
+        "blockers": [
+            {
+                "code": "PLAN_REQUIRED",
+                "source": None,
+                "message": "enabled task requires plan artifacts",
+            }
+        ],
+    }
+    serialized = json.dumps(report)
+    assert '"items"' not in serialized
+    assert '"intent"' not in serialized
+    assert '"surfaces"' not in serialized
+    assert '"evidence_refs"' not in serialized
+
+
+def test_plan_status_report_projects_stale_fingerprints_without_progress():
+    from harness.blockers import GateBlocker
+    from harness.plan_reconciliation import plan_fingerprint, plan_status_report
+
+    task = {
+        "risk": {"profile": "STANDARD"},
+        "plan_reconciliation": {"enabled": True, "mode": "final"},
+    }
+    plan = {"version": 1, "items": [{"id": "P-001", "intent": "work"}]}
+    stale = "sha256:" + "0" * 64
+    execution = {
+        "version": 1,
+        "plan": {"path": ".harness/plan.yaml", "fingerprint": stale},
+        "items": {"P-001": {"status": "COMPLETE"}},
+    }
+    blocker = GateBlocker(
+        "PLAN_STALE",
+        "implementation",
+        "plan fingerprint does not match canonical plan",
+        recover_to="IMPLEMENTING",
+    )
+
+    report = plan_status_report(task, plan, execution, [blocker])
+
+    assert report["plan"] == {
+        "present": True,
+        "execution_present": True,
+        "fingerprint": plan_fingerprint(plan),
+        "execution_fingerprint": stale,
+        "fingerprint_fresh": False,
+    }
+    assert report["progress"] is None
+    assert report["next_plan_item"] is None
+    assert report["final_status"] == "blocked"
+    assert [row["code"] for row in report["blockers"]] == ["PLAN_STALE"]
+
+
+def test_plan_status_report_counts_only_persisted_trustworthy_statuses():
+    from harness.blockers import GateBlocker
+    from harness.plan_reconciliation import plan_fingerprint, plan_status_report
+
+    task = {
+        "risk": {"profile": "STANDARD"},
+        "plan_reconciliation": {"enabled": True, "mode": "final"},
+    }
+    plan = {
+        "version": 1,
+        "items": [
+            {"id": f"P-{number:03}", "intent": "work"} for number in range(1, 8)
+        ],
+    }
+    execution = {
+        "version": 1,
+        "plan": {"path": ".harness/plan.yaml", "fingerprint": plan_fingerprint(plan)},
+        "items": {
+            "P-002": {"status": "PENDING"},
+            "P-003": {"status": "IN_PROGRESS"},
+            "P-004": {"status": "COMPLETE"},
+            "P-005": {"status": "SKIPPED", "reason": "not needed"},
+            "P-006": {
+                "status": "SUPERSEDED",
+                "reason": "replaced",
+                "superseded_by": ["P-004"],
+            },
+            "P-007": {"status": "BLOCKED"},
+        },
+    }
+    proof = GateBlocker(
+        "PLAN_PROOF_MISSING",
+        "verification",
+        "complete test item lacks item-owned evidence",
+        source="P-004",
+        recover_to="VERIFYING",
+    )
+
+    report = plan_status_report(task, plan, execution, [proof])
+
+    assert list(report["progress"]["statuses"]) == [
+        "PENDING",
+        "IN_PROGRESS",
+        "COMPLETE",
+        "SKIPPED",
+        "SUPERSEDED",
+        "BLOCKED",
+    ]
+    assert report["progress"] == {
+        "total": 7,
+        "reconciled": 3,
+        "statuses": {
+            "PENDING": 1,
+            "IN_PROGRESS": 1,
+            "COMPLETE": 1,
+            "SKIPPED": 1,
+            "SUPERSEDED": 1,
+            "BLOCKED": 1,
+        },
+    }
+    assert report["next_plan_item"] == "P-001"
+    assert report["final_status"] == "blocked"
+
+
+def test_plan_status_report_delegates_next_and_final_to_context_summary(monkeypatch):
+    from harness import plan_reconciliation
+
+    task = {
+        "risk": {"profile": "STANDARD"},
+        "plan_reconciliation": {"enabled": True, "mode": "final"},
+    }
+    plan = {"version": 1, "items": []}
+    execution = {
+        "version": 1,
+        "plan": {
+            "path": ".harness/plan.yaml",
+            "fingerprint": plan_reconciliation.plan_fingerprint(plan),
+        },
+        "items": {},
+    }
+    calls = []
+
+    def summary(*args):
+        calls.append(args)
+        return {
+            "enabled": True,
+            "mode": "final",
+            "next_plan_item": "P-999",
+            "final_status": "blocked",
+        }
+
+    monkeypatch.setattr(plan_reconciliation, "plan_context_summary", summary)
+
+    report = plan_reconciliation.plan_status_report(task, plan, execution, [])
+
+    assert calls == [(task, plan, execution, ())]
+    assert report["next_plan_item"] == "P-999"
+    assert report["final_status"] == "blocked"
+
+
 def test_plan_context_summary_projects_disabled_shape_only():
     from harness.plan_reconciliation import plan_context_summary
 

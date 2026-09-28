@@ -162,6 +162,78 @@ def plan_context_summary(
     }
 
 
+def plan_status_report(
+    task: dict,
+    plan: dict | None,
+    execution: dict | None,
+    blockers: Iterable[GateBlocker],
+) -> dict:
+    """Project compact read-only status from one loaded plan assessment."""
+    configuration = effective_plan_reconciliation(task)
+    if not configuration["enabled"]:
+        return configuration
+
+    blocker_list = tuple(blockers)
+    summary = plan_context_summary(task, plan, execution, blocker_list)
+    fingerprint = plan_fingerprint(plan) if plan is not None else None
+    execution_fingerprint = (
+        execution["plan"]["fingerprint"] if execution is not None else None
+    )
+    fingerprint_fresh = (
+        fingerprint == execution_fingerprint
+        if fingerprint is not None and execution_fingerprint is not None
+        else None
+    )
+    progress = None
+    if fingerprint_fresh:
+        statuses = {
+            status: 0
+            for status in (
+                "PENDING",
+                "IN_PROGRESS",
+                "COMPLETE",
+                "SKIPPED",
+                "SUPERSEDED",
+                "BLOCKED",
+            )
+        }
+        reconciled = 0
+        for item in plan["items"]:
+            record = execution["items"].get(item["id"])
+            if record is None:
+                continue
+            status = record["status"]
+            statuses[status] += 1
+            if status in {"COMPLETE", "SKIPPED", "SUPERSEDED"}:
+                reconciled += 1
+        progress = {
+            "total": len(plan["items"]),
+            "reconciled": reconciled,
+            "statuses": statuses,
+        }
+    return {
+        **configuration,
+        "plan": {
+            "present": plan is not None,
+            "execution_present": execution is not None,
+            "fingerprint": fingerprint,
+            "execution_fingerprint": execution_fingerprint,
+            "fingerprint_fresh": fingerprint_fresh,
+        },
+        "progress": progress,
+        "next_plan_item": summary["next_plan_item"],
+        "final_status": summary["final_status"],
+        "blockers": [
+            {
+                "code": blocker.code,
+                "source": blocker.source,
+                "message": blocker.message,
+            }
+            for blocker in blocker_list
+        ],
+    }
+
+
 def _blocker(issue: PlanIssue, *, source: str | None = None) -> GateBlocker:
     return GateBlocker(
         issue.code,
