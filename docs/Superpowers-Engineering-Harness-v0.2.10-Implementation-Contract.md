@@ -1,7 +1,7 @@
 # Superpowers Engineering Harness v0.2.10
 ## Plan Execution Reconciliation — Implementation Contract
 
-> Status: P0 implemented; P1/P2 planned
+> Status: P0/P1A/P1B implemented; P1C design draft; P2 planned
 > Authority: this document resolves implementation ambiguity in
 > `docs/Superpowers-Engineering-Harness-v0.2.10-Plan-Execution-Reconciliation.md`.
 > Scope: deterministic control-plane support for reconciling implementation-plan items.
@@ -91,6 +91,24 @@ Rules:
 - `surface_refs` must be a subset of declared item surfaces. They are mechanically checked against `changed_paths_since(task.git.base_commit)`, never `business_paths()`, Agent-authored `impact.yaml`, or `scope.owned_paths`. They are not evidence. While `protected_paths_fingerprint(risk.user_changes.paths)` equals stored `risk.user_changes.fingerprint`, every path in `risk.user_changes.paths` is removed from that set before the check. The fingerprint argument is the full stored path list, not `surface_refs`. If that aggregate fingerprint differs, P0 never treats any initial user path as plan surface proof. `PLAN_PROTECTED_PATHS_MODIFIED` applies only during final reconciliation to a `COMPLETE` item with non-empty `surfaces` when its `surfaces` or `surface_refs` intersects `risk.user_changes.paths`.
 - Existing evidence files and types remain authoritative. v0.2.10 adds neither `EV-*` IDs nor `CHANGE` / `VERIFICATION` evidence types.
 
+### 2.3 Q3 task-level execution v2
+
+STANDARD/Q2 `mode: final` continues to require execution v1. STRICT/Q3 `mode: task_and_final` requires execution v2:
+
+```yaml
+version: 2
+plan:
+  path: .harness/plan.yaml
+  fingerprint: sha256:<semantic-plan-digest>
+sequence: 0
+transitions: []
+items: {}
+```
+
+Execution v2 adds a contiguous, replayable transition journal and keeps `items` as its exact current projection. Untouched items are implicit `PENDING` and absent from `items`. `sequence: 0`, `transitions: []`, and `items: {}` is a legal replay and the Q3 entry shape for `IMPLEMENTING`. Legal actions are `BEGIN`, `BLOCK`, `RESUME`, `RECONCILE`, and `REFRESH_PROOF`; their state transitions and proof/Decision receipts are defined by the P1C design. Replay validates journal structure, lifecycle/order, and projection equality only; it never repairs or guesses history. Current Decision acceptance and current evidence/proof validity remain P0 checks after successful replay.
+
+A Q3 v1 document returns `PLAN_TASK_LEVEL_REQUIRED`. A Q2 v2 document returns `PLAN_DISPOSITION_INVALID`; execution version never opts a task into another enforcement mode. An all-pending Q3 v1 document may upgrade to an empty v2 journal. Progressed v1 state is never converted into synthetic history.
+
 ## 3. Item states and terminal constraints
 
 Allowed states:
@@ -114,6 +132,8 @@ Branch selection uses non-empty arrays. An omitted array and `[]` are the same; 
 | `PENDING`, `IN_PROGRESS`, `BLOCKED` | — | Final reconciliation fails. |
 
 `SKIPPED` and `SUPERSEDED` always require explicit reason. A supplied `decision_id` must resolve to an ACCEPTED `DEC-*` for current task. Gate does not infer whether semantic scope changed from item text; skills or human workflow decide when a Decision is required. Frozen-input changes remain existing Alignment drift.
+
+For STRICT/Q3 `task_and_final` only, task-level `SKIPPED` and `SUPERSEDED` reconciliation always requires a `decision_id` resolving to an ACCEPTED Decision for the current task. STANDARD/Q2 final-only behavior remains reason-required and Decision-optional.
 
 ## 4. Lifecycle integration
 
@@ -141,7 +161,7 @@ Final reconciliation is a `quality_gate.run_gate` check. Therefore it runs both:
 
 This makes reconciliation re-evaluate after a fix, evidence freshness change, or plan artifact change. It is not a one-time assertion before verification.
 
-Enabled STANDARD/STRICT tasks must have valid `plan.yaml` and initialized `plan-execution.yaml` before `PLANNED → IMPLEMENTING`. Initialization means both schemas pass, `plan.path` is exactly `.harness/plan.yaml`, and fingerprint matches current canonical plan. Item records may be absent or nonterminal at this entry. FAST never loads Plan Reconciliation artifacts unless a future explicit opt-in is defined.
+Enabled STANDARD/STRICT tasks must have valid `plan.yaml` and initialized `plan-execution.yaml` before `PLANNED → IMPLEMENTING`. Initialization means both schemas pass, `plan.path` is exactly `.harness/plan.yaml`, and fingerprint matches current canonical plan. Q2 v1 item records may be absent or nonterminal at this entry. Q3 `task_and_final` entry requires v2 with `sequence: 0`, empty transitions, and empty projection. FAST never loads Plan Reconciliation artifacts unless a future explicit opt-in is defined.
 
 P0 final Gate validates final state/proof only. It does not infer unrecorded temporal execution order or add state transitions. `task_and_final` is persisted configuration in P0; deterministic Q3 task-level enforcement is P1 work.
 
@@ -156,16 +176,20 @@ Gate emits only defined, non-overlapping codes:
 | `PLAN_ITEM_UNRECONCILED` | item missing or has nonterminal state | implementation | `IMPLEMENTING` |
 | `PLAN_PROOF_MISSING` | COMPLETE lacks required valid support | verification | `VERIFYING` |
 | `PLAN_PROTECTED_PATHS_MODIFIED` | final COMPLETE surface item intersects protected initial-user path after aggregate fingerprint changed | implementation | `IMPLEMENTING` |
-| `PLAN_DISPOSITION_INVALID` | schema-valid skip, supersede, reference, or cycle failure | implementation | `IMPLEMENTING` |
+| `PLAN_DISPOSITION_INVALID` | schema-valid skip, supersede, reference, cycle, or mode/version failure | implementation | `IMPLEMENTING` |
+| `PLAN_TASK_LEVEL_REQUIRED` | Q3 `task_and_final` execution lacks v2 task-level history | implementation | `IMPLEMENTING` |
+| `PLAN_SEQUENCE_INVALID` | schema-valid v2 journal cannot replay or disagrees with its projection | implementation | `IMPLEMENTING` |
 
-These codes must be registered in `RECOVERY_POLICY`. Each item-derived blocker sets `GateBlocker.source` to its `P-*` ID so blocker fingerprints distinguish items. Empty paths, absolute paths, and paths containing `..` are schema-invalid and remain `InvalidHarnessState` with exit 2. `PLAN_DISPOSITION_INVALID` applies only after schema validation, including a plan ref whose named parent lacks its bare case, a `surface_ref` absent from that item's `surfaces`, an execution key absent from `plan.yaml`, a `superseded_by` value that is not a non-empty list of `P-*` IDs, and any cycle. A declared path that is absent from the mechanical change set is `PLAN_PROOF_MISSING`, not a disposition failure. For qualifying protected-path condition, emit only `PLAN_PROTECTED_PATHS_MODIFIED` for surface proof; evidence insufficiency on same COMPLETE item still emits `PLAN_PROOF_MISSING`. Nonterminal items emit only `PLAN_ITEM_UNRECONCILED`; `SKIPPED` and `SUPERSEDED` do not emit protected-path blocker. No `PLAN_DRIFT_UNRESOLVED` code is added: frozen-contract drift remains existing `CONTRACT_CHANGED` / scope-drift handling.
+These codes must be registered in `RECOVERY_POLICY`. `PLAN_TASK_LEVEL_REQUIRED` and `PLAN_SEQUENCE_INVALID` have `source: null`; they never route `BLOCKED` to `SPECIFYING`, which is not a legal recovery transition. Each item-derived blocker sets `GateBlocker.source` to its `P-*` ID so blocker fingerprints distinguish items. Empty paths, absolute paths, and paths containing `..` are schema-invalid and remain `InvalidHarnessState` with exit 2. `PLAN_DISPOSITION_INVALID` applies only after schema validation, including a plan ref whose named parent lacks its bare case, a `surface_ref` absent from that item's `surfaces`, an execution key absent from `plan.yaml`, a mode/version mismatch, a `superseded_by` value that is not a non-empty list of `P-*` IDs, and any cycle. A declared path that is absent from the mechanical change set is `PLAN_PROOF_MISSING`, not a disposition failure. For qualifying protected-path condition, emit only `PLAN_PROTECTED_PATHS_MODIFIED` for surface proof; evidence insufficiency on same COMPLETE item still emits `PLAN_PROOF_MISSING`. Nonterminal items emit only `PLAN_ITEM_UNRECONCILED`; `SKIPPED` and `SUPERSEDED` do not emit protected-path blocker. No `PLAN_DRIFT_UNRESOLVED` code is added: frozen-contract drift remains existing `CONTRACT_CHANGED` / scope-drift handling.
+
+Assessment early returns remain deterministic: missing artifacts return only `PLAN_REQUIRED`; fingerprint mismatch returns only `PLAN_STALE`; Q2/v2 returns only `PLAN_DISPOSITION_INVALID`; Q3/v1 returns only `PLAN_TASK_LEVEL_REQUIRED`; structurally invalid v2 replay returns only `PLAN_SEQUENCE_INVALID`; only trusted replay proceeds to P0 Decision, disposition, current-proof, surface, and protected-path checks. A current Decision rejection remains `PLAN_DISPOSITION_INVALID`; current evidence staleness or latest-receipt byte mismatch remains `PLAN_PROOF_MISSING`.
 
 ## 6. Plan revision and Alignment
 
 Updating semantic plan fields produces a new fingerprint. On mismatch, reconciliation reports only `PLAN_STALE` and does not evaluate item proof/disposition until a caller writes matching fingerprint.
 
 - Retaining prior IDs and appending replacements is required authoring practice, but P0 validates current artifacts only. Detecting deletion across independently rewritten files requires a future append-only ID registry.
-- Internal sequencing or equivalent implementation approach: revise plan, map retained prior item to `SUPERSEDED`/`SKIPPED` with reason where applicable, then reconcile in `IMPLEMENTING`.
+- Internal sequencing or equivalent implementation approach: revise plan, remain or recover in `IMPLEMENTING`, publish execution with the matching fingerprint, and reconcile there. P1C does not preserve, synthesize, or remap old journal history.
 - Change to Requirements, Acceptance Criteria, frozen Alignment inputs, declared scope, external interface, permission, persistence, or accepted Decision: use existing `IMPLEMENTING → SPECIFYING` Realignment flow. Do not create parallel plan-drift workflow.
 
 ## 7. Context and status
@@ -182,13 +206,13 @@ plan_reconciliation:
   final_status: blocked
 ```
 
-`mode` projects the enabled task configuration (`final` or `task_and_final`). `next_plan_item` is advisory: first nonterminal item in canonical plan order, or null when all items are terminal. A missing artifact or stale fingerprint also produces null because execution position is not trustworthy. `final_status` is only `pass` or `blocked` and represents the P0 final check even when `mode` is `task_and_final`; P1C owns Q3 task-level enforcement. Neither field authorizes work or replaces `harness resume`, which continues to route only a `BLOCKED` task from typed Gate blockers.
+`mode` projects the enabled task configuration (`final` or `task_and_final`). `next_plan_item` is advisory: first nonterminal item in canonical plan order, or null when all items are terminal. A missing artifact, stale fingerprint, required task-level upgrade, or failed v2 replay produces null because execution position is not trustworthy. `final_status` is only `pass` or `blocked` and represents the independent P0 final check even when `mode` is `task_and_final`; task-level blockers do not determine it. A report may therefore contain `final_status: pass` together with `PLAN_TASK_LEVEL_REQUIRED` or `PLAN_SEQUENCE_INVALID`. P1C owns Q3 task-level enforcement. Neither field authorizes work or replaces `harness resume`, which continues to route only a `BLOCKED` task from typed Gate blockers.
 
 Projected `enabled` is true only for an enabled STANDARD or STRICT task. FAST/Q1 Context projects `{enabled: false}` and does not load plan artifacts, including when the task file sets `enabled: true`. Gate returns through the FAST path before Plan Reconciliation. That setting is not the section 4 opt-in. Context schema failures use `CONTEXT_SCHEMA_INVALID`; `harness gate` still reports malformed plan artifacts as `InvalidHarnessState` with exit 2. Semantic plan results remain the typed `PLAN_*` blockers.
 
 P1A adds nullable `generated_from.plan_hash` and `generated_from.plan_execution_hash`. Disabled tasks keep both null and omit plan keys from the generic `files` map. For an enabled present artifact, the named hash equals both its `files` entry and reference `sha256`; for enabled absence, the named hash, `files` entry, and reference are null.
 
-`harness plan status` is read-only projection. Gate preflight is existing `harness gate preflight`; no separate Gate Preview command is introduced.
+`harness plan status` is read-only projection. For Q3 task-level-required or replay-invalid execution, status reports `progress: null` and `next_plan_item: null`; journal bodies remain omitted. Gate preflight is existing `harness gate preflight`; no separate Gate Preview command is introduced.
 
 ## 8. Enablement and migration
 
