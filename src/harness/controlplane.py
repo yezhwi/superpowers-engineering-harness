@@ -19,6 +19,7 @@ from harness import (
     interface_contract,
     interface_review,
     impact as impact_domain,
+    plan_reconciliation,
     quality_gate,
     review_outcome,
     risk,
@@ -795,6 +796,19 @@ def cmd_transition(target: str, *, reason: str | None = None) -> int:
                 print("ALIGNMENT_BLOCKED", file=sys.stderr)
                 print(f"  ALIGNMENT_FREEZE_INVALID: {exc}", file=sys.stderr)
                 return 1
+            if (task.get("plan_reconciliation") or {}).get("enabled"):
+                try:
+                    plan_issues = plan_reconciliation.validate_plan_initialization(
+                        harness_dir
+                    )
+                except plan_reconciliation.PlanArtifactError as exc:
+                    print(f"INVALID_HARNESS_STATE: {exc}", file=sys.stderr)
+                    return 2
+                if plan_issues:
+                    print("PLAN_RECONCILIATION_BLOCKED", file=sys.stderr)
+                    for issue in plan_issues:
+                        print(f"  {issue.code}: {issue.message}", file=sys.stderr)
+                    return 1
     if current == "VERIFYING" and target == "GATING" and profile != "FAST":
         print(
             "REVIEW_OUTCOME_REQUIRED: STANDARD/STRICT tasks must use review outcome",
@@ -1837,6 +1851,10 @@ def cmd_task_classify(level: str, dimensions: dict[str, str]) -> int:
         task["scope"] = {"owned_paths": [], "protected_user_paths": list(user_changes)}
         head = workspace.git_head()
         task["git"] = workspace.git_baseline(head)
+        task["plan_reconciliation"] = {
+            "enabled": level != "Q1",
+            "mode": "task_and_final" if level == "Q3" else "final" if level == "Q2" else "disabled",
+        }
         task["risk"] = {
             "level": level,
             "profile": profile,
@@ -1933,6 +1951,10 @@ def cmd_task_escalate(level: str, reason: str) -> int:
         )
         staged_risk["level"] = level
         staged_risk["profile"] = risk.PROFILES[level]
+        staged_task["plan_reconciliation"] = {
+            "enabled": level != "Q1",
+            "mode": "task_and_final" if level == "Q3" else "final" if level == "Q2" else "disabled",
+        }
         save_task(staged, staged_task)
         publish_replacement(harness_dir, staged)
     except Exception as exc:

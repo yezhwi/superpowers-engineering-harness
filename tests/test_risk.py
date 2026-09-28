@@ -166,6 +166,10 @@ def test_fast_implementation_escalation_restarts_standard_contract(tmp_path):
     task = yaml.safe_load((tmp_path / ".harness/current-task.yaml").read_text())
     assert task["state"] == "SPECIFYING"
     assert task["risk"]["profile"] == "STRICT"
+    assert task["plan_reconciliation"] == {
+        "enabled": True,
+        "mode": "task_and_final",
+    }
     assert run_cli(tmp_path, "transition", "IMPLEMENTING").returncode == 1
 
 

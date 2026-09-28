@@ -50,6 +50,30 @@ def standard_repo_in_state(tmp_path: Path) -> Path:
     return tmp_path
 
 
+def test_q2_classification_persists_final_plan_reconciliation_enablement(tmp_path):
+    repo = standard_repo_in_state(tmp_path)
+
+    task = yaml.safe_load((repo / ".harness/current-task.yaml").read_text())
+
+    assert task["plan_reconciliation"] == {"enabled": True, "mode": "final"}
+
+
+def write_plan_artifacts(repo: Path):
+    from harness.plan_reconciliation import plan_fingerprint
+
+    plan = {"version": 1, "items": []}
+    (repo / ".harness/plan.yaml").write_text(yaml.safe_dump(plan))
+    (repo / ".harness/plan-execution.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "version": 1,
+                "plan": {"path": ".harness/plan.yaml", "fingerprint": plan_fingerprint(plan)},
+                "items": {},
+            }
+        )
+    )
+
+
 def write_minimal_decision(repo: Path):
     decision = {
         "version": 1,
@@ -245,12 +269,55 @@ def test_standard_planned_to_implementing_rejects_open_alignment_decision(tmp_pa
     assert "DIRECTIVE: HALT_AND_WAIT" in result.stderr
 
 
+def test_enabled_standard_entry_requires_matching_plan_artifacts(tmp_path):
+    repo = standard_repo_in_state(tmp_path)
+    write_minimal_decision(repo)
+    write_documents(repo, valid=True)
+    write_alignment(repo, frozen=True)
+
+    result = cli(repo, "transition", "IMPLEMENTING")
+
+    assert result.returncode == 1
+    assert "PLAN_REQUIRED" in result.stderr
+
+
+def test_enabled_standard_entry_treats_malformed_plan_as_invalid_state(tmp_path):
+    repo = standard_repo_in_state(tmp_path)
+    write_minimal_decision(repo)
+    write_documents(repo, valid=True)
+    write_alignment(repo, frozen=True)
+    (repo / ".harness/plan.yaml").write_text("not: [valid")
+    (repo / ".harness/plan-execution.yaml").write_text("version: 1")
+
+    result = cli(repo, "transition", "IMPLEMENTING")
+
+    assert result.returncode == 2
+    assert "INVALID_HARNESS_STATE" in result.stderr
+
+
+def test_legacy_standard_entry_ignores_malformed_plan_artifacts(tmp_path):
+    repo = standard_repo_in_state(tmp_path)
+    write_minimal_decision(repo)
+    write_documents(repo, valid=True)
+    write_alignment(repo, frozen=True)
+    task_path = repo / ".harness/current-task.yaml"
+    task = yaml.safe_load(task_path.read_text())
+    task.pop("plan_reconciliation")
+    task_path.write_text(yaml.safe_dump(task))
+    (repo / ".harness/plan.yaml").write_text("not: [valid")
+
+    result = cli(repo, "transition", "IMPLEMENTING")
+
+    assert result.returncode == 0, result.stderr
+
+
 def test_standard_planned_to_implementing_accepts_complete_alignment(tmp_path):
     """Break caught: complete intent closure cannot reach implementation."""
     repo = standard_repo_in_state(tmp_path)
     write_minimal_decision(repo)
     write_documents(repo, valid=True)
     write_alignment(repo, frozen=True)
+    write_plan_artifacts(repo)
 
     result = cli(repo, "transition", "IMPLEMENTING")
 
@@ -271,6 +338,7 @@ def test_standard_entry_seals_typed_boundary_and_removal_drifts(
     write_minimal_decision(repo)
     write_documents(repo, valid=True)
     write_alignment(repo, frozen=True)
+    write_plan_artifacts(repo)
     impact_path = repo / ".harness/impact.yaml"
     impact_path.write_text(yaml.safe_dump({"impact": {"contracts": [{"ref": ref, "kind": kind}], "required_tests": ["tests/test_test_plan_transition.py"]}}))
 

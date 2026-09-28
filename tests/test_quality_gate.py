@@ -134,6 +134,31 @@ def make_harness(tmp_path: Path) -> Path:
     return h
 
 
+def test_enabled_gate_emits_plan_item_unreconciled_blocker(tmp_path):
+    from harness.plan_reconciliation import plan_fingerprint
+    from harness.quality_gate import run_gate
+
+    h = make_harness(tmp_path)
+    task_path = h / "current-task.yaml"
+    task = yaml.safe_load(task_path.read_text())
+    task["plan_reconciliation"] = {"enabled": True, "mode": "final"}
+    task_path.write_text(yaml.safe_dump(task))
+    plan = {"version": 1, "items": [{"id": "P-001", "intent": "finish"}]}
+    (h / "plan.yaml").write_text(yaml.safe_dump(plan))
+    (h / "plan-execution.yaml").write_text(
+        yaml.safe_dump(
+            {"version": 1, "plan": {"path": ".harness/plan.yaml", "fingerprint": plan_fingerprint(plan)}, "items": {"P-001": {"status": "PENDING"}}}
+        )
+    )
+
+    status, blockers = run_gate(h)
+
+    assert status == "BLOCKED"
+    assert [(blocker.code, blocker.source, blocker.recover_to) for blocker in blockers if blocker.code.startswith("PLAN_")] == [
+        ("PLAN_ITEM_UNRECONCILED", "P-001", "IMPLEMENTING")
+    ]
+
+
 def test_gate_unions_fresh_related_test_evidence(tmp_path):
     from harness.quality_gate import run_gate
 

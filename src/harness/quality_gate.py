@@ -27,6 +27,7 @@ from .existing_verification import (
     has_existing_verification,
 )
 from .paths import EvidenceReferenceError, evidence_path
+from .plan_reconciliation import PlanArtifactError, validate_plan_reconciliation
 from .risk_boundaries import (
     RiskBoundaryPolicyError,
     business_paths,
@@ -1142,6 +1143,18 @@ def _evaluate_gate(
         return f.get("status") in OPEN_FINDING_STATUSES
 
     _append_live_alignment_drift(harness_dir, task, findings, block)
+
+    if (task.get("plan_reconciliation") or {}).get("enabled"):
+        try:
+            plan_blockers = validate_plan_reconciliation(
+                harness_dir,
+                task,
+                head=head,
+                workspace=current_workspace,
+            )
+        except PlanArtifactError as exc:
+            raise InvalidHarnessState(str(exc)) from exc
+        blockers.extend(plan_blockers)
 
     open_critical = [
         f

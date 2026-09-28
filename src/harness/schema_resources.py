@@ -24,6 +24,8 @@ SCHEMA_NAMES = (
     "invariant.schema.json",
     "minimal-implementation.schema.json",
     "observability.schema.json",
+    "plan-execution.schema.json",
+    "plan.schema.json",
     "requirement.schema.json",
     "task.schema.json",
 )

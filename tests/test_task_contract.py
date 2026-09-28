@@ -263,6 +263,360 @@ def test_templates_validate_against_schemas():
     jsonschema.validate(invs, inv_schema)
 
 
+def test_plan_fingerprint_normalizes_omitted_optional_lists():
+    from harness.plan_reconciliation import plan_fingerprint
+
+    omitted = {"version": 1, "items": [{"id": "P-001", "intent": "work"}]}
+    explicit = {
+        "version": 1,
+        "items": [
+            {
+                "id": "P-001",
+                "intent": "work",
+                "requirement_refs": [],
+                "test_case_refs": [],
+                "invariant_refs": [],
+                "surfaces": [],
+            }
+        ],
+    }
+
+    assert plan_fingerprint(omitted) == plan_fingerprint(explicit)
+
+
+def test_plan_initialization_accepts_matching_fingerprint_and_short_circuits_stale(tmp_path):
+    from harness.plan_reconciliation import plan_fingerprint, validate_plan_initialization
+
+    harness_dir = tmp_path / ".harness"
+    harness_dir.mkdir()
+    plan = {"version": 1, "items": [{"id": "P-001", "intent": "work"}]}
+    (harness_dir / "plan.yaml").write_text(yaml.safe_dump(plan))
+    execution = {
+        "version": 1,
+        "plan": {"path": ".harness/plan.yaml", "fingerprint": plan_fingerprint(plan)},
+        "items": {},
+    }
+    (harness_dir / "plan-execution.yaml").write_text(yaml.safe_dump(execution))
+
+    assert validate_plan_initialization(harness_dir) == []
+
+    execution["plan"]["fingerprint"] = "sha256:" + "0" * 64
+    (harness_dir / "plan-execution.yaml").write_text(yaml.safe_dump(execution))
+    assert [issue.code for issue in validate_plan_initialization(harness_dir)] == [
+        "PLAN_STALE"
+    ]
+
+
+def test_plan_initialization_rejects_execution_item_not_in_plan(tmp_path):
+    from harness.plan_reconciliation import plan_fingerprint, validate_plan_initialization
+
+    harness_dir = tmp_path / ".harness"
+    harness_dir.mkdir()
+    plan = {"version": 1, "items": [{"id": "P-001", "intent": "work"}]}
+    (harness_dir / "plan.yaml").write_text(yaml.safe_dump(plan))
+    execution = {
+        "version": 1,
+        "plan": {"path": ".harness/plan.yaml", "fingerprint": plan_fingerprint(plan)},
+        "items": {"P-999": {"status": "PENDING"}},
+    }
+    (harness_dir / "plan-execution.yaml").write_text(yaml.safe_dump(execution))
+
+    assert [issue.code for issue in validate_plan_initialization(harness_dir)] == [
+        "PLAN_DISPOSITION_INVALID"
+    ]
+
+
+def test_final_plan_reconciliation_reports_only_unreconciled_nonterminal_item(tmp_path):
+    from harness.plan_reconciliation import plan_fingerprint, validate_plan_reconciliation
+
+    harness_dir = tmp_path / ".harness"
+    harness_dir.mkdir()
+    plan = {"version": 1, "items": [{"id": "P-001", "intent": "work"}]}
+    (harness_dir / "plan.yaml").write_text(yaml.safe_dump(plan))
+    execution = {
+        "version": 1,
+        "plan": {"path": ".harness/plan.yaml", "fingerprint": plan_fingerprint(plan)},
+        "items": {"P-001": {"status": "PENDING"}},
+    }
+    (harness_dir / "plan-execution.yaml").write_text(yaml.safe_dump(execution))
+
+    blockers = validate_plan_reconciliation(harness_dir, {}, head="head", workspace="ws")
+
+    assert [(blocker.code, blocker.source, blocker.recover_to) for blocker in blockers] == [
+        ("PLAN_ITEM_UNRECONCILED", "P-001", "IMPLEMENTING")
+    ]
+
+
+def test_final_plan_reconciliation_rejects_supersession_cycle(tmp_path):
+    from harness.plan_reconciliation import plan_fingerprint, validate_plan_reconciliation
+
+    harness_dir = tmp_path / ".harness"
+    harness_dir.mkdir()
+    plan = {
+        "version": 1,
+        "items": [
+            {"id": "P-001", "intent": "old"},
+            {"id": "P-002", "intent": "replacement"},
+        ],
+    }
+    (harness_dir / "plan.yaml").write_text(yaml.safe_dump(plan))
+    execution = {
+        "version": 1,
+        "plan": {"path": ".harness/plan.yaml", "fingerprint": plan_fingerprint(plan)},
+        "items": {
+            "P-001": {
+                "status": "SUPERSEDED",
+                "reason": "replaced",
+                "superseded_by": ["P-002"],
+            },
+            "P-002": {
+                "status": "SUPERSEDED",
+                "reason": "replaced",
+                "superseded_by": ["P-001"],
+            },
+        },
+    }
+    (harness_dir / "plan-execution.yaml").write_text(yaml.safe_dump(execution))
+
+    assert [blocker.code for blocker in validate_plan_reconciliation(harness_dir, {}, head="head", workspace="ws")] == [
+        "PLAN_DISPOSITION_INVALID"
+    ]
+
+
+def test_final_plan_reconciliation_rejects_missing_qualified_parent_case(tmp_path):
+    from harness.plan_reconciliation import plan_fingerprint, validate_plan_reconciliation
+
+    harness_dir = tmp_path / ".harness"
+    harness_dir.mkdir()
+    plan = {
+        "version": 1,
+        "items": [{"id": "P-001", "intent": "test", "test_case_refs": ["REQ-001/TC-999"]}],
+    }
+    (harness_dir / "plan.yaml").write_text(yaml.safe_dump(plan))
+    execution = {
+        "version": 1,
+        "plan": {"path": ".harness/plan.yaml", "fingerprint": plan_fingerprint(plan)},
+        "items": {"P-001": {"status": "COMPLETE", "evidence_refs": ["unit-test"]}},
+    }
+    (harness_dir / "plan-execution.yaml").write_text(yaml.safe_dump(execution))
+    (harness_dir / "requirements.yaml").write_text(
+        yaml.safe_dump({"requirements": [{"id": "REQ-001", "test_plan": {"cases": []}}]})
+    )
+    (harness_dir / "invariants.yaml").write_text(yaml.safe_dump({"invariants": []}))
+
+    assert [blocker.code for blocker in validate_plan_reconciliation(harness_dir, {}, head="head", workspace="ws")] == [
+        "PLAN_DISPOSITION_INVALID"
+    ]
+
+
+def test_final_plan_reconciliation_requires_item_owned_evidence(tmp_path):
+    from harness.plan_reconciliation import plan_fingerprint, validate_plan_reconciliation
+
+    harness_dir = tmp_path / ".harness"
+    harness_dir.mkdir()
+    plan = {
+        "version": 1,
+        "items": [{"id": "P-001", "intent": "test", "test_case_refs": ["REQ-001/TC-001"]}],
+    }
+    (harness_dir / "plan.yaml").write_text(yaml.safe_dump(plan))
+    execution = {
+        "version": 1,
+        "plan": {"path": ".harness/plan.yaml", "fingerprint": plan_fingerprint(plan)},
+        "items": {"P-001": {"status": "COMPLETE"}},
+    }
+    (harness_dir / "plan-execution.yaml").write_text(yaml.safe_dump(execution))
+    (harness_dir / "requirements.yaml").write_text(
+        yaml.safe_dump(
+            {"requirements": [{"id": "REQ-001", "test_plan": {"cases": [{"id": "TC-001"}]}}]}
+        )
+    )
+    (harness_dir / "invariants.yaml").write_text(yaml.safe_dump({"invariants": []}))
+
+    assert [blocker.code for blocker in validate_plan_reconciliation(harness_dir, {}, head="head", workspace="ws")] == [
+        "PLAN_PROOF_MISSING"
+    ]
+
+
+def test_final_plan_reconciliation_rejects_missing_item_evidence_record(tmp_path):
+    from harness.plan_reconciliation import plan_fingerprint, validate_plan_reconciliation
+
+    harness_dir = tmp_path / ".harness"
+    harness_dir.mkdir()
+    plan = {"version": 1, "items": [{"id": "P-001", "intent": "test", "test_case_refs": ["REQ-001/TC-001"]}]}
+    (harness_dir / "plan.yaml").write_text(yaml.safe_dump(plan))
+    execution = {"version": 1, "plan": {"path": ".harness/plan.yaml", "fingerprint": plan_fingerprint(plan)}, "items": {"P-001": {"status": "COMPLETE", "evidence_refs": ["missing"]}}}
+    (harness_dir / "plan-execution.yaml").write_text(yaml.safe_dump(execution))
+    (harness_dir / "requirements.yaml").write_text(yaml.safe_dump({"requirements": [{"id": "REQ-001", "test_plan": {"cases": [{"id": "TC-001"}]}}]}))
+    (harness_dir / "invariants.yaml").write_text(yaml.safe_dump({"invariants": []}))
+
+    assert [blocker.code for blocker in validate_plan_reconciliation(harness_dir, {}, head="head", workspace="ws")] == ["PLAN_PROOF_MISSING"]
+
+
+def test_final_plan_reconciliation_requires_item_evidence_to_cover_manual_case(tmp_path):
+    import json
+
+    from harness.plan_reconciliation import plan_fingerprint, validate_plan_reconciliation
+
+    harness_dir = tmp_path / ".harness"
+    harness_dir.mkdir()
+    plan = {"version": 1, "items": [{"id": "P-001", "intent": "manual", "test_case_refs": ["REQ-001/TC-001"]}]}
+    (harness_dir / "plan.yaml").write_text(yaml.safe_dump(plan))
+    fingerprint = "sha256:" + "0" * 64
+    execution = {"version": 1, "plan": {"path": ".harness/plan.yaml", "fingerprint": plan_fingerprint(plan)}, "items": {"P-001": {"status": "COMPLETE", "evidence_refs": ["manual"]}}}
+    (harness_dir / "plan-execution.yaml").write_text(yaml.safe_dump(execution))
+    (harness_dir / "requirements.yaml").write_text(yaml.safe_dump({"requirements": [{"id": "REQ-001", "test_plan": {"cases": [{"id": "TC-001", "strategy": "manual", "tests": []}]}}]}))
+    (harness_dir / "invariants.yaml").write_text(yaml.safe_dump({"invariants": []}))
+    evidence = harness_dir / "evidence"
+    evidence.mkdir()
+    (evidence / "manual.json").write_text(json.dumps({"type": "unit_test", "timestamp": "2026-01-01T00:00:00+00:00", "command": "true", "exit_code": 0, "commit": "head", "workspace_fingerprint": fingerprint, "workspace_fingerprint_after": fingerprint}))
+
+    assert [blocker.code for blocker in validate_plan_reconciliation(harness_dir, {}, head="head", workspace=fingerprint)] == ["PLAN_PROOF_MISSING"]
+
+
+def test_final_plan_reconciliation_requires_surface_refs_for_surface_item(tmp_path):
+    from harness.plan_reconciliation import plan_fingerprint, validate_plan_reconciliation
+
+    harness_dir = tmp_path / ".harness"
+    harness_dir.mkdir()
+    plan = {"version": 1, "items": [{"id": "P-001", "intent": "surface", "surfaces": ["src/example.py"]}]}
+    (harness_dir / "plan.yaml").write_text(yaml.safe_dump(plan))
+    execution = {"version": 1, "plan": {"path": ".harness/plan.yaml", "fingerprint": plan_fingerprint(plan)}, "items": {"P-001": {"status": "COMPLETE"}}}
+    (harness_dir / "plan-execution.yaml").write_text(yaml.safe_dump(execution))
+
+    assert [blocker.code for blocker in validate_plan_reconciliation(harness_dir, {}, head="head", workspace="ws")] == ["PLAN_PROOF_MISSING"]
+
+
+def test_final_plan_reconciliation_requires_item_evidence_to_cover_automated_node(tmp_path):
+    import json
+
+    from harness.plan_reconciliation import plan_fingerprint, validate_plan_reconciliation
+
+    harness_dir = tmp_path / ".harness"
+    harness_dir.mkdir()
+    node = "tests/test_task_contract.py::test_plan_fingerprint_normalizes_omitted_optional_lists"
+    plan = {"version": 1, "items": [{"id": "P-001", "intent": "auto", "test_case_refs": ["REQ-001/TC-001"]}]}
+    (harness_dir / "plan.yaml").write_text(yaml.safe_dump(plan))
+    fingerprint = "sha256:" + "0" * 64
+    execution = {"version": 1, "plan": {"path": ".harness/plan.yaml", "fingerprint": plan_fingerprint(plan)}, "items": {"P-001": {"status": "COMPLETE", "evidence_refs": ["unit"]}}}
+    (harness_dir / "plan-execution.yaml").write_text(yaml.safe_dump(execution))
+    (harness_dir / "requirements.yaml").write_text(yaml.safe_dump({"requirements": [{"id": "REQ-001", "test_plan": {"cases": [{"id": "TC-001", "strategy": "unit", "tests": [node]}]}}]}))
+    (harness_dir / "invariants.yaml").write_text(yaml.safe_dump({"invariants": []}))
+    evidence = harness_dir / "evidence"
+    evidence.mkdir()
+    (evidence / "unit.json").write_text(json.dumps({"type": "unit_test", "timestamp": "2026-01-01T00:00:00+00:00", "command": "pytest", "exit_code": 0, "commit": "head", "workspace_fingerprint": fingerprint, "workspace_fingerprint_after": fingerprint, "covered_tests": []}))
+
+    assert [blocker.code for blocker in validate_plan_reconciliation(harness_dir, {}, head="head", workspace=fingerprint)] == ["PLAN_PROOF_MISSING"]
+
+
+def test_final_plan_reconciliation_requires_declared_changed_surface(tmp_path, monkeypatch):
+    from harness import plan_reconciliation
+
+    harness_dir = tmp_path / ".harness"
+    harness_dir.mkdir()
+    plan = {"version": 1, "items": [{"id": "P-001", "intent": "surface", "surfaces": ["src/example.py"]}]}
+    (harness_dir / "plan.yaml").write_text(yaml.safe_dump(plan))
+    execution = {"version": 1, "plan": {"path": ".harness/plan.yaml", "fingerprint": plan_reconciliation.plan_fingerprint(plan)}, "items": {"P-001": {"status": "COMPLETE", "surface_refs": ["src/example.py"]}}}
+    (harness_dir / "plan-execution.yaml").write_text(yaml.safe_dump(execution))
+    monkeypatch.setattr(plan_reconciliation, "changed_paths_since", lambda base: ())
+
+    blockers = plan_reconciliation.validate_plan_reconciliation(harness_dir, {"git": {"base_commit": "base"}}, head="head", workspace="ws")
+
+    assert [blocker.code for blocker in blockers] == ["PLAN_PROOF_MISSING"]
+
+
+def test_final_plan_reconciliation_blocks_changed_protected_surface(tmp_path, monkeypatch):
+    from harness import plan_reconciliation
+
+    harness_dir = tmp_path / ".harness"
+    harness_dir.mkdir()
+    plan = {"version": 1, "items": [{"id": "P-001", "intent": "surface", "surfaces": ["docs/user.md"]}]}
+    (harness_dir / "plan.yaml").write_text(yaml.safe_dump(plan))
+    execution = {"version": 1, "plan": {"path": ".harness/plan.yaml", "fingerprint": plan_reconciliation.plan_fingerprint(plan)}, "items": {"P-001": {"status": "COMPLETE", "surface_refs": ["docs/user.md"]}}}
+    (harness_dir / "plan-execution.yaml").write_text(yaml.safe_dump(execution))
+    monkeypatch.setattr(plan_reconciliation, "changed_paths_since", lambda base: ("docs/user.md",))
+    monkeypatch.setattr(plan_reconciliation, "protected_paths_fingerprint", lambda paths: "changed")
+    task = {"git": {"base_commit": "base"}, "risk": {"user_changes": {"paths": ["docs/user.md"], "fingerprint": "stored"}}}
+
+    assert [blocker.code for blocker in plan_reconciliation.validate_plan_reconciliation(harness_dir, task, head="head", workspace="ws")] == ["PLAN_PROTECTED_PATHS_MODIFIED"]
+
+
+def test_final_plan_reconciliation_keeps_evidence_blocker_with_protected_surface(tmp_path, monkeypatch):
+    from harness import plan_reconciliation
+
+    harness_dir = tmp_path / ".harness"
+    harness_dir.mkdir()
+    plan = {"version": 1, "items": [{"id": "P-001", "intent": "mixed", "test_case_refs": ["REQ-001/TC-001"], "surfaces": ["docs/user.md"]}]}
+    (harness_dir / "plan.yaml").write_text(yaml.safe_dump(plan))
+    execution = {"version": 1, "plan": {"path": ".harness/plan.yaml", "fingerprint": plan_reconciliation.plan_fingerprint(plan)}, "items": {"P-001": {"status": "COMPLETE", "surface_refs": ["docs/user.md"]}}}
+    (harness_dir / "plan-execution.yaml").write_text(yaml.safe_dump(execution))
+    (harness_dir / "requirements.yaml").write_text(yaml.safe_dump({"requirements": [{"id": "REQ-001", "test_plan": {"cases": [{"id": "TC-001", "strategy": "manual", "tests": []}]}}]}))
+    (harness_dir / "invariants.yaml").write_text(yaml.safe_dump({"invariants": []}))
+    monkeypatch.setattr(plan_reconciliation, "changed_paths_since", lambda base: ("docs/user.md",))
+    monkeypatch.setattr(plan_reconciliation, "protected_paths_fingerprint", lambda paths: "changed")
+    task = {"git": {"base_commit": "base"}, "risk": {"user_changes": {"paths": ["docs/user.md"], "fingerprint": "stored"}}}
+
+    codes = [blocker.code for blocker in plan_reconciliation.validate_plan_reconciliation(harness_dir, task, head="head", workspace="ws")]
+
+    assert codes == ["PLAN_PROTECTED_PATHS_MODIFIED", "PLAN_PROOF_MISSING"]
+
+
+def test_final_plan_reconciliation_excludes_unchanged_protected_surface_from_proof(tmp_path, monkeypatch):
+    from harness import plan_reconciliation
+
+    harness_dir = tmp_path / ".harness"
+    harness_dir.mkdir()
+    plan = {"version": 1, "items": [{"id": "P-001", "intent": "surface", "surfaces": ["docs/user.md"]}]}
+    (harness_dir / "plan.yaml").write_text(yaml.safe_dump(plan))
+    execution = {"version": 1, "plan": {"path": ".harness/plan.yaml", "fingerprint": plan_reconciliation.plan_fingerprint(plan)}, "items": {"P-001": {"status": "COMPLETE", "surface_refs": ["docs/user.md"]}}}
+    (harness_dir / "plan-execution.yaml").write_text(yaml.safe_dump(execution))
+    monkeypatch.setattr(plan_reconciliation, "changed_paths_since", lambda base: ("docs/user.md",))
+    monkeypatch.setattr(plan_reconciliation, "protected_paths_fingerprint", lambda paths: "stored")
+    task = {"git": {"base_commit": "base"}, "risk": {"user_changes": {"paths": ["docs/user.md"], "fingerprint": "stored"}}}
+
+    assert [blocker.code for blocker in plan_reconciliation.validate_plan_reconciliation(harness_dir, task, head="head", workspace="ws")] == ["PLAN_PROOF_MISSING"]
+
+
+def test_final_plan_reconciliation_rejects_missing_requirement_reference(tmp_path):
+    from harness.plan_reconciliation import plan_fingerprint, validate_plan_reconciliation
+
+    harness_dir = tmp_path / ".harness"
+    harness_dir.mkdir()
+    plan = {"version": 1, "items": [{"id": "P-001", "intent": "skip", "requirement_refs": ["REQ-999"]}]}
+    (harness_dir / "plan.yaml").write_text(yaml.safe_dump(plan))
+    execution = {"version": 1, "plan": {"path": ".harness/plan.yaml", "fingerprint": plan_fingerprint(plan)}, "items": {"P-001": {"status": "SKIPPED", "reason": "not needed"}}}
+    (harness_dir / "plan-execution.yaml").write_text(yaml.safe_dump(execution))
+    (harness_dir / "requirements.yaml").write_text(yaml.safe_dump({"requirements": []}))
+    (harness_dir / "invariants.yaml").write_text(yaml.safe_dump({"invariants": []}))
+
+    assert [blocker.code for blocker in validate_plan_reconciliation(harness_dir, {}, head="head", workspace="ws")] == ["PLAN_DISPOSITION_INVALID"]
+
+
+def test_final_plan_reconciliation_rejects_unaccepted_decision_reference(tmp_path):
+    from harness.plan_reconciliation import plan_fingerprint, validate_plan_reconciliation
+
+    harness_dir = tmp_path / ".harness"
+    harness_dir.mkdir()
+    plan = {"version": 1, "items": [{"id": "P-001", "intent": "skip"}]}
+    (harness_dir / "plan.yaml").write_text(yaml.safe_dump(plan))
+    execution = {"version": 1, "plan": {"path": ".harness/plan.yaml", "fingerprint": plan_fingerprint(plan)}, "items": {"P-001": {"status": "SKIPPED", "reason": "decision", "decision_id": "DEC-999"}}}
+    (harness_dir / "plan-execution.yaml").write_text(yaml.safe_dump(execution))
+
+    blockers = validate_plan_reconciliation(harness_dir, {"task": {"id": "TASK-058"}}, head="head", workspace="ws")
+
+    assert [blocker.code for blocker in blockers] == ["PLAN_DISPOSITION_INVALID"]
+
+
+@pytest.mark.parametrize("surface", ["", "/tmp/escape", "docs/../secret"])
+def test_plan_schema_rejects_non_repository_relative_surface(surface):
+    if jsonschema is None:
+        pytest.skip("jsonschema not installed")
+    schema = _load(resources.files("harness").joinpath("schemas", "plan.schema.json"))
+    document = {"version": 1, "items": [{"id": "P-001", "intent": "work", "surfaces": [surface]}]}
+
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate(document, schema)
+
+
 def _load(path):
     import json
 

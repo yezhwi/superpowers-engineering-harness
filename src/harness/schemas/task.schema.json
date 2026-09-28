@@ -69,6 +69,15 @@
       },
       "additionalProperties": false
     },
+    "plan_reconciliation": {
+      "type": "object",
+      "required": ["enabled", "mode"],
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "mode": {"enum": ["disabled", "final", "task_and_final"]}
+      },
+      "additionalProperties": false
+    },
     "scope": {
       "type": "object",
       "required": ["owned_paths", "protected_user_paths"],
