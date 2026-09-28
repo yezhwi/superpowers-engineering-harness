@@ -255,20 +255,28 @@ def _fresh_item_evidence(harness_dir: Path, references: list[str], head: str, wo
         return False
 
 
-def _qualified_cases(harness_dir: Path) -> dict[str, set[str]]:
+def _qualified_cases(harness_dir: Path) -> dict[str, dict]:
     from harness import source_access
 
-    cases: dict[str, set[str]] = {}
-    for filename, key in (("requirements.yaml", "requirements"), ("invariants.yaml", "invariants")):
+    cases: dict[str, dict] = {}
+    for filename, key, schema_name in (
+        ("requirements.yaml", "requirements", "requirement.schema.json"),
+        ("invariants.yaml", "invariants", "invariant.schema.json"),
+    ):
+        path = harness_dir / filename
         try:
-            document = yaml.safe_load(
-                source_access.read_text(harness_dir / filename, encoding="utf-8")
-            )
-        except (OSError, yaml.YAMLError):
+            document = yaml.safe_load(source_access.read_text(path, encoding="utf-8"))
+        except FileNotFoundError:
             continue
-        for record in document.get(key, []):
-            cases[record.get("id")] = {
-                case.get("id"): case
+        except (OSError, UnicodeError, yaml.YAMLError) as exc:
+            raise PlanArtifactError(f"PLAN_SOURCE_INVALID: {path}") from exc
+        try:
+            validate(document, read_schema(schema_name))
+        except ValidationError as exc:
+            raise PlanArtifactError(f"PLAN_SOURCE_INVALID: {path}") from exc
+        for record in document[key]:
+            cases[record["id"]] = {
+                case["id"]: case
                 for case in (record.get("test_plan") or {}).get("cases", [])
             }
     return cases

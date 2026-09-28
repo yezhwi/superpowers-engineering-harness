@@ -22,6 +22,35 @@ except ImportError:  # pragma: no cover
     jsonschema = None
 
 
+def _requirements_with_cases(cases: list[dict]) -> dict:
+    normalized = [
+        {
+            "id": case["id"],
+            "type": "contract",
+            "strategy": case.get("strategy", "unit"),
+            "description": "plan reconciliation fixture",
+            **({"tests": case["tests"]} if "tests" in case else {}),
+        }
+        for case in cases
+    ]
+    return {
+        "requirements": [
+            {
+                "id": "REQ-001",
+                "statement": "Plan item has qualified proof",
+                "priority": "must",
+                "status": "pending",
+                "test_plan": {
+                    "strategies": sorted(
+                        {case["strategy"] for case in normalized} or {"unit"}
+                    ),
+                    "cases": normalized,
+                },
+            }
+        ]
+    }
+
+
 REQUIREMENTS_EXAMPLE = {
     "requirements": [
         {
@@ -538,7 +567,7 @@ def test_final_plan_reconciliation_rejects_missing_qualified_parent_case(tmp_pat
     }
     (harness_dir / "plan-execution.yaml").write_text(yaml.safe_dump(execution))
     (harness_dir / "requirements.yaml").write_text(
-        yaml.safe_dump({"requirements": [{"id": "REQ-001", "test_plan": {"cases": []}}]})
+        yaml.safe_dump(_requirements_with_cases([]))
     )
     (harness_dir / "invariants.yaml").write_text(yaml.safe_dump({"invariants": []}))
 
@@ -564,9 +593,7 @@ def test_final_plan_reconciliation_requires_item_owned_evidence(tmp_path):
     }
     (harness_dir / "plan-execution.yaml").write_text(yaml.safe_dump(execution))
     (harness_dir / "requirements.yaml").write_text(
-        yaml.safe_dump(
-            {"requirements": [{"id": "REQ-001", "test_plan": {"cases": [{"id": "TC-001"}]}}]}
-        )
+        yaml.safe_dump(_requirements_with_cases([{"id": "TC-001"}]))
     )
     (harness_dir / "invariants.yaml").write_text(yaml.safe_dump({"invariants": []}))
 
@@ -584,7 +611,7 @@ def test_final_plan_reconciliation_rejects_missing_item_evidence_record(tmp_path
     (harness_dir / "plan.yaml").write_text(yaml.safe_dump(plan))
     execution = {"version": 1, "plan": {"path": ".harness/plan.yaml", "fingerprint": plan_fingerprint(plan)}, "items": {"P-001": {"status": "COMPLETE", "evidence_refs": ["missing"]}}}
     (harness_dir / "plan-execution.yaml").write_text(yaml.safe_dump(execution))
-    (harness_dir / "requirements.yaml").write_text(yaml.safe_dump({"requirements": [{"id": "REQ-001", "test_plan": {"cases": [{"id": "TC-001"}]}}]}))
+    (harness_dir / "requirements.yaml").write_text(yaml.safe_dump(_requirements_with_cases([{"id": "TC-001"}])))
     (harness_dir / "invariants.yaml").write_text(yaml.safe_dump({"invariants": []}))
 
     assert [blocker.code for blocker in validate_plan_reconciliation(harness_dir, {}, head="head", workspace="ws")] == ["PLAN_PROOF_MISSING"]
@@ -602,7 +629,13 @@ def test_final_plan_reconciliation_requires_item_evidence_to_cover_manual_case(t
     fingerprint = "sha256:" + "0" * 64
     execution = {"version": 1, "plan": {"path": ".harness/plan.yaml", "fingerprint": plan_fingerprint(plan)}, "items": {"P-001": {"status": "COMPLETE", "evidence_refs": ["manual"]}}}
     (harness_dir / "plan-execution.yaml").write_text(yaml.safe_dump(execution))
-    (harness_dir / "requirements.yaml").write_text(yaml.safe_dump({"requirements": [{"id": "REQ-001", "test_plan": {"cases": [{"id": "TC-001", "strategy": "manual", "tests": []}]}}]}))
+    (harness_dir / "requirements.yaml").write_text(
+        yaml.safe_dump(
+            _requirements_with_cases(
+                [{"id": "TC-001", "strategy": "manual", "tests": []}]
+            )
+        )
+    )
     (harness_dir / "invariants.yaml").write_text(yaml.safe_dump({"invariants": []}))
     evidence = harness_dir / "evidence"
     evidence.mkdir()
@@ -637,7 +670,13 @@ def test_final_plan_reconciliation_requires_item_evidence_to_cover_automated_nod
     fingerprint = "sha256:" + "0" * 64
     execution = {"version": 1, "plan": {"path": ".harness/plan.yaml", "fingerprint": plan_fingerprint(plan)}, "items": {"P-001": {"status": "COMPLETE", "evidence_refs": ["unit"]}}}
     (harness_dir / "plan-execution.yaml").write_text(yaml.safe_dump(execution))
-    (harness_dir / "requirements.yaml").write_text(yaml.safe_dump({"requirements": [{"id": "REQ-001", "test_plan": {"cases": [{"id": "TC-001", "strategy": "unit", "tests": [node]}]}}]}))
+    (harness_dir / "requirements.yaml").write_text(
+        yaml.safe_dump(
+            _requirements_with_cases(
+                [{"id": "TC-001", "strategy": "unit", "tests": [node]}]
+            )
+        )
+    )
     (harness_dir / "invariants.yaml").write_text(yaml.safe_dump({"invariants": []}))
     evidence = harness_dir / "evidence"
     evidence.mkdir()
@@ -687,7 +726,13 @@ def test_final_plan_reconciliation_keeps_evidence_blocker_with_protected_surface
     (harness_dir / "plan.yaml").write_text(yaml.safe_dump(plan))
     execution = {"version": 1, "plan": {"path": ".harness/plan.yaml", "fingerprint": plan_reconciliation.plan_fingerprint(plan)}, "items": {"P-001": {"status": "COMPLETE", "surface_refs": ["docs/user.md"]}}}
     (harness_dir / "plan-execution.yaml").write_text(yaml.safe_dump(execution))
-    (harness_dir / "requirements.yaml").write_text(yaml.safe_dump({"requirements": [{"id": "REQ-001", "test_plan": {"cases": [{"id": "TC-001", "strategy": "manual", "tests": []}]}}]}))
+    (harness_dir / "requirements.yaml").write_text(
+        yaml.safe_dump(
+            _requirements_with_cases(
+                [{"id": "TC-001", "strategy": "manual", "tests": []}]
+            )
+        )
+    )
     (harness_dir / "invariants.yaml").write_text(yaml.safe_dump({"invariants": []}))
     monkeypatch.setattr(plan_reconciliation, "changed_paths_since", lambda base: ("docs/user.md",))
     monkeypatch.setattr(plan_reconciliation, "protected_paths_fingerprint", lambda paths: "changed")

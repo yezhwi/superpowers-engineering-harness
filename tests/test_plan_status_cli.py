@@ -248,12 +248,37 @@ def test_plan_status_complete_with_failed_proof_stays_reconciled_and_blocked(har
     assert repository_bytes(harness.parent) == before
 
 
-def test_plan_status_enabled_malformed_required_source_fails_closed(harness):
+@pytest.mark.parametrize(
+    ("relative_path", "content"),
+    [
+        ("decisions/DEC-001.yaml", "["),
+        ("requirements.yaml", "["),
+        ("invariants.yaml", "requirements: []"),
+    ],
+)
+def test_plan_status_enabled_malformed_required_source_fails_closed(
+    harness, relative_path, content
+):
     enable_plan_status(harness)
     write_plan_artifacts(harness)
-    decisions = harness / "decisions"
-    decisions.mkdir(exist_ok=True)
-    (decisions / "DEC-001.yaml").write_text("[")
+    path = harness / relative_path
+    path.parent.mkdir(exist_ok=True)
+    path.write_text(content)
+    before = repository_bytes(harness.parent)
+
+    result = cli(harness.parent, "plan", "status", "--json")
+
+    assert result.returncode == 2
+    assert result.stdout == ""
+    assert result.stderr.startswith("INVALID_HARNESS_STATE:")
+    assert repository_bytes(harness.parent) == before
+
+
+def test_plan_status_enabled_unreadable_required_source_fails_closed(harness):
+    enable_plan_status(harness)
+    write_plan_artifacts(harness)
+    (harness / "requirements.yaml").unlink()
+    (harness / "requirements.yaml").mkdir()
     before = repository_bytes(harness.parent)
 
     result = cli(harness.parent, "plan", "status", "--json")
