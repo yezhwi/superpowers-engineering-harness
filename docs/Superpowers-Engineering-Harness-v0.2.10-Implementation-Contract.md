@@ -177,11 +177,16 @@ Context may project:
 ```yaml
 plan_reconciliation:
   enabled: true
+  mode: final
   next_plan_item: P-003
   final_status: blocked
 ```
 
-`next_plan_item` is advisory: first nonterminal item in canonical plan order, or null when all items are terminal. `final_status` is only `pass` or `blocked`. Neither field authorizes work or replaces `harness resume`, which continues to route only a `BLOCKED` task from typed Gate blockers.
+`mode` projects the enabled task configuration (`final` or `task_and_final`). `next_plan_item` is advisory: first nonterminal item in canonical plan order, or null when all items are terminal. A missing artifact or stale fingerprint also produces null because execution position is not trustworthy. `final_status` is only `pass` or `blocked` and represents the P0 final check even when `mode` is `task_and_final`; P1C owns Q3 task-level enforcement. Neither field authorizes work or replaces `harness resume`, which continues to route only a `BLOCKED` task from typed Gate blockers.
+
+Projected `enabled` is true only for an enabled STANDARD or STRICT task. FAST/Q1 Context projects `{enabled: false}` and does not load plan artifacts, including when the task file sets `enabled: true`. Gate returns through the FAST path before Plan Reconciliation. That setting is not the section 4 opt-in. Context schema failures use `CONTEXT_SCHEMA_INVALID`; `harness gate` still reports malformed plan artifacts as `InvalidHarnessState` with exit 2. Semantic plan results remain the typed `PLAN_*` blockers.
+
+P1A adds nullable `generated_from.plan_hash` and `generated_from.plan_execution_hash`. Disabled tasks keep both null and omit plan keys from the generic `files` map. For an enabled present artifact, the named hash equals both its `files` entry and reference `sha256`; for enabled absence, the named hash, `files` entry, and reference are null.
 
 `harness plan status` is read-only projection. Gate preflight is existing `harness gate preflight`; no separate Gate Preview command is introduced.
 
