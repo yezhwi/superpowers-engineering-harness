@@ -1730,3 +1730,102 @@ def test_q3_replay_valid_current_surface_receipt_can_pass_p0(tmp_path, monkeypat
 
     assert assessment.blockers == ()
     assert assessment.final_blockers == ()
+
+
+def test_plan_status_task_level_blocker_hides_progress_but_keeps_independent_final_pass():
+    from harness.plan_reconciliation import (
+        assess_plan_reconciliation_documents,
+        plan_fingerprint,
+        plan_status_report,
+    )
+
+    plan = {"version": 1, "items": []}
+    execution = {
+        "version": 1,
+        "plan": {"path": ".harness/plan.yaml", "fingerprint": plan_fingerprint(plan)},
+        "items": {},
+    }
+    task = _plan_assessment_task("STRICT", "task_and_final")
+    assessment = assess_plan_reconciliation_documents(
+        Path(".harness"), task, plan, execution, head="head", workspace="workspace"
+    )
+
+    report = plan_status_report(task, plan, execution, assessment)
+
+    assert [blocker["code"] for blocker in report["blockers"]] == [
+        "PLAN_TASK_LEVEL_REQUIRED"
+    ]
+    assert report["progress"] is None
+    assert report["next_plan_item"] is None
+    assert report["final_status"] == "pass"
+
+
+def test_plan_status_sequence_invalid_hides_persisted_projection():
+    from harness.plan_reconciliation import (
+        assess_plan_reconciliation_documents,
+        plan_fingerprint,
+        plan_status_report,
+    )
+
+    plan = {"version": 1, "items": []}
+    execution = {
+        "version": 2,
+        "plan": {"path": ".harness/plan.yaml", "fingerprint": plan_fingerprint(plan)},
+        "sequence": 1,
+        "transitions": [],
+        "items": {},
+    }
+    task = _plan_assessment_task("STRICT", "task_and_final")
+    assessment = assess_plan_reconciliation_documents(
+        Path(".harness"), task, plan, execution, head="head", workspace="workspace"
+    )
+
+    report = plan_status_report(task, plan, execution, assessment)
+
+    assert [blocker["code"] for blocker in report["blockers"]] == [
+        "PLAN_SEQUENCE_INVALID"
+    ]
+    assert report["progress"] is None
+    assert report["next_plan_item"] is None
+    assert report["final_status"] == "pass"
+
+
+def test_plan_status_uses_assessment_projection_and_omits_journal_bodies():
+    import json
+
+    from harness.plan_reconciliation import (
+        PlanAssessment,
+        plan_fingerprint,
+        plan_status_report,
+    )
+
+    plan = {
+        "version": 1,
+        "items": [{"id": "P-001", "intent": "work", "surfaces": ["src/x.py"]}],
+    }
+    execution = {
+        "version": 2,
+        "plan": {"path": ".harness/plan.yaml", "fingerprint": plan_fingerprint(plan)},
+        "sequence": 0,
+        "transitions": [],
+        "items": {},
+    }
+    assessment = PlanAssessment(
+        blockers=(),
+        final_blockers=(),
+        projection={"P-001": {"status": "IN_PROGRESS"}},
+        replay=None,
+    )
+
+    report = plan_status_report(
+        _plan_assessment_task("STRICT", "task_and_final"),
+        plan,
+        execution,
+        assessment,
+    )
+    encoded = json.dumps(report)
+
+    assert report["progress"]["statuses"]["IN_PROGRESS"] == 1
+    assert report["next_plan_item"] == "P-001"
+    for secret in ("transitions", "sequence", "proof_receipt", "decision_receipt"):
+        assert secret not in encoded

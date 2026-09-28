@@ -89,7 +89,10 @@ def build_control_core(source: AuthoritativeContext) -> ControlCore:
                 "risk": task["risk"],
             },
             "plan_reconciliation": plan_context_summary(
-                task, source.plan, source.plan_execution, source.gate.blockers
+                task,
+                source.plan,
+                source.plan_execution,
+                source.plan_assessment or source.gate.blockers,
             ),
             "requirements": [r for r in source.requirements if r["priority"] == "must"],
             "invariants": source.invariants,

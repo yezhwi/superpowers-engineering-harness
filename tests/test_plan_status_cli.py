@@ -132,6 +132,96 @@ def test_plan_status_enabled_missing_artifacts_are_blocked_reports(harness, miss
     assert repository_bytes(harness.parent) == before
 
 
+@pytest.mark.parametrize(
+    ("version", "expected"),
+    [(1, "PLAN_TASK_LEVEL_REQUIRED"), (2, "PLAN_SEQUENCE_INVALID")],
+)
+def test_plan_status_untrusted_task_level_execution_hides_progress_and_final_truth(
+    harness, version, expected
+):
+    from harness.plan_reconciliation import plan_fingerprint
+
+    task_path = harness / "current-task.yaml"
+    task = yaml.safe_load(task_path.read_text())
+    task["risk"]["level"] = "Q3"
+    task["risk"]["profile"] = "STRICT"
+    task["plan_reconciliation"] = {"enabled": True, "mode": "task_and_final"}
+    task_path.write_text(yaml.safe_dump(task))
+    plan = {"version": 1, "items": []}
+    execution = {
+        "version": version,
+        "plan": {
+            "path": ".harness/plan.yaml",
+            "fingerprint": plan_fingerprint(plan),
+        },
+        "items": {},
+    }
+    if version == 2:
+        execution.update({"sequence": 1, "transitions": []})
+    (harness / "plan.yaml").write_text(yaml.safe_dump(plan))
+    (harness / "plan-execution.yaml").write_text(yaml.safe_dump(execution))
+    before = repository_bytes(harness.parent)
+
+    result = cli(harness.parent, "plan", "status", "--json")
+
+    assert result.returncode == 0, result.stderr
+    report = json.loads(result.stdout)
+    assert [blocker["code"] for blocker in report["blockers"]] == [expected]
+    assert report["progress"] is None
+    assert report["next_plan_item"] is None
+    assert report["final_status"] == "pass"
+    for secret in ("transitions", "sequence", "proof_receipt", "decision_receipt"):
+        assert secret not in result.stdout
+    assert repository_bytes(harness.parent) == before
+
+
+def test_plan_status_trusted_v2_progress_comes_from_replay_projection(harness):
+    from harness.plan_reconciliation import plan_fingerprint
+
+    task_path = harness / "current-task.yaml"
+    task = yaml.safe_load(task_path.read_text())
+    task["risk"]["level"] = "Q3"
+    task["risk"]["profile"] = "STRICT"
+    task["plan_reconciliation"] = {"enabled": True, "mode": "task_and_final"}
+    task_path.write_text(yaml.safe_dump(task))
+    plan = {
+        "version": 1,
+        "items": [
+            {"id": "P-001", "intent": "first"},
+            {"id": "P-002", "intent": "second"},
+        ],
+    }
+    execution = {
+        "version": 2,
+        "plan": {
+            "path": ".harness/plan.yaml",
+            "fingerprint": plan_fingerprint(plan),
+        },
+        "sequence": 1,
+        "transitions": [
+            {
+                "sequence": 1,
+                "item": "P-001",
+                "from": "PENDING",
+                "to": "IN_PROGRESS",
+                "action": "BEGIN",
+            }
+        ],
+        "items": {"P-001": {"status": "IN_PROGRESS"}},
+    }
+    (harness / "plan.yaml").write_text(yaml.safe_dump(plan))
+    (harness / "plan-execution.yaml").write_text(yaml.safe_dump(execution))
+
+    result = cli(harness.parent, "plan", "status", "--json")
+
+    assert result.returncode == 0, result.stderr
+    report = json.loads(result.stdout)
+    assert report["progress"]["statuses"]["IN_PROGRESS"] == 1
+    assert report["progress"]["statuses"]["PENDING"] == 0
+    assert report["next_plan_item"] == "P-001"
+    assert "transitions" not in result.stdout
+
+
 def test_plan_status_enabled_stale_artifacts_are_blocked_report(harness):
     enable_plan_status(harness)
     write_plan_artifacts(harness, stale=True)

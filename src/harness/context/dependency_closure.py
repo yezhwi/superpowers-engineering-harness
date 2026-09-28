@@ -45,6 +45,7 @@ ALLOWED = ENTRIES | {
     "context.selector",
     "blockers",
     "paths",
+    "plan_execution",
     "plan_reconciliation",
     "state_machine",
     "test_plan",

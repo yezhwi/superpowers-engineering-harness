@@ -163,7 +163,7 @@ def cmd_plan_status(json_output: bool) -> int:
                 harness_dir, optional=True
             )
             current = workspace.snapshot()
-            blockers = plan_reconciliation.validate_plan_reconciliation_documents(
+            assessment = plan_reconciliation.assess_plan_reconciliation_documents(
                 harness_dir,
                 task,
                 plan,
@@ -172,7 +172,7 @@ def cmd_plan_status(json_output: bool) -> int:
                 workspace=current.fingerprint,
             )
             report = plan_reconciliation.plan_status_report(
-                task, plan, execution, blockers
+                task, plan, execution, assessment
             )
     except (
         HarnessStateError,

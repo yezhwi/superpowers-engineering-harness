@@ -176,6 +176,66 @@ def test_fast_ad_hoc_plan_reconciliation_ignores_malformed_sources(harness):
     assert core["plan_reconciliation"] == {"enabled": False}
 
 
+def test_context_uses_independent_plan_assessment_without_journal_projection(harness):
+    import json
+
+    from harness.plan_reconciliation import plan_fingerprint
+
+    enable_plan_reconciliation(harness, level="Q3")
+    plan = {"version": 1, "items": []}
+    execution = {
+        "version": 1,
+        "plan": {
+            "path": ".harness/plan.yaml",
+            "fingerprint": plan_fingerprint(plan),
+        },
+        "items": {},
+    }
+    write_yaml(harness / "plan.yaml", plan)
+    write_yaml(harness / "plan-execution.yaml", execution)
+
+    source, core = load_and_build(harness)
+    encoded = json.dumps(core)
+
+    assert [blocker.code for blocker in source.plan_assessment.blockers] == [
+        "PLAN_TASK_LEVEL_REQUIRED"
+    ]
+    assert core["plan_reconciliation"] == {
+        "enabled": True,
+        "mode": "task_and_final",
+        "next_plan_item": None,
+        "final_status": "pass",
+    }
+    for secret in ("transitions", "sequence", "proof_receipt", "decision_receipt"):
+        assert secret not in encoded
+
+
+def test_context_hides_next_item_for_replay_invalid_v2(harness):
+    from harness.plan_reconciliation import plan_fingerprint
+
+    enable_plan_reconciliation(harness, level="Q3")
+    plan = {"version": 1, "items": [{"id": "P-001", "intent": "work"}]}
+    execution = {
+        "version": 2,
+        "plan": {
+            "path": ".harness/plan.yaml",
+            "fingerprint": plan_fingerprint(plan),
+        },
+        "sequence": 1,
+        "transitions": [],
+        "items": {},
+    }
+    write_yaml(harness / "plan.yaml", plan)
+    write_yaml(harness / "plan-execution.yaml", execution)
+
+    source, core = load_and_build(harness)
+
+    assert [blocker.code for blocker in source.plan_assessment.blockers] == [
+        "PLAN_SEQUENCE_INVALID"
+    ]
+    assert core["plan_reconciliation"]["next_plan_item"] is None
+
+
 def _frozen_alignment(task_id="TASK-028"):
     from harness.alignment import contract_hash
     from test_alignment import complete_alignment
@@ -525,6 +585,10 @@ def test_evidence_summary_keeps_failure_and_staleness_without_raw_output(harness
 @pytest.mark.parametrize("level", ["Q1", "Q2", "Q3"])
 def test_classified_old_task_loads_without_new_budget_fields(harness, level):
     task = set_profile(harness, level)
+    if level in {"Q2", "Q3"}:
+        alignment = _frozen_alignment(task["task"]["id"])
+        write_yaml(harness / "alignment.yaml", alignment)
+        _write_matching_seal(harness, alignment)
     _, core = load_and_build(harness)
     assert core["task"]["risk"] == task["risk"]
 

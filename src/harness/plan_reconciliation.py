@@ -206,26 +206,39 @@ def validate_plan_initialization(
     return []
 
 
-def plan_context_summary(
-    task: dict,
+def _assessment_projection(
     plan: dict | None,
     execution: dict | None,
-    blockers: Iterable[GateBlocker],
-) -> dict:
-    """Project body-free Plan Reconciliation state from already-loaded facts."""
-    configuration = effective_plan_reconciliation(task)
-    if not configuration["enabled"]:
-        return configuration
-    blocker_list = tuple(blockers)
-    next_item = None
+    assessment: PlanAssessment | Iterable[GateBlocker],
+) -> tuple[tuple[GateBlocker, ...], tuple[GateBlocker, ...], dict | None]:
+    if isinstance(assessment, PlanAssessment):
+        return assessment.blockers, assessment.final_blockers, assessment.projection
+    blockers = tuple(assessment)
     trustworthy = (
         plan is not None
         and execution is not None
         and execution["plan"]["fingerprint"] == plan_fingerprint(plan)
     )
-    if trustworthy:
+    return blockers, blockers, execution["items"] if trustworthy else None
+
+
+def plan_context_summary(
+    task: dict,
+    plan: dict | None,
+    execution: dict | None,
+    assessment: PlanAssessment | Iterable[GateBlocker],
+) -> dict:
+    """Project body-free Plan Reconciliation state from already-loaded facts."""
+    configuration = effective_plan_reconciliation(task)
+    if not configuration["enabled"]:
+        return configuration
+    _, final_blockers, projection = _assessment_projection(
+        plan, execution, assessment
+    )
+    next_item = None
+    if plan is not None and projection is not None:
         for item in plan["items"]:
-            record = execution["items"].get(item["id"])
+            record = projection.get(item["id"])
             if record is None or record["status"] in {
                 "PENDING",
                 "IN_PROGRESS",
@@ -238,7 +251,7 @@ def plan_context_summary(
         "next_plan_item": next_item,
         "final_status": (
             "blocked"
-            if any(blocker.code.startswith("PLAN_") for blocker in blocker_list)
+            if any(blocker.code.startswith("PLAN_") for blocker in final_blockers)
             else "pass"
         ),
     }
@@ -248,15 +261,22 @@ def plan_status_report(
     task: dict,
     plan: dict | None,
     execution: dict | None,
-    blockers: Iterable[GateBlocker],
+    assessment: PlanAssessment | Iterable[GateBlocker],
 ) -> dict:
     """Project compact read-only status from one loaded plan assessment."""
     configuration = effective_plan_reconciliation(task)
     if not configuration["enabled"]:
         return configuration
 
-    blocker_list = tuple(blockers)
-    summary = plan_context_summary(task, plan, execution, blocker_list)
+    blocker_list, _, projection = _assessment_projection(
+        plan, execution, assessment
+    )
+    summary = plan_context_summary(
+        task,
+        plan,
+        execution,
+        assessment if isinstance(assessment, PlanAssessment) else blocker_list,
+    )
     fingerprint = plan_fingerprint(plan) if plan is not None else None
     execution_fingerprint = (
         execution["plan"]["fingerprint"] if execution is not None else None
@@ -267,7 +287,7 @@ def plan_status_report(
         else None
     )
     progress = None
-    if fingerprint_fresh:
+    if plan is not None and projection is not None:
         statuses = {
             status: 0
             for status in (
@@ -281,7 +301,7 @@ def plan_status_report(
         }
         reconciled = 0
         for item in plan["items"]:
-            record = execution["items"].get(item["id"])
+            record = projection.get(item["id"])
             if record is None:
                 continue
             status = record["status"]

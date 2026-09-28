@@ -18,6 +18,7 @@ from harness import (
 from harness.evidence_validator import EvidenceStatus, project_evidence
 from harness.plan_reconciliation import (
     PlanArtifactError,
+    assess_plan_reconciliation_documents,
     effective_plan_reconciliation,
     load_plan_artifacts,
 )
@@ -163,7 +164,8 @@ class FileContextSource:
         fast = task["risk"]["profile"] == "FAST"
         plan = None
         plan_execution = None
-        if effective_plan_reconciliation(task)["enabled"]:
+        plan_configuration = effective_plan_reconciliation(task)
+        if plan_configuration["enabled"]:
             try:
                 plan, plan_execution = load_plan_artifacts(
                     self.harness_dir, optional=True
@@ -375,6 +377,21 @@ class FileContextSource:
                         "current_fingerprint": projection.current_fingerprint,
                     }
                 )
+            plan_assessment = None
+            if plan_configuration["enabled"]:
+                try:
+                    plan_assessment = assess_plan_reconciliation_documents(
+                        self.harness_dir,
+                        task,
+                        plan,
+                        plan_execution,
+                        head=current.head,
+                        workspace=current.fingerprint,
+                    )
+                except (PlanArtifactError, decision.DecisionError) as exc:
+                    raise ContextBuildError(
+                        "CONTEXT_SCHEMA_INVALID", str(exc)
+                    ) from exc
             gate = quality_gate.assess_gate(
                 self.harness_dir, head=current.head, allow_preflight=True
             )
@@ -407,4 +424,5 @@ class FileContextSource:
             references=self.references.copy(),
             workspace=current,
             gate=gate,
+            plan_assessment=plan_assessment,
         )

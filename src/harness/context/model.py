@@ -1,7 +1,7 @@
 """Authoritative inputs retained independently of their Control Core projection."""
 
 from dataclasses import dataclass, field
-from typing import Protocol, TypedDict
+from typing import Any, Protocol, TypedDict
 
 from harness.quality_gate import GateAssessment
 from harness.workspace import WorkspaceSnapshot
@@ -35,6 +35,7 @@ class AuthoritativeContext:
     references: dict[str, dict | None]
     workspace: WorkspaceSnapshot
     gate: GateAssessment
+    plan_assessment: Any | None = None
     expansions: list[dict] = field(default_factory=list)
 
 
