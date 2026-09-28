@@ -20,6 +20,8 @@ class AuthoritativeContext:
     """Loaded inputs, not an atomic snapshot or proof of Context Integrity."""
 
     task: dict
+    plan: dict | None
+    plan_execution: dict | None
     requirements: list[dict]
     invariants: list[dict]
     decisions: list[dict]
@@ -42,6 +44,7 @@ class ContextSource(Protocol):
 
 class ControlCore(TypedDict):
     task: dict
+    plan_reconciliation: dict
     requirements: list[dict]
     invariants: list[dict]
     decisions: list[dict]

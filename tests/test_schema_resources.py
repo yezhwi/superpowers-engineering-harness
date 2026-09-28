@@ -102,8 +102,7 @@ def test_old_projection_document_requires_regeneration(harness):
     from harness.context.integrity import build_context, validate_context
 
     document = build_context(harness)
-    document["generated_from"]["projection_version"] = 1
-    document["generated_from"].pop("schema_resources")
+    document["generated_from"]["projection_version"] = 2
     with pytest.raises(ContextBuildError, match="CONTEXT_SCHEMA_INVALID"):
         validate_context(harness, document)
 

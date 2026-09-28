@@ -9,7 +9,11 @@ from pathlib import Path
 import pytest
 import test_context_builder
 import yaml
-from test_context_builder import write_yaml
+from test_context_builder import (
+    enable_plan_reconciliation,
+    write_plan_artifacts,
+    write_yaml,
+)
 from test_context_integrity import add_core_records as add_records
 
 from harness import decision
@@ -268,6 +272,25 @@ def test_publication_failure_restores_last_complete_bundle(
     assert bundle_bytes(harness) == before
     assert not list((harness / "context").glob("*.tmp"))
     assert not list((harness / ".staging").glob("context-*"))
+
+
+def test_plan_change_during_publication_leaves_no_partial_bundle(harness, monkeypatch):
+    from harness import transaction
+    from harness.context.store import generate_context
+
+    enable_plan_reconciliation(harness)
+    write_plan_artifacts(harness)
+    original = transaction.publish
+
+    def mutate_plan(*args, **kwargs):
+        original(*args, **kwargs)
+        with (harness / "plan-execution.yaml").open("a") as stream:
+            stream.write("\n# concurrent change\n")
+
+    monkeypatch.setattr(transaction, "publish", mutate_plan)
+    with pytest.raises(ContextBuildError, match="CONTEXT_STALE"):
+        generate_context(harness, mode="full")
+    assert bundle_bytes(harness) == {}
 
 
 def test_source_change_during_publication_rolls_back_new_bundle(harness, monkeypatch):

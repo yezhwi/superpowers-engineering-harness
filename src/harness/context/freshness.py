@@ -15,7 +15,7 @@ from harness.workspace import WorkspaceError, snapshot
 from .model import ContextBuildError
 from .source import ARTIFACT_PATTERNS
 
-PROJECTION_VERSION = 2
+PROJECTION_VERSION = 3
 ROOT_FILES = (
     "current-task.yaml",
     "requirements.yaml",
@@ -174,6 +174,19 @@ def _current_task_decision_scope_paths(harness_dir: Path) -> set[str]:
     return declared
 
 
+def _plan_source_names(harness_dir: Path) -> tuple[str, ...]:
+    """Select plan roots only for effectively enabled STANDARD/STRICT tasks."""
+    from harness.plan_reconciliation import effective_plan_reconciliation
+
+    path = harness_dir / "current-task.yaml"
+    if not source_access.is_file(path):
+        return ()
+    task = yaml.safe_load(source_access.read_text(path))
+    if not isinstance(task, dict) or not effective_plan_reconciliation(task)["enabled"]:
+        return ()
+    return ("plan.yaml", "plan-execution.yaml")
+
+
 def _protected_paths(harness_dir: Path) -> set[str]:
     """FAST reads these as literal filenames, not scope globs/test selectors."""
     path = harness_dir / "current-task.yaml"
@@ -208,12 +221,22 @@ def bootstrap_scope(harness_dir: Path):
 
 
 @contextmanager
-def version_scope(harness_dir: Path, discovered: set[str], protected: set[str]):
+def version_scope(
+    harness_dir: Path,
+    discovered: set[str],
+    protected: set[str],
+    plan_sources: tuple[str, ...],
+):
     """Freeze known control members before bytes/version collection."""
     root = harness_dir.absolute().parent
     allowed = [
         harness_dir / name
-        for name in (*ROOT_FILES, "alignment.yaml", "alignment-freeze.yaml")
+        for name in (
+            *ROOT_FILES,
+            *plan_sources,
+            "alignment.yaml",
+            "alignment-freeze.yaml",
+        )
     ]
     for directory, pattern in ARTIFACT_PATTERNS.items():
         path = harness_dir / directory
@@ -242,9 +265,12 @@ def capture(harness_dir: Path) -> dict:
     with bootstrap_scope(harness_dir):
         discovered = _declared_paths(harness_dir)
         protected = _protected_paths(harness_dir)
+        plan_sources = _plan_source_names(harness_dir)
     try:
-        with version_scope(harness_dir, discovered, protected):
-            return _capture_versions(harness_dir, root, discovered, protected)
+        with version_scope(harness_dir, discovered, protected, plan_sources):
+            return _capture_versions(
+                harness_dir, root, discovered, protected, plan_sources
+            )
     except (OSError, ValueError, yaml.YAMLError, WorkspaceError) as exc:
         if isinstance(exc, ContextBuildError):
             raise
@@ -254,7 +280,11 @@ def capture(harness_dir: Path) -> dict:
 
 
 def _capture_versions(
-    harness_dir: Path, root: Path, discovered: set[str], protected: set[str]
+    harness_dir: Path,
+    root: Path,
+    discovered: set[str],
+    protected: set[str],
+    plan_sources: tuple[str, ...],
 ) -> dict:
     files = {}
     try:
@@ -263,7 +293,7 @@ def _capture_versions(
             for name in ("alignment.yaml", "alignment-freeze.yaml")
             if source_access.exists(harness_dir / name)
         )
-        root_files = ROOT_FILES + alignment_files
+        root_files = ROOT_FILES + plan_sources + alignment_files
         for name in root_files:
             path = contained_path(root, f"{harness_dir.name}/{name}")
             files[name] = file_version(path)
@@ -308,6 +338,8 @@ def _capture_versions(
         "workspace_hash": current.fingerprint,
         "head": current.head,
         "control_plane_hash": digest(files),
+        "plan_hash": files.get("plan.yaml"),
+        "plan_execution_hash": files.get("plan-execution.yaml"),
         **{
             f"{key}_hash": digest(
                 {

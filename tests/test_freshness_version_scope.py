@@ -2,6 +2,7 @@
 
 import pytest
 import test_context_builder
+import yaml
 
 from harness.context import freshness
 from harness.context.model import ContextBuildError
@@ -27,6 +28,35 @@ def test_version_phase_keeps_existing_canonical_artifacts_readable(harness):
     result = freshness.capture(harness)
     assert result["files"]["current-task.yaml"]
     assert result["files"]["evidence/"] is not None
+
+
+def test_enabled_plan_artifacts_are_conditional_named_freshness_inputs(harness):
+    path = harness / "current-task.yaml"
+    task = yaml.safe_load(path.read_text())
+    task["risk"]["level"] = "Q2"
+    task["risk"]["profile"] = "STANDARD"
+    task["plan_reconciliation"] = {"enabled": True, "mode": "final"}
+    path.write_text(yaml.safe_dump(task))
+
+    missing = freshness.capture(harness)
+    assert missing["files"]["plan.yaml"] is None
+    assert missing["files"]["plan-execution.yaml"] is None
+    assert missing["plan_hash"] is None
+    assert missing["plan_execution_hash"] is None
+
+    (harness / "plan.yaml").write_text("version: 1\nitems: []\n")
+    plan_present = freshness.capture(harness)
+    assert plan_present["plan_hash"] == plan_present["files"]["plan.yaml"]
+    assert plan_present["plan_hash"].startswith("sha256:")
+    assert plan_present["plan_execution_hash"] is None
+
+    (harness / "plan-execution.yaml").write_text("version: 1\n")
+    both_present = freshness.capture(harness)
+    assert both_present["plan_execution_hash"] == both_present["files"]["plan-execution.yaml"]
+    assert both_present != plan_present
+
+    (harness / "plan.yaml").unlink()
+    assert freshness.capture(harness)["plan_hash"] is None
 
 
 def test_new_canonical_member_after_freeze_rejects_capture(harness, monkeypatch):

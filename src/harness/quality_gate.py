@@ -112,7 +112,7 @@ def _append_live_alignment_drift(harness_dir: Path, task: dict, findings: list, 
     """Escalate only drift computed from this assessment."""
     from harness import alignment, source_access
     from harness.decision import DecisionError, load_decisions
-    from harness.impact import ImpactContractError
+    from harness.impact import ImpactContractError, current_boundary_refs
 
     path = harness_dir / "alignment.yaml"
     profile = (task.get("risk") or {}).get("profile")
@@ -141,8 +141,6 @@ def _append_live_alignment_drift(harness_dir: Path, task: dict, findings: list, 
     except alignment.AlignmentError as exc:
         raise InvalidHarnessState(f"ALIGNMENT_FREEZE_INVALID: {exc}") from exc
     try:
-        from harness.controlplane import current_boundary_refs
-
         impact_document = {}
         impact_path = harness_dir / "impact.yaml"
         if source_access.exists(impact_path):

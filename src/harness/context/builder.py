@@ -5,6 +5,7 @@ from copy import deepcopy
 from harness import impact as impact_domain
 
 from harness.blockers import blocker_document
+from harness.plan_reconciliation import plan_context_summary
 from harness.quality_gate import OPEN_FINDING_STATUSES
 
 from .model import AuthoritativeContext, ControlCore
@@ -87,6 +88,9 @@ def build_control_core(source: AuthoritativeContext) -> ControlCore:
                 "state": task["state"],
                 "risk": task["risk"],
             },
+            "plan_reconciliation": plan_context_summary(
+                task, source.plan, source.plan_execution, source.gate.blockers
+            ),
             "requirements": [r for r in source.requirements if r["priority"] == "must"],
             "invariants": source.invariants,
             "decisions": layer0_decisions(source.decisions, task["task"]["id"]),

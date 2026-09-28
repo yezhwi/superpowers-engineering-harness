@@ -45,6 +45,7 @@ ALLOWED = ENTRIES | {
     "context.selector",
     "blockers",
     "paths",
+    "plan_reconciliation",
     "state_machine",
     "test_plan",
     "workspace",
@@ -63,6 +64,7 @@ ALLOWED = ENTRIES | {
     "templates",
     "collect_evidence",
     "existing_verification",
+    "impact",
     "telemetry_lock",
 }
 ADAPTERS = {

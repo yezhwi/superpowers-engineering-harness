@@ -86,6 +86,24 @@ def test_protected_paths_are_literal_files_not_globs_or_test_selectors(harness, 
     assert capture(harness) != before
 
 
+def test_fast_ad_hoc_plan_enablement_does_not_version_adjacent_artifacts(harness):
+    path = harness / "current-task.yaml"
+    task = yaml.safe_load(path.read_text())
+    task["plan_reconciliation"] = {"enabled": True, "mode": "final"}
+    path.write_text(yaml.safe_dump(task))
+
+    before = capture(harness)
+    (harness / "plan.yaml").write_text("items: [")
+    (harness / "plan-execution.yaml").write_text("broken: [")
+    after = capture(harness)
+
+    assert before == after
+    assert after["plan_hash"] is None
+    assert after["plan_execution_hash"] is None
+    assert "plan.yaml" not in after["files"]
+    assert "plan-execution.yaml" not in after["files"]
+
+
 def test_empty_protected_paths_remain_compatible(harness):
     path = harness / "current-task.yaml"
     task = yaml.safe_load(path.read_text())

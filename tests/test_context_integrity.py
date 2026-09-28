@@ -5,7 +5,11 @@ import json
 
 import pytest
 import test_context_builder
-from test_context_builder import write_yaml
+from test_context_builder import (
+    enable_plan_reconciliation,
+    write_plan_artifacts,
+    write_yaml,
+)
 
 from harness.context.model import ContextBuildError
 
@@ -118,6 +122,51 @@ def test_ci07_changed_statement_is_rejected_even_with_same_ids(harness):
     document = build(harness)
     document["control"]["requirements"][0]["statement"] = "Weakened constraint"
     with pytest.raises(ContextBuildError, match="CONTEXT_INACCURATE"):
+        validate(harness, document)
+
+
+def test_enabled_plan_summary_matches_in_full_and_compact_context(harness):
+    enable_plan_reconciliation(harness)
+    write_plan_artifacts(harness)
+
+    full = build(harness)
+    from harness.context.integrity import build_context
+    compact = build_context(harness, mode="compact")
+
+    assert compact["control"]["plan_reconciliation"] == full["control"]["plan_reconciliation"]
+    assert full["control"]["plan_reconciliation"] == {
+        "enabled": True,
+        "mode": "final",
+        "next_plan_item": "P-1",
+        "final_status": "blocked",
+    }
+    assert full["references"]["plan.yaml"]["ref"] == ".harness/plan.yaml"
+    assert full["references"]["plan-execution.yaml"]["ref"] == ".harness/plan-execution.yaml"
+    assert {row["id"] for row in full["omitted"]} >= {
+        "plan.yaml",
+        "plan-execution.yaml",
+    }
+    source = full["manifest"]["sources"]["plan_reconciliation"]
+    assert source["loaded"] is True
+    assert source["total"] == 1
+    assert source["included"] == 0
+
+
+def test_disabled_plan_summary_has_no_refs_or_omissions(harness):
+    document = build(harness)
+
+    assert document["control"]["plan_reconciliation"] == {"enabled": False}
+    assert "plan.yaml" not in document["references"]
+    assert "plan-execution.yaml" not in document["references"]
+    assert not any(row["id"].startswith("plan") for row in document["omitted"])
+    assert document["manifest"]["sources"]["plan_reconciliation"]["loaded"] is False
+
+
+def test_altered_plan_summary_is_rejected(harness):
+    document = build(harness)
+    document["control"]["plan_reconciliation"] = {"enabled": True}
+
+    with pytest.raises(ContextBuildError, match="CONTEXT_(SCHEMA_INVALID|INACCURATE)"):
         validate(harness, document)
 
 

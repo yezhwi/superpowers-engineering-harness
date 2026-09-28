@@ -2224,13 +2224,8 @@ def legacy_boundary_baseline(document: dict) -> dict[str, list[str]]:
 
 
 def current_boundary_refs(document: dict, impact: dict) -> dict[str, list[str]]:
-    """Canonical declared boundaries; typed kind is sole classification source."""
-    contracts = typed_contracts(impact)
-    return {
-        "interface": sorted({item["contract_id"] for item in impact.get("interfaces", []) if item.get("visibility") == "external" and item.get("contract_id")}),
-        "permission": sorted(item["ref"] for item in contracts if item["kind"] == "permission"),
-        "persistence": sorted(item["ref"] for item in contracts if item["kind"] == "persistence"),
-    }
+    """Compatibility wrapper for canonical impact boundary normalization."""
+    return impact_domain.current_boundary_refs(document, impact)
 
 
 def typed_contracts(impact: dict) -> list[dict[str, str]]:

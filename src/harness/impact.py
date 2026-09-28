@@ -28,6 +28,26 @@ def typed_contracts(impact: dict) -> list[dict[str, str]]:
     return result
 
 
+def current_boundary_refs(document: dict, impact: dict) -> dict[str, list[str]]:
+    """Return canonical external, permission, and persistence boundaries."""
+    contracts = typed_contracts(impact)
+    return {
+        "interface": sorted(
+            {
+                item["contract_id"]
+                for item in impact.get("interfaces", [])
+                if item.get("visibility") == "external" and item.get("contract_id")
+            }
+        ),
+        "permission": sorted(
+            item["ref"] for item in contracts if item["kind"] == "permission"
+        ),
+        "persistence": sorted(
+            item["ref"] for item in contracts if item["kind"] == "persistence"
+        ),
+    }
+
+
 def contract_paths(impact: dict) -> list[str]:
     """Return only legacy-compatible generic refs for filesystem consumers."""
     return [item["ref"] for item in typed_contracts(impact) if item["kind"] == "generic"]

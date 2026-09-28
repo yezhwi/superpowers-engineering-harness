@@ -645,6 +645,193 @@ def test_plan_schema_rejects_non_repository_relative_surface(surface):
         jsonschema.validate(document, schema)
 
 
+def test_load_plan_artifacts_optional_preserves_per_file_absence(tmp_path):
+    from harness.plan_reconciliation import load_plan_artifacts
+
+    harness_dir = tmp_path / ".harness"
+    harness_dir.mkdir()
+
+    assert load_plan_artifacts(harness_dir, optional=True) == (None, None)
+
+
+def test_load_plan_artifacts_optional_rejects_malformed_present_file(tmp_path):
+    from harness.plan_reconciliation import PlanArtifactError, load_plan_artifacts
+
+    harness_dir = tmp_path / ".harness"
+    harness_dir.mkdir()
+    (harness_dir / "plan.yaml").write_text("items: [")
+
+    with pytest.raises(PlanArtifactError, match="PLAN_SCHEMA_INVALID"):
+        load_plan_artifacts(harness_dir, optional=True)
+
+
+@pytest.mark.parametrize(
+    "risk,configuration,expected",
+    [
+        (
+            {"level": "Q1", "profile": "FAST"},
+            {"enabled": True, "mode": "final"},
+            {"enabled": False},
+        ),
+        (
+            {"level": "Q2", "profile": "STANDARD"},
+            {"enabled": True, "mode": "final"},
+            {"enabled": True, "mode": "final"},
+        ),
+        (
+            {"level": "Q3", "profile": "STRICT"},
+            {"enabled": True, "mode": "task_and_final"},
+            {"enabled": True, "mode": "task_and_final"},
+        ),
+        (
+            {"level": "Q2", "profile": "STANDARD"},
+            None,
+            {"enabled": False},
+        ),
+    ],
+)
+def test_effective_plan_reconciliation_respects_profile_boundary(
+    risk, configuration, expected
+):
+    from harness.plan_reconciliation import effective_plan_reconciliation
+
+    task = {"risk": risk}
+    if configuration is not None:
+        task["plan_reconciliation"] = configuration
+
+    assert effective_plan_reconciliation(task) == expected
+
+
+def test_plan_context_summary_projects_disabled_shape_only():
+    from harness.plan_reconciliation import plan_context_summary
+
+    task = {
+        "risk": {"profile": "FAST"},
+        "plan_reconciliation": {"enabled": True, "mode": "final"},
+    }
+
+    assert plan_context_summary(task, None, None, []) == {"enabled": False}
+
+
+def test_plan_context_summary_uses_first_canonical_nonterminal_item():
+    from harness.blockers import GateBlocker
+    from harness.plan_reconciliation import plan_context_summary, plan_fingerprint
+
+    task = {
+        "risk": {"profile": "STANDARD"},
+        "plan_reconciliation": {"enabled": True, "mode": "final"},
+    }
+    plan = {
+        "version": 1,
+        "items": [
+            {"id": "P-001", "intent": "done"},
+            {"id": "P-002", "intent": "missing"},
+            {"id": "P-003", "intent": "pending"},
+        ],
+    }
+    execution = {
+        "version": 1,
+        "plan": {"path": ".harness/plan.yaml", "fingerprint": plan_fingerprint(plan)},
+        "items": {
+            "P-001": {"status": "SKIPPED", "reason": "done"},
+            "P-003": {"status": "PENDING"},
+        },
+    }
+    blockers = [
+        GateBlocker("PLAN_ITEM_UNRECONCILED", "implementation", "pending")
+    ]
+
+    assert plan_context_summary(task, plan, execution, blockers) == {
+        "enabled": True,
+        "mode": "final",
+        "next_plan_item": "P-002",
+        "final_status": "blocked",
+    }
+
+
+@pytest.mark.parametrize(
+    "plan,execution,blockers,expected_status",
+    [
+        (None, None, ["PLAN_REQUIRED"], "blocked"),
+        (
+            {"version": 1, "items": [{"id": "P-001", "intent": "work"}]},
+            {
+                "version": 1,
+                "plan": {
+                    "path": ".harness/plan.yaml",
+                    "fingerprint": "sha256:" + "0" * 64,
+                },
+                "items": {"P-001": {"status": "PENDING"}},
+            },
+            ["PLAN_STALE"],
+            "blocked",
+        ),
+    ],
+)
+def test_plan_context_summary_does_not_select_item_when_artifacts_untrustworthy(
+    plan, execution, blockers, expected_status
+):
+    from harness.blockers import GateBlocker
+    from harness.plan_reconciliation import plan_context_summary
+
+    task = {
+        "risk": {"profile": "STANDARD"},
+        "plan_reconciliation": {"enabled": True, "mode": "final"},
+    }
+    typed = [GateBlocker(code, "implementation", code) for code in blockers]
+
+    summary = plan_context_summary(task, plan, execution, typed)
+
+    assert summary["next_plan_item"] is None
+    assert summary["final_status"] == expected_status
+
+
+def test_plan_context_summary_ignores_non_plan_blockers_and_keeps_terminal_item_null():
+    from harness.blockers import GateBlocker
+    from harness.plan_reconciliation import plan_context_summary, plan_fingerprint
+
+    task = {
+        "risk": {"profile": "STRICT"},
+        "plan_reconciliation": {"enabled": True, "mode": "task_and_final"},
+    }
+    plan = {"version": 1, "items": [{"id": "P-001", "intent": "done"}]}
+    execution = {
+        "version": 1,
+        "plan": {"path": ".harness/plan.yaml", "fingerprint": plan_fingerprint(plan)},
+        "items": {"P-001": {"status": "SKIPPED", "reason": "done"}},
+    }
+    blockers = [GateBlocker("EVIDENCE_MISSING", "verification", "missing")]
+
+    assert plan_context_summary(task, plan, execution, blockers) == {
+        "enabled": True,
+        "mode": "task_and_final",
+        "next_plan_item": None,
+        "final_status": "pass",
+    }
+
+
+def test_plan_context_summary_keeps_terminal_proof_failure_without_next_item():
+    from harness.blockers import GateBlocker
+    from harness.plan_reconciliation import plan_context_summary, plan_fingerprint
+
+    task = {
+        "risk": {"profile": "STANDARD"},
+        "plan_reconciliation": {"enabled": True, "mode": "final"},
+    }
+    plan = {"version": 1, "items": [{"id": "P-001", "intent": "done"}]}
+    execution = {
+        "version": 1,
+        "plan": {"path": ".harness/plan.yaml", "fingerprint": plan_fingerprint(plan)},
+        "items": {"P-001": {"status": "COMPLETE"}},
+    }
+    blockers = [GateBlocker("PLAN_PROOF_MISSING", "verification", "missing")]
+
+    summary = plan_context_summary(task, plan, execution, blockers)
+
+    assert summary["next_plan_item"] is None
+    assert summary["final_status"] == "blocked"
+
+
 def _load(path):
     import json
 

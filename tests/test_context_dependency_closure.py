@@ -13,6 +13,13 @@ def test_current_trusted_closure_is_complete_and_direct_io_clean():
     assert_trusted_closure(ROOT / "src/harness")
 
 
+def test_plan_reconciliation_is_reviewed_code_not_adapter():
+    from harness.context.dependency_closure import ADAPTERS, ALLOWED
+
+    assert "plan_reconciliation" in ALLOWED
+    assert "plan_reconciliation" not in ADAPTERS
+
+
 def test_unknown_helper_import_is_rejected(tmp_path):
     from harness.context.dependency_closure import assert_trusted_closure
 

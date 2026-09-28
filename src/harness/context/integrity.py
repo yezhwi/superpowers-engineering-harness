@@ -45,6 +45,11 @@ def _omitted(source: AuthoritativeContext) -> list[dict]:
         names.append("observability.yaml")
     if source.alignment is not None and source.references.get("alignment.yaml"):
         names.append("alignment.yaml")
+    names.extend(
+        name
+        for name in ("plan.yaml", "plan-execution.yaml")
+        if source.references.get(name)
+    )
     return [
         {"id": name, "reason": "body_not_inlined", **source.references[name]}
         for name in sorted(names)
@@ -59,9 +64,21 @@ def _manifest(source: AuthoritativeContext, versions: dict, working: dict) -> di
         "findings": source.findings,
         "evidence": source.evidence,
     }
+    plan_source = {
+        "loaded": source.plan is not None and source.plan_execution is not None,
+        "hash": digest(
+            {
+                "plan": versions["plan_hash"],
+                "execution": versions["plan_execution_hash"],
+            }
+        ),
+        "total": len((source.plan or {}).get("items", [])),
+        "included": 0,
+    }
     return {
         "candidate_boundary": "declared-control-artifacts",
         "sources": {
+            **{
             name: {
                 "loaded": versions["files"].get(
                     name + (".yaml" if name in {"requirements", "invariants"} else "/")
@@ -87,6 +104,8 @@ def _manifest(source: AuthoritativeContext, versions: dict, working: dict) -> di
                 ),
             }
             for name, records in groups.items()
+            },
+            "plan_reconciliation": plan_source,
         },
     }
 
@@ -209,7 +228,7 @@ def _check_document(source: AuthoritativeContext, document: dict, root: Path) ->
     # Compare remaining projection fields after resolving refs, so broken refs
     # retain their actionable error code rather than an opaque equality failure.
     expected = build_control_core(source)
-    for field in ("contracts", "observability"):
+    for field in ("contracts", "observability", "plan_reconciliation"):
         _same(core[field], expected[field], f"altered {field}")
     selected = DeterministicSelector().select(source, policy, mode=document["mode"])
     _same(document["working"], selected.working, "altered working candidates")

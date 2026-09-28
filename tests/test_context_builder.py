@@ -93,6 +93,89 @@ def load_and_build(root):
     return source, build_control_core(source)
 
 
+def enable_plan_reconciliation(harness, *, level="Q2"):
+    task = set_profile(harness, level)
+    task["plan_reconciliation"] = {
+        "enabled": True,
+        "mode": "task_and_final" if level == "Q3" else "final",
+    }
+    write_yaml(harness / "current-task.yaml", task)
+    alignment = _frozen_alignment(task["task"]["id"])
+    write_yaml(harness / "alignment.yaml", alignment)
+    _write_matching_seal(harness, alignment)
+    return task
+
+
+def write_plan_artifacts(harness):
+    from harness.plan_reconciliation import plan_fingerprint
+
+    plan = {"version": 1, "items": [{"id": "P-1", "intent": "Implement summary"}]}
+    execution = {
+        "version": 1,
+        "plan": {"path": ".harness/plan.yaml", "fingerprint": plan_fingerprint(plan)},
+        "items": {"P-1": {"status": "PENDING"}},
+    }
+    write_yaml(harness / "plan.yaml", plan)
+    write_yaml(harness / "plan-execution.yaml", execution)
+    return plan, execution
+
+
+def test_plan_reconciliation_sources_and_references_load_when_enabled(harness):
+    enable_plan_reconciliation(harness)
+    plan, execution = write_plan_artifacts(harness)
+
+    source, _ = load_and_build(harness)
+
+    assert source.plan == plan
+    assert source.plan_execution == execution
+    assert source.references["plan.yaml"]["ref"] == ".harness/plan.yaml"
+    assert source.references["plan-execution.yaml"]["sha256"].startswith("sha256:")
+
+
+@pytest.mark.parametrize("missing", ["both", "plan", "execution"])
+def test_plan_reconciliation_missing_sources_remain_null(harness, missing):
+    enable_plan_reconciliation(harness)
+    if missing != "both":
+        write_plan_artifacts(harness)
+        if missing == "plan":
+            (harness / "plan.yaml").unlink()
+        else:
+            (harness / "plan-execution.yaml").unlink()
+
+    source, _ = load_and_build(harness)
+
+    assert source.plan is None if missing in {"both", "plan"} else source.plan is not None
+    assert source.plan_execution is None if missing in {"both", "execution"} else source.plan_execution is not None
+    assert source.references["plan.yaml"] is None if missing in {"both", "plan"} else source.references["plan.yaml"]
+    assert source.references["plan-execution.yaml"] is None if missing in {"both", "execution"} else source.references["plan-execution.yaml"]
+
+
+def test_plan_reconciliation_malformed_present_source_fails_closed(harness):
+    from harness.context.model import ContextBuildError
+    from harness.context.source import FileContextSource
+
+    enable_plan_reconciliation(harness)
+    (harness / "plan.yaml").write_text("items: [")
+
+    with pytest.raises(ContextBuildError, match="CONTEXT_SCHEMA_INVALID"):
+        FileContextSource(harness).load()
+
+
+def test_fast_ad_hoc_plan_reconciliation_ignores_malformed_sources(harness):
+    task = yaml.safe_load((harness / "current-task.yaml").read_text())
+    task["plan_reconciliation"] = {"enabled": True, "mode": "final"}
+    write_yaml(harness / "current-task.yaml", task)
+    (harness / "plan.yaml").write_text("items: [")
+    (harness / "plan-execution.yaml").write_text("items: [")
+
+    source, core = load_and_build(harness)
+
+    assert source.plan is None
+    assert source.plan_execution is None
+    assert "plan.yaml" not in source.references
+    assert core["plan_reconciliation"] == {"enabled": False}
+
+
 def _frozen_alignment(task_id="TASK-028"):
     from harness.alignment import contract_hash
     from test_alignment import complete_alignment

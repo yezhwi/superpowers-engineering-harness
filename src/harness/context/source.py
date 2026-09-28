@@ -16,6 +16,11 @@ from harness import (
     workspace,
 )
 from harness.evidence_validator import EvidenceStatus, project_evidence
+from harness.plan_reconciliation import (
+    PlanArtifactError,
+    effective_plan_reconciliation,
+    load_plan_artifacts,
+)
 from harness.repository import RepositoryNotFoundError, find_git_root
 
 from .model import AuthoritativeContext, ContextBuildError
@@ -156,6 +161,23 @@ class FileContextSource:
                 "classified task required; run task classify first",
             )
         fast = task["risk"]["profile"] == "FAST"
+        plan = None
+        plan_execution = None
+        if effective_plan_reconciliation(task)["enabled"]:
+            try:
+                plan, plan_execution = load_plan_artifacts(
+                    self.harness_dir, optional=True
+                )
+            except PlanArtifactError as exc:
+                raise ContextBuildError("CONTEXT_SCHEMA_INVALID", str(exc)) from exc
+            for name, document in (
+                ("plan.yaml", plan),
+                ("plan-execution.yaml", plan_execution),
+            ):
+                if document is None:
+                    self.references[name] = None
+                else:
+                    self._reference(name)
         alignment_document = None
         if (task.get("alignment") or {}).get("required") or source_access.exists(
             self.harness_dir / "alignment.yaml"
@@ -370,6 +392,8 @@ class FileContextSource:
         return AuthoritativeContext(
             expansions=expansions,
             task=task,
+            plan=plan,
+            plan_execution=plan_execution,
             requirements=requirements,
             invariants=invariants,
             decisions=decisions,

@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -49,11 +50,25 @@ class PlanIssue:
     message: str
 
 
+def effective_plan_reconciliation(task: dict) -> dict:
+    """Return effective Context/Gate plan configuration for current profile."""
+    configuration = task.get("plan_reconciliation") or {}
+    profile = (task.get("risk") or {}).get("profile")
+    if configuration.get("enabled") is not True or profile not in {
+        "STANDARD",
+        "STRICT",
+    }:
+        return {"enabled": False}
+    return {"enabled": True, "mode": configuration["mode"]}
+
+
 def _load_yaml(path: Path, schema_name: str) -> tuple[dict | None, PlanIssue | None]:
+    from harness import source_access
+
     try:
-        document = yaml.safe_load(path.read_text(encoding="utf-8"))
+        document = yaml.safe_load(source_access.read_text(path, encoding="utf-8"))
         validate(document, read_schema(schema_name))
-    except (OSError, yaml.YAMLError, ValidationError, ValueError) as exc:
+    except (OSError, UnicodeError, yaml.YAMLError, ValidationError) as exc:
         raise PlanArtifactError(f"PLAN_SCHEMA_INVALID: {path}") from exc
     if schema_name == "plan.schema.json":
         item_ids = [item["id"] for item in document["items"]]
@@ -62,18 +77,33 @@ def _load_yaml(path: Path, schema_name: str) -> tuple[dict | None, PlanIssue | N
     return document, None
 
 
+def load_plan_artifacts(
+    harness_dir: Path, *, optional: bool = False
+) -> tuple[dict | None, dict | None]:
+    """Load canonical plan documents while preserving per-file absence."""
+    from harness import source_access
+
+    loaded: list[dict | None] = []
+    for name, schema_name in (
+        ("plan.yaml", "plan.schema.json"),
+        ("plan-execution.yaml", "plan-execution.schema.json"),
+    ):
+        path = harness_dir / name
+        if not source_access.is_file(path):
+            if not optional:
+                raise PlanArtifactError(f"PLAN_REQUIRED: {path}")
+            loaded.append(None)
+            continue
+        document, _ = _load_yaml(path, schema_name)
+        loaded.append(document)
+    return loaded[0], loaded[1]
+
+
 def validate_plan_initialization(harness_dir: Path) -> list[PlanIssue]:
     """Validate artifacts needed before enabled task implementation begins."""
-    plan_path = harness_dir / "plan.yaml"
-    execution_path = harness_dir / "plan-execution.yaml"
-    if not plan_path.is_file() or not execution_path.is_file():
+    plan, execution = load_plan_artifacts(harness_dir, optional=True)
+    if plan is None or execution is None:
         return [PlanIssue("PLAN_REQUIRED", "enabled task requires plan artifacts")]
-    plan, issue = _load_yaml(plan_path, "plan.schema.json")
-    if issue:
-        return [issue]
-    execution, issue = _load_yaml(execution_path, "plan-execution.schema.json")
-    if issue:
-        return [issue]
     if execution["plan"]["fingerprint"] != plan_fingerprint(plan):
         return [PlanIssue("PLAN_STALE", "plan fingerprint does not match canonical plan")]
     plan_ids = {item["id"] for item in plan["items"]}
@@ -85,6 +115,44 @@ def validate_plan_initialization(harness_dir: Path) -> list[PlanIssue]:
             )
         ]
     return []
+
+
+def plan_context_summary(
+    task: dict,
+    plan: dict | None,
+    execution: dict | None,
+    blockers: Iterable[GateBlocker],
+) -> dict:
+    """Project body-free Plan Reconciliation state from already-loaded facts."""
+    configuration = effective_plan_reconciliation(task)
+    if not configuration["enabled"]:
+        return configuration
+    blocker_list = tuple(blockers)
+    next_item = None
+    trustworthy = (
+        plan is not None
+        and execution is not None
+        and execution["plan"]["fingerprint"] == plan_fingerprint(plan)
+    )
+    if trustworthy:
+        for item in plan["items"]:
+            record = execution["items"].get(item["id"])
+            if record is None or record["status"] in {
+                "PENDING",
+                "IN_PROGRESS",
+                "BLOCKED",
+            }:
+                next_item = item["id"]
+                break
+    return {
+        **configuration,
+        "next_plan_item": next_item,
+        "final_status": (
+            "blocked"
+            if any(blocker.code.startswith("PLAN_") for blocker in blocker_list)
+            else "pass"
+        ),
+    }
 
 
 def _blocker(issue: PlanIssue, *, source: str | None = None) -> GateBlocker:
@@ -109,10 +177,14 @@ def _fresh_item_evidence(harness_dir: Path, references: list[str], head: str, wo
 
 
 def _qualified_cases(harness_dir: Path) -> dict[str, set[str]]:
+    from harness import source_access
+
     cases: dict[str, set[str]] = {}
     for filename, key in (("requirements.yaml", "requirements"), ("invariants.yaml", "invariants")):
         try:
-            document = yaml.safe_load((harness_dir / filename).read_text(encoding="utf-8"))
+            document = yaml.safe_load(
+                source_access.read_text(harness_dir / filename, encoding="utf-8")
+            )
         except (OSError, yaml.YAMLError):
             continue
         for record in document.get(key, []):
@@ -206,10 +278,7 @@ def validate_plan_reconciliation(
     if issues:
         return [_blocker(issue) for issue in issues]
 
-    plan, _ = _load_yaml(harness_dir / "plan.yaml", "plan.schema.json")
-    execution, _ = _load_yaml(
-        harness_dir / "plan-execution.yaml", "plan-execution.schema.json"
-    )
+    plan, execution = load_plan_artifacts(harness_dir)
     if supersession := _supersession_issue(plan, execution):
         item_id, message = supersession
         return [
