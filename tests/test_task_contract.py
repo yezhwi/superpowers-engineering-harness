@@ -326,6 +326,144 @@ def test_plan_initialization_rejects_execution_item_not_in_plan(tmp_path):
     ]
 
 
+@pytest.mark.parametrize("missing", ["both", "plan", "execution"])
+def test_plan_reconciliation_documents_preserves_missing_short_circuit(
+    tmp_path, missing
+):
+    from harness.plan_reconciliation import (
+        plan_fingerprint,
+        validate_plan_reconciliation_documents,
+    )
+
+    harness_dir = tmp_path / ".harness"
+    harness_dir.mkdir()
+    plan = {"version": 1, "items": [{"id": "P-001", "intent": "work"}]}
+    execution = {
+        "version": 1,
+        "plan": {"path": ".harness/plan.yaml", "fingerprint": plan_fingerprint(plan)},
+        "items": {"P-999": {"status": "PENDING"}},
+    }
+    selected_plan = None if missing in {"both", "plan"} else plan
+    selected_execution = None if missing in {"both", "execution"} else execution
+
+    blockers = validate_plan_reconciliation_documents(
+        harness_dir,
+        {},
+        selected_plan,
+        selected_execution,
+        head="head",
+        workspace="ws",
+    )
+
+    assert [blocker.code for blocker in blockers] == ["PLAN_REQUIRED"]
+
+
+def test_plan_reconciliation_documents_preserves_stale_before_unknown_item(tmp_path):
+    from harness.plan_reconciliation import validate_plan_reconciliation_documents
+
+    harness_dir = tmp_path / ".harness"
+    harness_dir.mkdir()
+    plan = {"version": 1, "items": [{"id": "P-001", "intent": "work"}]}
+    execution = {
+        "version": 1,
+        "plan": {"path": ".harness/plan.yaml", "fingerprint": "sha256:" + "0" * 64},
+        "items": {"P-999": {"status": "PENDING"}},
+    }
+
+    blockers = validate_plan_reconciliation_documents(
+        harness_dir, {}, plan, execution, head="head", workspace="ws"
+    )
+
+    assert [blocker.code for blocker in blockers] == ["PLAN_STALE"]
+
+
+def test_plan_reconciliation_documents_preserves_unknown_item_short_circuit(tmp_path):
+    from harness.plan_reconciliation import (
+        plan_fingerprint,
+        validate_plan_reconciliation_documents,
+    )
+
+    harness_dir = tmp_path / ".harness"
+    harness_dir.mkdir()
+    plan = {"version": 1, "items": [{"id": "P-001", "intent": "work"}]}
+    execution = {
+        "version": 1,
+        "plan": {"path": ".harness/plan.yaml", "fingerprint": plan_fingerprint(plan)},
+        "items": {"P-999": {"status": "PENDING"}},
+    }
+
+    blockers = validate_plan_reconciliation_documents(
+        harness_dir, {}, plan, execution, head="head", workspace="ws"
+    )
+
+    assert [blocker.code for blocker in blockers] == ["PLAN_DISPOSITION_INVALID"]
+
+
+def test_plan_reconciliation_documents_preserves_supersession_short_circuit(tmp_path):
+    from harness.plan_reconciliation import (
+        plan_fingerprint,
+        validate_plan_reconciliation_documents,
+    )
+
+    harness_dir = tmp_path / ".harness"
+    harness_dir.mkdir()
+    plan = {
+        "version": 1,
+        "items": [
+            {"id": "P-001", "intent": "old"},
+            {"id": "P-002", "intent": "replacement"},
+        ],
+    }
+    execution = {
+        "version": 1,
+        "plan": {"path": ".harness/plan.yaml", "fingerprint": plan_fingerprint(plan)},
+        "items": {
+            "P-001": {
+                "status": "SUPERSEDED",
+                "reason": "replaced",
+                "superseded_by": ["P-002"],
+            },
+            "P-002": {
+                "status": "SUPERSEDED",
+                "reason": "replaced",
+                "superseded_by": ["P-001"],
+            },
+        },
+    }
+
+    blockers = validate_plan_reconciliation_documents(
+        harness_dir, {}, plan, execution, head="head", workspace="ws"
+    )
+
+    assert [(blocker.code, blocker.source) for blocker in blockers] == [
+        ("PLAN_DISPOSITION_INVALID", "P-001")
+    ]
+
+
+def test_plan_reconciliation_documents_matches_pending_wrapper_shape(tmp_path):
+    from harness.plan_reconciliation import (
+        plan_fingerprint,
+        validate_plan_reconciliation_documents,
+    )
+
+    harness_dir = tmp_path / ".harness"
+    harness_dir.mkdir()
+    plan = {"version": 1, "items": [{"id": "P-001", "intent": "work"}]}
+    execution = {
+        "version": 1,
+        "plan": {"path": ".harness/plan.yaml", "fingerprint": plan_fingerprint(plan)},
+        "items": {"P-001": {"status": "PENDING"}},
+    }
+
+    blockers = validate_plan_reconciliation_documents(
+        harness_dir, {}, plan, execution, head="head", workspace="ws"
+    )
+
+    assert [(blocker.code, blocker.source, blocker.recover_to) for blocker in blockers] == [
+        ("PLAN_ITEM_UNRECONCILED", "P-001", "IMPLEMENTING")
+    ]
+
+
 def test_final_plan_reconciliation_reports_only_unreconciled_nonterminal_item(tmp_path):
     from harness.plan_reconciliation import plan_fingerprint, validate_plan_reconciliation
 

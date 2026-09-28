@@ -99,9 +99,10 @@ def load_plan_artifacts(
     return loaded[0], loaded[1]
 
 
-def validate_plan_initialization(harness_dir: Path) -> list[PlanIssue]:
-    """Validate artifacts needed before enabled task implementation begins."""
-    plan, execution = load_plan_artifacts(harness_dir, optional=True)
+def _plan_initialization_issues(
+    plan: dict | None, execution: dict | None
+) -> list[PlanIssue]:
+    """Validate one already-loaded canonical plan/execution pair."""
     if plan is None or execution is None:
         return [PlanIssue("PLAN_REQUIRED", "enabled task requires plan artifacts")]
     if execution["plan"]["fingerprint"] != plan_fingerprint(plan):
@@ -115,6 +116,12 @@ def validate_plan_initialization(harness_dir: Path) -> list[PlanIssue]:
             )
         ]
     return []
+
+
+def validate_plan_initialization(harness_dir: Path) -> list[PlanIssue]:
+    """Validate artifacts needed before enabled task implementation begins."""
+    plan, execution = load_plan_artifacts(harness_dir, optional=True)
+    return _plan_initialization_issues(plan, execution)
 
 
 def plan_context_summary(
@@ -273,12 +280,33 @@ def _supersession_issue(plan: dict, execution: dict) -> tuple[str, str] | None:
 def validate_plan_reconciliation(
     harness_dir: Path, task: dict, *, head: str, workspace: str
 ) -> list[GateBlocker]:
-    """Return final-plan blockers for enabled tasks after regular Gate checks."""
-    issues = validate_plan_initialization(harness_dir)
+    """Load canonical documents once and return final-plan blockers."""
+    plan, execution = load_plan_artifacts(harness_dir, optional=True)
+    return validate_plan_reconciliation_documents(
+        harness_dir,
+        task,
+        plan,
+        execution,
+        head=head,
+        workspace=workspace,
+    )
+
+
+def validate_plan_reconciliation_documents(
+    harness_dir: Path,
+    task: dict,
+    plan: dict | None,
+    execution: dict | None,
+    *,
+    head: str,
+    workspace: str,
+) -> list[GateBlocker]:
+    """Return P0 blockers from one already-loaded plan/execution pair."""
+    issues = _plan_initialization_issues(plan, execution)
     if issues:
         return [_blocker(issue) for issue in issues]
+    assert plan is not None and execution is not None
 
-    plan, execution = load_plan_artifacts(harness_dir)
     if supersession := _supersession_issue(plan, execution):
         item_id, message = supersession
         return [
