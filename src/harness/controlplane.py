@@ -1572,8 +1572,11 @@ def cmd_mr_describe() -> int:
 
 def cmd_gate_preflight() -> int:
     """Run Gate assessment without changing task state."""
+    from . import plan_reporting
+
+    harness_dir = Path(".harness")
     try:
-        assessment = quality_gate.assess_gate(Path(".harness"), allow_preflight=True)
+        assessment = quality_gate.assess_gate(harness_dir, allow_preflight=True)
     except quality_gate.AlignmentRepairRequired as exc:
         print(str(exc), file=sys.stderr)
         return 1
@@ -1589,9 +1592,19 @@ def cmd_gate_preflight() -> int:
         .get("verification_commands", {})
     )
     for blocker in blockers:
+        if assessment.plan_assessment is not None and blocker.code.startswith("PLAN_"):
+            continue
         print(f"- {blocker.code}: {blocker.message}")
         if blocker.source in commands:
             print(f"  command: {commands[blocker.source]}")
+    if assessment.plan_assessment is not None:
+        task = load_task(harness_dir)
+        for line in plan_reporting.gate_plan_preview(
+            task,
+            assessment.plan_assessment.plan,
+            assessment.plan_assessment,
+        ):
+            print(line)
     return 0 if status == "PASS" else 1
 
 

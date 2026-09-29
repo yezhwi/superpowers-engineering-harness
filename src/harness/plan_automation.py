@@ -108,13 +108,15 @@ def mechanical_surface_facts(
         protected_digest != user_changes.get("fingerprint")
     )
     needs_surfaces = any(item.get("surfaces", []) for item in plan.get("items", []))
-    base_commit = task.get("git", {}).get("base_commit", "HEAD")
-    changed_values = (
-        changed_paths(base_commit)
-        if repo_root is None
-        else changed_paths(base_commit, repo_root=repo_root)
-    )
-    changed = frozenset(changed_values if needs_surfaces else ())
+    changed_values = ()
+    if needs_surfaces:
+        base_commit = task.get("git", {}).get("base_commit") or "HEAD"
+        changed_values = (
+            changed_paths(base_commit)
+            if repo_root is None
+            else changed_paths(base_commit, repo_root=repo_root)
+        )
+    changed = frozenset(changed_values)
     usable = changed if protected_changed else changed - protected
     return MechanicalSurfaceFacts(changed, frozenset(usable), protected, protected_changed)
 

@@ -178,6 +178,71 @@ def test_enabled_gate_emits_plan_item_unreconciled_blocker(tmp_path, monkeypatch
     ]
 
 
+def test_gate_computes_one_plan_assessment_and_carries_same_object(tmp_path, monkeypatch):
+    from harness import quality_gate
+    from harness.plan_reconciliation import plan_fingerprint
+
+    monkeypatch.setattr(quality_gate, "_append_live_alignment_drift", lambda *args: None)
+    h = make_harness(tmp_path)
+    task_path = h / "current-task.yaml"
+    task = yaml.safe_load(task_path.read_text())
+    task["risk"] = {
+        "level": "Q2",
+        "profile": "STANDARD",
+        "dimensions": SAFE_DIMENSIONS,
+        "escalation_history": [],
+        "user_changes": {"paths": [], "fingerprint": "sha256:" + "0" * 64},
+    }
+    task["plan_reconciliation"] = {"enabled": True, "mode": "final"}
+    task_path.write_text(yaml.safe_dump(task))
+    plan = {"version": 1, "items": [{"id": "P-001", "intent": "finish"}]}
+    (h / "plan.yaml").write_text(yaml.safe_dump(plan))
+    (h / "plan-execution.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "version": 1,
+                "plan": {
+                    "path": ".harness/plan.yaml",
+                    "fingerprint": plan_fingerprint(plan),
+                },
+                "items": {"P-001": {"status": "PENDING"}},
+            }
+        )
+    )
+    original_load = quality_gate.load_plan_artifacts
+    original_assess = quality_gate.assess_plan_reconciliation_documents
+    calls = {"load": 0, "assess": 0}
+    captured = []
+
+    def load_once(*args, **kwargs):
+        calls["load"] += 1
+        return original_load(*args, **kwargs)
+
+    def assess_once(*args, **kwargs):
+        calls["assess"] += 1
+        result = original_assess(*args, **kwargs)
+        captured.append(result)
+        return result
+
+    monkeypatch.setattr(quality_gate, "load_plan_artifacts", load_once)
+    monkeypatch.setattr(
+        quality_gate, "assess_plan_reconciliation_documents", assess_once
+    )
+    monkeypatch.setattr(
+        quality_gate,
+        "validate_plan_reconciliation",
+        lambda *_args, **_kwargs: pytest.fail("legacy wrapper must not run"),
+        raising=False,
+    )
+
+    result = quality_gate.assess_gate(h)
+
+    assert calls == {"load": 1, "assess": 1}
+    assert result.plan_assessment is captured[0]
+    plan_blocker = next(blocker for blocker in result.blockers if blocker.code.startswith("PLAN_"))
+    assert plan_blocker is captured[0].blockers[0]
+
+
 def test_fast_gate_ignores_ad_hoc_enablement_and_malformed_plan(tmp_path):
     from harness.quality_gate import run_gate
 

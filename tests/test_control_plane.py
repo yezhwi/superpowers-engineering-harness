@@ -84,6 +84,77 @@ def test_gate_preflight_requires_release_readiness_for_ready_output(tmp_path, mo
     assert "READY: no" in capsys.readouterr().out
 
 
+def test_gate_preflight_appends_plan_preview_without_duplicate_plan_blocker(
+    tmp_path, monkeypatch, capsys
+):
+    from harness import plan_reporting
+    from harness.blockers import GateBlocker
+    from harness.plan_reconciliation import PlanAssessment
+
+    harness = tmp_path / ".harness"
+    harness.mkdir()
+    (harness / "gate.yaml").write_text("gate: {verification_commands: {}}\n")
+    monkeypatch.chdir(tmp_path)
+    plan_blocker = GateBlocker(
+        "PLAN_ITEM_UNRECONCILED",
+        "implementation",
+        "plan pending",
+        source="P-001",
+        recover_to="IMPLEMENTING",
+    )
+    other_blocker = GateBlocker(
+        "BUILD_FAILED", "verification", "build failed", recover_to="VERIFYING"
+    )
+    carried = PlanAssessment(
+        (plan_blocker,),
+        (plan_blocker,),
+        {"P-001": {"status": "PENDING"}},
+        None,
+        {"version": 1, "items": [{"id": "P-001", "intent": "work"}]},
+    )
+    gate = quality_gate.GateAssessment(
+        "BLOCKED",
+        (other_blocker, plan_blocker),
+        {"status": "BLOCKED"},
+        {"status": "NOT_READY", "reasons": ["quality_gate_blocked"]},
+        carried,
+    )
+    monkeypatch.setattr(quality_gate, "assess_gate", lambda *_args, **_kwargs: gate)
+    monkeypatch.setattr(
+        controlplane,
+        "load_task",
+        lambda *_args, **_kwargs: {
+            "plan_reconciliation": {"enabled": True, "mode": "task_and_final"}
+        },
+    )
+    seen = []
+
+    original_render = plan_reporting.gate_plan_preview
+
+    def render(task, plan, assessment):
+        seen.append((plan, assessment))
+        return original_render(task, plan, assessment)
+
+    monkeypatch.setattr(plan_reporting, "gate_plan_preview", render)
+
+    assert controlplane.cmd_gate_preflight() == 1
+    output = capsys.readouterr().out
+    assert output == (
+        "READY: no\n"
+        "- BUILD_FAILED: build failed\n"
+        "Plan:\n"
+        "  Mode: task_and_final\n"
+        "  Progress: 0 / 1 reconciled\n"
+        "  Next: P-001\n"
+        "  Final: BLOCKED\n"
+        "  Blockers:\n"
+        "- PLAN_ITEM_UNRECONCILED: plan pending\n"
+        "  source: P-001\n"
+    )
+    assert output.count("PLAN_ITEM_UNRECONCILED") == 1
+    assert seen == [(carried.plan, carried)]
+
+
 def make_repo(tmp_path: Path, **task_overrides) -> Path:
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True, capture_output=True)
     run_cli(tmp_path, "init")

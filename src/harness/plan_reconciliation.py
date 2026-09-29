@@ -88,6 +88,7 @@ class PlanAssessment:
     final_blockers: tuple[GateBlocker, ...]
     projection: dict[str, dict] | None
     replay: ReplayResult | None
+    plan: dict | None = None
 
 
 def effective_plan_reconciliation(task: dict) -> dict:
@@ -881,7 +882,7 @@ def assess_plan_reconciliation_documents(
     """Assess public task-level trust and independent P0 final state."""
     early = _artifact_early_blockers(plan, execution)
     if early:
-        return PlanAssessment(early, early, None, None)
+        return PlanAssessment(early, early, None, None, plan)
     assert plan is not None and execution is not None
 
     configuration = effective_plan_reconciliation(task)
@@ -893,7 +894,7 @@ def assess_plan_reconciliation_documents(
 
     if not task_level and execution["version"] != 1:
         blocker = _mode_blocker("final-only task requires plan execution v1")
-        return PlanAssessment((blocker,), (blocker,), None, None)
+        return PlanAssessment((blocker,), (blocker,), None, None, plan)
 
     if task_level and execution["version"] == 1:
         final = tuple(
@@ -910,7 +911,7 @@ def assess_plan_reconciliation_documents(
             "PLAN_TASK_LEVEL_REQUIRED",
             "task-level plan execution history requires execution v2",
         )
-        return PlanAssessment((blocker,), final, None, None)
+        return PlanAssessment((blocker,), final, None, None, plan)
 
     if task_level:
         replay = replay_plan_execution(plan, execution)
@@ -929,7 +930,7 @@ def assess_plan_reconciliation_documents(
                 "PLAN_SEQUENCE_INVALID",
                 f"plan execution journal cannot replay: {replay.issues[0].code}",
             )
-            return PlanAssessment((blocker,), final, None, replay)
+            return PlanAssessment((blocker,), final, None, replay, plan)
         projection = replay.items
     else:
         replay = None
@@ -948,7 +949,7 @@ def assess_plan_reconciliation_documents(
             ),
         )
     )
-    return PlanAssessment(final, final, projection, replay)
+    return PlanAssessment(final, final, projection, replay, plan)
 
 
 def assess_plan_verification_entry_documents(

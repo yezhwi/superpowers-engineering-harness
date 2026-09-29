@@ -6,7 +6,11 @@ import pytest
 
 from harness.blockers import GateBlocker
 from harness.plan_reconciliation import PlanAssessment
-from harness.plan_reporting import plan_item_reports, with_verbose_items
+from harness.plan_reporting import (
+    gate_plan_preview,
+    plan_item_reports,
+    with_verbose_items,
+)
 
 
 def plan_items():
@@ -191,6 +195,57 @@ def test_with_verbose_items_preserves_top_level_order_and_final_status():
     assert tuple(result) == (*base.keys(), "items")
     assert result["final_status"] == "pass"
     assert result is not base
+
+
+def test_gate_plan_preview_renders_trusted_body_free_summary_and_item_blockers():
+    plan = {
+        "version": 1,
+        "items": [
+            {"id": "P-001", "intent": "SECRET", "surfaces": ["x"]},
+            {"id": "P-002", "intent": "SECRET TWO", "surfaces": ["y"]},
+        ],
+    }
+    assessed = assessment(
+        {"P-001": {"status": "COMPLETE", "proof_receipt": "SECRET-RECEIPT"}},
+        blockers=(blocker("PLAN_ITEM_UNRECONCILED", "P-002", "IMPLEMENTING"),),
+        final_blockers=(blocker("PLAN_ITEM_UNRECONCILED", "P-002", "IMPLEMENTING"),),
+    )
+
+    lines = gate_plan_preview(
+        {"plan_reconciliation": {"enabled": True, "mode": "task_and_final"}},
+        plan,
+        assessed,
+    )
+
+    assert lines == (
+        "Plan:",
+        "  Mode: task_and_final",
+        "  Progress: 1 / 2 reconciled",
+        "  Next: P-002",
+        "  Final: BLOCKED",
+        "  Blockers:",
+        "- PLAN_ITEM_UNRECONCILED: SECRET blocker message",
+        "  source: P-002",
+    )
+    assert "SECRET-RECEIPT" not in "\n".join(lines)
+    assert "SECRET TWO" not in "\n".join(lines)
+
+
+def test_gate_plan_preview_hides_untrusted_progress_but_keeps_independent_final():
+    lines = gate_plan_preview(
+        {"plan_reconciliation": {"enabled": True, "mode": "final"}},
+        plan_items(),
+        assessment(
+            None,
+            blockers=(blocker("PLAN_STALE", "P-001", "IMPLEMENTING"),),
+            final_blockers=(),
+        ),
+    )
+
+    assert "  Progress: unavailable" in lines
+    assert "  Next: -" in lines
+    assert "  Final: PASS" in lines
+    assert "  source: P-001" in lines
 
 
 def test_verbose_projection_never_serializes_body_sentinels():

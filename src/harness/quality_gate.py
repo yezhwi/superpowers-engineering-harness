@@ -27,7 +27,12 @@ from .existing_verification import (
     has_existing_verification,
 )
 from .paths import EvidenceReferenceError, evidence_path
-from .plan_reconciliation import PlanArtifactError, validate_plan_reconciliation
+from .plan_reconciliation import (
+    PlanArtifactError,
+    PlanAssessment,
+    assess_plan_reconciliation_documents,
+    load_plan_artifacts,
+)
 from .risk_boundaries import (
     RiskBoundaryPolicyError,
     business_paths,
@@ -458,9 +463,8 @@ def _evaluate_gate(
     head: str | None = None,
     allow_converged: bool = False,
     allow_preflight: bool = False,
-) -> tuple[str, list]:
-    """Returns (status, blockers). status in {'PASS','BLOCKED'}.
-    Raises InvalidHarnessState."""
+) -> tuple[str, list, PlanAssessment | None]:
+    """Return status, blockers, and one optional Plan assessment."""
     from harness import source_access
 
     task = _load_yaml(harness_dir / "current-task.yaml")
@@ -496,7 +500,8 @@ def _evaluate_gate(
     gate_doc = _load_yaml(harness_dir / "gate.yaml")
     validate_schema(gate_doc, "gate.schema.json", harness_dir / "gate.yaml")
     if (task.get("risk") or {}).get("profile") == "FAST":
-        return run_fast_gate(task, harness_dir, head, current_workspace)
+        status, blockers = run_fast_gate(task, harness_dir, head, current_workspace)
+        return status, blockers, None
 
     requirements_doc = _load_yaml(harness_dir / "requirements.yaml")
     invariants_doc = _load_yaml(harness_dir / "invariants.yaml")
@@ -1142,17 +1147,21 @@ def _evaluate_gate(
 
     _append_live_alignment_drift(harness_dir, task, findings, block)
 
+    plan_assessment = None
     if (task.get("plan_reconciliation") or {}).get("enabled"):
         try:
-            plan_blockers = validate_plan_reconciliation(
+            plan, execution = load_plan_artifacts(harness_dir, optional=True)
+            plan_assessment = assess_plan_reconciliation_documents(
                 harness_dir,
                 task,
+                plan,
+                execution,
                 head=head,
                 workspace=current_workspace,
             )
         except PlanArtifactError as exc:
             raise InvalidHarnessState(str(exc)) from exc
-        blockers.extend(plan_blockers)
+        blockers.extend(plan_assessment.blockers)
 
     open_critical = [
         f
@@ -1202,7 +1211,7 @@ def _evaluate_gate(
         )
 
     status = "PASS" if not blockers else "BLOCKED"
-    return status, blockers
+    return status, blockers, plan_assessment
 
 
 @dataclass(frozen=True)
@@ -1211,6 +1220,7 @@ class GateAssessment:
     blockers: tuple[GateBlocker, ...]
     quality: dict[str, str]
     release_readiness: dict[str, list[str] | str]
+    plan_assessment: PlanAssessment | None = None
 
 
 def assess_gate(
@@ -1220,7 +1230,7 @@ def assess_gate(
     allow_preflight: bool = False,
 ) -> GateAssessment:
     """Evaluate current Harness state without persisting a Gate result."""
-    status, blockers = _evaluate_gate(
+    status, blockers, plan_assessment = _evaluate_gate(
         harness_dir,
         head=head,
         allow_converged=allow_converged,
@@ -1236,6 +1246,7 @@ def assess_gate(
         tuple(blockers),
         {"status": "PASS" if status == "PASS" else "BLOCKED"},
         readiness,
+        plan_assessment,
     )
 
 

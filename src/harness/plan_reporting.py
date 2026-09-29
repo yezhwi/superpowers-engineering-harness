@@ -69,3 +69,47 @@ def with_verbose_items(report: dict, plan: dict | None, assessment) -> dict:
     result = deepcopy(report)
     result["items"] = list(plan_item_reports(plan, assessment))
     return result
+
+
+def gate_plan_preview(
+    task: dict,
+    plan: dict | None,
+    assessment,
+) -> tuple[str, ...]:
+    """Render compact body-free Plan facts from one carried assessment."""
+    mode = (task.get("plan_reconciliation") or {}).get("mode") or "final"
+    lines = ["Plan:", f"  Mode: {mode}"]
+    if plan is None or assessment.projection is None:
+        lines.extend(["  Progress: unavailable", "  Next: -"])
+    else:
+        statuses = {
+            item["id"]: assessment.projection.get(item["id"], {}).get(
+                "status", "PENDING"
+            )
+            for item in plan["items"]
+        }
+        terminal = {"COMPLETE", "SKIPPED", "SUPERSEDED"}
+        reconciled = sum(status in terminal for status in statuses.values())
+        next_item = next(
+            (item["id"] for item in plan["items"] if statuses[item["id"]] not in terminal),
+            None,
+        )
+        lines.extend(
+            [
+                f"  Progress: {reconciled} / {len(plan['items'])} reconciled",
+                f"  Next: {next_item or '-'}",
+            ]
+        )
+    lines.append(
+        f"  Final: {'BLOCKED' if assessment.final_blockers else 'PASS'}"
+    )
+    plan_blockers = [
+        blocker for blocker in assessment.blockers if blocker.code.startswith("PLAN_")
+    ]
+    if plan_blockers:
+        lines.append("  Blockers:")
+        for blocker in plan_blockers:
+            lines.append(f"- {blocker.code}: {blocker.message}")
+            if blocker.source:
+                lines.append(f"  source: {blocker.source}")
+    return tuple(lines)
