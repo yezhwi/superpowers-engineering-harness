@@ -1159,9 +1159,22 @@ def _evaluate_gate(
                 head=head,
                 workspace=current_workspace,
             )
-        except PlanArtifactError as exc:
+        except DecisionError:
+            if not any(
+                blocker.code == "DECISION_REFERENCE_INVALID"
+                for blocker in blockers
+            ):
+                block(
+                    "DECISION_REFERENCE_INVALID",
+                    "harness",
+                    "decision record is invalid",
+                )
+            # Skip decision-dependent Plan proof so Gate can persist BLOCKED.
+            plan_assessment = None
+        except (PlanArtifactError, WorkspaceError) as exc:
             raise InvalidHarnessState(str(exc)) from exc
-        blockers.extend(plan_assessment.blockers)
+        if plan_assessment is not None:
+            blockers.extend(plan_assessment.blockers)
 
     open_critical = [
         f

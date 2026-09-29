@@ -143,6 +143,37 @@ def make_harness(tmp_path: Path) -> Path:
     return h
 
 
+def _enable_standard_plan(h: Path) -> Path:
+    from harness.plan_reconciliation import plan_fingerprint
+
+    task_path = h / "current-task.yaml"
+    task = yaml.safe_load(task_path.read_text())
+    task["risk"] = {
+        "level": "Q2",
+        "profile": "STANDARD",
+        "dimensions": SAFE_DIMENSIONS,
+        "escalation_history": [],
+        "user_changes": {"paths": [], "fingerprint": "sha256:" + "0" * 64},
+    }
+    task["plan_reconciliation"] = {"enabled": True, "mode": "final"}
+    task_path.write_text(yaml.safe_dump(task))
+    plan = {"version": 1, "items": [{"id": "P-001", "intent": "finish"}]}
+    (h / "plan.yaml").write_text(yaml.safe_dump(plan))
+    (h / "plan-execution.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "version": 1,
+                "plan": {
+                    "path": ".harness/plan.yaml",
+                    "fingerprint": plan_fingerprint(plan),
+                },
+                "items": {"P-001": {"status": "PENDING"}},
+            }
+        )
+    )
+    return task_path
+
+
 def test_enabled_gate_emits_plan_item_unreconciled_blocker(tmp_path, monkeypatch):
     from harness import quality_gate
     from harness.plan_reconciliation import plan_fingerprint
@@ -176,6 +207,85 @@ def test_enabled_gate_emits_plan_item_unreconciled_blocker(tmp_path, monkeypatch
     assert [(blocker.code, blocker.source, blocker.recover_to) for blocker in blockers if blocker.code.startswith("PLAN_")] == [
         ("PLAN_ITEM_UNRECONCILED", "P-001", "IMPLEMENTING")
     ]
+
+
+def test_enabled_plan_keeps_malformed_decision_in_blocked_gate_domain(
+    tmp_path, monkeypatch
+):
+    from types import SimpleNamespace
+
+    from harness import controlplane, quality_gate
+
+    monkeypatch.setattr(quality_gate, "_append_live_alignment_drift", lambda *args: None)
+    h = make_harness(tmp_path)
+    task_path = _enable_standard_plan(h)
+    decisions = h / "decisions"
+    decisions.mkdir()
+    (decisions / "DEC-001.yaml").write_text("not: a-valid-decision\n")
+
+    current_workspace = quality_gate.snapshot().fingerprint
+    monkeypatch.setattr(quality_gate, "git_head", lambda: HEAD)
+    monkeypatch.setattr(
+        quality_gate,
+        "snapshot",
+        lambda: SimpleNamespace(fingerprint=current_workspace),
+    )
+    monkeypatch.chdir(tmp_path)
+    assert controlplane.cmd_gate() == 0
+
+    persisted_task = yaml.safe_load(task_path.read_text())
+    assert persisted_task["state"] == "BLOCKED"
+    assert [
+        blocker["code"]
+        for blocker in persisted_task["gate"]["blocked_by"]
+        if blocker["code"] == "DECISION_REFERENCE_INVALID"
+    ] == ["DECISION_REFERENCE_INVALID"]
+
+
+def test_enabled_plan_adds_decision_blocker_when_only_plan_load_fails(
+    tmp_path, monkeypatch
+):
+    from harness import quality_gate
+    from harness.decision import DecisionError
+
+    monkeypatch.setattr(quality_gate, "_append_live_alignment_drift", lambda *args: None)
+    h = make_harness(tmp_path)
+    _enable_standard_plan(h)
+
+    def decision_failure(*_args, **_kwargs):
+        raise DecisionError("DECISION_RECORD_INVALID")
+
+    monkeypatch.setattr(
+        quality_gate, "assess_plan_reconciliation_documents", decision_failure
+    )
+
+    result = quality_gate.assess_gate(h)
+
+    assert [
+        blocker.code
+        for blocker in result.blockers
+        if blocker.code == "DECISION_REFERENCE_INVALID"
+    ] == ["DECISION_REFERENCE_INVALID"]
+
+
+def test_enabled_plan_maps_workspace_error_to_invalid_harness_state(
+    tmp_path, monkeypatch
+):
+    from harness import plan_automation, quality_gate
+    from harness.quality_gate import InvalidHarnessState
+    from harness.workspace import WorkspaceError
+
+    monkeypatch.setattr(quality_gate, "_append_live_alignment_drift", lambda *args: None)
+    h = make_harness(tmp_path)
+    _enable_standard_plan(h)
+
+    def workspace_failure(*_args, **_kwargs):
+        raise WorkspaceError("PLAN_WORKSPACE_QUERY_FAILED")
+
+    monkeypatch.setattr(plan_automation, "mechanical_surface_facts", workspace_failure)
+
+    with pytest.raises(InvalidHarnessState, match="PLAN_WORKSPACE_QUERY_FAILED"):
+        quality_gate.assess_gate(h)
 
 
 def test_gate_computes_one_plan_assessment_and_carries_same_object(tmp_path, monkeypatch):
