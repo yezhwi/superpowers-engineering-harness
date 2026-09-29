@@ -1,8 +1,8 @@
-# Superpowers Engineering Harness v0.2.9
+# Superpowers Engineering Harness v0.2.10
 
 [English](README.md)
 
-`v0.2.9 current release`；v0.2.7/v0.2.8 的 risk-adaptive safeguard 均保留。v0.2.9 在 Q2/Q3 Implementation 前新增结构化 Alignment 闭环与冻结、确定性的合同/边界漂移诊断、opt-in Alignment Context Layer 0 引用，以及显式 records 的 alignment Benchmark 指标。它不推断代码语义、不证明 Agent 行为、不采集 external telemetry。见 [v0.2.9 实现契约](docs/Superpowers-Engineering-Harness-v0.2.9-Implementation-Contract.md)。
+`v0.2.10 current release`；既有 risk-adaptive、Context 与 Alignment safeguard 均保留。v0.2.10 新增确定性 Plan Reconciliation：canonical execution artifacts、Q3 task-level journal、权威 Context/status 投影、受限 Markdown 同步、有界 Q3 自动 COMPLETE proof，以及复用单次 assessment 的 Gate preflight 报告。它不把 Markdown 当作 Gate truth、不合成执行历史，也不推断 SKIPPED/SUPERSEDED 的语义理由。见 [v0.2.10 实现契约](docs/Superpowers-Engineering-Harness-v0.2.10-Implementation-Contract.md)。
 
 **Routing：** Q0 直接回答、不创建 task；Q1 / FAST 使用 RED/fix/GREEN/Light Gate；Q2 / STANDARD 与 Q3 / STRICT 使用完整 contract/review/Gate 流程。
 
@@ -55,6 +55,9 @@ v0.2.8  Derived Context + Integrity + Host Usage + Multi-run Benchmark
   ↓
 v0.2.9  实现前 Alignment 闭环与冻结
         + 合同 / 边界漂移诊断
+  ↓
+v0.2.10 Canonical Plan execution reconciliation
+        + Q3 journal + Context/status + mechanical projections
 ```
 
 ## Engineering Quality
@@ -154,7 +157,7 @@ curl -fsSL https://raw.githubusercontent.com/yezhwi/superpowers-engineering-harn
 需要固定版本时：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/yezhwi/superpowers-engineering-harness/main/scripts/install-agy.sh | bash -s -- v0.2.9
+curl -fsSL https://raw.githubusercontent.com/yezhwi/superpowers-engineering-harness/main/scripts/install-agy.sh | bash -s -- v0.2.10
 ```
 
 安装器更新 `~/.gemini/antigravity-cli/skills/` 下 Harness 自己的 skills，保留无关全局 skills；不会初始化项目。每个 Git 项目中单独运行一次 `harness init`，再用 `agy` 启动 AGY；首次会话可用 `/engineering-harness` 显式调用 Harness。
@@ -207,6 +210,20 @@ harness evidence run --type unit_test --scope related --covered-test tests/test_
 - **Q0：** 直接回答；不创建 Harness task。
 - **Q1 / FAST：** 仅限范围窄、低风险工作。必须显式分类；当前业务路径已命中 `.harness/risk-boundaries.yaml` 的 Q2/Q3 时，Q1 分类失败且不落盘。FAST 仍要求 task 级失败 RED、成功 GREEN 证据和 Light Gate，但跳过 impact、复杂度审查、requirements、invariants ceremony。`harness status` 的 Build/Unit/Integration 摘要与 Evidence 列表使用同一 live projection。若 work item 已在目标分支实现，用 `harness task verify-existing` 记录有效 existing-verification，禁止伪造 RED；普通缺陷修复仍走 RED→GREEN。`requires_reproduction` 保持 task 为 `CLASSIFIED`，创建或恢复 finding 后正常复现。
 - **Q2 / STANDARD** 与 **Q3 / STRICT：** 使用现有完整 Harness 流程。风险只能升级，不能降级。
+
+### Plan reconciliation（v0.2.10）
+
+STANDARD/Q2 使用 final-only execution v1。STRICT/Q3 使用可重放的 task-level execution v2，并保留相同且独立的 final proof checks。FAST/Q1 在读取 Plan、Markdown 或自动 evidence source 前直接返回。
+
+```bash
+harness plan status                  # 只读 canonical summary
+harness plan status --verbose        # opt-in body-free item/proof health
+harness plan sync-markdown docs/plan.md
+harness plan reconcile P-001 --auto  # 仅 Q3 COMPLETE
+harness gate preflight               # 既有 preflight 追加 Plan section
+```
+
+Markdown checkbox 只是单向 projection，永远不是 Gate truth。`--auto` 选择有界 mechanical proof，再委托既有 locked reconciliation path；它不能创建 SKIPPED、SUPERSEDED、reason、Decision 或执行历史。默认 status 输出保持兼容，也不新增独立 Gate preview command。
 
 ```bash
 harness task classify --level Q1 --scope low --contract none --data none \

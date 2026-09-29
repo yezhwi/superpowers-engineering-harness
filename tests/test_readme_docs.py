@@ -13,16 +13,21 @@ def test_readmes_document_agy_quick_start():
         text = (REPO / name).read_text(encoding="utf-8")
         assert heading in text
         assert "scripts/install-agy.sh" in text
-        assert "bash -s -- v0.2.9" in text
+        assert "bash -s -- v0.2.10" in text
         assert "agy" in text
 
 
-def test_changelog_keeps_agy_installer_out_of_v029_release_notes():
+def test_changelog_includes_unreleased_work_in_v0210_release_notes():
     text = (REPO / "CHANGELOG.md").read_text(encoding="utf-8")
-    unreleased, released = text.split("## 0.2.9", maxsplit=1)
+    unreleased, released = text.split("## 0.2.10", maxsplit=1)
+    notes = released.split("## 0.2.9", maxsplit=1)[0]
+
     assert "## Unreleased" in unreleased
-    assert "AGY" in unreleased
-    assert "AGY" not in released.split("## 0.2.8", maxsplit=1)[0]
+    assert "AGY" not in unreleased
+    assert "AGY" in notes
+    assert "task replacement" in notes
+    assert "Plan Reconciliation" in notes
+    assert "tag, push, or publish" in notes
 
 
 def test_root_skill_routes_diagnosability():
@@ -79,8 +84,8 @@ def test_readmes_document_risk_profiles_and_independent_authorization():
 def test_docs_identify_current_adaptive_release():
     for path in (REPO / "README.md", REPO / "README.zh-CN.md"):
         text = path.read_text()
-        assert "v0.2.9 current release" in text
-        assert "v0.2.9 implementation contract" in text or "v0.2.9 实现契约" in text
+        assert "v0.2.10 current release" in text
+        assert "v0.2.10 implementation contract" in text or "v0.2.10 实现契约" in text
         assert "INCONCLUSIVE" in text
         assert "risk-adaptive" in text
         assert "Q1 / FAST" in text and "Q2 / STANDARD" in text and "Q3 / STRICT" in text
@@ -89,8 +94,33 @@ def test_docs_identify_current_adaptive_release():
     assert "Soft evidence budgets" in changelog
     assert "local telemetry" in changelog
     assert "fixture benchmarks" in changelog
-    assert "## 0.2.9" in changelog
+    assert "## 0.2.10" in changelog
     assert "multi-run statistics" in changelog
+
+
+def test_v0210_readmes_document_plan_reconciliation_commands_and_boundaries():
+    for path in (REPO / "README.md", REPO / "README.zh-CN.md"):
+        text = path.read_text(encoding="utf-8")
+        for command in (
+            "harness plan status",
+            "harness plan sync-markdown",
+            "harness plan reconcile",
+            "harness gate preflight",
+        ):
+            assert command in text
+        assert "--verbose" in text
+        assert "--auto" in text
+        assert "FAST" in text and "Q2" in text and "Q3" in text
+        assert "Markdown" in text
+
+
+def test_v0210_contract_marks_all_delivery_slices_implemented():
+    text = (
+        REPO / "docs/Superpowers-Engineering-Harness-v0.2.10-Implementation-Contract.md"
+    ).read_text(encoding="utf-8")
+
+    assert "Status: P0/P1A/P1B/P1C/P2 implemented" in text
+    assert "P2 design approved" not in text
 
 
 def test_readmes_define_telemetry_measurement_boundary():

@@ -1,8 +1,8 @@
-# Superpowers Engineering Harness v0.2.9
+# Superpowers Engineering Harness v0.2.10
 
 [简体中文](README.zh-CN.md)
 
-`v0.2.9 current release`; v0.2.7/v0.2.8 safeguards remain available. v0.2.9 adds structured Alignment closure and freeze before Q2/Q3 implementation, deterministic contract/boundary drift diagnostics, opt-in Alignment Context Layer 0 references, and explicit-record alignment benchmark metrics. It does not infer code semantics, attest agent behavior, or collect external telemetry. See [v0.2.9 implementation contract](docs/Superpowers-Engineering-Harness-v0.2.9-Implementation-Contract.md).
+`v0.2.10 current release`; earlier risk-adaptive, Context, and Alignment safeguards remain available. v0.2.10 adds deterministic Plan Reconciliation: canonical execution artifacts, Q3 task-level journals, authoritative Context/status projection, restricted Markdown synchronization, bounded Q3 automatic COMPLETE proof, and one-assessment Gate preflight reporting. It does not treat Markdown as Gate truth, synthesize execution history, or infer semantic skip/supersede decisions. See [v0.2.10 implementation contract](docs/Superpowers-Engineering-Harness-v0.2.10-Implementation-Contract.md).
 
 **Routing:** Q0 answers without task; Q1 / FAST uses RED/fix/GREEN/Light Gate; Q2 / STANDARD and Q3 / STRICT use full contract/review/Gate workflow.
 
@@ -51,6 +51,9 @@ v0.2.8  Derived Context + Integrity + Host Usage + Multi-run Benchmark
   ↓
 v0.2.9  Pre-implementation Alignment closure and freeze
         + contract / boundary drift diagnostics
+  ↓
+v0.2.10 Canonical Plan execution reconciliation
+        + Q3 journal + Context/status + mechanical projections
 ```
 
 ## Engineering Quality
@@ -150,7 +153,7 @@ curl -fsSL https://raw.githubusercontent.com/yezhwi/superpowers-engineering-harn
 Pin a release when needed:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/yezhwi/superpowers-engineering-harness/main/scripts/install-agy.sh | bash -s -- v0.2.9
+curl -fsSL https://raw.githubusercontent.com/yezhwi/superpowers-engineering-harness/main/scripts/install-agy.sh | bash -s -- v0.2.10
 ```
 
 Installer updates Harness-owned skills under `~/.gemini/antigravity-cli/skills/` and preserves unrelated global skills. It does not initialize a project. In each Git project, run `harness init` once, then start AGY with `agy`; use `/engineering-harness` to invoke Harness explicitly in first session.
@@ -203,6 +206,20 @@ Recover interrupted work with `harness status`; Harness resumes from `.harness/c
 - **Q0:** direct answer; no Harness task.
 - **Q1 / FAST:** narrow, low-risk work only. Classify explicitly; Q1 is rejected without persisting when current business paths already match `.harness/risk-boundaries.yaml` Q2/Q3. FAST still needs task-level failing RED and passing GREEN evidence, then Light Gate. It skips impact, complexity review, requirements, and invariants ceremony. `harness status` Build/Unit/Integration lines use the same live evidence projection as the Evidence list. If the work item is already implemented, `harness task verify-existing` can record a valid existing-verification record without forging RED; ordinary bugfix still requires RED→GREEN. `requires_reproduction` keeps task `CLASSIFIED`; create or resume a finding and reproduce normally.
 - **Q2 / STANDARD** and **Q3 / STRICT:** use current full Harness workflow. Risk may only escalate, never downgrade.
+
+### Plan reconciliation (v0.2.10)
+
+STANDARD/Q2 uses final-only execution v1. STRICT/Q3 uses replayable task-level execution v2 plus the same independent final proof checks. FAST/Q1 returns before reading Plan, Markdown, or automatic-evidence sources.
+
+```bash
+harness plan status                  # read-only canonical summary
+harness plan status --verbose        # opt-in body-free item/proof health
+harness plan sync-markdown docs/plan.md
+harness plan reconcile P-001 --auto  # Q3 COMPLETE only
+harness gate preflight               # existing preflight with appended Plan section
+```
+
+Markdown checkboxes are one-way projections and never Gate truth. `--auto` selects bounded mechanical proof and delegates to the existing locked reconciliation path; it cannot create SKIPPED, SUPERSEDED, reasons, Decisions, or execution history. Default status output remains compatible, and no separate Gate preview command exists.
 
 ```bash
 harness task classify --level Q1 --scope low --contract none --data none \

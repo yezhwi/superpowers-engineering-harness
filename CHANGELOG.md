@@ -2,8 +2,21 @@
 
 ## Unreleased
 
+## 0.2.10
+
+- Add deterministic Plan Reconciliation for STANDARD/Q2 and STRICT/Q3 tasks: canonical Plan artifacts, semantic fingerprints, final proof checks, typed blockers, recovery policy, and Q3 replayable task-level execution without fabricated history.
+- Add authoritative Plan Context and read-only status projections. `harness plan status` preserves default output compatibility; `--verbose` adds body-free item status and proof health.
+- Add explicit one-way `harness plan sync-markdown`, bounded Q3 `harness plan reconcile P-* --auto`, and a body-free Plan section in existing `harness gate preflight`. Markdown remains non-authoritative; automatic reconciliation creates only ordinary `COMPLETE` requests through the existing locked mutation path.
+- Preserve FAST/Q1 no-read isolation and STANDARD/Q2 final-only execution while hardening malformed proof sources, Alignment guards, blocker fingerprints, convergence routing, and FAST Context helper loading.
 - Add one-command AGY global installer. It resolves latest stable release by default, accepts an explicit tag, updates Harness-owned skills under `~/.gemini/antigravity-cli/skills/`, and preserves unrelated skills. Project initialization remains explicit through `harness init` in each Git repository.
 - Archive and clear stale `alignment.yaml` during task replacement/recovery so prior-task Alignment cannot block a replacement task.
+- Keep this repository step local-only: it does not create a tag, push, or publish a package or GitHub Release.
+
+### Install
+
+```bash
+pi install git:github.com/yezhwi/superpowers-engineering-harness@v0.2.10
+```
 
 ## 0.2.9
 

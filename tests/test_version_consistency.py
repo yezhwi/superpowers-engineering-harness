@@ -2,16 +2,14 @@
 
 import json
 import re
-from pathlib import Path
-
 import tomllib
-
+from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 
 
 def test_current_release_metadata_is_publishable():
-    expected = "0.2.9"
+    expected = "0.2.10"
     assert (
         tomllib.loads((REPO / "pyproject.toml").read_text())["project"]["version"]
         == expected
