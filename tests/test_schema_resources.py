@@ -121,6 +121,16 @@ def test_resource_symlink_outside_schema_root_is_rejected(tmp_path, monkeypatch)
         schema_resources.read_schema("decision.schema.json")
 
 
+def test_p2_modules_and_public_entrypoints_are_installed_package_imports():
+    from harness.plan_automation import derive_auto_proof
+    from harness.plan_markdown import sync_plan_markdown
+    from harness.plan_reporting import gate_plan_preview
+
+    assert callable(derive_auto_proof)
+    assert callable(sync_plan_markdown)
+    assert callable(gate_plan_preview)
+
+
 def test_all_shipped_schemas_have_explicit_registry_entries():
     from importlib import resources
 

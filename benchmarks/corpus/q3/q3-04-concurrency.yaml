@@ -2,5 +2,6 @@ id: q3-04-concurrency
 level: Q3
 expected_profile: STRICT
 scenario: concurrency scenario
-risk_tags: [concurrency]
+risk_tags: [concurrency, plan-reconciliation-p2]
+plan_reconciliation_case: replay_recovery
 required_correctness: ['gate_pass', 'regression_detected', 'contract_violation_detected', 'security_violation_detected']

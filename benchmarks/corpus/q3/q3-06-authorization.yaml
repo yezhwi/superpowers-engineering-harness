@@ -2,5 +2,6 @@ id: q3-06-authorization
 level: Q3
 expected_profile: STRICT
 scenario: authorization scenario
-risk_tags: [authorization]
+risk_tags: [authorization, plan-reconciliation-p2]
+plan_reconciliation_case: trusted_projection_recovery
 required_correctness: ['gate_pass', 'regression_detected', 'contract_violation_detected', 'security_violation_detected']
