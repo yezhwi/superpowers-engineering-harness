@@ -14,6 +14,7 @@ from .blockers import GateBlocker
 from .collect_evidence import command_covers_test, record_covers_test
 from .evidence_validator import EvidenceStatus, project_evidence
 from .paths import EvidenceReferenceError, evidence_path
+from . import plan_automation
 from .plan_execution import (
     PlanExecutionError,
     ReplayResult,
@@ -558,17 +559,18 @@ def _validate_p0_projection(
     qualified_cases = _qualified_cases(harness_dir)
     user_changes = (task.get("risk") or {}).get("user_changes", {})
     protected = set(user_changes.get("paths", []))
-    protected_changed = check_proof and bool(protected) and (
-        protected_paths_fingerprint(tuple(sorted(protected)))
-        != user_changes.get("fingerprint")
-    )
-    changed_surfaces = (
-        set(changed_paths_since(task.get("git", {}).get("base_commit", "HEAD")))
-        if check_proof and any(item.get("surfaces", []) for item in plan["items"])
-        else set()
-    )
-    if check_proof and not protected_changed:
-        changed_surfaces -= protected
+    if check_proof:
+        surface_facts = plan_automation.mechanical_surface_facts(
+            task,
+            plan,
+            _changed_paths=changed_paths_since,
+            _protected_fingerprint=protected_paths_fingerprint,
+        )
+        protected_changed = surface_facts.protected_fingerprint_changed
+        changed_surfaces = set(surface_facts.usable)
+    else:
+        protected_changed = False
+        changed_surfaces = set()
 
     blockers: list[GateBlocker] = []
     for item in plan["items"]:
