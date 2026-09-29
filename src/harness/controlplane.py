@@ -195,6 +195,39 @@ def cmd_plan_status(json_output: bool) -> int:
     return 0
 
 
+def cmd_plan_sync_markdown(target: str) -> int:
+    from . import plan_markdown
+
+    harness_dir = Path(".harness")
+    try:
+        task = load_task(harness_dir)
+        quality_gate.validate_schema(
+            task, "task.schema.json", harness_dir / "current-task.yaml"
+        )
+        changed = plan_markdown.sync_plan_markdown(
+            harness_dir, Path.cwd(), task, target
+        )
+    except plan_markdown.PlanMarkdownError as exc:
+        print(exc.code, file=sys.stderr)
+        return 1
+    except (
+        HarnessStateError,
+        OSError,
+        yaml.YAMLError,
+        quality_gate.InvalidHarnessState,
+        plan_reconciliation.PlanArtifactError,
+        decision.DecisionError,
+        evidence_validator.EvidenceValidationError,
+        EvidenceReferenceError,
+        source_access.ContextBuildError,
+        workspace.WorkspaceError,
+    ) as exc:
+        print(f"INVALID_HARNESS_STATE: {exc}", file=sys.stderr)
+        return 2
+    print("PLAN_MARKDOWN_UPDATED" if changed else "PLAN_MARKDOWN_UNCHANGED")
+    return 0
+
+
 def cmd_plan_mutation(args) -> int:
     harness_dir = Path(".harness")
     disposition = getattr(args, "plan_disposition", None)

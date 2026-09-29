@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
+
+from .telemetry_lock import telemetry_lock
+from .transaction import atomic_write
 
 _MAPPING_LINE = re.compile(r"^[ \t]*- \[( |x|X)\] (P-[0-9]+)(?:[ \t]+.*)?$")
 _RESERVED_PREFIX = re.compile(r"^[ \t]*- \[")
@@ -79,3 +83,71 @@ def project_markdown_checkboxes(
             projected[line_index] = line[:marker_index] + marker + line[marker_index + 1 :]
 
     return "".join(projected).encode("utf-8")
+
+
+def _markdown_target(
+    repo_root: Path, task: dict, target: str
+) -> Path:
+    relative = Path(target)
+    if not target or relative.is_absolute() or ".." in relative.parts:
+        raise PlanMarkdownError("PLAN_MARKDOWN_TARGET_INVALID")
+    if relative.as_posix() in (task.get("risk", {}).get("user_changes", {}).get("paths") or []):
+        raise PlanMarkdownError("PLAN_MARKDOWN_TARGET_INVALID")
+
+    root = repo_root.resolve()
+    path = root
+    for part in relative.parts:
+        path = path / part
+        if path.is_symlink():
+            raise PlanMarkdownError("PLAN_MARKDOWN_TARGET_INVALID")
+    try:
+        path.resolve().relative_to(root)
+    except (OSError, ValueError) as exc:
+        raise PlanMarkdownError("PLAN_MARKDOWN_TARGET_INVALID") from exc
+    if not path.is_file():
+        raise PlanMarkdownError("PLAN_MARKDOWN_TARGET_INVALID")
+    return path
+
+
+def sync_plan_markdown(
+    harness_dir: Path,
+    repo_root: Path,
+    task: dict,
+    target: str,
+) -> bool:
+    """Project one trusted Plan execution into an explicit Markdown target."""
+    from . import plan_reconciliation
+    from .workspace import snapshot
+
+    configuration = plan_reconciliation.effective_plan_reconciliation(task)
+    if configuration.get("enabled") is not True:
+        raise PlanMarkdownError("PLAN_MARKDOWN_TARGET_INVALID")
+
+    with telemetry_lock(harness_dir):
+        path = _markdown_target(repo_root, task, target)
+        plan, execution = plan_reconciliation.load_plan_artifacts(
+            harness_dir, optional=True
+        )
+        current = snapshot(repo_root)
+        assessment = plan_reconciliation.assess_plan_reconciliation_documents(
+            harness_dir,
+            task,
+            plan,
+            execution,
+            head=current.head,
+            workspace=current.fingerprint,
+        )
+        if plan is None or assessment.projection is None:
+            code = assessment.blockers[0].code if assessment.blockers else "PLAN_REQUIRED"
+            raise PlanMarkdownError(code)
+
+        content = path.read_bytes()
+        projected = project_markdown_checkboxes(
+            content,
+            tuple(item["id"] for item in plan["items"]),
+            assessment.projection,
+        )
+        if projected == content:
+            return False
+        atomic_write(path, projected)
+        return True
