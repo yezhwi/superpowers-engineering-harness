@@ -110,6 +110,30 @@ def test_readmes_document_matching_skills_and_cli_install_without_full_suite():
         assert "impact-related" in text or "影响相关" in text
 
 
+def test_readmes_describe_runnable_plan_examples_and_actual_operator_boundaries():
+    for path in (REPO / "README.md", REPO / "README.zh-CN.md"):
+        text = path.read_text(encoding="utf-8")
+
+        assert text.index("harness plan upgrade-execution") < text.index(
+            "harness plan begin P-001"
+        )
+        assert "harness plan reconcile P-001 --complete \\" in text
+        assert "--evidence unit-test-<digest>" in text
+        assert "--surface src/example.py" in text
+        assert "harness plan refresh-proof P-001 \\" in text
+        assert "choose one" in text.lower() or "二选一" in text
+
+        assert "only reads `.harness/current-task.yaml`" not in text
+        assert "只读取 `.harness/current-task.yaml`" not in text
+        assert "read-only" in text.lower() or "只读" in text
+        assert "clarification" in text.lower() or "澄清" in text
+        assert "authorization" in text.lower() or "授权" in text
+        assert "escalation" in text.lower() or "升级" in text
+
+        assert "Q0 is a direct answer and creates no Harness task." not in text
+        assert "Q0 直接回答，不创建 Harness task。" not in text
+
+
 def test_root_skill_routes_diagnosability():
     text = (REPO / "SKILL.md").read_text(encoding="utf-8")
     assert "Production Diagnosability Routing" in text

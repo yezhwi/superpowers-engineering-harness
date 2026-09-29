@@ -2,34 +2,191 @@
 
 [简体中文](README.zh-CN.md)
 
-`v0.2.10 current release`; earlier risk-adaptive, Context, and Alignment safeguards remain available. v0.2.10 adds deterministic Plan Reconciliation: canonical execution artifacts, Q3 task-level journals, authoritative Context/status projection, restricted Markdown synchronization, bounded Q3 automatic COMPLETE proof, and one-assessment Gate preflight reporting. It does not treat Markdown as Gate truth, synthesize execution history, or infer semantic skip/supersede decisions. See [v0.2.10 implementation contract](docs/Superpowers-Engineering-Harness-v0.2.10-Implementation-Contract.md).
-
-**Routing:** Q0 answers without task; Q1 / FAST uses RED/fix/GREEN/Light Gate; Q2 / STANDARD and Q3 / STRICT use full contract/review/Gate workflow.
+Engineering Harness is a deterministic control plane around [Superpowers](https://github.com/obra/superpowers) development workflows. It does not replace agent or worker skills. It persists task state, requires proof, and prevents an agent from declaring work done without gate approval.
 
 [Architecture: big picture](docs/architecture.md)
 
-Engineering Harness is deterministic control plane around [Superpowers](https://github.com/obra/superpowers) development workflows. It does not replace agent or worker skills. It persists task state, requires proof, and prevents an agent from declaring work done without gate approval.
+## Why Harness
 
-## Why
+You tell the Agent what to change. Harness keeps the task, the proof, and the Gate result in `.harness/` so a new session can continue the same work. The Agent cannot mark the task done until `harness gate` prints `DECISION: CONVERGED`.
 
-AI coding workflows commonly fail when context is lost, completion is self-declared, tests/evidence are stale, review findings are never reproduced, repair loops do not converge, or correct code contains unnecessary complexity.
+- A small, low-risk fix stays on Q1 / FAST: failing proof, fix, passing proof, Light Gate.
+- A normal delivery stays on Q2 / STANDARD: contract, related tests, review, and a final plan check.
+- A high-risk change stays on Q3 / STRICT: one plan item at a time. Risk can rise. It does not silently fall.
 
-Harness turns these into persisted, checkable controls:
+A question is answered directly and creates no task. A code change starts only after you ask for one, for example: "Use Engineering Harness to fix this bug: cancelling an order twice issues two refunds."
 
-```text
-State + Contract + Invariant + Executable Test + Evidence + Deterministic Gate
+## Quick start
+
+Install Superpowers, Pi skills, and the matching deterministic CLI with one explicit bootstrap command. With no version argument, installer resolves npm `latest` and requires the matching Git tag before changing installation:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/yezhwi/superpowers-engineering-harness/main/scripts/install-pi.sh | bash
 ```
 
-## Design model
+Pin a release when needed:
 
-| Layer | Responsibility |
-|---|---|
-| Model | Worker that reasons and changes code |
-| Superpowers | Development workflow: design, planning, TDD, review |
-| Engineering Harness | Controller: state, contracts, evidence, findings, gate |
-| Tests / compiler / gate | Source of truth |
+```bash
+curl -fsSL https://raw.githubusercontent.com/yezhwi/superpowers-engineering-harness/main/scripts/install-pi.sh | bash -s -- v0.2.10
+```
 
-Harness is suitable for agentic feature and bug-fix delivery. It is not a replacement for CI, security scanning, or human architecture decisions.
+Installer checks whether Superpowers is configured and installs it only when missing. It reconciles pinned Harness Pi skills, installs matching Python CLI into isolated user environment, and exposes `~/.local/bin/harness`. Add `~/.local/bin` to `PATH` if installer reports it missing. Re-running same version is idempotent. Review downloaded script before execution when required by local security policy.
+
+For source development, install repository editable environment separately with `python -m pip install -e /path/to/superpowers-engineering-harness`.
+
+Initialize a repository once. After that, daily work is a request to the Agent. The Engineering Harness skill reads persisted state and runs `harness` itself. You do not type those commands.
+
+```bash
+cd your-project
+harness init
+```
+
+Open a session and say what to change, for example:
+
+```text
+Use Engineering Harness to fix this bug: cancelling an order twice issues two refunds.
+```
+
+To continue interrupted work, open a new session and ask the Agent to resume the current task. For Pi, open a new session after installing skills. Skills load at session start.
+
+### Antigravity CLI (agy)
+
+Install Harness CLI and AGY global skills once, from any directory, with latest stable release:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/yezhwi/superpowers-engineering-harness/main/scripts/install-agy.sh | bash
+```
+
+Pin a release when needed:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/yezhwi/superpowers-engineering-harness/main/scripts/install-agy.sh | bash -s -- v0.2.10
+```
+
+Installer updates Harness-owned skills under `~/.gemini/antigravity-cli/skills/` and preserves unrelated global skills. It does not initialize a project. In each Git project, run `harness init` once, then start AGY with `agy`; use `/engineering-harness` to invoke Harness explicitly in first session.
+
+## Current workflow
+
+You describe the change. The Agent classifies the risk, does the work, and calls Harness at each phase. Most routine Harness commands need no interaction. The Agent may still ask for requirement clarification, design approval, an accepted Decision, an explicit skip or supersede, protected-action authorization, or an escalation decision.
+
+The blocks below are the commands the Agent runs. `harness status` is read-only and does not mutate Harness state. When Gate emits `DECISION: CONTINUE` and persists blockers, the Agent runs `harness resume`, which chooses the recovery state from the blocker code and does not trust a persisted `recover_to`.
+
+Q2 / STANDARD and Q3 / STRICT share the contract, review, and Gate path. The Agent records `review outcome PASS`, which performs `REVIEWING → GATING`:
+
+```bash
+harness status
+harness transition IMPLEMENTING
+harness evidence run --type unit_test --command "pytest tests/test_cancel.py"
+harness transition VERIFYING
+harness review complexity --file review.yaml
+harness transition REVIEWING
+harness review outcome PASS --reason-code REVIEW_CLEAN
+harness gate
+# inspect DECISION: CONVERGED, then:
+harness transition DONE
+```
+
+Blocked recovery (`harness gate` emits `DECISION: CONTINUE`; Gate persists blockers and `harness resume` derives the target):
+
+```bash
+harness gate
+# after DECISION: CONTINUE
+harness resume
+```
+
+Before `VERIFYING`, record impact and related tests. Harness never executes a full suite, even when repository instructions request one. Evidence scope is always `related` and must cover every required test:
+
+```bash
+harness impact add-change src/orders/cancel.py
+harness impact add-test tests/test_cancel.py::test_duplicate_cancel_single_refund
+harness evidence run --type unit_test --scope related --covered-test tests/test_cancel.py::test_duplicate_cancel_single_refund --command "pytest tests/test_cancel.py::test_duplicate_cancel_single_refund"
+```
+
+Related test evidence is append-only (`unit-test-<hash>.json`). Gate unions fresh records' `covered_tests`, so adding one required test needs only that test's command. `VERIFYING → REVIEWING` runs freshness preflight first; stale required evidence blocks entry. STANDARD/STRICT task plans also reject declared test targets whose file path does not exist. Review reasons are controlled: use `REVIEW_CLEAN`, `TEST_COVERAGE_INSUFFICIENT`, `EVIDENCE_INCOMPLETE`, `INVARIANT_UNPROVEN`, `TEST_SCOPE_INSUFFICIENT`, `LOGIC_ERROR`, `REGRESSION`, `CONTRACT_VIOLATION`, or `INVARIANT_VIOLATION` for the matching outcome.
+
+### Q1 / FAST
+
+A question or explanation is Q0: the Agent answers directly and creates no Harness task. Q1 / FAST is narrow, low-risk work only. Classify explicitly; Q1 is rejected without persisting when current business paths already match `.harness/risk-boundaries.yaml` Q2/Q3. FAST returns before reading Plan, Markdown, or automatic-evidence sources. It still needs task-level failing RED and passing GREEN evidence, then Light Gate. It skips impact, complexity review, requirements, and invariants ceremony. `harness status` Build/Unit/Integration lines use the same live evidence projection as the Evidence list. If the work item is already implemented, `harness task verify-existing` can record a valid existing-verification record without forging RED; an ordinary bugfix still requires RED→GREEN. `requires_reproduction` keeps the task `CLASSIFIED`; create or resume a finding and reproduce normally.
+
+```bash
+harness task classify --level Q1 --scope low --contract none --data none \
+  --authorization none --security none --concurrency none --deployment none
+harness transition IMPLEMENTING
+# collect a failing regression proof before the fix, then passing proof after the fix
+harness evidence run --type unit_test --phase red --covered-test tests/test_x.py::test_x --command "pytest tests/test_x.py::test_x"
+harness evidence run --type unit_test --phase green --covered-test tests/test_x.py::test_x --command "pytest tests/test_x.py::test_x"
+harness transition VERIFYING
+harness transition GATING
+harness gate
+```
+
+FAST does not grant external actions. Authorizations are independent per task; grant only the requested action. A full-suite authorization does not exist:
+
+```bash
+harness authorize commit
+harness authorize push
+# also: create-mr, ready-mr, merge, deploy; revoke with revoke-<action>
+```
+
+### Q2 / STANDARD
+
+For a standard change, the Agent keeps a final-only plan and reconciles it before Gate. Q2 uses final-only Plan execution v1. `harness plan status` reports whether final reconciliation passes. `--verbose` adds a body-free item and proof-health view. `harness gate preflight` keeps its existing `READY:` and blocker lines, then appends that Plan summary from the same assessment. There is no separate Gate preview command. Q2 does not use the Q3 journal commands.
+
+```bash
+harness plan status
+harness plan status --verbose
+harness plan sync-markdown docs/plan.md
+harness gate preflight
+```
+
+### Q3 / STRICT
+
+For strict work, the Agent advances one plan item at a time and asks you before a skip or supersede. Q3 uses replayable execution v2 and the same independent final proof checks. Journal commands write `.harness/plan-execution.yaml` under the existing lock. `harness plan begin` starts only the canonical next nonterminal item. `block` and `plan resume` change that item only; they do not call `harness resume` and do not change the top-level task state. `refresh-proof` replaces the current COMPLETE proof. `upgrade-execution` publishes an empty v2 journal only when every existing record is still `PENDING`.
+
+```bash
+# Upgrade a legacy all-PENDING v1 execution before beginning the first item.
+harness plan upgrade-execution
+harness plan begin P-001
+harness plan block P-001 --reason "waiting on an accepted decision"
+harness plan resume P-001
+
+# Choose one reconciliation path: derive mechanical proof automatically,
+harness plan reconcile P-001 --auto
+# or submit explicit proof.
+harness plan reconcile P-001 --complete \
+  --evidence unit-test-<digest> --surface src/example.py
+
+# Refresh proof later only when evidence or changed surfaces have changed.
+harness plan refresh-proof P-001 \
+  --evidence unit-test-<new-digest> --surface src/example.py
+```
+
+`SKIPPED` and `SUPERSEDED` are explicit `reconcile` dispositions. Q3 requires an accepted Decision for those two; `--auto` cannot create them, a reason, a Decision, or execution history. Default `harness plan status` output stays compatible when `--verbose` is omitted.
+
+Risk may only escalate, never downgrade. Evidence reuse, soft budgets, local telemetry, and fixture benchmarks are available. Remote telemetry and external-agent benchmark claims are unavailable.
+
+## Boundaries
+
+> **Security boundary:** `harness evidence run --command` executes shell syntax (`shell=True`) as trusted text entered directly by the local Harness operator.
+
+Never forward remote requests, configuration values, API payloads, CI metadata, or other untrusted input to this option. Internal `_collect` is unsupported internal API, not Python access control or provenance proof.
+
+Markdown checkboxes are a one-way projection of canonical Plan execution. They are not Gate input, not proof, and not a source of truth. `harness plan sync-markdown` changes only the checkbox character in an explicit repository path.
+
+`--auto` may establish only a mechanical `COMPLETE`. It selects a bounded evidence cover and changed surfaces, then submits an ordinary COMPLETE request through the existing locked reconciliation path. It cannot choose `SKIPPED` or `SUPERSEDED`.
+
+**Gate and Finding contract:** Only `harness gate` evaluates or persists product Gate results; direct `python scripts/quality_gate.py` is disabled. Persisted Findings require an explicit category (`adversarial`, `diagnosability`, `complexity`, or `interface`); category-less legacy records fail with `MIGRATION_REQUIRED`. `finding.schema.json` was removed; use category-specific schemas.
+
+### Iron laws
+
+1. Task state lives in `.harness/current-task.yaml`, never only in model context.
+2. A fixed state machine controls transitions.
+3. Gate PASS is required before `CONVERGED → DONE`.
+4. Confirmed bugs require regression tests.
+5. Evidence is fresh and bound to the current Git HEAD and workspace.
+6. Bounded iteration ends in `ESCALATED`, not an infinite repair loop.
+7. Markdown is not Gate truth. Canonical Plan YAML remains authoritative.
+8. `--auto` records only mechanical `COMPLETE`. Semantic skip and supersede stay explicit operator dispositions.
 
 ## Version evolution
 
@@ -55,6 +212,10 @@ v0.2.9  Pre-implementation Alignment closure and freeze
 v0.2.10 Canonical Plan execution reconciliation
         + Q3 journal + Context/status + mechanical projections
 ```
+
+`v0.2.10 current release`; earlier risk-adaptive, Context, and Alignment safeguards remain available. v0.2.10 adds deterministic Plan Reconciliation: canonical execution artifacts, Q3 task-level journals, authoritative Context/status projection, restricted Markdown synchronization, bounded Q3 automatic COMPLETE proof, and one-assessment Gate preflight reporting. It does not treat Markdown as Gate truth, synthesize execution history, or infer semantic skip/supersede decisions. See [v0.2.10 implementation contract](docs/Superpowers-Engineering-Harness-v0.2.10-Implementation-Contract.md).
+
+**Routing:** Q0 answers without task; Q1 / FAST uses RED/fix/GREEN/Light Gate; Q2 / STANDARD and Q3 / STRICT use full contract/review/Gate workflow.
 
 ## Engineering Quality
 
@@ -83,9 +244,7 @@ v0.2.10 Canonical Plan execution reconciliation
                             DONE
 ```
 
-Harness controls state, proof, Finding lifecycle, and Gate. Agent judges business semantics and logging quality. Harness does not provide logger SDK, OpenTelemetry, APM, automatic log insertion, or universal source scanning.
-
-## Workflow
+Harness controls state, proof, Finding lifecycle, and Gate. The agent judges business semantics and logging quality. Harness does not provide a logger SDK, OpenTelemetry, APM, automatic log insertion, or universal source scanning.
 
 ```text
 Requirement
@@ -107,149 +266,22 @@ Quality Gate (GATING)
 CONVERGED → DONE
 ```
 
-Iron laws:
+## Rules still in force
 
-1. Task state lives in `.harness/current-task.yaml`, never only model context.
-2. Fixed state machine controls transitions.
-3. Gate PASS is required before `CONVERGED → DONE`.
-4. Confirmed bugs require regression tests.
-5. Evidence is fresh and bound to current Git HEAD/workspace.
-6. Bounded iteration ends in `ESCALATED`, not infinite repair.
-
-## Quick start
-
-Install Superpowers, Pi skills, and the matching deterministic CLI with one explicit bootstrap command. With no version argument, installer resolves npm `latest` and requires the matching Git tag before changing installation:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/yezhwi/superpowers-engineering-harness/main/scripts/install-pi.sh | bash
-```
-
-Pin a release when needed:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/yezhwi/superpowers-engineering-harness/main/scripts/install-pi.sh | bash -s -- v0.2.10
-```
-
-Installer checks whether Superpowers is configured and installs it only when missing. It reconciles pinned Harness Pi skills, installs matching Python CLI into isolated user environment, and exposes `~/.local/bin/harness`. Add `~/.local/bin` to `PATH` if installer reports it missing. Re-running same version is idempotent. Review downloaded script before execution when required by local security policy.
-
-For source development, install repository editable environment separately with `python -m pip install -e /path/to/superpowers-engineering-harness`.
-
-Initialize target repository, then start each session from persisted state:
-
-```bash
-cd your-project
-harness init
-harness status
-```
-
-Ask agent to work through Harness, for example:
+AI coding workflows commonly fail when context is lost, completion is self-declared, tests or evidence are stale, review findings are never reproduced, repair loops do not converge, or correct code contains unnecessary complexity. Harness turns these into persisted, checkable controls:
 
 ```text
-Use Engineering Harness to fix this bug: cancelling an order twice issues two refunds.
+State + Contract + Invariant + Executable Test + Evidence + Deterministic Gate
 ```
 
-For Pi, open new session after installing skills. Skills load at session start.
+| Layer | Responsibility |
+|---|---|
+| Model | Worker that reasons and changes code |
+| Superpowers | Development workflow: design, planning, TDD, review |
+| Engineering Harness | Controller: state, contracts, evidence, findings, gate |
+| Tests / compiler / gate | Source of truth |
 
-### Antigravity CLI (agy)
-
-Install Harness CLI and AGY global skills once, from any directory, with latest stable release:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/yezhwi/superpowers-engineering-harness/main/scripts/install-agy.sh | bash
-```
-
-Pin a release when needed:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/yezhwi/superpowers-engineering-harness/main/scripts/install-agy.sh | bash -s -- v0.2.10
-```
-
-Installer updates Harness-owned skills under `~/.gemini/antigravity-cli/skills/` and preserves unrelated global skills. It does not initialize a project. In each Git project, run `harness init` once, then start AGY with `agy`; use `/engineering-harness` to invoke Harness explicitly in first session.
-
-## Daily operations
-
-> **Security boundary:** `harness evidence run --command` executes shell syntax (`shell=True`) as trusted text entered directly by local Harness operator.
-
-Never forward remote requests, configuration values, API payloads, CI metadata, or other untrusted input to this option. Internal `_collect` is unsupported internal API, not Python access control or provenance proof.
-
-**Gate and Finding contract:** Only `harness gate` evaluates or persists product Gate results; direct `python scripts/quality_gate.py` is disabled. Persisted Findings require an explicit category (`adversarial`, `diagnosability`, `complexity`, or `interface`); category-less legacy records fail with `MIGRATION_REQUIRED`. `finding.schema.json` was removed; use category-specific schemas.
-
-Normal success path (`review outcome PASS` performs `REVIEWING → GATING`):
-
-```bash
-harness status
-harness transition IMPLEMENTING
-harness evidence run --type unit_test --command "pytest tests/test_cancel.py"
-harness transition VERIFYING
-harness review complexity --file review.yaml
-harness transition REVIEWING
-harness review outcome PASS --reason-code REVIEW_CLEAN
-harness gate
-# inspect DECISION: CONVERGED, then:
-harness transition DONE
-```
-
-Blocked recovery path (`harness gate` emits `DECISION: CONTINUE`; Gate persists blockers and `harness resume` derives target):
-
-```bash
-harness gate
-# after DECISION: CONTINUE
-harness resume
-```
-
-Before `VERIFYING`, record impact and related tests. Harness never executes a full suite, even when repository instructions request one. Evidence scope is always `related` and must cover every required test:
-
-```bash
-harness impact add-change src/orders/cancel.py
-harness impact add-test tests/test_cancel.py::test_duplicate_cancel_single_refund
-harness evidence run --type unit_test --scope related --covered-test tests/test_cancel.py::test_duplicate_cancel_single_refund --command "pytest tests/test_cancel.py::test_duplicate_cancel_single_refund"
-```
-
-Related test evidence is append-only (`unit-test-<hash>.json`). Gate unions fresh records' `covered_tests`, so adding one required test needs only that test's command. `VERIFYING → REVIEWING` runs freshness preflight first; stale required evidence blocks entry. STANDARD/STRICT task plans also reject declared test targets whose file path does not exist.
-
-Recover interrupted work with `harness status`; Harness resumes from `.harness/current-task.yaml`. Gate recovery derives target from blocker code, not persisted `recover_to`. Review reasons are controlled: use `REVIEW_CLEAN`, `TEST_COVERAGE_INSUFFICIENT`, `EVIDENCE_INCOMPLETE`, `INVARIANT_UNPROVEN`, `TEST_SCOPE_INSUFFICIENT`, `LOGIC_ERROR`, `REGRESSION`, `CONTRACT_VIOLATION`, or `INVARIANT_VIOLATION` for matching outcome.
-
-### Risk-adaptive workflow (v0.2.3)
-
-- **Q0:** direct answer; no Harness task.
-- **Q1 / FAST:** narrow, low-risk work only. Classify explicitly; Q1 is rejected without persisting when current business paths already match `.harness/risk-boundaries.yaml` Q2/Q3. FAST still needs task-level failing RED and passing GREEN evidence, then Light Gate. It skips impact, complexity review, requirements, and invariants ceremony. `harness status` Build/Unit/Integration lines use the same live evidence projection as the Evidence list. If the work item is already implemented, `harness task verify-existing` can record a valid existing-verification record without forging RED; ordinary bugfix still requires RED→GREEN. `requires_reproduction` keeps task `CLASSIFIED`; create or resume a finding and reproduce normally.
-- **Q2 / STANDARD** and **Q3 / STRICT:** use current full Harness workflow. Risk may only escalate, never downgrade.
-
-### Plan reconciliation (v0.2.10)
-
-STANDARD/Q2 uses final-only execution v1. STRICT/Q3 uses replayable task-level execution v2 plus the same independent final proof checks. FAST/Q1 returns before reading Plan, Markdown, or automatic-evidence sources.
-
-```bash
-harness plan status                  # read-only canonical summary
-harness plan status --verbose        # opt-in body-free item/proof health
-harness plan sync-markdown docs/plan.md
-harness plan reconcile P-001 --auto  # Q3 COMPLETE only
-harness gate preflight               # existing preflight with appended Plan section
-```
-
-Markdown checkboxes are one-way projections and never Gate truth. `--auto` selects bounded mechanical proof and delegates to the existing locked reconciliation path; it cannot create SKIPPED, SUPERSEDED, reasons, Decisions, or execution history. Default status output remains compatible, and no separate Gate preview command exists.
-
-```bash
-harness task classify --level Q1 --scope low --contract none --data none \
-  --authorization none --security none --concurrency none --deployment none
-harness transition IMPLEMENTING
-# collect a failing regression proof before fix, then passing proof after fix
-harness evidence run --type unit_test --phase red --covered-test tests/test_x.py::test_x --command "pytest tests/test_x.py::test_x"
-harness evidence run --type unit_test --phase green --covered-test tests/test_x.py::test_x --command "pytest tests/test_x.py::test_x"
-harness transition VERIFYING
-harness transition GATING
-harness gate
-```
-
-FAST does not grant external actions. Authorizations are independent per task; grant only requested action. Full-suite authorization does not exist:
-
-```bash
-harness authorize commit
-harness authorize push
-# also: create-mr, ready-mr, merge, deploy; revoke with revoke-<action>
-```
-
-Evidence reuse, soft budgets, local telemetry, and fixture benchmarks are available. Remote telemetry and external-agent benchmark claims are unavailable.
+Harness is suitable for agentic feature and bug-fix delivery. It is not a replacement for CI, security scanning, or human architecture decisions.
 
 ### FAST repository verification
 

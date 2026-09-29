@@ -2,38 +2,191 @@
 
 [English](README.md)
 
-`v0.2.10 current release`；既有 risk-adaptive、Context 与 Alignment safeguard 均保留。v0.2.10 新增确定性 Plan Reconciliation：canonical execution artifacts、Q3 task-level journal、权威 Context/status 投影、受限 Markdown 同步、有界 Q3 自动 COMPLETE proof，以及复用单次 assessment 的 Gate preflight 报告。它不把 Markdown 当作 Gate truth、不合成执行历史，也不推断 SKIPPED/SUPERSEDED 的语义理由。见 [v0.2.10 实现契约](docs/Superpowers-Engineering-Harness-v0.2.10-Implementation-Contract.md)。
-
-**Routing：** Q0 直接回答、不创建 task；Q1 / FAST 使用 RED/fix/GREEN/Light Gate；Q2 / STANDARD 与 Q3 / STRICT 使用完整 contract/review/Gate 流程。
+Engineering Harness 是 [Superpowers](https://github.com/obra/superpowers) 开发工作流外层的确定性控制平面。它不替代 Agent 或 worker Skill；它持久化任务状态、要求可验证证据，并阻止 Agent 未经 Gate 批准就宣称任务完成。
 
 [架构全景图](docs/architecture.md)
 
-Engineering Harness 是 [Superpowers](https://github.com/obra/superpowers) 开发工作流外层确定性控制平面。它不替代 Agent 或 worker Skill；它持久化任务状态、要求可验证证据，并阻止 Agent 未经 Gate 批准就宣称任务完成。
+## 为什么用 Harness
 
-## 生产可诊断性（v0.2.6）
+你告诉 Agent 要改什么。Harness 把任务、证明和 Gate 结果留在 `.harness/` 里，新会话可以继续同一件工作。在 `harness gate` 打印 `DECISION: CONVERGED` 之前，Agent 不能把任务标成完成。
 
-Q0 跳过可诊断性；Q1 可执行业务 ID、异常上下文、敏感数据的 Agent advisory 检查，但仅用于路由，不构成持久化 Core/Gate 证明。Q2 仅当 Contract 要求时创建 `.harness/observability.yaml` 并执行 `harness review diagnosability`；Q3 始终要求有效 applicability 与 fresh review evidence。Harness 校验 artifact 与 Gate，不提供日志 SDK、OpenTelemetry、自动插日志或通用源码扫描。
+- 小而低风险的修复留在 Q1 / FAST：失败证明、修复、通过证明、Light Gate。
+- 普通交付留在 Q2 / STANDARD：合同、相关测试、review，以及最终计划核对。
+- 高风险变更留在 Q3 / STRICT：一次推进一个计划项。风险可以升级，不会被悄悄降低。
 
-## 解决什么问题
+提问会直接回答，并且不创建任务。只有你提出修改时才开始改代码，例如："Use Engineering Harness to fix this bug: cancelling an order twice issues two refunds."
 
-AI Coding 工作流常见问题：上下文丢失、Agent 自证完成、测试或证据过期、review finding 未复现、修复循环不收敛、功能正确但实现复杂度不必要。
+## 5 分钟上手
 
-Harness 将这些风险变为可持久化、可检查控制：
+通过一条显式 bootstrap 命令安装 Superpowers、Pi skills 和匹配版本的确定性 CLI。未指定版本时，安装器解析 npm `latest`，并在修改安装前要求存在匹配 Git tag：
 
-```text
-State + Contract + Invariant + Executable Test + Evidence + Deterministic Gate
+```bash
+curl -fsSL https://raw.githubusercontent.com/yezhwi/superpowers-engineering-harness/main/scripts/install-pi.sh | bash
 ```
 
-## 设计原理
+需要固定版本时：
 
-| 层 | 职责 |
-|---|---|
-| Model | 推理和修改代码的 Worker |
-| Superpowers | 设计、计划、TDD、review 等开发工作流 |
-| Engineering Harness | 状态、合同、证据、finding、gate 控制器 |
-| Tests / compiler / gate | 事实来源 |
+```bash
+curl -fsSL https://raw.githubusercontent.com/yezhwi/superpowers-engineering-harness/main/scripts/install-pi.sh | bash -s -- v0.2.10
+```
 
-Harness 适合 Agent 驱动功能开发和 bug 修复交付；不替代 CI、安全扫描或人工架构决策。
+安装器检查是否已配置 Superpowers，仅在缺失时安装；同时协调固定版本的 Harness Pi skills，把匹配 Python CLI 安装到隔离用户环境，并暴露 `~/.local/bin/harness`。如果 `~/.local/bin` 不在 `PATH`，安装器会给出提示。重复安装相同版本保持幂等。若本地安全策略要求，请先审查下载脚本再执行。
+
+源码开发时，另行使用 `python -m pip install -e /path/to/superpowers-engineering-harness` 安装可编辑环境。
+
+仓库只需初始化一次。之后的日常工作是向 Agent 说明要做什么。Engineering Harness skill 读取持久化状态，并自己调用 `harness`。你不需要输入这些命令。
+
+```bash
+cd your-project
+harness init
+```
+
+打开会话并说明要改什么，例如：
+
+```text
+Use Engineering Harness to fix this bug: cancelling an order twice issues two refunds.
+```
+
+工作中断后，新开一个会话，让 Agent 继续当前任务。Pi 安装 Skills 后需新开会话。Skills 在会话启动时加载。
+
+### Antigravity CLI（agy）
+
+在任意目录执行一次，安装最新稳定版 Harness CLI 和 AGY 全局 skills：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/yezhwi/superpowers-engineering-harness/main/scripts/install-agy.sh | bash
+```
+
+需要固定版本时：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/yezhwi/superpowers-engineering-harness/main/scripts/install-agy.sh | bash -s -- v0.2.10
+```
+
+安装器更新 `~/.gemini/antigravity-cli/skills/` 下 Harness 自己的 skills，保留无关全局 skills；不会初始化项目。每个 Git 项目中单独运行一次 `harness init`，再用 `agy` 启动 AGY；首次会话可用 `/engineering-harness` 显式调用 Harness。
+
+## 当前日常路径
+
+你描述要做的变更。Agent 负责分类风险、完成实现，并在每个阶段调用 Harness。多数日常 Harness 命令无需交互；Agent 仍可能请求需求澄清、设计批准、接受 Decision、明确跳过或取代某项、受保护操作授权，或处理升级决定。
+
+下面的命令块是 Agent 执行的步骤。`harness status` 是只读操作，不修改 Harness 状态。Gate 输出 `DECISION: CONTINUE` 并写入 blocker 后，Agent 才运行 `harness resume`；它按 blocker code 选择恢复状态，不信任持久化的 `recover_to`。
+
+Q2 / STANDARD 与 Q3 / STRICT 共用 contract、review 和 Gate 路径。Agent 记录 `review outcome PASS`，它执行 `REVIEWING → GATING`：
+
+```bash
+harness status
+harness transition IMPLEMENTING
+harness evidence run --type unit_test --command "pytest tests/test_cancel.py"
+harness transition VERIFYING
+harness review complexity --file review.yaml
+harness transition REVIEWING
+harness review outcome PASS --reason-code REVIEW_CLEAN
+harness gate
+# 检查 DECISION: CONVERGED，然后：
+harness transition DONE
+```
+
+阻塞恢复（`harness gate` 输出 `DECISION: CONTINUE`；Gate 持久化 blocker，`harness resume` 按 code 推导目标状态）：
+
+```bash
+harness gate
+# 仅在 DECISION: CONTINUE 后
+harness resume
+```
+
+进入 `VERIFYING` 前记录影响范围和关联测试。Harness 永不执行全量测试，即使仓库指令要求执行。证据 scope 固定为 `related`，且必须覆盖全部 required tests：
+
+```bash
+harness impact add-change src/orders/cancel.py
+harness impact add-test tests/test_cancel.py::test_duplicate_cancel_single_refund
+harness evidence run --type unit_test --scope related --covered-test tests/test_cancel.py::test_duplicate_cancel_single_refund --command "pytest tests/test_cancel.py::test_duplicate_cancel_single_refund"
+```
+
+关联 test evidence 采用 append-only 文件名（`unit-test-<hash>.json`）。Gate 合并所有 fresh record 的 `covered_tests`，新增一个 required test 时只需运行该 test。`VERIFYING → REVIEWING` 先执行 freshness preflight；required evidence stale 时拒绝进入。STANDARD/STRICT task plan 声明的 test target 文件不存在时也会拒绝。Review reason code 为受控集合：匹配的结果使用 `REVIEW_CLEAN`、`TEST_COVERAGE_INSUFFICIENT`、`EVIDENCE_INCOMPLETE`、`INVARIANT_UNPROVEN`、`TEST_SCOPE_INSUFFICIENT`、`LOGIC_ERROR`、`REGRESSION`、`CONTRACT_VIOLATION` 或 `INVARIANT_VIOLATION`。
+
+### Q1 / FAST
+
+提问或解释属于 Q0：Agent 直接回答，不创建 Harness task。Q1 / FAST 仅限范围窄、低风险的工作。必须显式分类；当前业务路径已命中 `.harness/risk-boundaries.yaml` 的 Q2/Q3 时，Q1 分类失败且不落盘。FAST 在读取 Plan、Markdown 或自动 evidence source 之前返回。它仍要求 task 级失败 RED、成功 GREEN 证据和 Light Gate，但跳过 impact、复杂度审查、requirements、invariants ceremony。`harness status` 的 Build/Unit/Integration 摘要与 Evidence 列表使用同一 live projection。若 work item 已在目标分支实现，用 `harness task verify-existing` 记录有效 existing-verification，禁止伪造 RED；普通缺陷修复仍走 RED→GREEN。`requires_reproduction` 保持 task 为 `CLASSIFIED`，创建或恢复 finding 后正常复现。
+
+```bash
+harness task classify --level Q1 --scope low --contract none --data none \
+  --authorization none --security none --concurrency none --deployment none
+harness transition IMPLEMENTING
+# 修复前记录失败 regression proof，修复后记录通过 proof
+harness evidence run --type unit_test --phase red --covered-test tests/test_x.py::test_x --command "pytest tests/test_x.py::test_x"
+harness evidence run --type unit_test --phase green --covered-test tests/test_x.py::test_x --command "pytest tests/test_x.py::test_x"
+harness transition VERIFYING
+harness transition GATING
+harness gate
+```
+
+FAST 不授予外部操作权限。每种授权在当前 task 内独立；只授权用户请求的动作。不存在全量测试授权：
+
+```bash
+harness authorize commit
+harness authorize push
+# 另有 create-mr、ready-mr、merge、deploy；用 revoke-<action> 撤销
+```
+
+### Q2 / STANDARD
+
+标准变更由 Agent 维护一份最终核对计划，并在 Gate 前完成核对。Q2 使用 final-only Plan execution v1。`harness plan status` 报告最终核对是否通过。`--verbose` 增加不含正文的项与 proof-health 视图。`harness gate preflight` 保留原有 `READY:` 和 blocker 行，再追加同一次 assessment 的 Plan 摘要。没有单独的 Gate preview 命令。Q2 不使用 Q3 日志命令。
+
+```bash
+harness plan status
+harness plan status --verbose
+harness plan sync-markdown docs/plan.md
+harness gate preflight
+```
+
+### Q3 / STRICT
+
+严格工作由 Agent 按计划项推进，跳过或取代某一项之前会先问你。Q3 使用可重放的 execution v2，并保留相同且独立的最终证明检查。日志命令在现有锁下写入 `.harness/plan-execution.yaml`。`harness plan begin` 只能开始规范顺序中的下一个未终态项。`block` 和 `plan resume` 只改变该项；它们不调用 `harness resume`，也不改变顶层任务状态。`refresh-proof` 替换当前 COMPLETE 证明。`upgrade-execution` 只在现有记录全部仍是 `PENDING` 时发布空的 v2 日志。
+
+```bash
+# 开始首个计划项前，先升级仍为 all-PENDING 的旧版 v1 execution。
+harness plan upgrade-execution
+harness plan begin P-001
+harness plan block P-001 --reason "waiting on an accepted decision"
+harness plan resume P-001
+
+# 二选一：自动推导机械证明，
+harness plan reconcile P-001 --auto
+# 或显式提交证明。
+harness plan reconcile P-001 --complete \
+  --evidence unit-test-<digest> --surface src/example.py
+
+# 仅在 evidence 或 changed surface 变化后刷新证明。
+harness plan refresh-proof P-001 \
+  --evidence unit-test-<new-digest> --surface src/example.py
+```
+
+`SKIPPED` 和 `SUPERSEDED` 是显式 `reconcile` 处置。Q3 的这两项必须有已接受的 Decision；`--auto` 不能创建它们，也不能创建 reason、Decision 或执行历史。省略 `--verbose` 时，默认 `harness plan status` 输出保持兼容。
+
+风险只能升级，不能降级。Evidence reuse、soft budget、local telemetry、fixture benchmark 已提供；remote telemetry 和外部 agent benchmark 声明不提供。
+
+## 边界
+
+> **安全边界：** `harness evidence run --command` 以本地 Harness 操作者直接输入、受信任 shell 文本执行（`shell=True`）。
+
+禁止将远程请求、配置值、API payload、CI 元数据或任何不可信输入转发给此选项。
+
+Markdown checkbox 是 canonical Plan execution 的单向投影。它不是 Gate 输入，不是证明，也不是事实来源。`harness plan sync-markdown` 只修改显式仓库路径里的勾选字符。
+
+`--auto` 只能确立机械 `COMPLETE`。它选择有界的证据覆盖和已变更表面，再把一条普通 COMPLETE 请求交给现有的加锁核对路径。它不能选择 `SKIPPED` 或 `SUPERSEDED`。
+
+**Gate 与 Finding 契约：** 只有 `harness gate` 可以评估或持久化产品 Gate 结果；直接运行 `python scripts/quality_gate.py` 已禁用。持久化 Finding 必须显式声明 category（`adversarial`、`diagnosability`、`complexity` 或 `interface`）；无 category 的旧记录以 `MIGRATION_REQUIRED` 失败。`finding.schema.json` 已删除，改用分类 Schema。
+
+### 铁律
+
+1. 任务状态存于 `.harness/current-task.yaml`，不能只存在模型上下文。
+2. 状态转换受固定状态机控制。
+3. 必须 Gate PASS 才可 `CONVERGED → DONE`。
+4. CONFIRMED bug 必须有回归测试。
+5. Evidence 必须新鲜，并绑定当前 Git HEAD/workspace。
+6. 有界迭代耗尽进入 `ESCALATED`，不允许无限修复。
+7. Markdown 不是 Gate 事实。权威来源仍是 canonical Plan YAML。
+8. `--auto` 只记录机械 `COMPLETE`。语义上的 skip 和 supersede 仍是操作者的显式处置。
 
 ## 版本演进
 
@@ -59,6 +212,10 @@ v0.2.9  实现前 Alignment 闭环与冻结
 v0.2.10 Canonical Plan execution reconciliation
         + Q3 journal + Context/status + mechanical projections
 ```
+
+`v0.2.10 current release`；既有 risk-adaptive、Context 与 Alignment safeguard 均保留。v0.2.10 新增确定性 Plan Reconciliation：canonical execution artifacts、Q3 task-level journal、权威 Context/status 投影、受限 Markdown 同步、有界 Q3 自动 COMPLETE proof，以及复用单次 assessment 的 Gate preflight 报告。它不把 Markdown 当作 Gate truth、不合成执行历史，也不推断 SKIPPED/SUPERSEDED 的语义理由。见 [v0.2.10 实现契约](docs/Superpowers-Engineering-Harness-v0.2.10-Implementation-Contract.md)。
+
+**Routing：** Q0 直接回答、不创建 task；Q1 / FAST 使用 RED/fix/GREEN/Light Gate；Q2 / STANDARD 与 Q3 / STRICT 使用完整 contract/review/Gate 流程。
 
 ## Engineering Quality
 
@@ -89,8 +246,6 @@ v0.2.10 Canonical Plan execution reconciliation
 
 Harness 负责状态、证据、Finding 生命周期和 Gate；Agent 判断业务语义与日志质量。Harness 不提供 logger SDK、OpenTelemetry、APM、自动插日志或通用源码扫描。
 
-## 流程
-
 ```text
 Requirement
   ↓
@@ -111,149 +266,22 @@ Quality Gate (GATING)
 CONVERGED → DONE
 ```
 
-铁律：
+## 仍然生效的规则
 
-1. 任务状态存于 `.harness/current-task.yaml`，不能只存在模型上下文。
-2. 状态转换受固定状态机控制。
-3. 必须 Gate PASS 才可 `CONVERGED → DONE`。
-4. CONFIRMED bug 必须有回归测试。
-5. Evidence 必须新鲜，并绑定当前 Git HEAD/workspace。
-6. 有界迭代耗尽进入 `ESCALATED`，不允许无限修复。
-
-## 5 分钟上手
-
-通过一条显式 bootstrap 命令安装 Superpowers、Pi skills 和匹配版本的确定性 CLI。未指定版本时，安装器解析 npm `latest`，并在修改安装前要求存在匹配 Git tag：
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/yezhwi/superpowers-engineering-harness/main/scripts/install-pi.sh | bash
-```
-
-需要固定版本时：
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/yezhwi/superpowers-engineering-harness/main/scripts/install-pi.sh | bash -s -- v0.2.10
-```
-
-安装器检查是否已配置 Superpowers，仅在缺失时安装；同时协调固定版本的 Harness Pi skills，把匹配 Python CLI 安装到隔离用户环境，并暴露 `~/.local/bin/harness`。如果 `~/.local/bin` 不在 `PATH`，安装器会给出提示。重复安装相同版本保持幂等。若本地安全策略要求，请先审查下载脚本再执行。
-
-源码开发时，另行使用 `python -m pip install -e /path/to/superpowers-engineering-harness` 安装可编辑环境。
-
-初始化目标仓库；每个会话从持久化状态开始：
-
-```bash
-cd your-project
-harness init
-harness status
-```
-
-向 Agent 发起 Harness 工作，例如：
+AI Coding 工作流常见问题：上下文丢失、Agent 自证完成、测试或证据过期、review finding 未复现、修复循环不收敛、功能正确但实现复杂度不必要。Harness 将这些风险变为可持久化、可检查控制：
 
 ```text
-Use Engineering Harness to fix this bug: cancelling an order twice issues two refunds.
+State + Contract + Invariant + Executable Test + Evidence + Deterministic Gate
 ```
 
-Pi 安装 Skills 后需新开会话。Skills 在会话启动时加载。
+| 层 | 职责 |
+|---|---|
+| Model | 推理和修改代码的 Worker |
+| Superpowers | 设计、计划、TDD、review 等开发工作流 |
+| Engineering Harness | 状态、合同、证据、finding、gate 控制器 |
+| Tests / compiler / gate | 事实来源 |
 
-### Antigravity CLI（agy）
-
-在任意目录执行一次，安装最新稳定版 Harness CLI 和 AGY 全局 skills：
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/yezhwi/superpowers-engineering-harness/main/scripts/install-agy.sh | bash
-```
-
-需要固定版本时：
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/yezhwi/superpowers-engineering-harness/main/scripts/install-agy.sh | bash -s -- v0.2.10
-```
-
-安装器更新 `~/.gemini/antigravity-cli/skills/` 下 Harness 自己的 skills，保留无关全局 skills；不会初始化项目。每个 Git 项目中单独运行一次 `harness init`，再用 `agy` 启动 AGY；首次会话可用 `/engineering-harness` 显式调用 Harness。
-
-## 日常使用
-
-> **安全边界：** `harness evidence run --command` 以本地 Harness 操作者直接输入、受信任 shell 文本执行（`shell=True`）。
-
-禁止将远程请求、配置值、API payload、CI 元数据或任何不可信输入转发给此选项。
-
-**Gate 与 Finding 契约：** 只有 `harness gate` 可以评估或持久化产品 Gate 结果；直接运行 `python scripts/quality_gate.py` 已禁用。持久化 Finding 必须显式声明 category（`adversarial`、`diagnosability`、`complexity` 或 `interface`）；无 category 的旧记录以 `MIGRATION_REQUIRED` 失败。`finding.schema.json` 已删除，改用分类 Schema。
-
-正常成功路径（`review outcome PASS` 执行 `REVIEWING → GATING`）：
-
-```bash
-harness status
-harness transition IMPLEMENTING
-harness evidence run --type unit_test --command "pytest tests/test_cancel.py"
-harness transition VERIFYING
-harness review complexity --file review.yaml
-harness transition REVIEWING
-harness review outcome PASS --reason-code REVIEW_CLEAN
-harness gate
-# 检查 DECISION: CONVERGED，然后：
-harness transition DONE
-```
-
-阻塞恢复路径（`harness gate` 输出 `DECISION: CONTINUE`；Gate 持久化 blocker，`harness resume` 按 code 推导目标状态）：
-
-```bash
-harness gate
-# 仅在 DECISION: CONTINUE 后
-harness resume
-```
-
-进入 `VERIFYING` 前记录影响范围和关联测试。Harness 永不执行全量测试，即使仓库指令要求执行。证据 scope 固定为 `related`，且必须覆盖全部 required tests：
-
-```bash
-harness impact add-change src/orders/cancel.py
-harness impact add-test tests/test_cancel.py::test_duplicate_cancel_single_refund
-harness evidence run --type unit_test --scope related --covered-test tests/test_cancel.py::test_duplicate_cancel_single_refund --command "pytest tests/test_cancel.py::test_duplicate_cancel_single_refund"
-```
-
-关联 test evidence 采用 append-only 文件名（`unit-test-<hash>.json`）。Gate 合并所有 fresh record 的 `covered_tests`，新增一个 required test 时只需运行该 test。`VERIFYING → REVIEWING` 先执行 freshness preflight；required evidence stale 时拒绝进入。STANDARD/STRICT task plan 声明的 test target 文件不存在时也会拒绝。
-
-会话中断后运行 `harness status`；Harness 从 `.harness/current-task.yaml` 恢复。`status` 是只读 projection；Gate 阻塞后运行 `harness resume`，Harness 按 typed blocker code 自动选择正确恢复状态，不信任持久化 `recover_to`。Review reason code 为受控集合，例如 `TEST_COVERAGE_INSUFFICIENT`、`EVIDENCE_INCOMPLETE`、`LOGIC_ERROR`。
-
-### 风险自适应流程（v0.2.3）
-
-- **Q0：** 直接回答；不创建 Harness task。
-- **Q1 / FAST：** 仅限范围窄、低风险工作。必须显式分类；当前业务路径已命中 `.harness/risk-boundaries.yaml` 的 Q2/Q3 时，Q1 分类失败且不落盘。FAST 仍要求 task 级失败 RED、成功 GREEN 证据和 Light Gate，但跳过 impact、复杂度审查、requirements、invariants ceremony。`harness status` 的 Build/Unit/Integration 摘要与 Evidence 列表使用同一 live projection。若 work item 已在目标分支实现，用 `harness task verify-existing` 记录有效 existing-verification，禁止伪造 RED；普通缺陷修复仍走 RED→GREEN。`requires_reproduction` 保持 task 为 `CLASSIFIED`，创建或恢复 finding 后正常复现。
-- **Q2 / STANDARD** 与 **Q3 / STRICT：** 使用现有完整 Harness 流程。风险只能升级，不能降级。
-
-### Plan reconciliation（v0.2.10）
-
-STANDARD/Q2 使用 final-only execution v1。STRICT/Q3 使用可重放的 task-level execution v2，并保留相同且独立的 final proof checks。FAST/Q1 在读取 Plan、Markdown 或自动 evidence source 前直接返回。
-
-```bash
-harness plan status                  # 只读 canonical summary
-harness plan status --verbose        # opt-in body-free item/proof health
-harness plan sync-markdown docs/plan.md
-harness plan reconcile P-001 --auto  # 仅 Q3 COMPLETE
-harness gate preflight               # 既有 preflight 追加 Plan section
-```
-
-Markdown checkbox 只是单向 projection，永远不是 Gate truth。`--auto` 选择有界 mechanical proof，再委托既有 locked reconciliation path；它不能创建 SKIPPED、SUPERSEDED、reason、Decision 或执行历史。默认 status 输出保持兼容，也不新增独立 Gate preview command。
-
-```bash
-harness task classify --level Q1 --scope low --contract none --data none \
-  --authorization none --security none --concurrency none --deployment none
-harness transition IMPLEMENTING
-# 修复前记录失败 regression proof，修复后记录通过 proof
-harness evidence run --type unit_test --phase red --covered-test tests/test_x.py::test_x --command "pytest tests/test_x.py::test_x"
-harness evidence run --type unit_test --phase green --covered-test tests/test_x.py::test_x --command "pytest tests/test_x.py::test_x"
-harness transition VERIFYING
-harness transition GATING
-harness gate
-```
-
-FAST 不授予外部操作权限。每种授权在当前 task 内独立；只授权用户请求的动作；不存在全量测试授权：
-
-```bash
-harness authorize commit
-harness authorize push
-# 另有 create-mr、ready-mr、merge、deploy；用 revoke-<action> 撤销
-```
-
-Evidence reuse、soft budget、local telemetry、fixture benchmark 已提供；remote telemetry 和外部 agent benchmark 声明不提供。
+Harness 适合 Agent 驱动功能开发和 bug 修复交付；不替代 CI、安全扫描或人工架构决策。
 
 ### FAST 仓库验证
 
@@ -398,6 +426,10 @@ harness review complexity --file complexity-review.yaml
 ```
 
 开放 HIGH complexity finding 阻塞 gate；MEDIUM 和 LOW 仅提示。安全、授权、审计、兼容性、迁移、无障碍和 NFR 所需复杂度不自动视为过度设计。Complexity review 默认使用任务 Git baseline，包含已提交、staged、unstaged 和相关 untracked 变更；`--base` 仅作显式 override。
+
+## 生产可诊断性（v0.2.6）
+
+Q0 跳过可诊断性；Q1 可执行业务 ID、异常上下文、敏感数据的 Agent advisory 检查，但仅用于路由，不构成持久化 Core/Gate 证明。Q2 仅当 Contract 要求时创建 `.harness/observability.yaml` 并执行 `harness review diagnosability`；Q3 始终要求有效 applicability 与 fresh review evidence。Harness 校验 artifact 与 Gate，不提供日志 SDK、OpenTelemetry、自动插日志或通用源码扫描。
 
 ## 依赖与 token 使用
 
