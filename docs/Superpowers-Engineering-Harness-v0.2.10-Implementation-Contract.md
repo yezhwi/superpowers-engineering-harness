@@ -1,9 +1,11 @@
 # Superpowers Engineering Harness v0.2.10
 ## Plan Execution Reconciliation — Implementation Contract
 
-> Status: P0/P1A/P1B implemented; P1C design draft; P2 planned
+> Status: P0/P1A/P1B/P1C implemented; P2 design approved
 > Authority: this document resolves implementation ambiguity in
 > `docs/Superpowers-Engineering-Harness-v0.2.10-Plan-Execution-Reconciliation.md`.
+> P2 design authority: `docs/superpowers/specs/2026-09-29-v0210-plan-reconciliation-p2-design.md`.
+> P2 execution plan: `docs/superpowers/plans/2026-09-29-v0210-plan-reconciliation-p2.md`.
 > Scope: deterministic control-plane support for reconciling implementation-plan items.
 
 ## 1. Goal and non-goal
@@ -281,9 +283,10 @@ Tests are control-plane fixtures. They do not claim that Harness observed an Age
 
 ### P2
 
-- Markdown checkbox projection;
-- automatic mechanical reconciliation assistance;
-- richer reports.
+- explicit one-way Markdown checkbox projection from trusted execution; Markdown remains non-authoritative;
+- bounded Q3 mechanical automation for ordinary `COMPLETE` reconciliation only, through the existing locked mutation path;
+- opt-in verbose status plus an appended Plan section in existing Gate preflight, both body-free and backed by one `PlanAssessment`;
+- request-local indexes only; no new lock, canonical artifact, evidence type, Gate command, Q2 journal mutation, or FAST Plan read.
 
 ## 11. Explicit exclusions
 
