@@ -52,6 +52,7 @@ def _main(argv=None) -> int:
     plan_sub = p_plan.add_subparsers(dest="plan_command", required=True)
     p_plan_status = plan_sub.add_parser("status", help="report read-only plan status")
     p_plan_status.add_argument("--json", dest="plan_json", action="store_true")
+    p_plan_status.add_argument("--verbose", dest="plan_verbose", action="store_true")
     p_plan_sync = plan_sub.add_parser(
         "sync-markdown", help="project canonical Plan state into explicit Markdown"
     )
@@ -420,7 +421,7 @@ def _main(argv=None) -> int:
     if args.subcommand == "status":
         return controlplane.cmd_status(Path(args.harness_dir).resolve())
     if args.subcommand == "plan" and args.plan_command == "status":
-        return controlplane.cmd_plan_status(args.plan_json)
+        return controlplane.cmd_plan_status(args.plan_json, args.plan_verbose)
     if args.subcommand == "plan" and args.plan_command == "sync-markdown":
         return controlplane.cmd_plan_sync_markdown(args.target)
     if args.subcommand == "plan":

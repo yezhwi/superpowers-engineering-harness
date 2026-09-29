@@ -50,8 +50,18 @@ def test_plan_status_disabled_json_is_exact_and_read_only(harness):
 
     assert result.returncode == human.returncode == 0, result.stderr + human.stderr
     assert json.loads(result.stdout) == {"enabled": False}
+    assert result.stdout == '{\n  "enabled": false\n}\n'
     assert human.stdout == "Plan Execution\n\nStatus: disabled\n"
     assert repository_bytes(harness.parent) == before
+
+
+def test_plan_status_verbose_parser_accepts_text_and_json(harness):
+    text = cli(harness.parent, "plan", "status", "--verbose")
+    machine = cli(harness.parent, "plan", "status", "--json", "--verbose")
+
+    assert text.returncode == machine.returncode == 0
+    assert text.stdout == "Plan Execution\n\nStatus: disabled\n"
+    assert json.loads(machine.stdout) == {"enabled": False, "items": []}
 
 
 def test_plan_status_fast_ad_hoc_enablement_ignores_malformed_artifacts(harness):
@@ -303,6 +313,93 @@ def test_plan_status_passing_text_omits_empty_blockers(harness):
     assert "Next: -" in human.stdout
     assert "Blockers:" not in human.stdout
     assert repository_bytes(harness.parent) == before
+
+
+def test_plan_status_verbose_projects_body_free_item_rows(harness):
+    from harness.plan_reconciliation import plan_fingerprint
+
+    enable_plan_status(harness)
+    plan = {
+        "version": 1,
+        "items": [
+            {
+                "id": "P-001",
+                "intent": "SECRET-INTENT",
+                "surfaces": ["src/example.py"],
+            },
+            {
+                "id": "P-002",
+                "intent": "SECRET-SECOND",
+                "test_case_refs": ["REQ-001/TC-001"],
+            },
+        ],
+    }
+    execution = {
+        "version": 1,
+        "plan": {
+            "path": ".harness/plan.yaml",
+            "fingerprint": plan_fingerprint(plan),
+        },
+        "items": {
+            "P-001": {"status": "COMPLETE"},
+            "P-002": {"status": "SKIPPED", "reason": "SECRET-REASON"},
+        },
+    }
+    (harness / "plan.yaml").write_text(yaml.safe_dump(plan))
+    (harness / "plan-execution.yaml").write_text(yaml.safe_dump(execution))
+
+    machine = cli(harness.parent, "plan", "status", "--json", "--verbose")
+    human = cli(harness.parent, "plan", "status", "--verbose")
+
+    assert machine.returncode == human.returncode == 0, machine.stderr + human.stderr
+    report = json.loads(machine.stdout)
+    assert report["final_status"] == "blocked"
+    assert report["items"] == [
+        {
+            "id": "P-001",
+            "status": "COMPLETE",
+            "proof_branch": "surfaces",
+            "proof_health": "missing",
+            "blockers": [
+                {"code": "PLAN_PROOF_MISSING", "recovery": "VERIFYING"}
+            ],
+        },
+        {
+            "id": "P-002",
+            "status": "SKIPPED",
+            "proof_branch": "tests",
+            "proof_health": "not_applicable",
+            "blockers": [
+                {"code": "PLAN_DISPOSITION_INVALID", "recovery": "IMPLEMENTING"}
+            ],
+        },
+    ]
+    assert "Items:\n  P-001 COMPLETE surfaces missing" in human.stdout
+    assert "P-002 SKIPPED tests not_applicable" in human.stdout
+    for secret in ("SECRET-INTENT", "SECRET-SECOND", "SECRET-REASON"):
+        assert secret not in machine.stdout
+        assert secret not in human.stdout
+
+
+def test_plan_status_verbose_untrusted_rows_have_null_status(harness):
+    enable_plan_status(harness)
+    _plan, execution = write_plan_artifacts(harness, stale=True)
+    execution["items"]["P-001"] = {"status": "COMPLETE"}
+    (harness / "plan-execution.yaml").write_text(yaml.safe_dump(execution))
+
+    result = cli(harness.parent, "plan", "status", "--json", "--verbose")
+
+    assert result.returncode == 0, result.stderr
+    report = json.loads(result.stdout)
+    assert report["items"] == [
+        {
+            "id": "P-001",
+            "status": None,
+            "proof_branch": "none",
+            "proof_health": "untrusted",
+            "blockers": [],
+        }
+    ]
 
 
 def test_plan_status_complete_with_failed_proof_stays_reconciled_and_blocked(harness):

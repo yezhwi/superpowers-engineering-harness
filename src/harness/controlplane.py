@@ -147,11 +147,26 @@ def _render_plan_status(report: dict) -> str:
         for blocker in report["blockers"]:
             source = f" [{blocker['source']}]" if blocker["source"] else ""
             lines.append(f"  {blocker['code']}{source} {blocker['message']}")
+    if "items" in report:
+        lines.extend(["", "Items:"])
+        for item in report["items"]:
+            lines.append(
+                f"  {item['id']} {item['status'] or '-'} "
+                f"{item['proof_branch']} {item['proof_health']}"
+            )
+            lines.extend(
+                f"    {blocker['code']} -> {blocker['recovery'] or '-'}"
+                for blocker in item["blockers"]
+            )
     return "\n".join(lines)
 
 
-def cmd_plan_status(json_output: bool) -> int:
+def cmd_plan_status(json_output: bool, verbose: bool = False) -> int:
+    from . import plan_reporting
+
     harness_dir = Path(".harness")
+    plan = None
+    assessment = None
     try:
         task = load_task(harness_dir)
         quality_gate.validate_schema(
@@ -174,6 +189,11 @@ def cmd_plan_status(json_output: bool) -> int:
             report = plan_reconciliation.plan_status_report(
                 task, plan, execution, assessment
             )
+        if verbose:
+            if assessment is None:
+                report = {**report, "items": []}
+            else:
+                report = plan_reporting.with_verbose_items(report, plan, assessment)
     except (
         HarnessStateError,
         OSError,
