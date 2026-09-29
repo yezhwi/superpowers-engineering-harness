@@ -1,6 +1,7 @@
 ---
 name: convergence
 description: "Use when `harness gate` has printed DECISION: CONVERGED, CONTINUE, or ESCALATED and the loop must finish, resume, or stop. Applies autonomous convergence policy rules with no scoring."
+compatibility: Requires Python 3.11+, Git, and a matching superpowers-engineering-harness CLI installed separately.
 ---
 
 # Convergence Skill

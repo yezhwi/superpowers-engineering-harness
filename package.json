@@ -1,8 +1,33 @@
 {
 	"name": "superpowers-engineering-harness",
 	"version": "0.2.10",
-	"description": "Deterministic engineering harness for AI coding workflows with persistent state, evidence, adversarial review, and quality gates.",
-	"files": ["README.md", "LICENSE", "SKILL.md", "skills"],
+	"description": "Pi skills for deterministic, evidence-backed engineering workflows; requires the separately installed Harness CLI.",
+	"license": "Apache-2.0",
+	"author": {
+		"name": "Yezhiwei"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/yezhwi/superpowers-engineering-harness.git"
+	},
+	"homepage": "https://github.com/yezhwi/superpowers-engineering-harness#readme",
+	"bugs": {
+		"url": "https://github.com/yezhwi/superpowers-engineering-harness/issues"
+	},
+	"files": [
+		"README.md",
+		"README.zh-CN.md",
+		"LICENSE",
+		"SKILL.md",
+		"skills",
+		"docs/architecture.md",
+		"docs/Superpowers-Engineering-Harness-v0.2.10-Implementation-Contract.md",
+		"docs/2026-09-07-evidence-freshness-and-test-path-binding-issues.md",
+		"docs/superpowers/specs/2026-08-26-v022-flow-hardening-design.md",
+		"docs/superpowers/specs/2026-08-25-v02-minimal-complexity-design.md",
+		"docs/worked-example.md",
+		"docs/engineering-harness-v0.1.md"
+	],
 	"keywords": [
 		"pi-package",
 		"engineering-harness",

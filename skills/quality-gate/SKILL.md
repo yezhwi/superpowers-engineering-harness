@@ -1,6 +1,7 @@
 ---
 name: quality-gate
 description: "Use when task state is GATING and a go/no-go decision is needed before CONVERGED. Runs `harness gate` and follows `DECISION:`; MUST NOT assess quality by judgement."
+compatibility: Requires Python 3.11+, Git, and a matching superpowers-engineering-harness CLI installed separately.
 ---
 
 # Quality Gate Skill

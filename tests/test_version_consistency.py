@@ -24,6 +24,27 @@ def test_current_release_metadata_is_publishable():
     assert f"## {expected} (unreleased)" not in changelog
 
 
+def test_npm_and_python_package_metadata_describe_same_license_and_source():
+    package = json.loads((REPO / "package.json").read_text())
+    project = tomllib.loads((REPO / "pyproject.toml").read_text())["project"]
+
+    assert package["license"] == project["license"] == "Apache-2.0"
+    assert package["author"] == {"name": "Yezhiwei"}
+    assert package["repository"] == {
+        "type": "git",
+        "url": "git+https://github.com/yezhwi/superpowers-engineering-harness.git",
+    }
+    assert package["homepage"] == (
+        "https://github.com/yezhwi/superpowers-engineering-harness#readme"
+    )
+    assert package["bugs"] == {
+        "url": "https://github.com/yezhwi/superpowers-engineering-harness/issues"
+    }
+    assert "Pi skills" in package["description"]
+    assert "Harness CLI" in package["description"]
+    assert (REPO / "LICENSE").read_text().startswith("Apache License\nVersion 2.0")
+
+
 def test_v027_release_notes_document_diagnosability():
     changelog = (REPO / "CHANGELOG.md").read_text()
     release = changelog.split("## 0.2.4", 1)[0]

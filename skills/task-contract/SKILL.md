@@ -1,6 +1,7 @@
 ---
 name: task-contract
 description: "Turn a User Requirement into a Task Contract: Acceptance Criteria, Requirements, Invariants, Risks, Verification Plan. Produces .harness/requirements.yaml and .harness/invariants.yaml and advances task state CLASSIFIED -> SPECIFYING -> PLANNED. This skill MUST NOT implement business code."
+compatibility: Requires Python 3.11+, Git, and a matching superpowers-engineering-harness CLI installed separately.
 ---
 
 # Task Contract Skill

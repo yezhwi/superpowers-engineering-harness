@@ -1,6 +1,7 @@
 ---
 name: minimal-implementation
 description: Run before implementation to record minimal necessary approach using Harness Decision Ladder.
+compatibility: Requires Python 3.11+, Git, and a matching superpowers-engineering-harness CLI installed separately.
 ---
 
 # Minimal Implementation Check

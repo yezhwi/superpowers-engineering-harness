@@ -1,6 +1,7 @@
 ---
 name: adversarial-review
 description: "Adversarial review of a Task Contract: construct failure scenarios, attempt to violate Requirements and Invariants. Produces .harness/findings/FND-nnn.yaml files with status=PROPOSED only. This skill MUST NOT confirm bugs, review code style, or suggest refactors."
+compatibility: Requires Python 3.11+, Git, and a matching superpowers-engineering-harness CLI installed separately.
 ---
 
 # Adversarial Review Skill

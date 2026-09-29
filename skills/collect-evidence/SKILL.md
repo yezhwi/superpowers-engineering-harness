@@ -1,6 +1,7 @@
 ---
 name: collect-evidence
 description: "Use when entering VERIFYING or before GATING and fresh evidence is required. Decides which evidence types the task needs, then runs collect_evidence.py; MUST NOT judge pass/fail itself."
+compatibility: Requires Python 3.11+, Git, and a matching superpowers-engineering-harness CLI installed separately.
 ---
 
 # Collect Evidence Skill

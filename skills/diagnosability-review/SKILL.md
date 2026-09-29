@@ -1,6 +1,7 @@
 ---
 name: diagnosability-review
 description: Review Q2/Q3 changed business paths for production diagnosability and persist structured review input.
+compatibility: Requires Python 3.11+, Git, and a matching superpowers-engineering-harness CLI installed separately.
 ---
 
 # Diagnosability Review

@@ -122,13 +122,15 @@ CONVERGED → DONE
 
 ## 5 分钟上手
 
-安装 worker 工作流、Harness Skills 和确定性 CLI：
+安装 worker 工作流、Pi skills 和匹配版本的确定性 CLI。npm package 只包含 skills，不会安装 Python `harness` 命令。
 
 ```bash
 pi install git:github.com/obra/superpowers
-pi install git:github.com/yezhwi/superpowers-engineering-harness
-pip install -e /path/to/superpowers-engineering-harness
+pi install npm:superpowers-engineering-harness@0.2.10
+python -m pip install "superpowers-engineering-harness @ git+https://github.com/yezhwi/superpowers-engineering-harness.git@v0.2.10"
 ```
+
+npm skills 与 Harness CLI 必须保持相同 release 版本。源码开发时，可将最后一条命令替换为 `python -m pip install -e /path/to/superpowers-engineering-harness`。
 
 初始化目标仓库；每个会话从持久化状态开始：
 
@@ -372,7 +374,7 @@ stdout 分别列出历史 `overall:` 与 v0.2.9 `experiment:`。缺 usage 或不
 
 ### 自动编排
 
-当 Engineering Harness Skill 控制任务时，它会在 `PLANNED` 自动调用 Minimal Implementation Check、在 `VERIFYING` 前记录 impact analysis、在验证全绿后且 `REVIEWING` 前调用 Complexity Reviewer。状态 guard 拒绝跳过记录。全量测试授权仍必须由人类显式决定。
+当 Engineering Harness Skill 控制任务时，它会在 `PLANNED` 自动调用 Minimal Implementation Check、在 `VERIFYING` 前记录 impact analysis、在验证全绿后且 `REVIEWING` 前调用 Complexity Reviewer。状态 guard 拒绝跳过记录。全量测试始终禁止；只运行明确列出的影响相关测试。
 
 ## v0.2：必要复杂度
 
@@ -406,8 +408,10 @@ Harness 依赖 Superpowers worker Skills，尤其 brainstorming、writing-plans�
 - [完整生命周期示例](docs/worked-example.md)
 - [历史 v0.1 实施手册](docs/engineering-harness-v0.1.md)
 
+只运行明确列出的影响相关测试。package metadata 区域示例：
+
 ```bash
-python -m pytest tests/ -q
+python -m pytest tests/test_version_consistency.py tests/test_readme_docs.py -q
 ```
 
 ## 许可证

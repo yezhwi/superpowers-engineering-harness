@@ -1,6 +1,7 @@
 ---
 name: reproduce-finding
 description: "Reproduce an adversarial finding through the mandatory lifecycle PROPOSED -> REPRODUCING -> CONFIRMED (bug reproduced, test RED) -> FIXING -> FIXED (test GREEN) -> VERIFIED (full regression) -> CLOSED, or REJECTED. Each status has one meaning and its own evidence requirement. No status may skip or shortcut this path."
+compatibility: Requires Python 3.11+, Git, and a matching superpowers-engineering-harness CLI installed separately.
 ---
 
 # Reproduce Finding Skill

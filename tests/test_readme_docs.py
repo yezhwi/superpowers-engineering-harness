@@ -1,6 +1,11 @@
 """README navigation and command contracts."""
 
+import json
+import re
+import subprocess
 from pathlib import Path
+
+import yaml
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -28,6 +33,75 @@ def test_changelog_includes_unreleased_work_in_v0210_release_notes():
     assert "task replacement" in notes
     assert "Plan Reconciliation" in notes
     assert "tag, push, or publish" in notes
+
+
+def test_npm_files_close_all_relative_readme_links_without_broad_docs_glob():
+    package = json.loads((REPO / "package.json").read_text(encoding="utf-8"))
+    packaged = set(package["files"])
+    targets = set()
+    for name in ("README.md", "README.zh-CN.md"):
+        text = (REPO / name).read_text(encoding="utf-8")
+        targets.update(
+            target.split("#", 1)[0]
+            for target in re.findall(r"\[[^\]]+\]\(([^)]+)\)", text)
+            if not target.startswith(("http://", "https://", "#"))
+        )
+
+    assert "docs" not in packaged
+    assert "SKILL.md" in packaged  # repository-level portable skill entry
+    assert targets <= packaged
+    assert package["pi"] == {"skills": ["./skills"]}
+
+
+def test_npm_pack_contains_core_skill_and_linked_docs():
+    result = subprocess.run(
+        ["npm", "pack", "--dry-run", "--json"],
+        cwd=REPO,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    paths = {item["path"] for item in json.loads(result.stdout)[0]["files"]}
+
+    assert "skills/engineering-harness/SKILL.md" in paths
+    assert "docs/architecture.md" in paths
+    assert (
+        "docs/Superpowers-Engineering-Harness-v0.2.10-Implementation-Contract.md"
+        in paths
+    )
+    assert not any("Architecture-Awareness" in path for path in paths)
+
+
+def test_packaged_skills_declare_cli_compatibility_and_root_copy_stays_synced():
+    expected = (
+        "Requires Python 3.11+, Git, and a matching "
+        "superpowers-engineering-harness CLI installed separately."
+    )
+    skill_paths = sorted((REPO / "skills").glob("*/SKILL.md"))
+
+    assert skill_paths
+    for path in skill_paths:
+        frontmatter = yaml.safe_load(path.read_text(encoding="utf-8").split("---", 2)[1])
+        assert frontmatter["compatibility"] == expected
+    engineering = REPO / "skills/engineering-harness/SKILL.md"
+    assert not engineering.is_symlink()
+    assert (REPO / "SKILL.md").read_bytes() == engineering.read_bytes()
+
+
+def test_readmes_document_matching_skills_and_cli_install_without_full_suite():
+    for path in (REPO / "README.md", REPO / "README.zh-CN.md"):
+        text = path.read_text(encoding="utf-8")
+        assert "pi install npm:superpowers-engineering-harness@0.2.10" in text
+        assert (
+            'python -m pip install "superpowers-engineering-harness '
+            '@ git+https://github.com/yezhwi/superpowers-engineering-harness.git@v0.2.10"'
+            in text
+        )
+        assert "matching" in text.lower() or "匹配" in text
+        assert "python -m pytest tests/ -q" not in text
+        assert "Full-suite authorization remains" not in text
+        assert "全量测试授权仍必须" not in text
+        assert "impact-related" in text or "影响相关" in text
 
 
 def test_root_skill_routes_diagnosability():

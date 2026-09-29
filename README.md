@@ -118,13 +118,15 @@ Iron laws:
 
 ## Quick start
 
-Install worker workflows, Harness skills, and deterministic CLI:
+Install worker workflows, Pi skills, and the matching deterministic CLI. The npm package contains skills only; it does not install the Python `harness` command.
 
 ```bash
 pi install git:github.com/obra/superpowers
-pi install git:github.com/yezhwi/superpowers-engineering-harness
-pip install -e /path/to/superpowers-engineering-harness
+pi install npm:superpowers-engineering-harness@0.2.10
+python -m pip install "superpowers-engineering-harness @ git+https://github.com/yezhwi/superpowers-engineering-harness.git@v0.2.10"
 ```
+
+Keep the npm skills and Harness CLI on the same release version. For source development, replace the final command with `python -m pip install -e /path/to/superpowers-engineering-harness`.
 
 Initialize target repository, then start each session from persisted state:
 
@@ -369,7 +371,7 @@ Stdout lists historical `overall:` separately from v0.2.9 `experiment:`. Missing
 
 ### Automatic orchestration
 
-When Engineering Harness Skill controls a task, it automatically invokes Minimal Implementation Check in `PLANNED`, records impact analysis before `VERIFYING`, and invokes Complexity Reviewer after green verification but before `REVIEWING`. State guards reject skipped records. Full-suite authorization remains an explicit human decision.
+When Engineering Harness Skill controls a task, it automatically invokes Minimal Implementation Check in `PLANNED`, records impact analysis before `VERIFYING`, and invokes Complexity Reviewer after green verification but before `REVIEWING`. State guards reject skipped records. Full-suite execution remains forbidden; run only explicitly listed impact-related tests.
 
 ## v0.2: necessary complexity
 
@@ -407,8 +409,10 @@ Caveman Mode is recommended to reduce agent output tokens. Keep code, commands, 
 - [Worked lifecycle example](docs/worked-example.md)
 - [Historical v0.1 implementation guide](docs/engineering-harness-v0.1.md)
 
+Run only impact-related tests, listed explicitly. For this package metadata area:
+
 ```bash
-python -m pytest tests/ -q
+python -m pytest tests/test_version_consistency.py tests/test_readme_docs.py -q
 ```
 
 ## License

@@ -1,6 +1,7 @@
 ---
 name: complexity-reviewer
 description: Review verified diff for unnecessary implementation complexity before adversarial review.
+compatibility: Requires Python 3.11+, Git, and a matching superpowers-engineering-harness CLI installed separately.
 ---
 
 # Complexity Reviewer
