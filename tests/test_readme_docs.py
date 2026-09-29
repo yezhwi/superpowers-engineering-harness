@@ -32,6 +32,7 @@ def test_changelog_includes_unreleased_work_in_v0210_release_notes():
     assert "AGY" in notes
     assert "task replacement" in notes
     assert "Plan Reconciliation" in notes
+    assert "one-command Pi bootstrap installer" in notes
     assert "tag, push, or publish" in notes
 
 
@@ -89,14 +90,19 @@ def test_packaged_skills_declare_cli_compatibility_and_root_copy_stays_synced():
 
 
 def test_readmes_document_matching_skills_and_cli_install_without_full_suite():
+    base = (
+        "https://raw.githubusercontent.com/yezhwi/"
+        "superpowers-engineering-harness"
+    )
     for path in (REPO / "README.md", REPO / "README.zh-CN.md"):
         text = path.read_text(encoding="utf-8")
-        assert "pi install npm:superpowers-engineering-harness@0.2.10" in text
+        assert f"curl -fsSL {base}/main/scripts/install-pi.sh | bash" in text
         assert (
-            'python -m pip install "superpowers-engineering-harness '
-            '@ git+https://github.com/yezhwi/superpowers-engineering-harness.git@v0.2.10"'
-            in text
-        )
+            f"curl -fsSL {base}/main/scripts/install-pi.sh "
+            "| bash -s -- v0.2.10"
+        ) in text
+        assert "Superpowers" in text
+        assert "isolated" in text.lower() or "隔离" in text
         assert "matching" in text.lower() or "匹配" in text
         assert "python -m pytest tests/ -q" not in text
         assert "Full-suite authorization remains" not in text

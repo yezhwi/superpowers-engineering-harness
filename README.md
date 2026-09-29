@@ -118,15 +118,21 @@ Iron laws:
 
 ## Quick start
 
-Install worker workflows, Pi skills, and the matching deterministic CLI. The npm package contains skills only; it does not install the Python `harness` command.
+Install Superpowers, Pi skills, and the matching deterministic CLI with one explicit bootstrap command. With no version argument, installer resolves npm `latest` and requires the matching Git tag before changing installation:
 
 ```bash
-pi install git:github.com/obra/superpowers
-pi install npm:superpowers-engineering-harness@0.2.10
-python -m pip install "superpowers-engineering-harness @ git+https://github.com/yezhwi/superpowers-engineering-harness.git@v0.2.10"
+curl -fsSL https://raw.githubusercontent.com/yezhwi/superpowers-engineering-harness/main/scripts/install-pi.sh | bash
 ```
 
-Keep the npm skills and Harness CLI on the same release version. For source development, replace the final command with `python -m pip install -e /path/to/superpowers-engineering-harness`.
+Pin a release when needed:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/yezhwi/superpowers-engineering-harness/main/scripts/install-pi.sh | bash -s -- v0.2.10
+```
+
+Installer checks whether Superpowers is configured and installs it only when missing. It reconciles pinned Harness Pi skills, installs matching Python CLI into isolated user environment, and exposes `~/.local/bin/harness`. Add `~/.local/bin` to `PATH` if installer reports it missing. Re-running same version is idempotent. Review downloaded script before execution when required by local security policy.
+
+For source development, install repository editable environment separately with `python -m pip install -e /path/to/superpowers-engineering-harness`.
 
 Initialize target repository, then start each session from persisted state:
 

@@ -9,13 +9,14 @@
 - Add explicit one-way `harness plan sync-markdown`, bounded Q3 `harness plan reconcile P-* --auto`, and a body-free Plan section in existing `harness gate preflight`. Markdown remains non-authoritative; automatic reconciliation creates only ordinary `COMPLETE` requests through the existing locked mutation path.
 - Preserve FAST/Q1 no-read isolation and STANDARD/Q2 final-only execution while hardening malformed proof sources, Alignment guards, blocker fingerprints, convergence routing, and FAST Context helper loading.
 - Add one-command AGY global installer. It resolves latest stable release by default, accepts an explicit tag, updates Harness-owned skills under `~/.gemini/antigravity-cli/skills/`, and preserves unrelated skills. Project initialization remains explicit through `harness init` in each Git repository.
+- Add one-command Pi bootstrap installer. It resolves npm `latest` or accepts an explicit version, validates matching npm/Git artifacts, installs missing Superpowers, reconciles legacy or stale Harness packages, and installs the matching Python CLI in an isolated user environment.
 - Archive and clear stale `alignment.yaml` during task replacement/recovery so prior-task Alignment cannot block a replacement task.
 - Keep this repository step local-only: it does not create a tag, push, or publish a package or GitHub Release.
 
 ### Install
 
 ```bash
-pi install git:github.com/yezhwi/superpowers-engineering-harness@v0.2.10
+curl -fsSL https://raw.githubusercontent.com/yezhwi/superpowers-engineering-harness/main/scripts/install-pi.sh | bash -s -- v0.2.10
 ```
 
 ## 0.2.9

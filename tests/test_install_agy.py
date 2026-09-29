@@ -1,11 +1,10 @@
 import os
-from pathlib import Path
 import shutil
 import stat
 import subprocess
+from pathlib import Path
 
 import pytest
-
 
 ROOT = Path(__file__).resolve().parents[1]
 INSTALLER = ROOT / "scripts" / "install-agy.sh"
@@ -40,7 +39,9 @@ def agy_environment(tmp_path):
 def test_installer_uses_latest_release_and_installs_global_skills(agy_environment):
     cwd, skills_root, log, env = agy_environment
 
-    result = subprocess.run([INSTALLER], cwd=cwd, env=env, text=True, capture_output=True)
+    result = subprocess.run(
+        [INSTALLER], cwd=cwd, env=env, text=True, capture_output=True, check=False
+    )
 
     assert result.returncode == 0, result.stderr
     assert "git clone --depth 1 --branch v9.9.9" in log.read_text()
@@ -58,7 +59,14 @@ def test_installer_uses_latest_release_and_installs_global_skills(agy_environmen
 def test_installer_accepts_explicit_version_without_latest_lookup(agy_environment):
     cwd, _, log, env = agy_environment
 
-    result = subprocess.run([INSTALLER, "v0.2.9"], cwd=cwd, env=env, text=True, capture_output=True)
+    result = subprocess.run(
+        [INSTALLER, "v0.2.9"],
+        cwd=cwd,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
 
     assert result.returncode == 0, result.stderr
     calls = log.read_text()
@@ -68,9 +76,21 @@ def test_installer_accepts_explicit_version_without_latest_lookup(agy_environmen
 
 def test_installer_rejects_broken_source_manifest_before_install(agy_environment):
     cwd, skills_root, log, env = agy_environment
-    (Path(env["AGY_TEST_SOURCE"]) / "SKILL.md").unlink()
+    (
+        Path(env["AGY_TEST_SOURCE"])
+        / "skills"
+        / "engineering-harness"
+        / "SKILL.md"
+    ).unlink()
 
-    result = subprocess.run([INSTALLER, "v0.2.9"], cwd=cwd, env=env, text=True, capture_output=True)
+    result = subprocess.run(
+        [INSTALLER, "v0.2.9"],
+        cwd=cwd,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
 
     assert result.returncode != 0
     assert "SKILL.md" in result.stderr
@@ -87,7 +107,9 @@ def test_installer_replaces_harness_skills_and_preserves_unrelated_skills(agy_en
     unrelated.mkdir()
     (unrelated / "marker").write_text("keep")
 
-    result = subprocess.run([INSTALLER], cwd=cwd, env=env, text=True, capture_output=True)
+    result = subprocess.run(
+        [INSTALLER], cwd=cwd, env=env, text=True, capture_output=True, check=False
+    )
 
     assert result.returncode == 0, result.stderr
     assert not (existing / "marker").exists()

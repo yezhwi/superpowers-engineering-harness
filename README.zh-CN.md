@@ -122,15 +122,21 @@ CONVERGED → DONE
 
 ## 5 分钟上手
 
-安装 worker 工作流、Pi skills 和匹配版本的确定性 CLI。npm package 只包含 skills，不会安装 Python `harness` 命令。
+通过一条显式 bootstrap 命令安装 Superpowers、Pi skills 和匹配版本的确定性 CLI。未指定版本时，安装器解析 npm `latest`，并在修改安装前要求存在匹配 Git tag：
 
 ```bash
-pi install git:github.com/obra/superpowers
-pi install npm:superpowers-engineering-harness@0.2.10
-python -m pip install "superpowers-engineering-harness @ git+https://github.com/yezhwi/superpowers-engineering-harness.git@v0.2.10"
+curl -fsSL https://raw.githubusercontent.com/yezhwi/superpowers-engineering-harness/main/scripts/install-pi.sh | bash
 ```
 
-npm skills 与 Harness CLI 必须保持相同 release 版本。源码开发时，可将最后一条命令替换为 `python -m pip install -e /path/to/superpowers-engineering-harness`。
+需要固定版本时：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/yezhwi/superpowers-engineering-harness/main/scripts/install-pi.sh | bash -s -- v0.2.10
+```
+
+安装器检查是否已配置 Superpowers，仅在缺失时安装；同时协调固定版本的 Harness Pi skills，把匹配 Python CLI 安装到隔离用户环境，并暴露 `~/.local/bin/harness`。如果 `~/.local/bin` 不在 `PATH`，安装器会给出提示。重复安装相同版本保持幂等。若本地安全策略要求，请先审查下载脚本再执行。
+
+源码开发时，另行使用 `python -m pip install -e /path/to/superpowers-engineering-harness` 安装可编辑环境。
 
 初始化目标仓库；每个会话从持久化状态开始：
 
