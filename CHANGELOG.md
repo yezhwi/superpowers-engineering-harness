@@ -11,7 +11,7 @@
 - Add one-command AGY global installer. It resolves latest stable release by default, accepts an explicit tag, updates Harness-owned skills under `~/.gemini/antigravity-cli/skills/`, and preserves unrelated skills. Project initialization remains explicit through `harness init` in each Git repository.
 - Add one-command Pi bootstrap installer. It resolves npm `latest` or accepts an explicit version, validates matching npm/Git artifacts, installs missing Superpowers, reconciles legacy or stale Harness packages, and installs the matching Python CLI in an isolated user environment.
 - Archive and clear stale `alignment.yaml` during task replacement/recovery so prior-task Alignment cannot block a replacement task.
-- Keep this repository step local-only: it does not create a tag, push, or publish a package or GitHub Release.
+- Release this version as Git tag v0.2.10.
 
 ### Install
 

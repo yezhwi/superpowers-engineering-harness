@@ -33,7 +33,7 @@ def test_changelog_includes_unreleased_work_in_v0210_release_notes():
     assert "task replacement" in notes
     assert "Plan Reconciliation" in notes
     assert "one-command Pi bootstrap installer" in notes
-    assert "tag, push, or publish" in notes
+    assert "Git tag v0.2.10" in notes
 
 
 def test_npm_files_close_all_relative_readme_links_without_broad_docs_glob():
