@@ -158,6 +158,56 @@ def test_plan_mutation_parser_accepts_valid_argument_shapes(tmp_path, arguments)
     assert "usage:" not in result.stderr
 
 
+def test_plan_reconcile_auto_parser_accepts_closed_auto_shape(tmp_path):
+    result = cli(tmp_path, "plan", "reconcile", "P-001", "--auto")
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert result.stderr.startswith("ERROR:")
+    assert "usage:" not in result.stderr
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        ("--auto", "--complete"),
+        ("--auto", "--skipped", "--reason", "x", "--decision", "DEC-001"),
+        ("--auto", "--superseded", "--reason", "x", "--decision", "DEC-001", "--replacement", "P-002"),
+        ("--auto", "--reason", "x"),
+        ("--auto", "--decision", "DEC-001"),
+        ("--auto", "--replacement", "P-002"),
+        ("--auto", "--evidence", "unit"),
+        ("--auto", "--surface", "src/x.py"),
+    ],
+)
+def test_plan_reconcile_auto_parser_rejects_semantic_or_explicit_proof_options(
+    tmp_path, arguments
+):
+    result = cli(tmp_path, "plan", "reconcile", "P-001", *arguments)
+
+    assert result.returncode == 2
+    assert result.stdout == ""
+    assert "usage:" in result.stderr
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        ("plan", "begin", "P-001", "--auto"),
+        ("plan", "block", "P-001", "--reason", "x", "--auto"),
+        ("plan", "resume", "P-001", "--auto"),
+        ("plan", "refresh-proof", "P-001", "--auto"),
+        ("plan", "upgrade-execution", "--auto"),
+    ],
+)
+def test_non_reconcile_commands_reject_auto(tmp_path, arguments):
+    result = cli(tmp_path, *arguments)
+
+    assert result.returncode == 2
+    assert result.stdout == ""
+    assert "usage:" in result.stderr
+
+
 def test_plan_sync_markdown_parser_accepts_one_explicit_path(tmp_path):
     result = cli(tmp_path, "plan", "sync-markdown", "docs/plan.md")
 
@@ -235,6 +285,29 @@ def mutation_repo(tmp_path: Path, *, stale: bool = False) -> Path:
         yaml.safe_dump(execution, sort_keys=False)
     )
     return harness_dir
+
+
+def test_plan_reconcile_auto_cli_publishes_ordinary_complete_transition(tmp_path):
+    harness_dir = mutation_repo(tmp_path)
+    assert cli(tmp_path, "plan", "begin", "P-001").returncode == 0
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "first.py").write_text("VALUE = 1\n")
+
+    result = cli(tmp_path, "plan", "reconcile", "P-001", "--auto")
+
+    assert (result.returncode, result.stdout, result.stderr) == (
+        0,
+        "PLAN_EXECUTION_UPDATED\n",
+        "",
+    )
+    execution = yaml.safe_load((harness_dir / "plan-execution.yaml").read_text())
+    assert execution["items"]["P-001"] == {
+        "status": "COMPLETE",
+        "surface_refs": ["src/first.py"],
+    }
+    assert execution["transitions"][-1]["action"] == "RECONCILE"
+    assert "auto" not in execution
+    assert "auto" not in execution["transitions"][-1]
 
 
 def test_plan_sync_markdown_updates_then_reports_exact_noop(tmp_path):

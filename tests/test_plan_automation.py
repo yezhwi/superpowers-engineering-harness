@@ -388,6 +388,48 @@ def test_derive_auto_proof_selects_sorted_usable_surfaces(tmp_path, monkeypatch)
     assert result.surface_refs == ("a.py", "z.py")
 
 
+def test_derive_auto_proof_combines_test_and_surface_branches(tmp_path, monkeypatch):
+    from harness import plan_automation
+
+    head = "a" * 40
+    workspace = "sha256:" + "b" * 64
+    harness_dir = automation_harness(tmp_path, strategy="manual")
+    write_record(
+        harness_dir,
+        "manual-proof",
+        evidence_record(
+            head=head, workspace=workspace, covered_test_cases=("TC-001",)
+        ),
+    )
+    item = {
+        "id": "P-001",
+        "test_case_refs": ["REQ-001/TC-001"],
+        "surfaces": ["src/changed.py"],
+    }
+    monkeypatch.setattr(
+        plan_automation,
+        "mechanical_surface_facts",
+        lambda *_args, **_kwargs: MechanicalSurfaceFacts(
+            frozenset({"src/changed.py"}),
+            frozenset({"src/changed.py"}),
+            frozenset(),
+            False,
+        ),
+    )
+
+    result = derive_auto_proof(
+        harness_dir,
+        {},
+        {"version": 1, "items": [item]},
+        item,
+        head=head,
+        workspace=workspace,
+    )
+
+    assert result.evidence_refs == ("manual-proof",)
+    assert result.surface_refs == ("src/changed.py",)
+
+
 def test_derive_auto_proof_rejects_surface_branch_without_usable_path(
     tmp_path, monkeypatch
 ):

@@ -80,6 +80,7 @@ def _main(argv=None) -> int:
         action="store_const",
         const="SUPERSEDED",
     )
+    disposition.add_argument("--auto", dest="plan_auto", action="store_true")
     p_plan_reconcile.add_argument("--reason")
     p_plan_reconcile.add_argument("--decision", dest="decision_id")
     p_plan_reconcile.add_argument("--replacement", action="append", default=[])
@@ -375,6 +376,8 @@ def _main(argv=None) -> int:
         disposition = args.plan_disposition
         has_proof = bool(args.evidence or args.surface)
         has_decision = bool(args.reason or args.decision_id or args.replacement)
+        if args.plan_auto and (disposition or has_proof or has_decision):
+            parser.error("--auto accepts no disposition, proof, or semantic options")
         if disposition == "COMPLETE" and has_decision:
             parser.error("--complete accepts only --evidence and --surface")
         if disposition == "SKIPPED" and (

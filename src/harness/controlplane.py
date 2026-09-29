@@ -248,6 +248,7 @@ def cmd_plan_mutation(args) -> int:
         surface_refs=tuple(getattr(args, "surface", ())),
         decision_id=getattr(args, "decision_id", None),
         replacements=tuple(getattr(args, "replacement", ())),
+        auto=getattr(args, "plan_auto", False),
     )
     try:
         task = load_task(harness_dir)

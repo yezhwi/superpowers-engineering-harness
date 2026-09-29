@@ -10,11 +10,11 @@ from pathlib import Path
 import yaml
 from jsonschema import ValidationError, validate
 
+from . import plan_automation
 from .blockers import GateBlocker
 from .collect_evidence import command_covers_test, record_covers_test
 from .evidence_validator import EvidenceStatus, project_evidence
 from .paths import EvidenceReferenceError, evidence_path
-from . import plan_automation
 from .plan_execution import (
     PlanExecutionError,
     ReplayResult,
@@ -73,6 +73,7 @@ class PlanMutationRequest:
     surface_refs: tuple[str, ...] = ()
     decision_id: str | None = None
     replacements: tuple[str, ...] = ()
+    auto: bool = False
 
 
 @dataclass(frozen=True)
@@ -1057,6 +1058,7 @@ def _normalize_mutation_request(
         surface_refs=tuple(sorted(set(request.surface_refs))),
         decision_id=request.decision_id,
         replacements=replacements,
+        auto=request.auto,
     )
 
 
@@ -1141,8 +1143,9 @@ def _proof_transition_payload(
     request: PlanMutationRequest,
     *,
     action: str,
+    initial_snapshot=None,
 ) -> dict:
-    before = workspace_snapshot(harness_dir.parent)
+    before = initial_snapshot or workspace_snapshot(harness_dir.parent)
     evidence = _evidence_receipts(
         harness_dir,
         request.evidence_refs,
@@ -1221,6 +1224,8 @@ def _lifecycle_transition(
     execution: dict,
     replay: ReplayResult,
     request: PlanMutationRequest,
+    *,
+    initial_snapshot=None,
 ) -> dict:
     item_id = request.item_id
     if not item_id or item_id not in {item["id"] for item in plan["items"]}:
@@ -1279,6 +1284,7 @@ def _lifecycle_transition(
                 replay,
                 request,
                 action="RECONCILE",
+                initial_snapshot=initial_snapshot,
             )
         elif request.disposition in {"SKIPPED", "SUPERSEDED"}:
             if not isinstance(request.reason, str) or not request.reason.strip():
@@ -1330,6 +1336,67 @@ def _lifecycle_transition(
     raise PlanMutationError("PLAN_DISPOSITION_INVALID")
 
 
+def _resolve_auto_request(
+    harness_dir: Path,
+    task: dict,
+    plan: dict,
+    execution: dict,
+    replay: ReplayResult,
+    request: PlanMutationRequest,
+):
+    if (
+        request.action != "RECONCILE"
+        or request.disposition is not None
+        or request.reason is not None
+        or request.evidence_refs
+        or request.surface_refs
+        or request.decision_id is not None
+        or request.replacements
+    ):
+        raise PlanMutationError("PLAN_DISPOSITION_INVALID")
+    item = next(
+        (candidate for candidate in plan["items"] if candidate["id"] == request.item_id),
+        None,
+    )
+    if item is None:
+        raise PlanMutationError("PLAN_SEQUENCE_INVALID")
+    status = replay.items.get(request.item_id, {}).get("status", "PENDING")
+    exact_retry_candidate = bool(
+        status == "COMPLETE"
+        and execution["transitions"]
+        and execution["transitions"][-1].get("item") == request.item_id
+        and execution["transitions"][-1].get("action") == "RECONCILE"
+    )
+    if not (
+        (status == "IN_PROGRESS" and replay.active_item == request.item_id)
+        or exact_retry_candidate
+    ):
+        raise PlanMutationError("PLAN_SEQUENCE_INVALID")
+
+    current = workspace_snapshot(harness_dir.parent)
+    try:
+        proof = plan_automation.derive_auto_proof(
+            harness_dir,
+            task,
+            plan,
+            item,
+            head=current.head,
+            workspace=current.fingerprint,
+        )
+    except plan_automation.PlanAutomationError as exc:
+        raise PlanMutationError(exc.code) from exc
+    return (
+        PlanMutationRequest(
+            action="RECONCILE",
+            item_id=request.item_id,
+            disposition="COMPLETE",
+            evidence_refs=proof.evidence_refs,
+            surface_refs=proof.surface_refs,
+        ),
+        current,
+    )
+
+
 def mutate_plan_execution(
     harness_dir: Path,
     task: dict,
@@ -1362,6 +1429,16 @@ def mutate_plan_execution(
             replay = replay_plan_execution(plan, execution)
             if replay.issues:
                 raise PlanMutationError("PLAN_SEQUENCE_INVALID")
+            initial_snapshot = None
+            if normalized.auto:
+                normalized, initial_snapshot = _resolve_auto_request(
+                    harness_dir,
+                    task,
+                    plan,
+                    execution,
+                    replay,
+                    normalized,
+                )
             try:
                 transition = _lifecycle_transition(
                     harness_dir,
@@ -1370,6 +1447,7 @@ def mutate_plan_execution(
                     execution,
                     replay,
                     normalized,
+                    initial_snapshot=initial_snapshot,
                 )
             except PlanMutationError as exc:
                 if exc.code == "PLAN_EXACT_RETRY":

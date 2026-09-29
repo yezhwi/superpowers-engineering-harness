@@ -530,6 +530,228 @@ def test_plan_mutation_complete_and_refresh_proof_use_current_workspace_receipts
     assert replay_plan_execution(document, execution).issues == ()
 
 
+def test_plan_mutation_auto_complete_uses_ordinary_payload_and_exact_retry(
+    tmp_path, monkeypatch
+):
+    from harness import plan_automation, plan_reconciliation
+
+    harness_dir = tmp_path / ".harness"
+    write_v2(harness_dir)
+    workspace = stable_workspace(monkeypatch)
+    monkeypatch.setattr(
+        plan_reconciliation, "changed_paths_since", lambda base: ("src/first.py",)
+    )
+    calls = []
+
+    def derive(harness, task_value, plan_value, item, *, head, workspace):
+        calls.append((harness, item["id"], head, workspace))
+        return plan_automation.AutoProofSelection((), ("src/first.py",))
+
+    monkeypatch.setattr(plan_automation, "derive_auto_proof", derive)
+    mutate(harness_dir, request(action="BEGIN", item_id="P-001"))
+    automatic = request(action="RECONCILE", item_id="P-001", auto=True)
+
+    assert mutate(harness_dir, automatic) is True
+    committed = (harness_dir / "plan-execution.yaml").read_bytes()
+    assert mutate(harness_dir, automatic) is False
+    assert (harness_dir / "plan-execution.yaml").read_bytes() == committed
+    execution = read_execution(harness_dir)
+    assert execution["transitions"][-1]["action"] == "RECONCILE"
+    assert execution["transitions"][-1]["to"] == "COMPLETE"
+    assert execution["items"]["P-001"] == {
+        "status": "COMPLETE",
+        "surface_refs": ["src/first.py"],
+    }
+    assert "auto" not in committed.decode()
+    assert calls == [
+        (harness_dir, "P-001", "head", workspace),
+        (harness_dir, "P-001", "head", workspace),
+    ]
+
+
+def test_plan_mutation_auto_rejects_wrong_active_item_before_proof_reads(
+    tmp_path, monkeypatch
+):
+    from harness import plan_automation
+    from harness.plan_reconciliation import PlanMutationError
+
+    harness_dir = tmp_path / ".harness"
+    write_v2(harness_dir)
+    mutate(harness_dir, request(action="BEGIN", item_id="P-001"))
+    monkeypatch.setattr(
+        plan_automation,
+        "derive_auto_proof",
+        lambda *_args, **_kwargs: pytest.fail("wrong item must reject before proof reads"),
+    )
+    before = tree_bytes(tmp_path)
+
+    with pytest.raises(PlanMutationError, match="PLAN_SEQUENCE_INVALID"):
+        mutate(
+            harness_dir,
+            request(action="RECONCILE", item_id="P-002", auto=True),
+        )
+
+    assert tree_bytes(tmp_path) == before
+
+
+def test_plan_mutation_auto_rejects_semantic_or_explicit_fields_defensively(
+    tmp_path, monkeypatch
+):
+    from harness import plan_automation
+    from harness.plan_reconciliation import PlanMutationError
+
+    harness_dir = tmp_path / ".harness"
+    write_v2(harness_dir)
+    mutate(harness_dir, request(action="BEGIN", item_id="P-001"))
+    monkeypatch.setattr(
+        plan_automation,
+        "derive_auto_proof",
+        lambda *_args, **_kwargs: pytest.fail("invalid shape must reject first"),
+    )
+
+    for extra in (
+        {"disposition": "SKIPPED"},
+        {"reason": "semantic"},
+        {"decision_id": "DEC-001"},
+        {"replacements": ("P-002",)},
+        {"evidence_refs": ("unit",)},
+        {"surface_refs": ("src/first.py",)},
+    ):
+        with pytest.raises(PlanMutationError, match="PLAN_DISPOSITION_INVALID"):
+            mutate(
+                harness_dir,
+                request(action="RECONCILE", item_id="P-001", auto=True, **extra),
+            )
+
+
+def test_plan_mutation_auto_policy_rejects_q2_before_proof_reads(
+    tmp_path, monkeypatch
+):
+    from harness import plan_automation
+    from harness.plan_reconciliation import PlanMutationError
+
+    harness_dir = tmp_path / ".harness"
+    harness_dir.mkdir()
+    (harness_dir / "plan.yaml").write_text("not: [valid")
+    monkeypatch.setattr(
+        plan_automation,
+        "derive_auto_proof",
+        lambda *_args, **_kwargs: pytest.fail("Q2 must reject before proof reads"),
+    )
+
+    with pytest.raises(PlanMutationError, match="PLAN_TASK_LEVEL_DISABLED"):
+        mutate(
+            harness_dir,
+            request(action="RECONCILE", item_id="P-001", auto=True),
+            task_value=task(profile="STANDARD", mode="final"),
+        )
+
+
+def test_plan_mutation_auto_revalidates_inferred_proof(tmp_path, monkeypatch):
+    from harness import plan_automation
+    from harness.plan_reconciliation import PlanMutationError
+
+    harness_dir = tmp_path / ".harness"
+    write_v2(harness_dir)
+    stable_workspace(monkeypatch)
+    monkeypatch.setattr(
+        plan_automation,
+        "derive_auto_proof",
+        lambda *_args, **_kwargs: plan_automation.AutoProofSelection(
+            (), ("src/not-declared.py",)
+        ),
+    )
+    mutate(harness_dir, request(action="BEGIN", item_id="P-001"))
+    before = tree_bytes(tmp_path)
+
+    with pytest.raises(PlanMutationError, match="PLAN_DISPOSITION_INVALID"):
+        mutate(
+            harness_dir,
+            request(action="RECONCILE", item_id="P-001", auto=True),
+        )
+
+    assert tree_bytes(tmp_path) == before
+
+
+def test_plan_mutation_auto_workspace_race_aborts_without_write(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from harness import plan_automation, plan_reconciliation
+    from harness.plan_reconciliation import PlanMutationError
+
+    harness_dir = tmp_path / ".harness"
+    write_v2(harness_dir)
+    mutate(harness_dir, request(action="BEGIN", item_id="P-001"))
+    monkeypatch.setattr(
+        plan_reconciliation, "changed_paths_since", lambda base: ("src/first.py",)
+    )
+    monkeypatch.setattr(
+        plan_automation,
+        "derive_auto_proof",
+        lambda *_args, **_kwargs: plan_automation.AutoProofSelection(
+            (), ("src/first.py",)
+        ),
+    )
+    snapshots = iter(
+        [
+            SimpleNamespace(head="head", fingerprint="sha256:" + "f" * 64),
+            SimpleNamespace(head="head", fingerprint="sha256:" + "e" * 64),
+        ]
+    )
+    monkeypatch.setattr(
+        plan_reconciliation, "workspace_snapshot", lambda root=None: next(snapshots)
+    )
+    before = tree_bytes(tmp_path)
+
+    with pytest.raises(PlanMutationError, match="PLAN_PROOF_MISSING"):
+        mutate(
+            harness_dir,
+            request(action="RECONCILE", item_id="P-001", auto=True),
+        )
+
+    assert tree_bytes(tmp_path) == before
+
+
+def test_plan_mutation_auto_and_explicit_complete_publish_equal_payloads(
+    tmp_path, monkeypatch
+):
+    from harness import plan_automation, plan_reconciliation
+
+    explicit_dir = tmp_path / "explicit" / ".harness"
+    automatic_dir = tmp_path / "automatic" / ".harness"
+    write_v2(explicit_dir)
+    write_v2(automatic_dir)
+    stable_workspace(monkeypatch)
+    monkeypatch.setattr(
+        plan_reconciliation, "changed_paths_since", lambda base: ("src/first.py",)
+    )
+    monkeypatch.setattr(
+        plan_automation,
+        "derive_auto_proof",
+        lambda *_args, **_kwargs: plan_automation.AutoProofSelection(
+            (), ("src/first.py",)
+        ),
+    )
+    for harness_dir in (explicit_dir, automatic_dir):
+        mutate(harness_dir, request(action="BEGIN", item_id="P-001"))
+
+    mutate(
+        explicit_dir,
+        request(
+            action="RECONCILE",
+            item_id="P-001",
+            disposition="COMPLETE",
+            surface_refs=("src/first.py",),
+        ),
+    )
+    mutate(
+        automatic_dir,
+        request(action="RECONCILE", item_id="P-001", auto=True),
+    )
+
+    assert read_execution(automatic_dir) == read_execution(explicit_dir)
+
+
 def test_plan_mutation_complete_rejects_missing_proof_branch_without_writes(
     tmp_path, monkeypatch
 ):
