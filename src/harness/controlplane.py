@@ -9,6 +9,7 @@ from dataclasses import replace
 
 from harness import (
     alignment,
+    architecture_store,
     benchmark,
     collect_evidence,
     complexity,
@@ -297,6 +298,73 @@ def cmd_plan_mutation(args) -> int:
         return 2
     print("PLAN_EXECUTION_UPDATED" if changed else "PLAN_EXECUTION_UNCHANGED")
     return 0
+
+
+def cmd_architecture(args) -> int:
+    """Dispatch Architecture mutations and deterministic read-only projections."""
+    from harness.architecture import ArchitectureError
+
+    harness_dir = Path(".harness")
+    command = args.architecture_command
+    try:
+        if command == "publish":
+            changed = architecture_store.publish_architecture(
+                harness_dir, Path(args.source_file)
+            )
+            print("ARCHITECTURE_PUBLISHED" if changed else "ARCHITECTURE_UNCHANGED")
+            return 0
+        if command == "scope":
+            changed = architecture_store.mutate_architecture_scope(
+                harness_dir, args.architecture_scope_action, args.module_id
+            )
+            print(
+                "ARCHITECTURE_SCOPE_UPDATED"
+                if changed
+                else "ARCHITECTURE_SCOPE_UNCHANGED"
+            )
+            return 0
+        if command == "validate":
+            report = architecture_store.validate_architecture(harness_dir)
+            if args.architecture_json:
+                print(json.dumps(report, indent=2, sort_keys=True, ensure_ascii=False))
+            else:
+                print("Architecture: VALID")
+                print(f"Fingerprint: {report['fingerprint']}")
+                print(f"Modules: {', '.join(report['modules']) or '-'}")
+                print(f"Ownership rules: {report['ownership_rules']}")
+            return 0
+        if command == "resolve":
+            report = architecture_store.resolve_architecture_path(
+                harness_dir, args.path
+            )
+            if args.architecture_json:
+                print(json.dumps(report, indent=2, sort_keys=True, ensure_ascii=False))
+            else:
+                print(f"{report['path']}: {report['status']}")
+                print(f"Kind: {report['kind'] or '-'}")
+                print(f"Modules: {', '.join(report['modules']) or '-'}")
+                print(f"Rule: {report['rule_id'] or '-'}")
+            return 0
+        if command == "check":
+            report = architecture_store.check_architecture(harness_dir)
+            if args.architecture_json:
+                print(json.dumps(report, indent=2, sort_keys=True, ensure_ascii=False))
+            else:
+                print(f"Architecture check: {report['status'].upper()}")
+                print(
+                    "Unexpected modules: "
+                    + (", ".join(report["unexpected_modules"]) or "-")
+                )
+                print(f"Diagnostics: {len(report['diagnostics'])}")
+            return 0
+    except (ArchitectureError, workspace.WorkspaceError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    except (OSError, yaml.YAMLError, ValueError, TypeError, KeyError) as exc:
+        print(f"ARCHITECTURE_OPERATION_FAILED: {exc}", file=sys.stderr)
+        return 2
+    print("ARCHITECTURE_COMMAND_INVALID", file=sys.stderr)
+    return 2
 
 
 def _alignment_completeness_issues(

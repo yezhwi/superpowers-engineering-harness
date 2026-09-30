@@ -206,6 +206,13 @@ def _match_score(pattern: str, path: str) -> tuple[int, int, int] | None:
     return exact, literal_count, len(pattern_segments)
 
 
+def ownership_match_score(
+    rule: OwnershipRule, path: str
+) -> tuple[int, int, int] | None:
+    """Return deterministic rule score for one canonical path, or no match."""
+    return _match_score(rule.pattern, path)
+
+
 def resolve_ownership(model: ArchitectureModel, path: str) -> OwnershipResolution:
     """Resolve one canonical path without repository access or implicit tie-breaks."""
     _segments(path, pattern=False)

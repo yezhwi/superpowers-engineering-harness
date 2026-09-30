@@ -27,6 +27,20 @@ def test_plan_automation_is_reviewed_code_not_adapter():
     assert "plan_automation" not in ADAPTERS
 
 
+def test_architecture_domain_and_store_are_reviewed_code_not_adapters():
+    from harness.context.dependency_closure import (
+        ADAPTERS,
+        ALLOWED,
+        assert_trusted_closure,
+    )
+
+    assert {"architecture", "architecture_store"} <= ALLOWED
+    assert not {"architecture", "architecture_store"} & set(ADAPTERS)
+    assert_trusted_closure(
+        ROOT / "src/harness", entries={"architecture_store", "architecture"}
+    )
+
+
 def test_quality_gate_closure_accepts_plan_automation_source_access():
     from harness.context.dependency_closure import assert_trusted_closure
 

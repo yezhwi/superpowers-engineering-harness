@@ -35,6 +35,8 @@ ENTRIES = {
     "risk_boundaries",
 }
 ALLOWED = ENTRIES | {
+    "architecture",
+    "architecture_store",
     "context.builder",
     "context.escalation",
     "context.freshness",

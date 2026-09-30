@@ -96,6 +96,31 @@ def _main(argv=None) -> int:
     plan_sub.add_parser(
         "upgrade-execution", help="upgrade all-pending Q3 execution to v2"
     )
+    p_architecture = sub.add_parser(
+        "architecture", help="publish and inspect canonical Architecture"
+    )
+    architecture_sub = p_architecture.add_subparsers(
+        dest="architecture_command", required=True
+    )
+    architecture_publish = architecture_sub.add_parser("publish")
+    architecture_publish.add_argument("--file", required=True, dest="source_file")
+    for command in ("validate", "check"):
+        architecture_read = architecture_sub.add_parser(command)
+        architecture_read.add_argument(
+            "--json", dest="architecture_json", action="store_true"
+        )
+    architecture_resolve = architecture_sub.add_parser("resolve")
+    architecture_resolve.add_argument("path")
+    architecture_resolve.add_argument(
+        "--json", dest="architecture_json", action="store_true"
+    )
+    architecture_scope = architecture_sub.add_parser("scope")
+    architecture_scope_sub = architecture_scope.add_subparsers(
+        dest="architecture_scope_action", required=True
+    )
+    for action in ("add", "remove"):
+        architecture_scope_command = architecture_scope_sub.add_parser(action)
+        architecture_scope_command.add_argument("module_id")
     p_context = sub.add_parser("context", help="generate a validated derived Context")
     context_mode = p_context.add_mutually_exclusive_group()
     context_mode.add_argument("--compact", dest="context_mode", action="store_const", const="compact")
@@ -426,6 +451,8 @@ def _main(argv=None) -> int:
         return controlplane.cmd_plan_sync_markdown(args.target)
     if args.subcommand == "plan":
         return controlplane.cmd_plan_mutation(args)
+    if args.subcommand == "architecture":
+        return controlplane.cmd_architecture(args)
     if args.subcommand == "context":
         return controlplane.cmd_context(
             args.context_command, args.context_mode or "compact", args.context_json,
