@@ -484,17 +484,65 @@ def _print_authority_halt(code: str) -> None:
     print(code, file=sys.stderr)
 
 
+def _architecture_preflight_guidance(state: str, *, authority: bool) -> str:
+    if authority:
+        return {
+            "SPECIFYING": "repair contract in SPECIFYING, then harness align freeze",
+            "IMPLEMENTING": "harness transition SPECIFYING --reason SCOPE_DRIFT",
+            "VERIFYING": "harness transition IMPLEMENTING, then enter SPECIFYING",
+            "REVIEWING": "harness review outcome VERIFICATION_GAP --reason-code ARCHITECTURE_SCOPE_INCOMPLETE",
+            "PLANNED": "harness task recover",
+            "GATING": "harness gate, then after ESCALATED use harness task new",
+            "BLOCKED": "harness resume",
+            "REPRODUCING": "complete Finding lifecycle before recovery",
+            "FIXING": "complete fix, then harness transition VERIFYING",
+            "CONVERGED": "harness task recover",
+            "DONE": "harness task new",
+            "ESCALATED": "harness task new",
+        }.get(state, "advance to SPECIFYING through legal transitions")
+    return {
+        "SPECIFYING": "repair Architecture and run harness align freeze",
+        "IMPLEMENTING": "harness transition SPECIFYING --reason SCOPE_DRIFT",
+        "VERIFYING": "harness transition IMPLEMENTING, then enter SPECIFYING",
+        "REVIEWING": "harness review outcome VERIFICATION_GAP --reason-code ARCHITECTURE_SCOPE_INCOMPLETE",
+        "GATING": "harness gate, then harness resume",
+        "BLOCKED": "harness resume",
+        "PLANNED": "harness transition IMPLEMENTING, then harness transition SPECIFYING --reason SCOPE_DRIFT",
+        "CONVERGED": "harness transition DONE, then harness task new",
+        "DONE": "harness task new",
+        "ESCALATED": "harness task new",
+    }.get(state, "advance to SPECIFYING through legal transitions")
+
+
 def _print_preflight_failure(blockers) -> None:
     authority = next(
         (item for item in blockers if blocker_module.is_user_authority_blocker(item.code)),
         None,
     )
+    state = load_task(Path(".harness")).get("state")
     if authority is not None:
         _print_authority_halt(authority.code)
+        print(
+            f"Next: {_architecture_preflight_guidance(state, authority=True)}",
+            file=sys.stderr,
+        )
         return
-    print("GATE_PREFLIGHT_MISSING_EVIDENCE", file=sys.stderr)
+    architecture_blocked = any(
+        item.code.startswith("ARCHITECTURE_") for item in blockers
+    )
+    print(
+        "GATE_PREFLIGHT_BLOCKED"
+        if architecture_blocked
+        else "GATE_PREFLIGHT_MISSING_EVIDENCE",
+        file=sys.stderr,
+    )
     for blocker in blockers:
         print(f"- {blocker.code}: {blocker.message}", file=sys.stderr)
+    if architecture_blocked:
+        print(
+            f"Next: {_architecture_preflight_guidance(state, authority=False)}",
+            file=sys.stderr,
+        )
 
 
 def _print_alignment_freeze_blocked(issues: list[alignment.AlignmentIssue]) -> None:

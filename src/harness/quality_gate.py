@@ -157,13 +157,28 @@ def _append_live_alignment_drift(harness_dir: Path, task: dict, findings: list, 
             decisions = load_decisions(harness_dir)
         except DecisionError as exc:
             raise InvalidHarnessState(f"DECISION_REFERENCE_INVALID: {exc}") from exc
+        seal_path = harness_dir / "alignment-freeze.yaml"
+        seal = (
+            yaml.safe_load(source_access.read_text(seal_path))
+            if source_access.is_file(seal_path)
+            else None
+        )
+        architecture_facts = (
+            alignment.ArchitectureFreezeFacts(
+                seal["architecture_mode"],
+                seal["architecture_fingerprint"],
+                tuple(seal["declared_modules"]),
+            )
+            if isinstance(seal, dict) and seal.get("version") == 2
+            else alignment.ArchitectureFreezeFacts("off", None, ())
+        )
         issues = alignment.sealed_freeze_drift(
             harness_dir,
             document,
             decisions=decisions,
             boundary_refs=current_boundary_refs(document, impact_document),
             bootstrap_legacy_off=False,
-            architecture_facts=None,
+            architecture_facts=architecture_facts,
         )
     except alignment.AlignmentError as exc:
         raise InvalidHarnessState(f"ALIGNMENT_FREEZE_INVALID: {exc}") from exc
@@ -504,6 +519,16 @@ def _evaluate_gate(
         status, blockers = run_fast_gate(task, harness_dir, head, current_workspace)
         return status, blockers, None
 
+    gate_cfg = gate_doc["gate"]
+    from .architecture_gate import ArchitectureGateError, assess_architecture
+
+    try:
+        architecture_assessment = assess_architecture(
+            harness_dir, task, gate_cfg, allow_preflight=allow_preflight
+        )
+    except ArchitectureGateError as exc:
+        raise InvalidHarnessState(str(exc)) from exc
+
     requirements_doc = _load_yaml(harness_dir / "requirements.yaml")
     invariants_doc = _load_yaml(harness_dir / "invariants.yaml")
     validate_schema(
@@ -512,7 +537,6 @@ def _evaluate_gate(
     validate_schema(
         invariants_doc, "invariant.schema.json", harness_dir / "invariants.yaml"
     )
-    gate_cfg = gate_doc["gate"]
     evidence = load_evidence(harness_dir / "evidence")
     findings = load_findings(harness_dir / "findings")
     impact_path = harness_dir / "impact.yaml"
@@ -615,7 +639,7 @@ def _evaluate_gate(
                     f"{finding['id']} related regression evidence invalid: {exc}"
                 ) from exc
 
-    blockers: list[GateBlocker] = []
+    blockers: list[GateBlocker] = list(architecture_assessment.blockers)
 
     def block(code: str, category: str, message: str, **identity) -> None:
         blockers.append(

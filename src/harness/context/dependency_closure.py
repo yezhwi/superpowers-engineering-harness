@@ -36,6 +36,7 @@ ENTRIES = {
 }
 ALLOWED = ENTRIES | {
     "architecture",
+    "architecture_gate",
     "architecture_store",
     "context.builder",
     "context.escalation",
