@@ -58,8 +58,72 @@ def test_align_freeze_seals_complete_draft_without_task_transition(tmp_path):
     assert result.returncode == 0, result.stderr
     sealed = yaml.safe_load((harness / "alignment.yaml").read_text())
     assert sealed["freeze"]["frozen"] is True
-    assert (harness / "alignment-freeze.yaml").is_file()
+    freeze = yaml.safe_load((harness / "alignment-freeze.yaml").read_text())
+    assert freeze["version"] == 2
+    assert freeze["architecture_mode"] == "off"
+    assert freeze["architecture_fingerprint"] is None
+    assert freeze["declared_modules"] == []
     assert (harness / "current-task.yaml").read_bytes() == before_task
+
+
+def test_required_align_freeze_rejects_missing_scope_before_architecture_read(tmp_path):
+    from test_alignment import complete_alignment
+
+    path = repo(tmp_path)
+    harness = path / ".harness"
+    document = complete_alignment()
+    document["task_id"] = "TASK-001"
+    (harness / "alignment.yaml").write_text(yaml.safe_dump(document))
+    gate_path = harness / "gate.yaml"
+    gate = yaml.safe_load(gate_path.read_text())
+    gate["gate"]["architecture"]["mode"] = "required"
+    gate_path.write_text(yaml.safe_dump(gate, sort_keys=False))
+    task_path = harness / "current-task.yaml"
+    task = yaml.safe_load(task_path.read_text())
+    task["scope"].pop("modules")
+    task_path.write_text(yaml.safe_dump(task, sort_keys=False))
+    (harness / "architecture.yaml").write_text("malformed: [")
+    before = {name: (harness / name).read_bytes() for name in ("alignment.yaml", "current-task.yaml", "architecture.yaml")}
+
+    result = cli(path, "align", "freeze")
+
+    assert result.returncode == 2
+    assert "ARCHITECTURE_SCOPE_DECLARATION_REQUIRED" in result.stderr
+    assert not (harness / "alignment-freeze.yaml").exists()
+    assert {name: (harness / name).read_bytes() for name in before} == before
+
+
+def test_required_align_freeze_accepts_explicit_empty_support_scope(tmp_path):
+    from test_alignment import complete_alignment
+
+    path = repo(tmp_path)
+    harness = path / ".harness"
+    source = path / "support.txt"
+    source.write_text("support")
+    document = complete_alignment()
+    document["task_id"] = "TASK-001"
+    (harness / "alignment.yaml").write_text(yaml.safe_dump(document))
+    gate = yaml.safe_load((harness / "gate.yaml").read_text())
+    gate["gate"]["architecture"]["mode"] = "required"
+    (harness / "gate.yaml").write_text(yaml.safe_dump(gate, sort_keys=False))
+    task = yaml.safe_load((harness / "current-task.yaml").read_text())
+    task["scope"]["modules"] = []
+    (harness / "current-task.yaml").write_text(yaml.safe_dump(task, sort_keys=False))
+    architecture = {
+        "version": 1,
+        "modules": [{"id": "app", "name": "App", "responsibility": "Run app.", "depends_on": [], "evidence": [{"type": "source", "path": "support.txt"}]}],
+        "ownership": [{"id": "OWN-001", "pattern": "support.txt", "kind": "support", "modules": []}],
+    }
+    (harness / "architecture.yaml").write_text(yaml.safe_dump(architecture, sort_keys=False))
+
+    result = cli(path, "align", "freeze")
+
+    assert result.returncode == 0, result.stderr
+    freeze = yaml.safe_load((harness / "alignment-freeze.yaml").read_text())
+    assert freeze["version"] == 2
+    assert freeze["architecture_mode"] == "required"
+    assert freeze["architecture_fingerprint"].startswith("sha256:")
+    assert freeze["declared_modules"] == []
 
 
 def test_align_freeze_rejects_proposed_decision_without_directive(tmp_path):

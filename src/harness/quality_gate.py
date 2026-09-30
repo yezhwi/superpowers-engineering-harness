@@ -162,7 +162,8 @@ def _append_live_alignment_drift(harness_dir: Path, task: dict, findings: list, 
             document,
             decisions=decisions,
             boundary_refs=current_boundary_refs(document, impact_document),
-            bootstrap=False,
+            bootstrap_legacy_off=False,
+            architecture_facts=None,
         )
     except alignment.AlignmentError as exc:
         raise InvalidHarnessState(f"ALIGNMENT_FREEZE_INVALID: {exc}") from exc

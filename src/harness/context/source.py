@@ -333,7 +333,8 @@ class FileContextSource:
                     alignment_document,
                     decisions=decisions,
                     boundary_refs=boundary_refs,
-                    bootstrap=False,
+                    bootstrap_legacy_off=False,
+                    architecture_facts=None,
                 )
             except alignment.AlignmentError as exc:
                 raise ContextBuildError("CONTEXT_SCHEMA_INVALID", str(exc)) from exc

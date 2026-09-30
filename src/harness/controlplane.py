@@ -390,6 +390,54 @@ def _alignment_completeness_issues(
     )
 
 
+def _architecture_mode(harness_dir: Path) -> str:
+    gate_path = harness_dir / "gate.yaml"
+    gate = yaml.safe_load(source_access.read_text(gate_path))
+    quality_gate.validate_schema(gate, "gate.schema.json", gate_path)
+    return gate["gate"].get("architecture", {}).get("mode", "off")
+
+
+def _architecture_freeze_facts(
+    harness_dir: Path,
+    task: dict,
+    *,
+    require_existing_v2: bool,
+) -> alignment.ArchitectureFreezeFacts:
+    """Resolve facts after required-mode seal compatibility precheck."""
+    from harness.architecture import ArchitectureError, architecture_fingerprint
+
+    mode = _architecture_mode(harness_dir)
+    if mode == "off":
+        return alignment.ArchitectureFreezeFacts("off", None, ())
+    if require_existing_v2:
+        sealed_path = harness_dir / "alignment-freeze.yaml"
+        if not source_access.is_file(sealed_path):
+            raise alignment.AlignmentError("CONTRACT_CHANGED")
+        sealed = yaml.safe_load(source_access.read_text(sealed_path))
+        quality_gate.validate_schema(
+            sealed, "alignment-freeze.schema.json", sealed_path
+        )
+        if sealed["version"] != 2 or sealed["architecture_mode"] != "required":
+            raise alignment.AlignmentError("CONTRACT_CHANGED")
+    scope = task.get("scope") or {}
+    if "modules" not in scope:
+        code = (
+            "CONTRACT_CHANGED"
+            if require_existing_v2
+            else "ARCHITECTURE_SCOPE_DECLARATION_REQUIRED"
+        )
+        raise ArchitectureError(code)
+    model = architecture_store.load_architecture(harness_dir, required=True)
+    assert model is not None
+    declared = tuple(scope["modules"])
+    known = {module.id for module in model.modules}
+    if not set(declared) <= known:
+        raise ArchitectureError("ARCHITECTURE_SCOPE_INVALID")
+    return alignment.ArchitectureFreezeFacts(
+        "required", architecture_fingerprint(model), declared
+    )
+
+
 def _read_only_alignment_readiness(harness_dir: Path, task: dict, document: dict):
     """Return closure/seal diagnostics without bootstrap or artifact mutation."""
     issues = _alignment_completeness_issues(harness_dir, task, document)
@@ -398,12 +446,19 @@ def _read_only_alignment_readiness(harness_dir: Path, task: dict, document: dict
     sealed = harness_dir / "alignment-freeze.yaml"
     if not source_access.exists(sealed):
         return [*issues, alignment.AlignmentIssue("CONTRACT_CHANGED", "alignment.yaml")]
+    facts = _architecture_freeze_facts(
+        harness_dir, task, require_existing_v2=True
+    ) if _architecture_mode(harness_dir) == "required" else alignment.ArchitectureFreezeFacts("off", None, ())
     impact = yaml.safe_load(source_access.read_text(harness_dir / "impact.yaml"))
     return [
         *issues,
         *alignment.sealed_freeze_drift(
-            harness_dir, document, decisions=decisions,
+            harness_dir,
+            document,
+            decisions=decisions,
             boundary_refs=current_boundary_refs(document, impact.get("impact", {})),
+            bootstrap_legacy_off=False,
+            architecture_facts=facts,
         ),
     ]
 
@@ -509,6 +564,9 @@ def cmd_align(command: str) -> int:
                 _print_alignment_freeze_blocked(issues)
                 return 1
             impact = yaml.safe_load(source_access.read_text(harness_dir / "impact.yaml"))
+            facts = _architecture_freeze_facts(
+                harness_dir, task, require_existing_v2=False
+            )
             document["freeze"] = {
                 "frozen": True,
                 "frozen_at": datetime.datetime.now(datetime.UTC).isoformat(),
@@ -517,7 +575,12 @@ def cmd_align(command: str) -> int:
             document["freeze"]["contract_hash"] = alignment.contract_hash(document)
             boundary_refs = current_boundary_refs(document, impact.get("impact", {}))
             record = alignment.freeze_record(
-                document, decisions=decisions, boundary_refs=boundary_refs
+                document,
+                decisions=decisions,
+                boundary_refs=boundary_refs,
+                architecture_mode=facts.mode,
+                architecture_fingerprint=facts.fingerprint,
+                declared_modules=facts.declared_modules,
             )
             quality_gate.validate_schema(record, "alignment-freeze.schema.json", sealed_path)
             staged = transaction.stage(harness_dir, [
@@ -568,7 +631,10 @@ def cmd_align(command: str) -> int:
                 document,
                 decisions=decisions,
                 boundary_refs=current_boundary_refs(document, impact.get("impact", {})),
-                bootstrap=False,
+                bootstrap_legacy_off=False,
+                architecture_facts=_architecture_freeze_facts(
+                    harness_dir, load_task(harness_dir), require_existing_v2=True
+                ) if _architecture_mode(harness_dir) == "required" else alignment.ArchitectureFreezeFacts("off", None, ()),
             )
         except alignment.AlignmentError as exc:
             stored = document["freeze"].get("contract_hash")
@@ -835,14 +901,27 @@ def cmd_transition(target: str, *, reason: str | None = None) -> int:
             impact = yaml.safe_load(source_access.read_text(harness_dir / "impact.yaml"))
             decisions = decision.load_decisions(harness_dir)
             current_refs = current_boundary_refs(document, impact.get("impact", {}))
+            mode = _architecture_mode(harness_dir)
+            facts = _architecture_freeze_facts(
+                harness_dir, task, require_existing_v2=mode == "required"
+            )
             sealed_path = harness_dir / "alignment-freeze.yaml"
-            if not sealed_path.exists():
+            if not source_access.exists(sealed_path):
                 alignment.validate_sealed_freeze(
-                    harness_dir, document, decisions=decisions,
+                    harness_dir,
+                    document,
+                    decisions=decisions,
                     boundary_refs=legacy_boundary_baseline(document),
+                    bootstrap_legacy_off=mode == "off",
+                    architecture_facts=facts,
                 )
             drift = alignment.sealed_freeze_drift(
-                harness_dir, document, decisions=decisions, boundary_refs=current_refs
+                harness_dir,
+                document,
+                decisions=decisions,
+                boundary_refs=current_refs,
+                bootstrap_legacy_off=False,
+                architecture_facts=facts,
             )
             if drift:
                 for issue in drift:
@@ -1071,6 +1150,10 @@ def cmd_transition(target: str, *, reason: str | None = None) -> int:
             try:
                 alignment.validate_freeze(alignment_document)
                 impact = yaml.safe_load(source_access.read_text(harness_dir / "impact.yaml"))
+                mode = _architecture_mode(harness_dir)
+                facts = _architecture_freeze_facts(
+                    harness_dir, task, require_existing_v2=mode == "required"
+                )
                 alignment.validate_sealed_freeze(
                     harness_dir,
                     alignment_document,
@@ -1078,6 +1161,8 @@ def cmd_transition(target: str, *, reason: str | None = None) -> int:
                     boundary_refs=current_boundary_refs(
                         alignment_document, impact.get("impact", {})
                     ),
+                    bootstrap_legacy_off=mode == "off",
+                    architecture_facts=facts,
                 )
             except (alignment.AlignmentError, decision.DecisionError, ValueError) as exc:
                 code = str(exc)

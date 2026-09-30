@@ -533,6 +533,7 @@ def test_standard_entry_seals_typed_boundary_and_removal_drifts(
 
     assert cli(repo, "transition", "IMPLEMENTING").returncode == 0
     sealed = yaml.safe_load((repo / ".harness/alignment-freeze.yaml").read_text())
+    assert sealed["version"] == 1
     assert sealed["boundary_refs"][kind] == [ref]
 
     impact_path.write_text(yaml.safe_dump({"impact": {"contracts": [], "required_tests": ["tests/test_test_plan_transition.py"]}}))
@@ -558,6 +559,28 @@ def test_standard_planned_to_implementing_rejects_unfrozen_alignment(tmp_path):
     assert "ALIGNMENT_FREEZE_INVALID" in result.stderr
     assert "POLICY: USER_AUTHORITY_REQUIRED" not in result.stderr
     assert "DIRECTIVE: HALT_AND_WAIT" not in result.stderr
+
+
+def test_required_planned_entry_rejects_missing_seal_before_architecture_read(tmp_path):
+    repo = standard_repo_in_state(tmp_path)
+    write_minimal_decision(repo)
+    write_documents(repo, valid=True)
+    write_alignment(repo, frozen=True)
+    write_plan_artifacts(repo)
+    harness = repo / ".harness"
+    gate = yaml.safe_load((harness / "gate.yaml").read_text())
+    gate["gate"]["architecture"]["mode"] = "required"
+    (harness / "gate.yaml").write_text(yaml.safe_dump(gate, sort_keys=False))
+    (harness / "architecture.yaml").write_text("malformed: [")
+    before = (harness / "architecture.yaml").read_bytes()
+
+    result = cli(repo, "transition", "IMPLEMENTING")
+
+    assert result.returncode == 1
+    assert "CONTRACT_CHANGED" in result.stderr
+    assert not (harness / "alignment-freeze.yaml").exists()
+    assert (harness / "architecture.yaml").read_bytes() == before
+    assert yaml.safe_load((harness / "current-task.yaml").read_text())["state"] == "PLANNED"
 
 
 def test_standard_entry_live_contract_change_halts(tmp_path):

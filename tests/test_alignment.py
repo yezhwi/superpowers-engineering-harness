@@ -1,3 +1,4 @@
+from copy import deepcopy
 from pathlib import Path
 
 import pytest
@@ -203,6 +204,217 @@ def test_completeness_diagnostics_are_ordered():
     ]
 
 
+def test_alignment_freeze_schema_accepts_exact_v1_and_v2_only():
+    from jsonschema import ValidationError, validate
+
+    from harness.schema_resources import read_schema
+
+    common = {
+        "task_id": "TASK-001",
+        "contract_hash": "sha256:" + "0" * 64,
+        "decision_selections": {},
+        "boundary_refs": {"interface": [], "permission": [], "persistence": []},
+        "frozen_at": "2026-10-01T00:00:00Z",
+    }
+    v1 = {"version": 1, **common}
+    v2 = {
+        "version": 2,
+        **common,
+        "architecture_mode": "required",
+        "architecture_fingerprint": "sha256:" + "1" * 64,
+        "declared_modules": ["app"],
+    }
+    schema = read_schema("alignment-freeze.schema.json")
+
+    validate(v1, schema)
+    validate(v2, schema)
+    validate(
+        {
+            **v2,
+            "architecture_mode": "off",
+            "architecture_fingerprint": None,
+            "declared_modules": [],
+        },
+        schema,
+    )
+    for invalid in (
+        {**v1, "architecture_mode": "off"},
+        {**v2, "unknown": True},
+        {**v2, "architecture_mode": "off"},
+        {**v2, "declared_modules": ["app", "app"]},
+    ):
+        with pytest.raises(ValidationError):
+            validate(invalid, schema)
+
+
+def test_freeze_record_v2_contains_architecture_facts():
+    from harness.alignment import contract_hash, freeze_record
+
+    document = complete_alignment()
+    document["freeze"] = {
+        "frozen": True,
+        "frozen_at": "2026-10-01T00:00:00Z",
+        "contract_hash": contract_hash(document),
+    }
+
+    record = freeze_record(
+        document,
+        decisions=[],
+        boundary_refs={"interface": [], "permission": [], "persistence": []},
+        architecture_mode="required",
+        architecture_fingerprint="sha256:" + "1" * 64,
+        declared_modules=("app",),
+    )
+
+    assert record["version"] == 2
+    assert record["architecture_mode"] == "required"
+    assert record["architecture_fingerprint"] == "sha256:" + "1" * 64
+    assert record["declared_modules"] == ["app"]
+
+
+def test_required_mode_rejects_missing_v1_and_v2_off_seals_without_bootstrap(tmp_path):
+    from harness.alignment import (
+        AlignmentIssue,
+        ArchitectureFreezeFacts,
+        contract_hash,
+        freeze_record,
+        sealed_freeze_drift,
+    )
+
+    document = complete_alignment()
+    document["freeze"] = {
+        "frozen": True,
+        "frozen_at": "2026-10-01T00:00:00Z",
+        "contract_hash": contract_hash(document),
+    }
+    refs = {"interface": [], "permission": [], "persistence": []}
+    required = ArchitectureFreezeFacts("required", "sha256:" + "1" * 64, ("app",))
+    assert sealed_freeze_drift(
+        tmp_path,
+        document,
+        decisions=[],
+        boundary_refs=refs,
+        bootstrap_legacy_off=False,
+        architecture_facts=required,
+    ) == [AlignmentIssue("CONTRACT_CHANGED")]
+    assert not (tmp_path / "alignment-freeze.yaml").exists()
+
+    legacy = {
+        "version": 1,
+        "task_id": document["task_id"],
+        "contract_hash": document["freeze"]["contract_hash"],
+        "decision_selections": {},
+        "boundary_refs": refs,
+        "frozen_at": document["freeze"]["frozen_at"],
+    }
+    (tmp_path / "alignment-freeze.yaml").write_text(yaml.safe_dump(legacy))
+    assert sealed_freeze_drift(
+        tmp_path,
+        document,
+        decisions=[],
+        boundary_refs=refs,
+        bootstrap_legacy_off=False,
+        architecture_facts=required,
+    )[0].code == "CONTRACT_CHANGED"
+
+    off = freeze_record(
+        document,
+        decisions=[],
+        boundary_refs=refs,
+        architecture_mode="off",
+        architecture_fingerprint=None,
+        declared_modules=(),
+    )
+    (tmp_path / "alignment-freeze.yaml").write_text(yaml.safe_dump(off))
+    assert sealed_freeze_drift(
+        tmp_path,
+        document,
+        decisions=[],
+        boundary_refs=refs,
+        bootstrap_legacy_off=False,
+        architecture_facts=required,
+    )[0].code == "CONTRACT_CHANGED"
+
+
+def test_v2_drift_compares_architecture_and_existing_contract_facts(tmp_path):
+    from harness.alignment import (
+        AlignmentIssue,
+        ArchitectureFreezeFacts,
+        contract_hash,
+        freeze_record,
+        sealed_freeze_drift,
+    )
+
+    document = complete_alignment()
+    document["freeze"] = {
+        "frozen": True,
+        "frozen_at": "2026-10-01T00:00:00Z",
+        "contract_hash": contract_hash(document),
+    }
+    refs = {"interface": [], "permission": [], "persistence": []}
+    facts = ArchitectureFreezeFacts("required", "sha256:" + "1" * 64, ("app",))
+    record = freeze_record(
+        document,
+        decisions=[],
+        boundary_refs=refs,
+        architecture_mode=facts.mode,
+        architecture_fingerprint=facts.fingerprint,
+        declared_modules=facts.declared_modules,
+    )
+    (tmp_path / "alignment-freeze.yaml").write_text(yaml.safe_dump(record))
+
+    assert sealed_freeze_drift(
+        tmp_path,
+        document,
+        decisions=[],
+        boundary_refs=refs,
+        bootstrap_legacy_off=False,
+        architecture_facts=facts,
+    ) == []
+    for changed in (
+        ArchitectureFreezeFacts("off", None, ()),
+        ArchitectureFreezeFacts("required", "sha256:" + "2" * 64, ("app",)),
+        ArchitectureFreezeFacts("required", "sha256:" + "1" * 64, ("other",)),
+    ):
+        assert sealed_freeze_drift(
+            tmp_path,
+            document,
+            decisions=[],
+            boundary_refs=refs,
+            bootstrap_legacy_off=False,
+            architecture_facts=changed,
+        )[0].code == "CONTRACT_CHANGED"
+
+    for field, value in (
+        ("task_id", "TASK-002"),
+        ("decision_selections", {"DEC-001": "changed"}),
+    ):
+        changed_record = dict(record)
+        changed_record[field] = value
+        (tmp_path / "alignment-freeze.yaml").write_text(yaml.safe_dump(changed_record))
+        assert sealed_freeze_drift(
+            tmp_path,
+            document,
+            decisions=[],
+            boundary_refs=refs,
+            bootstrap_legacy_off=False,
+            architecture_facts=facts,
+        )[0].code == "CONTRACT_CHANGED"
+
+    changed_record = deepcopy(record)
+    changed_record["boundary_refs"]["permission"] = ["DEC-001"]
+    (tmp_path / "alignment-freeze.yaml").write_text(yaml.safe_dump(changed_record))
+    issues = sealed_freeze_drift(
+        tmp_path,
+        document,
+        decisions=[],
+        boundary_refs=refs,
+        bootstrap_legacy_off=False,
+        architecture_facts=facts,
+    )
+    assert issues == [AlignmentIssue("SCOPE_DRIFT_PERMISSION", "DEC-001")]
+
+
 def test_sealed_freeze_bootstraps_once_and_rejects_self_hash_rewrite(tmp_path):
     from harness.alignment import contract_hash, validate_sealed_freeze
 
@@ -264,11 +476,20 @@ def test_sealed_freeze_reports_each_changed_boundary(tmp_path):
     document["task_id"] = "TASK-001"
     document["freeze"] = {"frozen": True, "frozen_at": "2026-09-18T00:00:00+00:00", "contract_hash": contract_hash(document)}
     initial = {"interface": [], "permission": ["DEC-001"], "persistence": ["INT-001"]}
-    assert sealed_freeze_drift(tmp_path, document, decisions=[], boundary_refs=initial) == []
+    assert sealed_freeze_drift(
+        tmp_path,
+        document,
+        decisions=[],
+        boundary_refs=initial,
+        bootstrap_legacy_off=True,
+        architecture_facts=None,
+    ) == []
 
     assert [(issue.code, issue.subject_id) for issue in sealed_freeze_drift(
         tmp_path, document, decisions=[],
         boundary_refs={"interface": [], "permission": ["DEC-002"], "persistence": []},
+        bootstrap_legacy_off=False,
+        architecture_facts=None,
     )] == [
         ("SCOPE_DRIFT_PERMISSION", "DEC-001"),
         ("SCOPE_DRIFT_PERMISSION", "DEC-002"),

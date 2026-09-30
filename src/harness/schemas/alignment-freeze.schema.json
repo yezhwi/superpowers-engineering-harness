@@ -1,13 +1,17 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "type": "object",
-  "required": ["version", "task_id", "contract_hash", "decision_selections", "boundary_refs", "frozen_at"],
-  "properties": {
-    "version": {"const": 1},
-    "task_id": {"type": "string", "pattern": "^TASK-[0-9]+$"},
-    "contract_hash": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
-    "decision_selections": {"type": "object", "additionalProperties": {"type": "string", "minLength": 1}},
-    "boundary_refs": {
+  "oneOf": [
+    {"$ref": "#/definitions/v1"},
+    {"$ref": "#/definitions/v2"}
+  ],
+  "definitions": {
+    "taskId": {"type": "string", "pattern": "^TASK-[0-9]+$"},
+    "fingerprint": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "decisionSelections": {
+      "type": "object",
+      "additionalProperties": {"type": "string", "minLength": 1}
+    },
+    "boundaryRefs": {
       "type": "object",
       "required": ["interface", "permission", "persistence"],
       "properties": {
@@ -17,7 +21,66 @@
       },
       "additionalProperties": false
     },
-    "frozen_at": {"type": "string", "minLength": 1}
-  },
-  "additionalProperties": false
+    "moduleId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"
+    },
+    "v1": {
+      "type": "object",
+      "required": ["version", "task_id", "contract_hash", "decision_selections", "boundary_refs", "frozen_at"],
+      "properties": {
+        "version": {"const": 1},
+        "task_id": {"$ref": "#/definitions/taskId"},
+        "contract_hash": {"$ref": "#/definitions/fingerprint"},
+        "decision_selections": {"$ref": "#/definitions/decisionSelections"},
+        "boundary_refs": {"$ref": "#/definitions/boundaryRefs"},
+        "frozen_at": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
+    "v2": {
+      "type": "object",
+      "required": ["version", "task_id", "contract_hash", "architecture_mode", "architecture_fingerprint", "declared_modules", "decision_selections", "boundary_refs", "frozen_at"],
+      "properties": {
+        "version": {"const": 2},
+        "task_id": {"$ref": "#/definitions/taskId"},
+        "contract_hash": {"$ref": "#/definitions/fingerprint"},
+        "architecture_mode": {"enum": ["off", "required"]},
+        "architecture_fingerprint": {
+          "oneOf": [
+            {"$ref": "#/definitions/fingerprint"},
+            {"type": "null"}
+          ]
+        },
+        "declared_modules": {
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {"$ref": "#/definitions/moduleId"}
+        },
+        "decision_selections": {"$ref": "#/definitions/decisionSelections"},
+        "boundary_refs": {"$ref": "#/definitions/boundaryRefs"},
+        "frozen_at": {"type": "string", "minLength": 1}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"architecture_mode": {"const": "off"}}},
+          "then": {
+            "properties": {
+              "architecture_fingerprint": {"type": "null"},
+              "declared_modules": {"maxItems": 0}
+            }
+          },
+          "else": {
+            "properties": {
+              "architecture_fingerprint": {"$ref": "#/definitions/fingerprint"}
+            }
+          }
+        }
+      ],
+      "additionalProperties": false
+    }
+  }
 }

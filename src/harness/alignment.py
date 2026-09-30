@@ -22,6 +22,13 @@ class AlignmentIssue:
     subject_id: str | None = None
 
 
+@dataclass(frozen=True)
+class ArchitectureFreezeFacts:
+    mode: str
+    fingerprint: str | None
+    declared_modules: tuple[str, ...]
+
+
 def _validate(document: dict) -> None:
     try:
         validate(document, read_schema("alignment.schema.json"))
@@ -91,22 +98,55 @@ def classify_scope_drift(
     return issues
 
 
-def freeze_record(
-    document: dict, *, decisions: list[dict], boundary_refs: dict
-) -> dict:
-    """Project current frozen Alignment facts into its immutable seal."""
-    selections = {
+def _decision_selections(document: dict, decisions: list[dict]) -> dict:
+    return {
         item["id"]: item["selected"]["option"]
         for item in decisions
         if item.get("status") == "ACCEPTED"
         and item.get("selected")
         and item["id"] in document["decision_ids"]
     }
+
+
+def _legacy_freeze_record(
+    document: dict, *, decisions: list[dict], boundary_refs: dict
+) -> dict:
     return {
         "version": 1,
         "task_id": document["task_id"],
         "contract_hash": contract_hash(document),
-        "decision_selections": selections,
+        "decision_selections": _decision_selections(document, decisions),
+        "boundary_refs": boundary_refs,
+        "frozen_at": document["freeze"]["frozen_at"],
+    }
+
+
+def freeze_record(
+    document: dict,
+    *,
+    decisions: list[dict],
+    boundary_refs: dict,
+    architecture_mode: str,
+    architecture_fingerprint: str | None,
+    declared_modules: tuple[str, ...],
+) -> dict:
+    """Project explicit v2 Alignment and Architecture facts into one seal."""
+    if architecture_mode not in {"off", "required"}:
+        raise AlignmentError("ALIGNMENT_FREEZE_INVALID")
+    if architecture_mode == "off" and (
+        architecture_fingerprint is not None or declared_modules
+    ):
+        raise AlignmentError("ALIGNMENT_FREEZE_INVALID")
+    if architecture_mode == "required" and architecture_fingerprint is None:
+        raise AlignmentError("ALIGNMENT_FREEZE_INVALID")
+    return {
+        "version": 2,
+        "task_id": document["task_id"],
+        "contract_hash": contract_hash(document),
+        "architecture_mode": architecture_mode,
+        "architecture_fingerprint": architecture_fingerprint,
+        "declared_modules": sorted(declared_modules),
+        "decision_selections": _decision_selections(document, decisions),
         "boundary_refs": boundary_refs,
         "frozen_at": document["freeze"]["frozen_at"],
     }
@@ -118,40 +158,75 @@ def sealed_freeze_drift(
     *,
     decisions: list[dict],
     boundary_refs: dict,
-    bootstrap: bool = True,
+    bootstrap_legacy_off: bool,
+    architecture_facts: ArchitectureFreezeFacts | None,
 ) -> list[AlignmentIssue]:
-    """Bootstrap legacy freeze once; classify immutable baseline changes.
-
-    Read-only callers pass ``bootstrap=False`` so a missing seal is drift
-    instead of a new baseline written during inspection.
-    """
+    """Compare seal by actual version; optionally publish missing legacy off seal."""
     validate_freeze(document)
-    record = freeze_record(
+    facts = architecture_facts or ArchitectureFreezeFacts("off", None, ())
+    legacy = _legacy_freeze_record(
         document, decisions=decisions, boundary_refs=boundary_refs
     )
-    try:
-        validate(record, read_schema("alignment-freeze.schema.json"))
-    except ValidationError as exc:
-        raise AlignmentError("ALIGNMENT_FREEZE_INVALID") from exc
     path = harness_dir / "alignment-freeze.yaml"
-    if not path.exists():
-        if not bootstrap:
+    if not source_access.exists(path):
+        if not bootstrap_legacy_off or facts.mode != "off":
             return [AlignmentIssue("CONTRACT_CHANGED")]
-        transaction.atomic_write(path, yaml.safe_dump(record, sort_keys=False).encode())
+        try:
+            validate(legacy, read_schema("alignment-freeze.schema.json"))
+        except ValidationError as exc:
+            raise AlignmentError("ALIGNMENT_FREEZE_INVALID") from exc
+        transaction.atomic_write(path, yaml.safe_dump(legacy, sort_keys=False).encode())
         return []
     try:
         actual = yaml.safe_load(source_access.read_text(path))
         validate(actual, read_schema("alignment-freeze.schema.json"))
     except (OSError, yaml.YAMLError, ValidationError) as exc:
         raise AlignmentError("ALIGNMENT_FREEZE_INVALID") from exc
-    if any(actual[key] != record[key] for key in ("task_id", "contract_hash", "decision_selections")):
+    if any(
+        actual[key] != legacy[key]
+        for key in ("task_id", "contract_hash", "decision_selections")
+    ):
         return [AlignmentIssue("CONTRACT_CHANGED")]
-    codes = {"interface": "SCOPE_DRIFT_API", "permission": "SCOPE_DRIFT_PERMISSION", "persistence": "SCOPE_DRIFT_PERSISTENCE"}
-    return [AlignmentIssue(codes[kind], ref) for kind in codes for ref in sorted(set(actual["boundary_refs"][kind]) ^ set(boundary_refs[kind]))]
+    if actual["version"] == 1:
+        if facts.mode != "off":
+            return [AlignmentIssue("CONTRACT_CHANGED")]
+    elif (
+        actual["architecture_mode"] != facts.mode
+        or actual["architecture_fingerprint"] != facts.fingerprint
+        or sorted(actual["declared_modules"]) != sorted(facts.declared_modules)
+    ):
+        return [AlignmentIssue("CONTRACT_CHANGED")]
+    codes = {
+        "interface": "SCOPE_DRIFT_API",
+        "permission": "SCOPE_DRIFT_PERMISSION",
+        "persistence": "SCOPE_DRIFT_PERSISTENCE",
+    }
+    return [
+        AlignmentIssue(codes[kind], ref)
+        for kind in codes
+        for ref in sorted(
+            set(actual["boundary_refs"][kind]) ^ set(boundary_refs[kind])
+        )
+    ]
 
 
-def validate_sealed_freeze(harness_dir: Path, document: dict, *, decisions: list[dict], boundary_refs: dict) -> None:
-    issues = sealed_freeze_drift(harness_dir, document, decisions=decisions, boundary_refs=boundary_refs)
+def validate_sealed_freeze(
+    harness_dir: Path,
+    document: dict,
+    *,
+    decisions: list[dict],
+    boundary_refs: dict,
+    bootstrap_legacy_off: bool = True,
+    architecture_facts: ArchitectureFreezeFacts | None = None,
+) -> None:
+    issues = sealed_freeze_drift(
+        harness_dir,
+        document,
+        decisions=decisions,
+        boundary_refs=boundary_refs,
+        bootstrap_legacy_off=bootstrap_legacy_off,
+        architecture_facts=architecture_facts,
+    )
     if issues:
         raise AlignmentError(issues[0].code)
 
