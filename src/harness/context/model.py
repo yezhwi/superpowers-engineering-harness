@@ -1,10 +1,15 @@
 """Authoritative inputs retained independently of their Control Core projection."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
-from typing import Any, Protocol, TypedDict
+from typing import TYPE_CHECKING, Any, Protocol, TypedDict
 
 from harness.quality_gate import GateAssessment
 from harness.workspace import WorkspaceSnapshot
+
+if TYPE_CHECKING:
+    from harness.architecture_gate import ArchitectureAssessment
 
 
 class ContextBuildError(ValueError):
@@ -35,6 +40,8 @@ class AuthoritativeContext:
     references: dict[str, dict | None]
     workspace: WorkspaceSnapshot
     gate: GateAssessment
+    architecture: dict | None = None
+    architecture_assessment: ArchitectureAssessment | None = None
     plan_assessment: Any | None = None
     expansions: list[dict] = field(default_factory=list)
 

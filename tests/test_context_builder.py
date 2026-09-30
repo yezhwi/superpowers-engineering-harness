@@ -93,6 +93,88 @@ def load_and_build(root):
     return source, build_control_core(source)
 
 
+def enable_required_architecture(harness, *, write_artifact=True):
+    from harness.architecture import architecture_fingerprint, load_architecture_document
+
+    task = set_profile(harness, "Q2")
+    task["scope"]["modules"] = ["app"]
+    write_yaml(harness / "current-task.yaml", task)
+    gate = yaml.safe_load((harness / "gate.yaml").read_text())
+    gate["gate"]["architecture"] = {"mode": "required"}
+    write_yaml(harness / "gate.yaml", gate)
+    source = harness.parent / "src/app.py"
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_text("VALUE = 1\n")
+    architecture = {
+        "version": 1,
+        "modules": [{
+            "id": "app",
+            "name": "Application",
+            "responsibility": "Run application behavior.",
+            "depends_on": [],
+            "evidence": [{"type": "source", "path": "src/app.py"}],
+        }],
+        "ownership": [{
+            "id": "OWN-001",
+            "pattern": "src/**",
+            "kind": "production",
+            "modules": ["app"],
+        }],
+    }
+    model = load_architecture_document(architecture)
+    if write_artifact:
+        write_yaml(harness / "architecture.yaml", architecture)
+    alignment = _frozen_alignment(task["task"]["id"])
+    write_yaml(harness / "alignment.yaml", alignment)
+    write_yaml(harness / "alignment-freeze.yaml", {
+        "version": 2,
+        "task_id": task["task"]["id"],
+        "contract_hash": alignment["freeze"]["contract_hash"],
+        "architecture_mode": "required",
+        "architecture_fingerprint": architecture_fingerprint(model),
+        "declared_modules": ["app"],
+        "decision_selections": {},
+        "boundary_refs": {"interface": [], "permission": [], "persistence": []},
+        "frozen_at": "2026-09-30T00:00:00+00:00",
+    })
+    return architecture
+
+
+def test_required_architecture_is_authoritative_and_shares_gate_assessment(harness):
+    architecture = enable_required_architecture(harness)
+
+    source, _ = load_and_build(harness)
+
+    assert source.architecture == architecture
+    assert source.architecture_assessment is source.gate.architecture_assessment
+    assert source.architecture_assessment.model is not None
+    assert source.references["architecture.yaml"]["ref"] == ".harness/architecture.yaml"
+
+
+def test_required_missing_architecture_remains_none_with_shared_blocker(harness):
+    enable_required_architecture(harness, write_artifact=False)
+
+    source, _ = load_and_build(harness)
+
+    assert source.architecture is None
+    assert source.architecture_assessment is source.gate.architecture_assessment
+    assert [blocker.code for blocker in source.architecture_assessment.blockers] == [
+        "ARCHITECTURE_REQUIRED"
+    ]
+    assert source.references["architecture.yaml"] is None
+
+
+def test_required_malformed_architecture_is_context_schema_invalid(harness):
+    from harness.context.model import ContextBuildError
+    from harness.context.source import FileContextSource
+
+    enable_required_architecture(harness)
+    (harness / "architecture.yaml").write_text("modules: [")
+
+    with pytest.raises(ContextBuildError, match="CONTEXT_SCHEMA_INVALID"):
+        FileContextSource(harness).load()
+
+
 def enable_plan_reconciliation(harness, *, level="Q2"):
     task = set_profile(harness, level)
     task["plan_reconciliation"] = {

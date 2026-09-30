@@ -41,6 +41,13 @@ def test_architecture_domain_and_store_are_reviewed_code_not_adapters():
     )
 
 
+def test_architecture_gate_is_reviewed_code_not_adapter():
+    from harness.context.dependency_closure import ADAPTERS, ALLOWED
+
+    assert "architecture_gate" in ALLOWED
+    assert "architecture_gate" not in ADAPTERS
+
+
 def test_quality_gate_closure_accepts_plan_automation_source_access():
     from harness.context.dependency_closure import assert_trusted_closure
 

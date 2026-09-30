@@ -1,5 +1,10 @@
 """Production Context must reject unregistered Gate input, not merely lint it."""
 
+import os
+from pathlib import Path
+import subprocess
+import sys
+
 import pytest
 import test_context_builder
 
@@ -9,6 +14,30 @@ from harness.context.model import ContextBuildError
 from harness.context.store import generate_context
 
 harness = test_context_builder.harness
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_cold_q2_off_context_import_stays_inside_source_scope(harness):
+    task = test_context_builder.set_profile(harness, "Q2")
+    alignment = test_context_builder._frozen_alignment(task["task"]["id"])
+    test_context_builder.write_yaml(harness / "alignment.yaml", alignment)
+    test_context_builder._write_matching_seal(harness, alignment)
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from pathlib import Path; "
+            "from harness.context.integrity import build_context; "
+            "build_context(Path('.harness'))",
+        ],
+        cwd=harness.parent,
+        capture_output=True,
+        text=True,
+        env={**os.environ, "PYTHONPATH": str(ROOT / "src")},
+    )
+
+    assert result.returncode == 0, result.stderr
 
 
 @pytest.mark.parametrize("swallow", [False, True])

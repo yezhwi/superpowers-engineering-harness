@@ -245,6 +245,35 @@ def resolve_ownership(model: ArchitectureModel, path: str) -> OwnershipResolutio
     )
 
 
+def architecture_document(model: ArchitectureModel) -> dict:
+    """Return complete canonical data without exposing in-memory dataclasses."""
+    modules = [
+        {
+            "id": module.id,
+            "name": module.name,
+            "responsibility": module.responsibility,
+            "depends_on": list(module.depends_on),
+            "evidence": [
+                {"type": item.type, "path": item.path} for item in module.evidence
+            ],
+        }
+        for module in model.modules
+    ]
+    ownership = []
+    for rule in model.ownership:
+        record = {
+            "id": rule.id,
+            "pattern": rule.pattern,
+            "kind": rule.kind,
+            "modules": list(rule.modules),
+        }
+        if rule.allow_empty:
+            record["allow_empty"] = True
+            record["empty_reason"] = rule.empty_reason
+        ownership.append(record)
+    return {"version": model.version, "modules": modules, "ownership": ownership}
+
+
 def architecture_fingerprint(model: ArchitectureModel) -> str:
     """Hash normalized semantic Architecture facts, never YAML presentation."""
     normalized = {

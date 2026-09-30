@@ -479,8 +479,9 @@ def _evaluate_gate(
     head: str | None = None,
     allow_converged: bool = False,
     allow_preflight: bool = False,
-) -> tuple[str, list, PlanAssessment | None]:
-    """Return status, blockers, and one optional Plan assessment."""
+    architecture_assessment=None,
+) -> tuple[str, list, PlanAssessment | None, object | None]:
+    """Return status, blockers, optional Plan and Architecture assessments."""
     from harness import source_access
 
     task = _load_yaml(harness_dir / "current-task.yaml")
@@ -517,17 +518,18 @@ def _evaluate_gate(
     validate_schema(gate_doc, "gate.schema.json", harness_dir / "gate.yaml")
     if (task.get("risk") or {}).get("profile") == "FAST":
         status, blockers = run_fast_gate(task, harness_dir, head, current_workspace)
-        return status, blockers, None
+        return status, blockers, None, None
 
     gate_cfg = gate_doc["gate"]
-    from .architecture_gate import ArchitectureGateError, assess_architecture
+    if architecture_assessment is None:
+        from .architecture_gate import ArchitectureGateError, assess_architecture
 
-    try:
-        architecture_assessment = assess_architecture(
-            harness_dir, task, gate_cfg, allow_preflight=allow_preflight
-        )
-    except ArchitectureGateError as exc:
-        raise InvalidHarnessState(str(exc)) from exc
+        try:
+            architecture_assessment = assess_architecture(
+                harness_dir, task, gate_cfg, allow_preflight=allow_preflight
+            )
+        except ArchitectureGateError as exc:
+            raise InvalidHarnessState(str(exc)) from exc
 
     requirements_doc = _load_yaml(harness_dir / "requirements.yaml")
     invariants_doc = _load_yaml(harness_dir / "invariants.yaml")
@@ -1249,7 +1251,7 @@ def _evaluate_gate(
         )
 
     status = "PASS" if not blockers else "BLOCKED"
-    return status, blockers, plan_assessment
+    return status, blockers, plan_assessment, architecture_assessment
 
 
 @dataclass(frozen=True)
@@ -1259,6 +1261,7 @@ class GateAssessment:
     quality: dict[str, str]
     release_readiness: dict[str, list[str] | str]
     plan_assessment: PlanAssessment | None = None
+    architecture_assessment: object | None = None
 
 
 def assess_gate(
@@ -1266,13 +1269,15 @@ def assess_gate(
     head: str | None = None,
     allow_converged: bool = False,
     allow_preflight: bool = False,
+    architecture_assessment=None,
 ) -> GateAssessment:
     """Evaluate current Harness state without persisting a Gate result."""
-    status, blockers, plan_assessment = _evaluate_gate(
+    status, blockers, plan_assessment, architecture_assessment = _evaluate_gate(
         harness_dir,
         head=head,
         allow_converged=allow_converged,
         allow_preflight=allow_preflight,
+        architecture_assessment=architecture_assessment,
     )
     readiness = (
         {"status": "NOT_READY", "reasons": ["quality_gate_blocked"]}
@@ -1280,11 +1285,12 @@ def assess_gate(
         else {"status": "READY", "reasons": []}
     )
     return GateAssessment(
-        status,
-        tuple(blockers),
-        {"status": "PASS" if status == "PASS" else "BLOCKED"},
-        readiness,
-        plan_assessment,
+        status=status,
+        blockers=tuple(blockers),
+        quality={"status": "PASS" if status == "PASS" else "BLOCKED"},
+        release_readiness=readiness,
+        plan_assessment=plan_assessment,
+        architecture_assessment=architecture_assessment,
     )
 
 

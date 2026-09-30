@@ -7,6 +7,7 @@ import yaml
 
 from harness import (
     alignment,
+    architecture_gate,
     decision,
     diagnosability,
     interface_contract,
@@ -15,6 +16,7 @@ from harness import (
     source_access,
     workspace,
 )
+from harness.architecture import architecture_document
 from harness.evidence_validator import EvidenceStatus, project_evidence
 from harness.plan_reconciliation import (
     PlanArtifactError,
@@ -162,6 +164,34 @@ class FileContextSource:
                 "classified task required; run task classify first",
             )
         fast = task["risk"]["profile"] == "FAST"
+        gate_document = self._document("gate.yaml", "gate.schema.json")
+        try:
+            architecture_assessment = architecture_gate.assess_architecture(
+                self.harness_dir,
+                task,
+                gate_document["gate"],
+                allow_preflight=True,
+            )
+        except architecture_gate.ArchitectureGateError as exc:
+            raise ContextBuildError("CONTEXT_SCHEMA_INVALID", str(exc)) from exc
+        architecture = (
+            architecture_document(architecture_assessment.model)
+            if architecture_assessment.model is not None
+            else None
+        )
+        architecture_mode = (
+            (gate_document["gate"].get("architecture") or {}).get("mode", "off")
+        )
+        architecture_enabled = (
+            not fast
+            and task["risk"].get("level") != "Q1"
+            and architecture_mode == "required"
+        )
+        if architecture_enabled:
+            if architecture is None:
+                self.references["architecture.yaml"] = None
+            else:
+                self._reference("architecture.yaml")
         plan = None
         plan_execution = None
         plan_configuration = effective_plan_reconciliation(task)
@@ -334,7 +364,11 @@ class FileContextSource:
                     decisions=decisions,
                     boundary_refs=boundary_refs,
                     bootstrap_legacy_off=False,
-                    architecture_facts=None,
+                    architecture_facts=alignment.ArchitectureFreezeFacts(
+                        architecture_mode,
+                        architecture_assessment.sealed_fingerprint,
+                        architecture_assessment.declared_modules,
+                    ),
                 )
             except alignment.AlignmentError as exc:
                 raise ContextBuildError("CONTEXT_SCHEMA_INVALID", str(exc)) from exc
@@ -351,7 +385,6 @@ class FileContextSource:
                 )
             except ValueError as exc:
                 raise ContextBuildError("CONTEXT_SCHEMA_INVALID", str(exc)) from exc
-        self._document("gate.yaml", "gate.schema.json")
         try:
             current = workspace.snapshot(self.repo_root)
             evidence = []
@@ -394,7 +427,10 @@ class FileContextSource:
                         "CONTEXT_SCHEMA_INVALID", str(exc)
                     ) from exc
             gate = quality_gate.assess_gate(
-                self.harness_dir, head=current.head, allow_preflight=True
+                self.harness_dir,
+                head=current.head,
+                allow_preflight=True,
+                architecture_assessment=architecture_assessment,
             )
         except (
             OSError,
@@ -425,5 +461,7 @@ class FileContextSource:
             references=self.references.copy(),
             workspace=current,
             gate=gate,
+            architecture=architecture,
+            architecture_assessment=architecture_assessment,
             plan_assessment=plan_assessment,
         )
