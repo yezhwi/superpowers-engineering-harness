@@ -109,6 +109,53 @@ def test_task_recover_archives_artifacts_and_creates_fresh_task(tmp_path):
     assert list(evidence.iterdir()) == []
 
 
+def test_task_recover_preserves_required_mode_and_architecture_artifact(tmp_path):
+    repo = make_repo(tmp_path)
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-qm", "base"], cwd=repo, check=True)
+    set_task_state(repo, "IMPLEMENTING")
+    harness = repo / ".harness"
+    seal = {
+        "version": 2,
+        "task_id": "TASK-004",
+        "contract_hash": "sha256:" + "0" * 64,
+        "architecture_mode": "required",
+        "architecture_fingerprint": "sha256:" + "1" * 64,
+        "declared_modules": ["app"],
+        "decision_selections": {},
+        "boundary_refs": {"interface": [], "permission": [], "persistence": []},
+        "frozen_at": "2026-10-01T00:00:00Z",
+    }
+    (harness / "alignment-freeze.yaml").write_text(yaml.safe_dump(seal, sort_keys=False))
+    architecture = harness / "architecture.yaml"
+    architecture.write_text("version: 1\n")
+    before = architecture.read_bytes()
+
+    result = run_cli(repo, "task", "recover", "TASK-005", "--reason", "stale")
+
+    assert result.returncode == 0, result.stderr
+    gate = yaml.safe_load((harness / "gate.yaml").read_text())
+    assert gate["gate"]["architecture"]["mode"] == "required"
+    assert architecture.read_bytes() == before
+    archive = next((harness / "history").glob("TASK-004-*"))
+    assert (archive / "alignment-freeze.yaml").is_file()
+
+
+def test_task_recover_malformed_seal_is_atomic(tmp_path):
+    repo = make_repo(tmp_path)
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-qm", "base"], cwd=repo, check=True)
+    set_task_state(repo, "IMPLEMENTING")
+    harness = repo / ".harness"
+    (harness / "alignment-freeze.yaml").write_text("version: 2\n")
+    before = {path.relative_to(harness).as_posix(): path.read_bytes() for path in harness.rglob("*") if path.is_file()}
+
+    result = run_cli(repo, "task", "recover", "TASK-005", "--reason", "stale")
+
+    assert result.returncode == 2
+    assert {path.relative_to(harness).as_posix(): path.read_bytes() for path in harness.rglob("*") if path.is_file()} == before
+
+
 def test_task_recover_archives_and_clears_stale_alignment(tmp_path):
     repo = make_repo(tmp_path)
     subprocess.run(["git", "add", "-A"], cwd=repo, check=True)

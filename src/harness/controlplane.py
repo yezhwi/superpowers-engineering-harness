@@ -38,7 +38,12 @@ import yaml
 from pathlib import Path
 
 from harness.paths import EvidenceReferenceError, evidence_output_path, evidence_path
-from harness.task_replacement import publish_replacement, replacement_workspace
+from harness.task_replacement import (
+    publish_replacement,
+    replacement_workspace,
+    restore_architecture_mode,
+    trusted_architecture_mode,
+)
 from harness.templates import templates_dir
 
 
@@ -2432,6 +2437,7 @@ def cmd_task_new(task_id: str, title: str = "") -> int:
         print(f"TASK_GIT_BASELINE_REQUIRED: {exc}", file=sys.stderr)
         return 2
     try:
+        architecture_mode = trusted_architecture_mode(harness_dir, old)
         staged = replacement_workspace(harness_dir)
         archive = (
             staged
@@ -2477,6 +2483,7 @@ def cmd_task_new(task_id: str, title: str = "") -> int:
             datetime.timezone.utc
         ).isoformat()
         initialize_task_git(task, head)
+        restore_architecture_mode(staged, architecture_mode)
         save_task(staged, task)
         publish_replacement(harness_dir, staged)
     except Exception as exc:
@@ -2510,6 +2517,7 @@ def cmd_task_recover(task_id: str, title: str, reason: str) -> int:
         print(f"TASK_GIT_BASELINE_REQUIRED: {exc}", file=sys.stderr)
         return 2
     try:
+        architecture_mode = trusted_architecture_mode(harness_dir, old)
         staged = replacement_workspace(harness_dir)
         timestamp = datetime.datetime.now(datetime.timezone.utc).strftime(
             "%Y%m%dT%H%M%S%fZ"
@@ -2562,6 +2570,7 @@ def cmd_task_recover(task_id: str, title: str, reason: str) -> int:
             datetime.timezone.utc
         ).isoformat()
         initialize_task_git(task, head)
+        restore_architecture_mode(staged, architecture_mode)
         save_task(staged, task)
         publish_replacement(harness_dir, staged)
     except Exception as exc:

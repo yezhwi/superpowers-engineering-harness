@@ -5,6 +5,53 @@ from __future__ import annotations
 import shutil
 import tempfile
 from pathlib import Path
+from typing import Literal
+
+import yaml
+
+from harness import source_access, transaction
+
+
+def trusted_architecture_mode(
+    harness_dir: Path, old_task: dict
+) -> Literal["off", "required"]:
+    """Resolve replacement policy from validated gate and same-task v2 seal."""
+    from harness.quality_gate import validate_schema
+
+    gate_path = harness_dir / "gate.yaml"
+    try:
+        gate = yaml.safe_load(source_access.read_text(gate_path))
+    except (OSError, yaml.YAMLError) as exc:
+        raise ValueError("ARCHITECTURE_GATE_INVALID") from exc
+    validate_schema(gate, "gate.schema.json", gate_path)
+    mode = gate["gate"].get("architecture", {}).get("mode", "off")
+
+    seal_path = harness_dir / "alignment-freeze.yaml"
+    if not source_access.is_file(seal_path):
+        return mode
+    try:
+        seal = yaml.safe_load(source_access.read_text(seal_path))
+    except (OSError, yaml.YAMLError) as exc:
+        raise ValueError("ALIGNMENT_FREEZE_INVALID") from exc
+    validate_schema(seal, "alignment-freeze.schema.json", seal_path)
+    if seal["task_id"] != old_task.get("task", {}).get("id"):
+        raise ValueError("ALIGNMENT_FREEZE_TASK_MISMATCH")
+    return seal["architecture_mode"] if seal["version"] == 2 else mode
+
+
+def restore_architecture_mode(
+    staged_harness_dir: Path, mode: Literal["off", "required"]
+) -> None:
+    """Restore trusted mode after replacement templates have been copied."""
+    from harness.quality_gate import validate_schema
+
+    gate_path = staged_harness_dir / "gate.yaml"
+    gate = yaml.safe_load(source_access.read_text(gate_path))
+    validate_schema(gate, "gate.schema.json", gate_path)
+    gate["gate"]["architecture"] = {"mode": mode}
+    transaction.atomic_write(
+        gate_path, yaml.safe_dump(gate, sort_keys=False).encode("utf-8")
+    )
 
 
 def replacement_workspace(harness_dir: Path) -> Path:

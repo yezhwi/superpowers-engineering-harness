@@ -2,6 +2,8 @@
 
 import subprocess, sys
 from pathlib import Path
+
+import pytest
 import yaml
 
 REPO = Path(__file__).resolve().parent.parent
@@ -44,6 +46,28 @@ def test_task_new_archives_done_task(tmp_path):
     assert any((h / "history").iterdir())
 
 
+def _write_v2_seal(harness, mode, *, task_id="TASK-001"):
+    record = {
+        "version": 2,
+        "task_id": task_id,
+        "contract_hash": "sha256:" + "0" * 64,
+        "architecture_mode": mode,
+        "architecture_fingerprint": "sha256:" + "1" * 64 if mode == "required" else None,
+        "declared_modules": ["app"] if mode == "required" else [],
+        "decision_selections": {},
+        "boundary_refs": {"interface": [], "permission": [], "persistence": []},
+        "frozen_at": "2026-10-01T00:00:00Z",
+    }
+    (harness / "alignment-freeze.yaml").write_text(yaml.safe_dump(record, sort_keys=False))
+
+
+def _set_gate_mode(harness, mode):
+    path = harness / "gate.yaml"
+    gate = yaml.safe_load(path.read_text())
+    gate["gate"]["architecture"]["mode"] = mode
+    path.write_text(yaml.safe_dump(gate, sort_keys=False))
+
+
 def test_task_new_archives_stale_alignment_freeze(tmp_path):
     h = setup(tmp_path)
     (h / "alignment.yaml").write_text("version: 1\ntask_id: TASK-001\n")
@@ -60,6 +84,61 @@ def test_task_new_archives_stale_alignment_freeze(tmp_path):
     archive = next((h / "history").iterdir())
     assert (archive / "alignment.yaml").exists()
     assert (archive / "alignment-freeze.yaml").exists()
+
+
+def test_task_new_restores_required_mode_from_same_task_v2_seal(tmp_path):
+    h = setup(tmp_path)
+    _set_gate_mode(h, "off")
+    _write_v2_seal(h, "required")
+    (h / "architecture.yaml").write_text("version: 1\n")
+    architecture_before = (h / "architecture.yaml").read_bytes()
+
+    result = cli(tmp_path, "task", "new", "TASK-002")
+
+    assert result.returncode == 0, result.stderr
+    assert yaml.safe_load((h / "gate.yaml").read_text())["gate"]["architecture"]["mode"] == "required"
+    assert (h / "architecture.yaml").read_bytes() == architecture_before
+    archive = next((h / "history").iterdir())
+    assert yaml.safe_load((archive / "alignment-freeze.yaml").read_text())["architecture_mode"] == "required"
+
+
+def test_task_new_v2_off_overrides_current_required_mode(tmp_path):
+    h = setup(tmp_path)
+    _set_gate_mode(h, "required")
+    _write_v2_seal(h, "off")
+
+    result = cli(tmp_path, "task", "new", "TASK-002")
+
+    assert result.returncode == 0, result.stderr
+    assert yaml.safe_load((h / "gate.yaml").read_text())["gate"]["architecture"]["mode"] == "off"
+
+
+def test_task_new_without_v2_uses_validated_current_gate_mode(tmp_path):
+    h = setup(tmp_path)
+    _set_gate_mode(h, "required")
+
+    result = cli(tmp_path, "task", "new", "TASK-002")
+
+    assert result.returncode == 0, result.stderr
+    assert yaml.safe_load((h / "gate.yaml").read_text())["gate"]["architecture"]["mode"] == "required"
+
+
+@pytest.mark.parametrize("malformed", ["gate", "seal", "identity"])
+def test_task_new_invalid_architecture_authority_is_atomic(tmp_path, malformed):
+    h = setup(tmp_path)
+    if malformed == "gate":
+        (h / "gate.yaml").write_text("gate: {architecture: {mode: invalid}}\n")
+    elif malformed == "seal":
+        (h / "alignment-freeze.yaml").write_text("version: 2\n")
+    else:
+        _write_v2_seal(h, "required", task_id="TASK-999")
+    before = {path.relative_to(h).as_posix(): path.read_bytes() for path in h.rglob("*") if path.is_file()}
+
+    result = cli(tmp_path, "task", "new", "TASK-002")
+
+    assert result.returncode == 2
+    assert "TASK_REPLACEMENT_FAILED" in result.stderr
+    assert {path.relative_to(h).as_posix(): path.read_bytes() for path in h.rglob("*") if path.is_file()} == before
 
 
 def test_task_new_resets_observability_contract(tmp_path):
