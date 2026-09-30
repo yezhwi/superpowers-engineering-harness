@@ -108,6 +108,62 @@ def test_load_optional_missing_and_required_missing(tmp_path):
     assert exc.value.code == "ARCHITECTURE_REQUIRED"
 
 
+def test_publish_wraps_scalar_task_risk_as_stable_architecture_error(tmp_path):
+    repo = repository(tmp_path)
+    harness = repo / ".harness"
+    task_path = harness / "current-task.yaml"
+    task = yaml.safe_load(task_path.read_text())
+    task["risk"] = 42
+    task_path.write_text(yaml.safe_dump(task, sort_keys=False))
+
+    with pytest.raises(ArchitectureError) as exc:
+        architecture_store.publish_architecture(harness, candidate(tmp_path))
+
+    assert exc.value.code == "ARCHITECTURE_TASK_INVALID"
+
+
+def test_publish_wraps_non_mapping_task_git_as_stable_architecture_error(tmp_path):
+    repo = repository(tmp_path)
+    harness = repo / ".harness"
+    task_path = harness / "current-task.yaml"
+    task = yaml.safe_load(task_path.read_text())
+    task["git"] = 42
+    task_path.write_text(yaml.safe_dump(task, sort_keys=False))
+
+    with pytest.raises(ArchitectureError) as exc:
+        architecture_store.publish_architecture(harness, candidate(tmp_path))
+
+    assert exc.value.code == "ARCHITECTURE_CHANGESET_INVALID"
+
+
+def test_publish_wraps_non_string_task_base_as_stable_architecture_error(tmp_path):
+    repo = repository(tmp_path)
+    harness = repo / ".harness"
+    task_path = harness / "current-task.yaml"
+    task = yaml.safe_load(task_path.read_text())
+    task["git"]["base_commit"] = 42
+    task_path.write_text(yaml.safe_dump(task, sort_keys=False))
+
+    with pytest.raises(ArchitectureError) as exc:
+        architecture_store.publish_architecture(harness, candidate(tmp_path))
+
+    assert exc.value.code == "ARCHITECTURE_CHANGESET_INVALID"
+
+
+def test_publish_wraps_invalid_task_base_as_stable_architecture_error(tmp_path):
+    repo = repository(tmp_path)
+    harness = repo / ".harness"
+    task_path = harness / "current-task.yaml"
+    task = yaml.safe_load(task_path.read_text())
+    task["git"]["base_commit"] = "no-such-ref"
+    task_path.write_text(yaml.safe_dump(task, sort_keys=False))
+
+    with pytest.raises(ArchitectureError) as exc:
+        architecture_store.publish_architecture(harness, candidate(tmp_path))
+
+    assert exc.value.code == "ARCHITECTURE_CHANGESET_INVALID"
+
+
 def test_publish_validates_candidate_before_any_write(tmp_path):
     repo = repository(tmp_path)
     bad = candidate(tmp_path, {"version": 1})
@@ -162,6 +218,102 @@ def test_implementing_publish_requires_realign_and_has_zero_writes(tmp_path):
     assert harness_bytes(repo) == before
 
 
+def test_load_rejects_fifo_swap_without_blocking(tmp_path, monkeypatch):
+    repo = repository(tmp_path)
+    harness = repo / ".harness"
+    architecture_store.publish_architecture(harness, candidate(tmp_path))
+    artifact = harness / "architecture.yaml"
+    original_is_file = architecture_store.source_access.is_file
+
+    def swap_after_check(path):
+        result = original_is_file(path)
+        if Path(path) == artifact:
+            artifact.unlink()
+            os.mkfifo(artifact)
+        return result
+
+    monkeypatch.setattr(architecture_store.source_access, "is_file", swap_after_check)
+
+    with pytest.raises(ArchitectureError, match="ARCHITECTURE_SCHEMA_INVALID"):
+        architecture_store.load_architecture(harness, required=True)
+
+
+def test_load_rejects_symlink_swap_between_metadata_check_and_read(tmp_path, monkeypatch):
+    repo = repository(tmp_path)
+    harness = repo / ".harness"
+    architecture_store.publish_architecture(harness, candidate(tmp_path))
+    artifact = harness / "architecture.yaml"
+    outside = tmp_path / "outside.yaml"
+    outside.write_bytes(artifact.read_bytes())
+    original_is_file = architecture_store.source_access.is_file
+
+    def swap_after_check(path):
+        result = original_is_file(path)
+        if Path(path) == artifact:
+            artifact.unlink()
+            artifact.symlink_to(outside)
+        return result
+
+    monkeypatch.setattr(architecture_store.source_access, "is_file", swap_after_check)
+
+    with pytest.raises(ArchitectureError, match="ARCHITECTURE_SCHEMA_INVALID"):
+        architecture_store.load_architecture(harness, required=True)
+
+
+def test_load_and_publish_reject_dangling_canonical_symlink(tmp_path):
+    repo = repository(tmp_path)
+    harness = repo / ".harness"
+    artifact = harness / "architecture.yaml"
+    artifact.symlink_to(tmp_path / "missing.yaml")
+
+    with pytest.raises(ArchitectureError, match="ARCHITECTURE_SCHEMA_INVALID"):
+        architecture_store.load_architecture(harness, required=True)
+    with pytest.raises(ArchitectureError, match="ARCHITECTURE_SCHEMA_INVALID"):
+        architecture_store.publish_architecture(harness, candidate(tmp_path))
+
+    assert artifact.is_symlink()
+
+
+def test_publish_rejects_symlinked_canonical_artifact_without_following_it(tmp_path):
+    repo = repository(tmp_path)
+    harness = repo / ".harness"
+    outside = tmp_path / "outside.yaml"
+    outside.write_text("external: unchanged")
+    artifact = harness / "architecture.yaml"
+    artifact.symlink_to(outside)
+
+    with pytest.raises(ArchitectureError, match="ARCHITECTURE_SCHEMA_INVALID"):
+        architecture_store.publish_architecture(harness, candidate(tmp_path))
+
+    assert outside.read_text() == "external: unchanged"
+
+
+def test_publish_rejects_evidence_beneath_symlinked_parent(tmp_path):
+    repo = repository(tmp_path)
+    source_dir = repo / "src"
+    outside = tmp_path / "outside-src"
+    outside.mkdir()
+    (outside / "app.py").write_text("print('outside')")
+    (source_dir / "app.py").unlink()
+    source_dir.rmdir()
+    source_dir.symlink_to(outside)
+
+    with pytest.raises(ArchitectureError, match="ARCHITECTURE_EVIDENCE_INVALID"):
+        architecture_store.publish_architecture(repo / ".harness", candidate(tmp_path))
+
+
+def test_publish_rejects_symlinked_evidence_path(tmp_path):
+    repo = repository(tmp_path)
+    evidence = repo / "src/app.py"
+    outside = tmp_path / "outside.py"
+    outside.write_text("print('outside')")
+    evidence.unlink()
+    evidence.symlink_to(outside)
+
+    with pytest.raises(ArchitectureError, match="ARCHITECTURE_EVIDENCE_INVALID"):
+        architecture_store.publish_architecture(repo / ".harness", candidate(tmp_path))
+
+
 def test_publish_rejects_missing_evidence_empty_rule_duplicate_and_conflict(tmp_path):
     repo = repository(tmp_path)
     harness = repo / ".harness"
@@ -209,6 +361,42 @@ def test_publish_rejects_missing_evidence_empty_rule_duplicate_and_conflict(tmp_
     with pytest.raises(ArchitectureError) as exc:
         architecture_store.publish_architecture(harness, candidate(tmp_path, conflict))
     assert exc.value.code == "ARCHITECTURE_OWNERSHIP_AMBIGUOUS"
+
+
+def test_publication_counts_task_attributable_deleted_path_for_rule_coverage(tmp_path):
+    repo = repository(tmp_path)
+    extra = repo / "evidence.txt"
+    extra.write_text("evidence")
+    git(repo, "add", "evidence.txt")
+    git(repo, "commit", "-qm", "evidence")
+    task_path = repo / ".harness/current-task.yaml"
+    task = yaml.safe_load(task_path.read_text())
+    task["git"]["base_commit"] = git(repo, "rev-parse", "HEAD")
+    task_path.write_text(yaml.safe_dump(task, sort_keys=False))
+    (repo / "src/app.py").unlink()
+    architecture = architecture_document()
+    architecture["modules"][0]["evidence"][0]["path"] = "evidence.txt"
+
+    assert architecture_store.publish_architecture(
+        repo / ".harness", candidate(tmp_path, architecture)
+    )
+
+
+def test_publication_rejects_only_highest_score_ambiguity(tmp_path):
+    repo = repository(tmp_path)
+    architecture = architecture_document()
+    architecture["modules"].append(
+        {"id": "other", "name": "Other", "responsibility": "Other.", "depends_on": [], "evidence": [{"type": "source", "path": "src/app.py"}]}
+    )
+    architecture["ownership"] = [
+        {"id": "OWN-001", "pattern": "src/app.py", "kind": "production", "modules": ["app"]},
+        {"id": "OWN-002", "pattern": "src/*", "kind": "production", "modules": ["app"]},
+        {"id": "OWN-003", "pattern": "src/*", "kind": "production", "modules": ["other"]},
+    ]
+
+    assert architecture_store.publish_architecture(
+        repo / ".harness", candidate(tmp_path, architecture)
+    )
 
 
 def test_allow_empty_rule_can_publish_without_matching_current_path(tmp_path):
@@ -299,6 +487,28 @@ def test_scope_add_remove_is_specifying_only_and_creates_no_authority_artifacts(
     assert not (harness / "alignment-freeze.yaml").exists()
 
 
+def test_scope_add_on_legacy_task_without_scope_creates_schema_valid_scope(tmp_path):
+    from harness.quality_gate import validate_schema
+
+    repo = repository(tmp_path)
+    harness = repo / ".harness"
+    architecture_store.publish_architecture(harness, candidate(tmp_path))
+    task_path = harness / "current-task.yaml"
+    task = yaml.safe_load(task_path.read_text())
+    task.pop("scope")
+    task_path.write_text(yaml.safe_dump(task, sort_keys=False))
+
+    assert architecture_store.mutate_architecture_scope(harness, "add", "app")
+
+    updated = yaml.safe_load(task_path.read_text())
+    assert updated["scope"] == {
+        "owned_paths": [],
+        "protected_user_paths": [],
+        "modules": ["app"],
+    }
+    validate_schema(updated, "task.schema.json", task_path)
+
+
 def test_scope_mutation_in_implementing_has_zero_writes(tmp_path):
     repo = repository(tmp_path)
     harness = repo / ".harness"
@@ -365,6 +575,84 @@ def test_read_commands_offer_stable_text_output(tmp_path):
         repo, "architecture", "resolve", "src/app.py"
     ).stdout
     assert cli(repo, "architecture", "check").stdout.startswith("Architecture check:")
+
+
+def test_check_uses_sealed_scope_and_reports_contract_change(tmp_path):
+    repo = repository(tmp_path)
+    harness = repo / ".harness"
+    assert architecture_store.publish_architecture(harness, candidate(tmp_path))
+    model = architecture_store.load_architecture(harness, required=True)
+    from harness.architecture import architecture_fingerprint
+    task_path = harness / "current-task.yaml"
+    task = yaml.safe_load(task_path.read_text())
+    task["scope"]["modules"] = []
+    task_path.write_text(yaml.safe_dump(task, sort_keys=False))
+    seal = {
+        "version": 2, "task_id": "TASK-001", "contract_hash": "sha256:" + "0" * 64,
+        "architecture_mode": "required", "architecture_fingerprint": architecture_fingerprint(model),
+        "declared_modules": ["app"], "decision_selections": {},
+        "boundary_refs": {"interface": [], "permission": [], "persistence": []}, "frozen_at": "now",
+    }
+    (harness / "alignment-freeze.yaml").write_text(yaml.safe_dump(seal))
+    gate = yaml.safe_load((harness / "gate.yaml").read_text())
+    gate["gate"]["architecture"]["mode"] = "required"
+    (harness / "gate.yaml").write_text(yaml.safe_dump(gate))
+
+    report = architecture_store.check_architecture(harness)
+
+    assert report["status"] == "blocked"
+    assert report["blockers"][0]["code"] == "CONTRACT_CHANGED"
+
+
+def test_check_reports_same_attributable_changes_assessed_by_gate(tmp_path):
+    repo = repository(tmp_path)
+    harness = repo / ".harness"
+    assert architecture_store.publish_architecture(harness, candidate(tmp_path))
+    model = architecture_store.load_architecture(harness, required=True)
+    from harness.architecture import architecture_fingerprint
+    task_path = harness / "current-task.yaml"
+    task = yaml.safe_load(task_path.read_text())
+    task["scope"]["modules"] = ["app"]
+    task_path.write_text(yaml.safe_dump(task, sort_keys=False))
+    seal = {
+        "version": 2, "task_id": "TASK-001", "contract_hash": "sha256:" + "0" * 64,
+        "architecture_mode": "required", "architecture_fingerprint": architecture_fingerprint(model),
+        "declared_modules": ["app"], "decision_selections": {},
+        "boundary_refs": {"interface": [], "permission": [], "persistence": []}, "frozen_at": "now",
+    }
+    (harness / "alignment-freeze.yaml").write_text(yaml.safe_dump(seal))
+    gate = yaml.safe_load((harness / "gate.yaml").read_text())
+    gate["gate"]["architecture"]["mode"] = "required"
+    (harness / "gate.yaml").write_text(yaml.safe_dump(gate))
+    (repo / "src/app.py").write_text("print('changed')")
+
+    report = architecture_store.check_architecture(harness)
+
+    assert report["status"] == "valid"
+    assert any(change["path"] == "src/app.py" for change in report["changes"])
+
+
+def test_check_wraps_malformed_gate_as_stable_architecture_error(tmp_path):
+    repo = repository(tmp_path)
+    harness = repo / ".harness"
+    (harness / "gate.yaml").write_text("gate: [")
+
+    with pytest.raises(ArchitectureError) as exc:
+        architecture_store.check_architecture(harness)
+
+    assert exc.value.code == "ARCHITECTURE_CHECK_INVALID"
+    assert str(exc.value) == "ARCHITECTURE_CHECK_INVALID"
+
+
+def test_check_wraps_invalid_gate_as_stable_architecture_error(tmp_path):
+    repo = repository(tmp_path)
+    harness = repo / ".harness"
+    gate = yaml.safe_load((harness / "gate.yaml").read_text())
+    gate["gate"]["architecture"] = {"mode": "invalid"}
+    (harness / "gate.yaml").write_text(yaml.safe_dump(gate))
+
+    with pytest.raises(ArchitectureError, match="ARCHITECTURE_CHECK_INVALID"):
+        architecture_store.check_architecture(harness)
 
 
 def test_read_command_rejects_malformed_present_artifact_without_writes(tmp_path):

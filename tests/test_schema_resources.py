@@ -130,6 +130,16 @@ def test_resource_symlink_outside_schema_root_is_rejected(tmp_path, monkeypatch)
         schema_resources.read_schema("decision.schema.json")
 
 
+def test_architecture_p0_modules_are_installed_package_imports():
+    from harness.architecture import load_architecture_document
+    from harness.architecture_gate import assess_architecture
+    from harness.architecture_store import load_architecture
+
+    assert callable(load_architecture_document)
+    assert callable(load_architecture)
+    assert callable(assess_architecture)
+
+
 def test_p2_modules_and_public_entrypoints_are_installed_package_imports():
     from harness.plan_automation import derive_auto_proof
     from harness.plan_markdown import sync_plan_markdown

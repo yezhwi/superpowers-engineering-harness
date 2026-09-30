@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 import pytest
@@ -10,6 +11,16 @@ from harness.transaction import StagedArtifact, publish, stage
 def test_stage_rejects_artifact_path_outside_staging_root(tmp_path, relative_path):
     with pytest.raises(ValueError, match="STAGED_ARTIFACT_PATH_INVALID"):
         stage(tmp_path / ".harness", [StagedArtifact(relative_path, b"bad")])
+
+
+def test_publish_rejects_existing_fifo_without_blocking(tmp_path):
+    harness = tmp_path / ".harness"
+    harness.mkdir()
+    os.mkfifo(harness / "artifact.yaml")
+    staged = stage(harness, [StagedArtifact("artifact.yaml", b"new")])
+
+    with pytest.raises(OSError, match="regular file"):
+        publish(harness, staged, replace_paths=frozenset({"artifact.yaml"}))
 
 
 def test_replacement_workspace_restores_original_when_swap_fails(tmp_path, monkeypatch):

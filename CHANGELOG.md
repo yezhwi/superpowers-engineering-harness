@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Add Architecture Scope Gate P0: operator-authored canonical Architecture YAML, deterministic ownership resolution, bounded models, and stable fingerprints.
+- Add typed four-layer Git attribution across committed, staged, worktree, and untracked changes while excluding `.harness` control-plane state.
+- Add Alignment seal v2 with explicit Architecture mode, fingerprint, and declared module scope; retain controlled legacy v1 compatibility only for off-mode phase entry.
+- Add atomic Architecture publication and scope commands, trusted task-replacement mode preservation, stable repairable blockers, and state-aware preflight guidance.
+- Preserve source isolation: FAST/Q1 and mode off do not read Architecture artifacts or schemas and do not execute Architecture resolver or Git collection.
+- Context projection, Drift Detection experiments, and Context Recovery experiments remain deferred to later v0.3.0 phases.
+
 ## 0.2.10
 
 - Add deterministic Plan Reconciliation for STANDARD/Q2 and STRICT/Q3 tasks: canonical Plan artifacts, semantic fingerprints, final proof checks, typed blockers, recovery policy, and Q3 replayable task-level execution without fabricated history.

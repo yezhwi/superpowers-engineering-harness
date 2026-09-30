@@ -53,10 +53,17 @@ def publish(
     """Publish staged files or restore every touched canonical target."""
     sources = sorted(path for path in stage_dir.rglob("*") if path.is_file())
     targets = [(path, harness_dir / path.relative_to(stage_dir)) for path in sources]
-    existing = {
-        target: target.read_bytes() if target.exists() else None
-        for _, target in targets
-    }
+    from harness import source_access
+
+    existing = {}
+    for _, target in targets:
+        if target.is_symlink():
+            raise OSError("canonical artifact must be a regular file")
+        existing[target] = (
+            source_access.read_regular_bytes_beneath(target, harness_dir)
+            if target.exists()
+            else None
+        )
     published: list[Path] = []
     succeeded = False
     try:

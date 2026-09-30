@@ -89,7 +89,7 @@ def test_fast_and_off_short_circuit_before_architecture_sources_or_git(tmp_path,
     def forbidden(*args, **kwargs):
         raise AssertionError("Architecture source/Git touched")
 
-    monkeypatch.setattr(architecture_gate.source_access, "is_file", forbidden)
+    monkeypatch.setattr(architecture_gate, "load_architecture", forbidden)
     monkeypatch.setattr(architecture_gate.workspace, "architecture_changes", forbidden)
     monkeypatch.setattr(architecture_gate.workspace, "architecture_path_index", forbidden)
     task = {"risk": {"level": "Q1", "profile": "FAST"}}
@@ -97,6 +97,16 @@ def test_fast_and_off_short_circuit_before_architecture_sources_or_git(tmp_path,
     task = {"risk": {"level": "Q3", "profile": "STRICT"}}
     assert architecture_gate.assess_architecture(tmp_path, task, {"architecture": {"mode": "off"}}, allow_preflight=True).blockers == ()
     assert architecture_gate.assess_architecture(tmp_path, task, {}, allow_preflight=True).blockers == ()
+
+
+def test_required_scalar_nested_task_state_is_stable_invalid_state(tmp_path):
+    from harness import architecture_gate
+
+    _root, harness, task, gate = fixture(tmp_path)
+    task["risk"]["user_changes"] = 42
+
+    with pytest.raises(architecture_gate.ArchitectureGateError, match="ARCHITECTURE_TASK_INVALID"):
+        architecture_gate.assess_architecture(harness, task, gate, allow_preflight=True)
 
 
 def test_required_missing_artifact_is_repairable_blocker(tmp_path):
@@ -110,6 +120,24 @@ def test_required_missing_artifact_is_repairable_blocker(tmp_path):
     assert [(b.code, b.category, b.source) for b in assessment.blockers] == [
         ("ARCHITECTURE_REQUIRED", "implementation", "artifact:.harness/architecture.yaml")
     ]
+
+
+def test_off_downgrade_from_required_seal_is_contract_change_before_artifact(tmp_path, monkeypatch):
+    from harness import architecture_gate
+
+    _root, harness, task, _gate = fixture(tmp_path)
+    (harness / "architecture.yaml").write_text("malformed: [")
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("Architecture artifact loaded before mode drift")
+
+    monkeypatch.setattr(architecture_gate, "load_architecture", forbidden)
+    assessment = architecture_gate.assess_architecture(
+        harness, task, {"architecture": {"mode": "off"}}, allow_preflight=True
+    )
+
+    assert assessment.blockers[0].code == "CONTRACT_CHANGED"
+    assert assessment.blockers[0].source == "artifact:.harness/alignment-freeze.yaml"
 
 
 def test_required_seal_mismatch_is_terminal_contract_change_before_artifact(tmp_path):
@@ -165,6 +193,92 @@ def test_scope_invalid_evidence_invalid_unresolved_and_ambiguous_blockers(tmp_pa
     (root / "src/app.py").write_text("changed\n")
     assessment = architecture_gate.assess_architecture(harness, task, gate, allow_preflight=True)
     assert any(b.code == "ARCHITECTURE_OWNERSHIP_AMBIGUOUS" and b.source == "path:src/app.py" for b in assessment.blockers)
+
+
+def test_gate_validates_evidence_only_for_frozen_declared_modules(tmp_path):
+    from harness import architecture_gate
+    from harness.architecture import architecture_fingerprint, load_architecture_document
+
+    _root, harness, task, gate = fixture(tmp_path)
+    architecture = yaml.safe_load((harness / "architecture.yaml").read_text())
+    architecture["modules"].append(
+        {"id": "other", "name": "Other", "responsibility": "Other.", "depends_on": [], "evidence": [{"type": "source", "path": "src/missing.py"}]}
+    )
+    model = load_architecture_document(architecture)
+    (harness / "architecture.yaml").write_text(yaml.safe_dump(architecture))
+    seal_path = harness / "alignment-freeze.yaml"
+    seal = yaml.safe_load(seal_path.read_text())
+    seal["architecture_fingerprint"] = architecture_fingerprint(model)
+    seal_path.write_text(yaml.safe_dump(seal))
+
+    assessment = architecture_gate.assess_architecture(harness, task, gate, allow_preflight=True)
+
+    assert not any(b.code == "ARCHITECTURE_EVIDENCE_INVALID" for b in assessment.blockers)
+
+
+def test_evidence_symlink_swap_during_metadata_check_fails_closed(tmp_path, monkeypatch):
+    from harness import architecture_gate
+
+    root, harness, task, gate = fixture(tmp_path)
+    evidence = root / "src/app.py"
+    outside = tmp_path / "outside.py"
+    outside.write_text("print('outside')")
+    original_is_symlink = architecture_gate.source_access.is_symlink
+
+    def swap_after_check(path):
+        result = original_is_symlink(path)
+        if Path(path) == evidence:
+            evidence.unlink()
+            evidence.symlink_to(outside)
+        return result
+
+    monkeypatch.setattr(architecture_gate.source_access, "is_symlink", swap_after_check)
+
+    assessment = architecture_gate.assess_architecture(
+        harness, task, gate, allow_preflight=True
+    )
+
+    assert any(b.code == "ARCHITECTURE_EVIDENCE_INVALID" for b in assessment.blockers)
+
+
+def test_symlinked_declared_module_evidence_is_invalid_state(tmp_path):
+    from harness import architecture_gate
+
+    root, harness, task, gate = fixture(tmp_path)
+    evidence = root / "src/app.py"
+    outside = tmp_path / "outside.py"
+    outside.write_text("print('outside')")
+    evidence.unlink()
+    evidence.symlink_to(outside)
+
+    with pytest.raises(architecture_gate.ArchitectureGateError, match="ARCHITECTURE_EVIDENCE_INVALID"):
+        architecture_gate.assess_architecture(harness, task, gate, allow_preflight=True)
+
+
+def test_dangling_canonical_architecture_symlink_is_invalid_state(tmp_path):
+    from harness import architecture_gate
+
+    _root, harness, task, gate = fixture(tmp_path)
+    artifact = harness / "architecture.yaml"
+    artifact.unlink()
+    artifact.symlink_to(tmp_path / "missing.yaml")
+
+    with pytest.raises(architecture_gate.ArchitectureGateError, match="ARCHITECTURE_SCHEMA_INVALID"):
+        architecture_gate.assess_architecture(harness, task, gate, allow_preflight=True)
+
+
+def test_symlinked_canonical_architecture_is_invalid_state(tmp_path):
+    from harness import architecture_gate
+
+    _root, harness, task, gate = fixture(tmp_path)
+    artifact = harness / "architecture.yaml"
+    outside = tmp_path / "outside.yaml"
+    outside.write_bytes(artifact.read_bytes())
+    artifact.unlink()
+    artifact.symlink_to(outside)
+
+    with pytest.raises(architecture_gate.ArchitectureGateError, match="ARCHITECTURE_SCHEMA_INVALID"):
+        architecture_gate.assess_architecture(harness, task, gate, allow_preflight=True)
 
 
 def test_shared_path_emits_one_scope_drift_per_undeclared_owner(tmp_path):

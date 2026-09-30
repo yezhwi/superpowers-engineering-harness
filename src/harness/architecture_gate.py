@@ -33,6 +33,7 @@ class ArchitectureAssessment:
     declared_modules: tuple[str, ...]
     relevant_modules: tuple[str, ...]
     sealed_fingerprint: str | None = None
+    attributable_changes: tuple[workspace.ArchitectureChangeRecord, ...] = ()
 
 
 def _block(code: str, message: str, source: str) -> GateBlocker:
@@ -83,33 +84,56 @@ def assess_architecture(
 ) -> ArchitectureAssessment:
     """Assess one task without persistence, inference, or duplicate Git snapshots."""
     del allow_preflight  # Assessment semantics are identical; caller controls persistence.
-    risk = task.get("risk") or {}
+    if not isinstance(task, dict) or not isinstance(gate_config, dict):
+        raise ArchitectureGateError("ARCHITECTURE_TASK_INVALID")
+    risk = task.get("risk")
+    if risk is not None and not isinstance(risk, dict):
+        raise ArchitectureGateError("ARCHITECTURE_TASK_INVALID")
+    risk = risk or {}
     if risk.get("profile") == "FAST" or risk.get("level") == "Q1":
         return ArchitectureAssessment((), None, (), ())
-    mode = (gate_config.get("architecture") or {}).get("mode", "off")
-    if mode == "off":
-        return ArchitectureAssessment((), None, (), ())
-    if mode != "required":
+    architecture_config = gate_config.get("architecture") or {}
+    if not isinstance(architecture_config, dict):
+        raise ArchitectureGateError("ARCHITECTURE_MODE_INVALID")
+    mode = architecture_config.get("mode", "off")
+    if mode not in {"off", "required"}:
         raise ArchitectureGateError("ARCHITECTURE_MODE_INVALID")
 
     seal = _load_seal(harness_dir)
+    if mode == "off":
+        if seal is not None and seal.get("version") == 2 and seal.get("architecture_mode") != "off":
+            return _contract_changed("Architecture mode changed after freeze")
+        return ArchitectureAssessment((), None, (), ())
+    task_metadata = task.get("task")
+    git = task.get("git")
+    if not isinstance(task_metadata, dict) or not isinstance(git, dict):
+        raise ArchitectureGateError("ARCHITECTURE_TASK_INVALID")
     if (
         seal is None
         or seal.get("version") != 2
-        or seal.get("task_id") != (task.get("task") or {}).get("id")
+        or seal.get("task_id") != task_metadata.get("id")
         or seal.get("architecture_mode") != "required"
     ):
         return _contract_changed("Architecture mode is not sealed as required")
 
     scope = task.get("scope") or {}
+    if not isinstance(scope, dict):
+        raise ArchitectureGateError("ARCHITECTURE_TASK_INVALID")
     if "modules" not in scope:
         return _contract_changed("declared Architecture modules changed")
-    declared = tuple(scope["modules"])
+    modules = scope["modules"]
+    if not isinstance(modules, list) or not all(
+        isinstance(module, str) for module in modules
+    ):
+        raise ArchitectureGateError("ARCHITECTURE_TASK_INVALID")
+    declared = tuple(modules)
     if sorted(seal["declared_modules"]) != sorted(declared):
         return _contract_changed("declared Architecture modules changed")
 
     artifact = harness_dir / "architecture.yaml"
-    if not source_access.is_file(artifact):
+    if source_access.is_symlink(artifact):
+        raise ArchitectureGateError("ARCHITECTURE_SCHEMA_INVALID")
+    if not source_access.exists(artifact):
         return ArchitectureAssessment(
             (
                 _block(
@@ -123,6 +147,8 @@ def assess_architecture(
             (),
             seal["architecture_fingerprint"],
         )
+    if not source_access.is_file(artifact):
+        raise ArchitectureGateError("ARCHITECTURE_SCHEMA_INVALID")
     try:
         model = load_architecture(harness_dir, required=True)
     except ArchitectureError as exc:
@@ -145,15 +171,23 @@ def assess_architecture(
 
     try:
         path_index = workspace.architecture_path_index(harness_dir.parent)
-        changes = workspace.architecture_changes(
-            task["git"]["base_commit"], harness_dir.parent
-        )
+        base_commit = git.get("base_commit")
+        if not isinstance(base_commit, str) or not base_commit:
+            raise ArchitectureGateError("ARCHITECTURE_CHANGESET_INVALID")
+        changes = workspace.architecture_changes(base_commit, harness_dir.parent)
     except (workspace.WorkspaceError, KeyError, TypeError) as exc:
         raise ArchitectureGateError("ARCHITECTURE_CHANGESET_INVALID") from exc
     current_paths = set(path_index)
     for module in model.modules:
+        if module.id not in set(seal["declared_modules"]):
+            continue
         for evidence in module.evidence:
-            if evidence.path not in current_paths:
+            evidence_path = harness_dir.parent / evidence.path
+            if source_access.is_symlink(evidence_path):
+                raise ArchitectureGateError("ARCHITECTURE_EVIDENCE_INVALID")
+            if evidence.path not in current_paths or not source_access.is_regular_file_beneath(
+                evidence_path, harness_dir.parent
+            ):
                 blockers.append(
                     _block(
                         "ARCHITECTURE_EVIDENCE_INVALID",
@@ -162,8 +196,15 @@ def assess_architecture(
                     )
                 )
 
-    preexisting = set((risk.get("user_changes") or {}).get("paths") or ())
-    owned = set(scope.get("owned_paths") or ())
+    user_changes = risk.get("user_changes") or {}
+    owned_paths = scope.get("owned_paths") or []
+    if not isinstance(user_changes, dict) or not isinstance(owned_paths, list):
+        raise ArchitectureGateError("ARCHITECTURE_TASK_INVALID")
+    preexisting_paths = user_changes.get("paths") or []
+    if not isinstance(preexisting_paths, list):
+        raise ArchitectureGateError("ARCHITECTURE_TASK_INVALID")
+    preexisting = set(preexisting_paths)
+    owned = set(owned_paths)
     excluded = preexisting - owned
     attributable = tuple(record for record in changes if record.path not in excluded)
     relevant: set[str] = set()
@@ -231,4 +272,5 @@ def assess_architecture(
         tuple(sorted(declared)),
         tuple(sorted(relevant)),
         fingerprint,
+        attributable,
     )

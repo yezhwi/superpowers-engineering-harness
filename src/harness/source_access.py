@@ -7,6 +7,7 @@ This module is not yet wired into Context/Gate production reads.
 
 import hashlib
 import os
+import stat
 import sys
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -260,6 +261,58 @@ def read_bytes(path: Path) -> bytes:
     return content
 
 
+def _open_beneath(path: Path, root: Path) -> int:
+    """Open path beneath root without following any symlink component."""
+    path = Path(path).absolute()
+    root = Path(root).absolute()
+    try:
+        relative = path.relative_to(root)
+    except ValueError as exc:
+        raise OSError("source is outside root") from exc
+    if not relative.parts:
+        raise OSError("source is not a file")
+    nofollow = getattr(os, "O_NOFOLLOW", None)
+    if nofollow is None:
+        raise OSError("O_NOFOLLOW is unavailable")
+    directory = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        for part in relative.parts[:-1]:
+            child = os.open(
+                part,
+                os.O_RDONLY | os.O_DIRECTORY | nofollow,
+                dir_fd=directory,
+            )
+            os.close(directory)
+            directory = child
+        return os.open(
+            relative.parts[-1],
+            os.O_RDONLY | os.O_NONBLOCK | nofollow,
+            dir_fd=directory,
+        )
+    finally:
+        os.close(directory)
+
+
+def read_regular_bytes_beneath(path: Path, root: Path) -> bytes:
+    """Read one regular file beneath root without following symlinks."""
+    _check(path, explicit=True)
+    descriptor = _open_beneath(path, root)
+    try:
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            raise OSError("source is not a regular file")
+        with os.fdopen(descriptor, "rb", closefd=False) as stream:
+            content = stream.read()
+    finally:
+        os.close(descriptor)
+    _observe(path, "bytes", _hash(content))
+    return content
+
+
+def read_regular_bytes(path: Path) -> bytes:
+    """Read one regular file without following its final symlink component."""
+    return read_regular_bytes_beneath(path, Path(path).absolute().parent)
+
+
 def read_text(path: Path, *, encoding: str = "utf-8") -> str:
     return read_bytes(path).decode(encoding)
 
@@ -276,6 +329,27 @@ def is_file(path: Path) -> bool:
     result = Path(path).is_file()
     _observe(path, "is_file", result)
     return result
+
+
+def is_regular_file_beneath(path: Path, root: Path) -> bool:
+    """Check regular-file metadata beneath root without following symlinks."""
+    _check(path, explicit=True)
+    try:
+        descriptor = _open_beneath(path, root)
+    except OSError:
+        result = False
+    else:
+        try:
+            result = stat.S_ISREG(os.fstat(descriptor).st_mode)
+        finally:
+            os.close(descriptor)
+    _observe(path, "is_file", result)
+    return result
+
+
+def is_regular_file_nofollow(path: Path) -> bool:
+    """Check regular-file metadata without following final symlink component."""
+    return is_regular_file_beneath(path, Path(path).absolute().parent)
 
 
 def is_dir(path: Path) -> bool:

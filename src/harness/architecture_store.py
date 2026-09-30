@@ -55,37 +55,78 @@ def load_architecture(
 ) -> ArchitectureModel | None:
     """Load canonical Architecture through audited source access."""
     path = harness_dir / _ARCHITECTURE_ARTIFACT
-    if not source_access.is_file(path):
+    if source_access.is_symlink(path):
+        raise ArchitectureError("ARCHITECTURE_SCHEMA_INVALID", "artifact must be a regular repository file")
+    if not source_access.exists(path):
         if required:
             raise ArchitectureError("ARCHITECTURE_REQUIRED")
         return None
-    content = source_access.read_bytes(path)
+    if not source_access.is_file(path):
+        raise ArchitectureError("ARCHITECTURE_SCHEMA_INVALID", "artifact must be a regular repository file")
+    try:
+        content = source_access.read_regular_bytes_beneath(path, harness_dir.parent)
+    except OSError as exc:
+        raise ArchitectureError(
+            "ARCHITECTURE_SCHEMA_INVALID", "artifact must be a regular repository file"
+        ) from exc
     return load_architecture_document(
         _load_yaml_bytes(content), source_size_bytes=len(content)
     )
 
 
-def _validate_publication(model: ArchitectureModel, repo_root: Path) -> tuple[str, ...]:
+def _task_attributable_changes(task: dict, repo_root: Path) -> tuple:
+    git = task.get("git")
+    if not isinstance(git, dict):
+        raise ArchitectureError("ARCHITECTURE_CHANGESET_INVALID")
+    base = git.get("base_commit")
+    if base is None:
+        return ()
+    if not isinstance(base, str) or not base:
+        raise ArchitectureError("ARCHITECTURE_CHANGESET_INVALID")
+    risk = task.get("risk")
+    scope = task.get("scope")
+    if risk is not None and not isinstance(risk, dict):
+        raise ArchitectureError("ARCHITECTURE_TASK_INVALID")
+    if scope is not None and not isinstance(scope, dict):
+        raise ArchitectureError("ARCHITECTURE_TASK_INVALID")
+    user_changes = (risk or {}).get("user_changes")
+    if user_changes is not None and not isinstance(user_changes, dict):
+        raise ArchitectureError("ARCHITECTURE_TASK_INVALID")
+    excluded = set((user_changes or {}).get("paths") or ())
+    excluded -= set((scope or {}).get("owned_paths") or ())
+    try:
+        changes = workspace.architecture_changes(base, repo_root)
+    except workspace.WorkspaceError as exc:
+        raise ArchitectureError("ARCHITECTURE_CHANGESET_INVALID") from exc
+    return tuple(record for record in changes if record.path not in excluded)
+
+
+def _validate_publication(
+    model: ArchitectureModel, repo_root: Path, task: dict | None = None
+) -> tuple[str, ...]:
     paths = workspace.architecture_path_index(repo_root)
     path_set = set(paths)
     for module in model.modules:
         for evidence in module.evidence:
-            if evidence.path not in path_set:
+            evidence_path = repo_root / evidence.path
+            if evidence.path not in path_set or not source_access.is_regular_file_beneath(
+                evidence_path, repo_root
+            ):
                 raise ArchitectureError(
                     "ARCHITECTURE_EVIDENCE_INVALID", evidence.path
                 )
+    coverage_paths = set(paths)
+    if task is not None:
+        coverage_paths.update(
+            record.path for record in _task_attributable_changes(task, repo_root)
+        )
     for rule in model.ownership:
         if not rule.allow_empty and not any(
-            ownership_match_score(rule, path) is not None for path in paths
+            ownership_match_score(rule, path) is not None for path in coverage_paths
         ):
             raise ArchitectureError("ARCHITECTURE_OWNERSHIP_EMPTY", rule.id)
     for path in paths:
-        by_score: dict[tuple[int, int, int], list[str]] = {}
-        for rule in model.ownership:
-            score = ownership_match_score(rule, path)
-            if score is not None:
-                by_score.setdefault(score, []).append(rule.id)
-        if any(len(rule_ids) > 1 for rule_ids in by_score.values()):
+        if resolve_ownership(model, path).status == "ambiguous":
             raise ArchitectureError("ARCHITECTURE_OWNERSHIP_AMBIGUOUS", path)
     return paths
 
@@ -99,7 +140,15 @@ def publish_architecture(harness_dir: Path, candidate: Path) -> bool:
     with telemetry_lock(harness_dir):
         task, _ = _load_task(harness_dir)
         _require_specifying(task)
-        _validate_publication(model, harness_dir.parent)
+        _validate_publication(model, harness_dir.parent, task)
+        artifact = harness_dir / _ARCHITECTURE_ARTIFACT
+        if source_access.is_symlink(artifact) or (
+            source_access.exists(artifact) and not source_access.is_file(artifact)
+        ):
+            raise ArchitectureError(
+                "ARCHITECTURE_SCHEMA_INVALID",
+                "artifact must be a regular repository file",
+            )
         try:
             existing = load_architecture(harness_dir, required=False)
         except ArchitectureError:
@@ -136,6 +185,8 @@ def mutate_architecture_scope(
         if module_id not in known:
             raise ArchitectureError("ARCHITECTURE_SCOPE_INVALID", module_id)
         scope = task.setdefault("scope", {})
+        scope.setdefault("owned_paths", [])
+        scope.setdefault("protected_user_paths", [])
         current = set(scope.get("modules") or ())
         updated = current | {module_id} if action == "add" else current - {module_id}
         if updated == current:
@@ -159,7 +210,8 @@ def validate_architecture(harness_dir: Path) -> dict:
     """Validate canonical model and repository-backed references without writes."""
     model = load_architecture(harness_dir, required=True)
     assert model is not None
-    _validate_publication(model, harness_dir.parent)
+    task, _ = _load_task(harness_dir)
+    _validate_publication(model, harness_dir.parent, task)
     return {
         "status": "valid",
         "fingerprint": architecture_fingerprint(model),
@@ -176,41 +228,43 @@ def resolve_architecture_path(harness_dir: Path, path: str) -> dict:
 
 
 def check_architecture(harness_dir: Path) -> dict:
-    """Project current task-attributable Git facts against explicit module scope."""
-    model = load_architecture(harness_dir, required=True)
-    assert model is not None
+    """Run the same read-only Architecture assessment consumed by Gate."""
+    from harness import quality_gate
+    from harness.architecture_gate import ArchitectureGateError, assess_architecture
+
     task, _ = _load_task(harness_dir)
+    gate_path = harness_dir / "gate.yaml"
     try:
-        base_commit = task["git"]["base_commit"]
-    except (KeyError, TypeError) as exc:
-        raise ArchitectureError("ARCHITECTURE_TASK_INVALID", "missing base commit") from exc
-    excluded = set((task.get("risk") or {}).get("user_changes", {}).get("paths") or ())
-    excluded -= set((task.get("scope") or {}).get("owned_paths") or ())
-    changed = tuple(
-        record
-        for record in workspace.architecture_changes(base_commit, harness_dir.parent)
-        if record.path not in excluded
-    )
-    actual: set[str] = set()
-    diagnostics: list[dict] = []
-    for path in sorted({record.path for record in changed}):
-        resolution = resolve_ownership(model, path)
-        if resolution.status == "resolved":
-            actual.update(resolution.modules)
-        else:
-            diagnostics.append(
-                {
-                    "path": path,
-                    "status": resolution.status,
-                    "rule_ids": list(resolution.rule_ids),
-                }
-            )
-    declared = set((task.get("scope") or {}).get("modules") or ())
+        gate = yaml.safe_load(source_access.read_text(gate_path))
+        quality_gate.validate_schema(gate, "gate.schema.json", gate_path)
+        assessment = assess_architecture(
+            harness_dir, task, gate["gate"], allow_preflight=True
+        )
+    except (
+        ArchitectureGateError,
+        quality_gate.InvalidHarnessState,
+        OSError,
+        UnicodeError,
+        yaml.YAMLError,
+        KeyError,
+        TypeError,
+    ) as exc:
+        raise ArchitectureError("ARCHITECTURE_CHECK_INVALID") from exc
     return {
-        "status": "valid" if not diagnostics and actual <= declared else "blocked",
-        "declared_modules": sorted(declared),
-        "actual_modules": sorted(actual),
-        "unexpected_modules": sorted(actual - declared),
-        "diagnostics": diagnostics,
-        "changes": [asdict(record) for record in changed],
+        "status": "valid" if not assessment.blockers else "blocked",
+        "declared_modules": list(assessment.declared_modules),
+        "actual_modules": list(assessment.relevant_modules),
+        "unexpected_modules": sorted(
+            {
+                (blocker.source or "").rsplit("module:", 1)[1]
+                for blocker in assessment.blockers
+                if blocker.code == "ARCHITECTURE_SCOPE_DRIFT"
+            }
+        ),
+        "diagnostics": [
+            {"code": blocker.code, "source": blocker.source}
+            for blocker in assessment.blockers
+        ],
+        "blockers": [asdict(blocker) for blocker in assessment.blockers],
+        "changes": [asdict(record) for record in assessment.attributable_changes],
     }

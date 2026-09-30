@@ -24,6 +24,21 @@ def test_current_release_metadata_is_publishable():
     assert f"## {expected} (unreleased)" not in changelog
 
 
+def test_unreleased_notes_scope_v030_to_architecture_p0_only():
+    changelog = (REPO / "CHANGELOG.md").read_text()
+    unreleased = changelog.split("## 0.2.10", 1)[0]
+
+    for phrase in (
+        "Architecture Scope Gate P0",
+        "four-layer Git attribution",
+        "Alignment seal v2",
+        "FAST/Q1 and mode off",
+    ):
+        assert phrase in unreleased
+    assert "Context projection delivered" not in unreleased
+    assert "Drift Detection experiment delivered" not in unreleased
+
+
 def test_npm_and_python_package_metadata_describe_same_license_and_source():
     package = json.loads((REPO / "package.json").read_text())
     project = tomllib.loads((REPO / "pyproject.toml").read_text())["project"]
