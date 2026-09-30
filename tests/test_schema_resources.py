@@ -16,6 +16,15 @@ def test_schema_parser_and_manifest_use_same_registered_bytes():
     assert schema_versions()["decision.schema.json"].startswith("sha256:")
 
 
+def test_architecture_schema_is_registered_with_exact_model_bounds():
+    from harness.schema_resources import read_schema, schema_versions
+
+    schema = read_schema("architecture.schema.json")
+    assert schema["properties"]["modules"]["maxItems"] == 256
+    assert schema["properties"]["ownership"]["maxItems"] == 1024
+    assert schema_versions()["architecture.schema.json"].startswith("sha256:")
+
+
 @pytest.mark.parametrize(
     "name",
     [

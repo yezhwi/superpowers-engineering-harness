@@ -1,0 +1,104 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "architecture.schema.json",
+  "title": "Engineering Harness Architecture Model",
+  "type": "object",
+  "required": ["version", "modules", "ownership"],
+  "properties": {
+    "version": {"const": 1},
+    "modules": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "items": {"$ref": "#/definitions/module"}
+    },
+    "ownership": {
+      "type": "array",
+      "maxItems": 1024,
+      "items": {"$ref": "#/definitions/ownership"}
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "moduleId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"
+    },
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "evidence": {
+      "type": "object",
+      "required": ["type", "path"],
+      "properties": {
+        "type": {"enum": ["source", "config", "documentation"]},
+        "path": {"$ref": "#/definitions/path"}
+      },
+      "additionalProperties": false
+    },
+    "module": {
+      "type": "object",
+      "required": ["id", "name", "responsibility", "depends_on", "evidence"],
+      "properties": {
+        "id": {"$ref": "#/definitions/moduleId"},
+        "name": {"type": "string", "minLength": 1, "maxLength": 128},
+        "responsibility": {"type": "string", "minLength": 1, "maxLength": 512},
+        "depends_on": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {"$ref": "#/definitions/moduleId"}
+        },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {"$ref": "#/definitions/evidence"}
+        }
+      },
+      "additionalProperties": false
+    },
+    "ownership": {
+      "type": "object",
+      "required": ["id", "pattern", "kind", "modules"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^OWN-[0-9]+$"},
+        "pattern": {"$ref": "#/definitions/path"},
+        "kind": {"enum": ["production", "shared", "support"]},
+        "modules": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "#/definitions/moduleId"}
+        },
+        "allow_empty": {"type": "boolean"},
+        "empty_reason": {"type": "string", "minLength": 1, "maxLength": 512}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"kind": {"const": "production"}}},
+          "then": {"properties": {"modules": {"minItems": 1, "maxItems": 1}}}
+        },
+        {
+          "if": {"properties": {"kind": {"const": "shared"}}},
+          "then": {"properties": {"modules": {"minItems": 2}}}
+        },
+        {
+          "if": {"properties": {"kind": {"const": "support"}}},
+          "then": {"properties": {"modules": {"maxItems": 0}}}
+        },
+        {
+          "if": {
+            "required": ["allow_empty"],
+            "properties": {"allow_empty": {"const": true}}
+          },
+          "then": {"required": ["empty_reason"]}
+        }
+      ],
+      "additionalProperties": false
+    }
+  }
+}

@@ -10,6 +10,7 @@ SCHEMA_NAMES = (
     "alignment.schema.json",
     "alignment-finding.schema.json",
     "alignment-freeze.schema.json",
+    "architecture.schema.json",
     "complexity-finding.schema.json",
     "context.schema.json",
     "decision.schema.json",
