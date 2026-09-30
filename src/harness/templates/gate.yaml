@@ -1,5 +1,8 @@
 gate:
 
+  architecture:
+    mode: "off"
+
   requirements:
     must_verified: true
     uncovered_allowed: 0

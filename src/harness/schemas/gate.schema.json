@@ -9,6 +9,12 @@
       "additionalProperties": false,
       "properties": {
         "requirements": {"$ref": "#/definitions/requirementPolicy"},
+        "architecture": {
+          "type": "object",
+          "required": ["mode"],
+          "additionalProperties": false,
+          "properties": {"mode": {"enum": ["off", "required"]}}
+        },
         "invariants": {"type": "object", "additionalProperties": false, "properties": {"minor_verified": {"type": "boolean"}}},
         "fast": {"type": "object", "additionalProperties": false, "properties": {"verification": {"$ref": "#/definitions/verificationPolicy"}}},
         "verification": {"$ref": "#/definitions/verificationPolicy"},

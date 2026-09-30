@@ -46,6 +46,37 @@ def test_reports_existing_harness(tmp_path):
     assert "skipped" in result.stdout.lower()
 
 
+def test_init_writes_explicit_off_policy_and_empty_module_scope(tmp_path):
+    repo = make_repo(tmp_path)
+
+    assert run_cli(repo, "init").returncode == 0
+
+    gate = yaml.safe_load((repo / ".harness/gate.yaml").read_text())
+    task = yaml.safe_load((repo / ".harness/current-task.yaml").read_text())
+    assert gate["gate"]["architecture"] == {"mode": "off"}
+    assert task["scope"]["modules"] == []
+
+
+def test_init_does_not_overwrite_existing_architecture_policy_or_scope(tmp_path):
+    repo = make_repo(tmp_path)
+    assert run_cli(repo, "init").returncode == 0
+    gate_path = repo / ".harness/gate.yaml"
+    task_path = repo / ".harness/current-task.yaml"
+    gate = yaml.safe_load(gate_path.read_text())
+    task = yaml.safe_load(task_path.read_text())
+    gate["gate"]["architecture"] = {"mode": "required"}
+    task["scope"]["modules"] = ["app"]
+    gate_path.write_text(yaml.safe_dump(gate, sort_keys=False))
+    task_path.write_text(yaml.safe_dump(task, sort_keys=False))
+    before_gate = gate_path.read_bytes()
+    before_task = task_path.read_bytes()
+
+    assert run_cli(repo, "init").returncode == 0
+
+    assert gate_path.read_bytes() == before_gate
+    assert task_path.read_bytes() == before_task
+
+
 def test_outside_repo_returns_one(tmp_path):
     result = run_cli(tmp_path, "init")
     assert result.returncode == 1

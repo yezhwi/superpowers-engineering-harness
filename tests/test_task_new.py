@@ -95,6 +95,18 @@ def test_task_new_defaults_type_to_feature(tmp_path):
     assert task["task"]["type"] == "feature"
 
 
+def test_task_new_writes_explicit_off_policy_and_empty_module_scope(tmp_path):
+    h = setup(tmp_path)
+
+    result = cli(tmp_path, "task", "new", "TASK-002")
+
+    assert result.returncode == 0, result.stderr
+    gate = yaml.safe_load((h / "gate.yaml").read_text())
+    task = yaml.safe_load((h / "current-task.yaml").read_text())
+    assert gate["gate"]["architecture"] == {"mode": "off"}
+    assert task["scope"]["modules"] == []
+
+
 def test_classify_freezes_complete_git_identity(tmp_path):
     h = setup(tmp_path, state="CREATED")
     flags = [

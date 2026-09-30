@@ -271,6 +271,63 @@ def test_task_contract_state_path_is_legal():
     require_legal("SPECIFYING", "PLANNED")
 
 
+def test_gate_architecture_policy_is_optional_off_compatible_and_strict():
+    if jsonschema is None:
+        pytest.skip("jsonschema not installed")
+    schema = _load(resources.files("harness").joinpath("schemas", "gate.schema.json"))
+
+    legacy = {"gate": {}}
+    explicit_off = {"gate": {"architecture": {"mode": "off"}}}
+    required = {"gate": {"architecture": {"mode": "required"}}}
+    for document in (legacy, explicit_off, required):
+        jsonschema.validate(document, schema)
+    assert legacy["gate"].get("architecture", {}).get("mode", "off") == "off"
+    for invalid in (
+        {"gate": {"architecture": {}}},
+        {"gate": {"architecture": {"mode": "auto"}}},
+        {"gate": {"architecture": {"mode": "off", "infer": True}}},
+    ):
+        with pytest.raises(jsonschema.ValidationError):
+            jsonschema.validate(invalid, schema)
+
+
+def test_task_scope_modules_is_optional_bounded_unique_and_not_path_typed(tmp_path):
+    from harness.quality_gate import InvalidHarnessState, validate_schema
+
+    template = yaml.safe_load(
+        resources.files("harness").joinpath("templates", "current-task.yaml").read_text()
+    )
+    legacy = yaml.safe_load(yaml.safe_dump(template))
+    legacy["scope"].pop("modules", None)
+    validate_schema(legacy, "task.schema.json", tmp_path / "legacy.yaml")
+
+    template["scope"]["modules"] = []
+    validate_schema(template, "task.schema.json", tmp_path / "empty.yaml")
+    assert "modules" in template["scope"]
+
+    template["scope"]["modules"] = [f"module-{index}" for index in range(64)]
+    validate_schema(template, "task.schema.json", tmp_path / "64.yaml")
+    template["scope"]["modules"].append("module-64")
+    with pytest.raises(InvalidHarnessState, match="task.schema.json"):
+        validate_schema(template, "task.schema.json", tmp_path / "65.yaml")
+
+    template["scope"]["modules"] = ["module-a", "module-a"]
+    with pytest.raises(InvalidHarnessState, match="task.schema.json"):
+        validate_schema(template, "task.schema.json", tmp_path / "duplicate.yaml")
+
+
+def test_task_module_bound_does_not_reduce_architecture_model_bound():
+    task_schema = _load(
+        resources.files("harness").joinpath("schemas", "task.schema.json")
+    )
+    architecture_schema = _load(
+        resources.files("harness").joinpath("schemas", "architecture.schema.json")
+    )
+
+    assert task_schema["properties"]["scope"]["properties"]["modules"]["maxItems"] == 64
+    assert architecture_schema["properties"]["modules"]["maxItems"] == 256
+
+
 def test_templates_validate_against_schemas():
     if jsonschema is None:
         pytest.skip("jsonschema not installed")
