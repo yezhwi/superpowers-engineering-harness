@@ -1,5 +1,6 @@
 """Finite workspace Git queries with owned file capture, not arbitrary fd grants."""
 
+import re
 import subprocess
 from pathlib import Path
 from tempfile import TemporaryFile
@@ -14,10 +15,25 @@ def _validate(args: tuple[str, ...]) -> None:
         not isinstance(arg, str) or not arg or "\0" in arg for arg in args
     ):
         raise GitQueryError("GIT_QUERY_INVALID")
+    architecture_pathspec = (
+        "--",
+        ".",
+        ":(exclude).harness",
+        ":(exclude).harness/**",
+    )
     if args in {
         ("rev-parse", "HEAD"),
         ("rev-parse", "--abbrev-ref", "HEAD"),
         ("ls-files", "--others", "--exclude-standard"),
+        ("ls-files", "-z", *architecture_pathspec),
+        ("ls-files", "--deleted", "-z", *architecture_pathspec),
+        (
+            "ls-files",
+            "--others",
+            "--exclude-standard",
+            "-z",
+            *architecture_pathspec,
+        ),
     }:
         return
     if (
@@ -52,6 +68,16 @@ def _validate(args: tuple[str, ...]) -> None:
             and rest[0] in {"--binary", "--name-only"}
             and not rest[1].startswith("-")
             and rest[2] == "--"
+        ):
+            return
+        if (
+            len(rest) == 8
+            and rest[:3] == ("--name-status", "--no-renames", "-z")
+            and (
+                rest[3] == "HEAD"
+                or re.fullmatch(r"[0-9a-f]{40,64}\.\.HEAD", rest[3]) is not None
+            )
+            and rest[4:] == architecture_pathspec
         ):
             return
     raise GitQueryError("GIT_QUERY_INVALID")

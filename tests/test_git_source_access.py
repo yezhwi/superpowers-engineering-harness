@@ -101,3 +101,66 @@ def test_adapter_rejects_nonquery_commands(harness, command):
 
     with pytest.raises(ValueError, match="GIT_QUERY_INVALID"):
         run_git_query(harness.parent, command)
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        (
+            "diff",
+            "--name-status",
+            "--no-renames",
+            "-z",
+            "HEAD",
+            "--",
+            ".",
+            ":(exclude).harness",
+            ":(exclude).harness/**",
+        ),
+        (
+            "diff",
+            "--cached",
+            "--name-status",
+            "--no-renames",
+            "-z",
+            "HEAD",
+            "--",
+            ".",
+            ":(exclude).harness",
+            ":(exclude).harness/**",
+        ),
+        (
+            "ls-files",
+            "--others",
+            "--exclude-standard",
+            "-z",
+            "--",
+            ".",
+            ":(exclude).harness",
+            ":(exclude).harness/**",
+        ),
+        (
+            "ls-files",
+            "-z",
+            "--",
+            ".",
+            ":(exclude).harness",
+            ":(exclude).harness/**",
+        ),
+        (
+            "ls-files",
+            "--deleted",
+            "-z",
+            "--",
+            ".",
+            ":(exclude).harness",
+            ":(exclude).harness/**",
+        ),
+    ],
+)
+def test_adapter_accepts_only_fixed_architecture_queries(harness, command):
+    from harness.git_query import run_git_query
+
+    result = run_git_query(harness.parent, command)
+
+    assert result.returncode == 0

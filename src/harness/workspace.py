@@ -4,6 +4,7 @@ import hashlib
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 import yaml
 
@@ -30,6 +31,12 @@ class ReviewScope:
     workspace: WorkspaceSnapshot
     files: tuple[str, ...]
     contract_refs: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class ArchitectureChangeRecord:
+    kind: Literal["added", "modified", "deleted", "untracked"]
+    path: str
 
 
 def _root(repo_root: Path | None) -> Path:
@@ -215,6 +222,119 @@ def changed_paths_since(
     paths = set(name for name in committed.decode().splitlines() if name)
     paths.update(snapshot(root).changed_paths)
     return tuple(sorted(paths))
+
+
+_ARCHITECTURE_PATHSPEC = ("--", ".", *_PRODUCT_EXCLUDE)
+_ARCHITECTURE_STATUS_KIND = {
+    "A": "added",
+    "M": "modified",
+    "T": "modified",
+    "D": "deleted",
+}
+
+
+def _canonical_git_path(raw: bytes) -> str:
+    try:
+        path = raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise WorkspaceError("ARCHITECTURE_CHANGESET_INVALID") from exc
+    parts = path.split("/")
+    if (
+        not path
+        or path == "."
+        or path.startswith("/")
+        or "\\" in path
+        or any(part in {"", ".", ".."} for part in parts)
+    ):
+        raise WorkspaceError("ARCHITECTURE_CHANGESET_INVALID")
+    return path
+
+
+def _nul_fields(output: bytes) -> list[bytes]:
+    if not output:
+        return []
+    if not output.endswith(b"\0"):
+        raise WorkspaceError("ARCHITECTURE_CHANGESET_INVALID")
+    return output[:-1].split(b"\0")
+
+
+def _architecture_diff_records(output: bytes) -> set[ArchitectureChangeRecord]:
+    fields = _nul_fields(output)
+    if len(fields) % 2:
+        raise WorkspaceError("ARCHITECTURE_CHANGESET_INVALID")
+    records: set[ArchitectureChangeRecord] = set()
+    for index in range(0, len(fields), 2):
+        try:
+            status = fields[index].decode("ascii")
+        except UnicodeDecodeError as exc:
+            raise WorkspaceError("ARCHITECTURE_CHANGESET_INVALID") from exc
+        kind = _ARCHITECTURE_STATUS_KIND.get(status)
+        if kind is None:
+            raise WorkspaceError("ARCHITECTURE_CHANGESET_INVALID")
+        records.add(ArchitectureChangeRecord(kind, _canonical_git_path(fields[index + 1])))
+    return records
+
+
+def _architecture_path_set(output: bytes) -> set[str]:
+    return {_canonical_git_path(field) for field in _nul_fields(output)}
+
+
+def _architecture_untracked_paths(repo_root: Path) -> set[str]:
+    return _architecture_path_set(
+        _run(
+            repo_root,
+            "ls-files",
+            "--others",
+            "--exclude-standard",
+            "-z",
+            *_ARCHITECTURE_PATHSPEC,
+        )
+    )
+
+
+def architecture_changes(
+    base_commit: str, repo_root: Path | None = None
+) -> tuple[ArchitectureChangeRecord, ...]:
+    """Return typed committed, staged, worktree, and untracked Git facts."""
+    root = _root(repo_root)
+    resolved_base = verify_git_ref(base_commit, root)
+    records: set[ArchitectureChangeRecord] = set()
+    for prefix, reference in (
+        ((), f"{resolved_base}..HEAD"),
+        ((), "HEAD"),
+        (("--cached",), "HEAD"),
+    ):
+        records.update(
+            _architecture_diff_records(
+                _run(
+                    root,
+                    "diff",
+                    *prefix,
+                    "--name-status",
+                    "--no-renames",
+                    "-z",
+                    reference,
+                    *_ARCHITECTURE_PATHSPEC,
+                )
+            )
+        )
+    records.update(
+        ArchitectureChangeRecord("untracked", path)
+        for path in _architecture_untracked_paths(root)
+    )
+    return tuple(sorted(records, key=lambda record: (record.path, record.kind)))
+
+
+def architecture_path_index(repo_root: Path | None = None) -> tuple[str, ...]:
+    """Return request-local current paths from Git index and untracked facts."""
+    root = _root(repo_root)
+    tracked = _architecture_path_set(
+        _run(root, "ls-files", "-z", *_ARCHITECTURE_PATHSPEC)
+    )
+    deleted = _architecture_path_set(
+        _run(root, "ls-files", "--deleted", "-z", *_ARCHITECTURE_PATHSPEC)
+    )
+    return tuple(sorted(tracked - deleted | _architecture_untracked_paths(root)))
 
 
 def protected_paths_fingerprint(
