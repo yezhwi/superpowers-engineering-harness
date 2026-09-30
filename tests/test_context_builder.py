@@ -164,6 +164,136 @@ def test_required_missing_architecture_remains_none_with_shared_blocker(harness)
     assert source.references["architecture.yaml"] is None
 
 
+def test_required_architecture_projects_exact_current_control_shape(harness):
+    enable_required_architecture(harness)
+
+    _, core = load_and_build(harness)
+
+    assert core["architecture"] == {
+        "status": "current",
+        "fingerprint": core["architecture"]["fingerprint"],
+        "declared_modules": ["app"],
+        "relevant_modules": [{
+            "id": "app",
+            "name": "Application",
+            "responsibility": "Run application behavior.",
+            "depends_on": [],
+        }],
+    }
+    assert set(core["architecture"]) == {
+        "status", "fingerprint", "declared_modules", "relevant_modules"
+    }
+    assert "evidence" not in str(core["architecture"])
+    assert "src/app.py" not in str(core["architecture"])
+
+
+def test_required_missing_architecture_projects_fixed_missing_shape(harness):
+    enable_required_architecture(harness, write_artifact=False)
+
+    _, core = load_and_build(harness)
+
+    assert core["architecture"] == {
+        "status": "missing",
+        "fingerprint": None,
+        "declared_modules": [],
+        "relevant_modules": [],
+        "blockers": ["ARCHITECTURE_REQUIRED"],
+    }
+
+
+def test_off_architecture_omits_control_projection(harness):
+    _, core = load_and_build(harness)
+
+    assert "architecture" not in core
+
+
+def test_architecture_summary_is_one_hop_cycle_safe_and_deduplicated():
+    from harness.architecture import architecture_context_summary, load_architecture_document
+    from harness.architecture_gate import ArchitectureAssessment
+
+    document = {
+        "version": 1,
+        "modules": [
+            {"id": "a", "name": "A", "responsibility": "A.", "depends_on": ["b"], "evidence": [{"type": "source", "path": "a.py"}]},
+            {"id": "b", "name": "B", "responsibility": "B.", "depends_on": ["a", "c"], "evidence": [{"type": "source", "path": "b.py"}]},
+            {"id": "c", "name": "C", "responsibility": "C.", "depends_on": [], "evidence": [{"type": "source", "path": "c.py"}]},
+            {"id": "unrelated", "name": "Unrelated", "responsibility": "Unrelated.", "depends_on": [], "evidence": [{"type": "source", "path": "u.py"}]},
+        ],
+        "ownership": [],
+    }
+    model = load_architecture_document(document)
+    assessment = ArchitectureAssessment((), model, ("a",), ("a",), "sha256:" + "1" * 64)
+
+    summary = architecture_context_summary(model, assessment)
+
+    assert [module["id"] for module in summary["relevant_modules"]] == ["a", "b"]
+    assert summary["relevant_modules"][1]["depends_on"] == ["a", "c"]
+
+
+def test_architecture_summary_support_only_scope_is_empty_and_shared_dependency_is_deduplicated():
+    from harness.architecture import architecture_context_summary, load_architecture_document
+    from harness.architecture_gate import ArchitectureAssessment
+
+    model = load_architecture_document({
+        "version": 1,
+        "modules": [
+            {"id": "a", "name": "A", "responsibility": "A.", "depends_on": ["shared"], "evidence": [{"type": "source", "path": "a.py"}]},
+            {"id": "b", "name": "B", "responsibility": "B.", "depends_on": ["shared"], "evidence": [{"type": "source", "path": "b.py"}]},
+            {"id": "shared", "name": "Shared", "responsibility": "Shared.", "depends_on": [], "evidence": [{"type": "source", "path": "shared.py"}]},
+        ],
+        "ownership": [{"id": "OWN-001", "pattern": "scripts/**", "kind": "support", "modules": []}],
+    })
+    empty = ArchitectureAssessment((), model, (), (), "sha256:" + "3" * 64)
+    shared = ArchitectureAssessment((), model, ("b", "a"), (), "sha256:" + "3" * 64)
+
+    assert architecture_context_summary(model, empty)["relevant_modules"] == []
+    assert [
+        module["id"]
+        for module in architecture_context_summary(model, shared)["relevant_modules"]
+    ] == ["a", "b", "shared"]
+
+
+def test_architecture_model_rejects_self_dependency():
+    from harness.architecture import ArchitectureError, load_architecture_document
+
+    with pytest.raises(ArchitectureError, match="ARCHITECTURE_MODEL_INVALID"):
+        load_architecture_document({
+            "version": 1,
+            "modules": [{
+                "id": "self", "name": "Self", "responsibility": "Self.",
+                "depends_on": ["self"],
+                "evidence": [{"type": "source", "path": "self.py"}],
+            }],
+            "ownership": [],
+        })
+
+
+def test_architecture_summary_projects_legal_256_module_bound_without_truncation():
+    from harness.architecture import architecture_context_summary, load_architecture_document
+    from harness.architecture_gate import ArchitectureAssessment
+
+    modules = []
+    for index in range(256):
+        dependencies = (
+            [f"m{child}" for child in range(64 + index * 3, min(67 + index * 3, 256))]
+            if index < 64
+            else []
+        )
+        modules.append({
+            "id": f"m{index}", "name": f"M{index}", "responsibility": f"Module {index}.",
+            "depends_on": dependencies,
+            "evidence": [{"type": "source", "path": f"src/m{index}.py"}],
+        })
+    model = load_architecture_document({"version": 1, "modules": modules, "ownership": []})
+    declared = tuple(f"m{index}" for index in range(64))
+    assessment = ArchitectureAssessment((), model, declared, declared, "sha256:" + "2" * 64)
+
+    summary = architecture_context_summary(model, assessment)
+
+    assert len(summary["relevant_modules"]) == 256
+    assert {module["id"] for module in summary["relevant_modules"]} == {f"m{i}" for i in range(256)}
+
+
 def test_required_malformed_architecture_is_context_schema_invalid(harness):
     from harness.context.model import ContextBuildError
     from harness.context.source import FileContextSource

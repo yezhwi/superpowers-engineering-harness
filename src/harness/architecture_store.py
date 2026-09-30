@@ -11,6 +11,7 @@ from harness import source_access, transaction, workspace
 from harness.architecture import (
     ArchitectureError,
     ArchitectureModel,
+    architecture_context_summary,
     architecture_fingerprint,
     load_architecture_document,
     ownership_match_score,
@@ -227,8 +228,7 @@ def resolve_architecture_path(harness_dir: Path, path: str) -> dict:
     return asdict(resolve_ownership(model, path))
 
 
-def check_architecture(harness_dir: Path) -> dict:
-    """Run the same read-only Architecture assessment consumed by Gate."""
+def _architecture_assessment(harness_dir: Path):
     from harness import quality_gate
     from harness.architecture_gate import ArchitectureGateError, assess_architecture
 
@@ -237,7 +237,7 @@ def check_architecture(harness_dir: Path) -> dict:
     try:
         gate = yaml.safe_load(source_access.read_text(gate_path))
         quality_gate.validate_schema(gate, "gate.schema.json", gate_path)
-        assessment = assess_architecture(
+        return assess_architecture(
             harness_dir, task, gate["gate"], allow_preflight=True
         )
     except (
@@ -250,6 +250,17 @@ def check_architecture(harness_dir: Path) -> dict:
         TypeError,
     ) as exc:
         raise ArchitectureError("ARCHITECTURE_CHECK_INVALID") from exc
+
+
+def summary_architecture(harness_dir: Path) -> dict:
+    """Return same bounded Architecture projection consumed by Context."""
+    assessment = _architecture_assessment(harness_dir)
+    return architecture_context_summary(assessment.model, assessment)
+
+
+def check_architecture(harness_dir: Path) -> dict:
+    """Run the same read-only Architecture assessment consumed by Gate."""
+    assessment = _architecture_assessment(harness_dir)
     return {
         "status": "valid" if not assessment.blockers else "blocked",
         "declared_modules": list(assessment.declared_modules),

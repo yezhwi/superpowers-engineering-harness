@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Protocol, TypedDict
+from typing import TYPE_CHECKING, Any, NotRequired, Protocol, TypedDict
 
 from harness.quality_gate import GateAssessment
 from harness.workspace import WorkspaceSnapshot
@@ -66,3 +66,4 @@ class ControlCore(TypedDict):
     alignment: dict | None
     evidence: list[dict]
     gate: dict
+    architecture: NotRequired[dict]

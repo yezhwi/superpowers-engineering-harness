@@ -5,11 +5,14 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from jsonschema import ValidationError, validate
 
 from harness.schema_resources import read_schema
+
+if TYPE_CHECKING:
+    from harness.architecture_gate import ArchitectureAssessment
 
 _MAX_ARCHITECTURE_BYTES = 1024 * 1024
 _FORBIDDEN_PATTERN_CHARS = frozenset("?[]{}")
@@ -272,6 +275,44 @@ def architecture_document(model: ArchitectureModel) -> dict:
             record["empty_reason"] = rule.empty_reason
         ownership.append(record)
     return {"version": model.version, "modules": modules, "ownership": ownership}
+
+
+def architecture_context_summary(
+    model: ArchitectureModel | None, assessment: ArchitectureAssessment
+) -> dict:
+    """Project bounded Context facts from one validated Architecture assessment."""
+    blocker_codes = {blocker.code for blocker in assessment.blockers}
+    if model is None:
+        if "ARCHITECTURE_REQUIRED" not in blocker_codes:
+            raise ArchitectureError("ARCHITECTURE_SUMMARY_UNAVAILABLE")
+        return {
+            "status": "missing",
+            "fingerprint": None,
+            "declared_modules": [],
+            "relevant_modules": [],
+            "blockers": ["ARCHITECTURE_REQUIRED"],
+        }
+    by_id = {module.id: module for module in model.modules}
+    declared = tuple(sorted(set(assessment.declared_modules)))
+    relevant = {module_id for module_id in declared if module_id in by_id}
+    for module_id in tuple(relevant):
+        relevant.update(by_id[module_id].depends_on)
+    if len(relevant) > 256:
+        raise ArchitectureError("ARCHITECTURE_MODEL_INVALID", "projection exceeds module bound")
+    return {
+        "status": "current",
+        "fingerprint": architecture_fingerprint(model),
+        "declared_modules": list(declared),
+        "relevant_modules": [
+            {
+                "id": by_id[module_id].id,
+                "name": by_id[module_id].name,
+                "responsibility": by_id[module_id].responsibility,
+                "depends_on": sorted(by_id[module_id].depends_on),
+            }
+            for module_id in sorted(relevant)
+        ],
+    }
 
 
 def architecture_fingerprint(model: ArchitectureModel) -> str:

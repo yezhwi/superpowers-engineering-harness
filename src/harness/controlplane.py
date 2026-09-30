@@ -350,6 +350,19 @@ def cmd_architecture(args) -> int:
                 print(f"Modules: {', '.join(report['modules']) or '-'}")
                 print(f"Rule: {report['rule_id'] or '-'}")
             return 0
+        if command == "summary":
+            report = architecture_store.summary_architecture(harness_dir)
+            if args.architecture_json:
+                print(json.dumps(report, indent=2, sort_keys=True, ensure_ascii=False))
+            else:
+                print(f"Architecture summary: {report['status'].upper()}")
+                print(f"Fingerprint: {report['fingerprint'] or '-'}")
+                print(
+                    "Declared modules: "
+                    + (", ".join(report["declared_modules"]) or "-")
+                )
+                print(f"Relevant modules: {len(report['relevant_modules'])}")
+            return 0
         if command == "check":
             report = architecture_store.check_architecture(harness_dir)
             if args.architecture_json:

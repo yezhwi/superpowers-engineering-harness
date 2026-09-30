@@ -3,6 +3,7 @@
 from copy import deepcopy
 
 from harness import impact as impact_domain
+from harness.architecture import architecture_context_summary
 
 from harness.blockers import blocker_document
 from harness.plan_reconciliation import plan_context_summary
@@ -81,6 +82,18 @@ def build_control_core(source: AuthoritativeContext) -> ControlCore:
                 "section": "applicability",
             },
         }
+    architecture = None
+    if source.architecture_assessment is not None and (
+        source.architecture_assessment.model is not None
+        or any(
+            blocker.code == "ARCHITECTURE_REQUIRED"
+            for blocker in source.architecture_assessment.blockers
+        )
+    ):
+        architecture = architecture_context_summary(
+            source.architecture_assessment.model,
+            source.architecture_assessment,
+        )
     return deepcopy(
         {
             "task": {
@@ -109,5 +122,6 @@ def build_control_core(source: AuthoritativeContext) -> ControlCore:
             "alignment": _alignment_summary(source),
             "evidence": source.evidence,
             "gate": {"status": source.gate.status, "blocked_by": blockers},
+            **({"architecture": architecture} if architecture is not None else {}),
         }
     )

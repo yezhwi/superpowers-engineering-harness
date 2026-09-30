@@ -564,6 +564,53 @@ def test_read_commands_are_deterministic_read_only_json_and_body_free(tmp_path):
     assert harness_bytes(repo) == before
 
 
+def test_summary_cli_matches_bounded_context_projection_and_is_read_only(tmp_path):
+    from harness.architecture import architecture_fingerprint
+
+    repo = repository(tmp_path)
+    harness = repo / ".harness"
+    assert architecture_store.publish_architecture(harness, candidate(tmp_path))
+    assert architecture_store.mutate_architecture_scope(harness, "add", "app")
+    model = architecture_store.load_architecture(harness, required=True)
+    task = yaml.safe_load((harness / "current-task.yaml").read_text())
+    task["risk"] = {
+        "level": "Q2", "profile": "STANDARD",
+        "dimensions": {
+            "scope": "low", "contract": "none", "data": "none",
+            "authorization": "none", "security": "none",
+            "concurrency": "none", "deployment": "none",
+        },
+        "escalation_history": [],
+        "user_changes": {"paths": [], "fingerprint": "sha256:" + "0" * 64},
+    }
+    (harness / "current-task.yaml").write_text(yaml.safe_dump(task, sort_keys=False))
+    gate = yaml.safe_load((harness / "gate.yaml").read_text())
+    gate["gate"]["architecture"]["mode"] = "required"
+    (harness / "gate.yaml").write_text(yaml.safe_dump(gate))
+    (harness / "alignment-freeze.yaml").write_text(yaml.safe_dump({
+        "version": 2, "task_id": "TASK-001", "contract_hash": "sha256:" + "0" * 64,
+        "architecture_mode": "required", "architecture_fingerprint": architecture_fingerprint(model),
+        "declared_modules": ["app"], "decision_selections": {},
+        "boundary_refs": {"interface": [], "permission": [], "persistence": []}, "frozen_at": "now",
+    }))
+    before = harness_bytes(repo)
+
+    result = cli(repo, "architecture", "summary", "--json")
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == {
+        "status": "current",
+        "fingerprint": architecture_fingerprint(model),
+        "declared_modules": ["app"],
+        "relevant_modules": [{
+            "id": "app", "name": "Application",
+            "responsibility": "Run application logic.", "depends_on": [],
+        }],
+    }
+    assert "SECRET_BODY" not in result.stdout
+    assert harness_bytes(repo) == before
+
+
 def test_read_commands_offer_stable_text_output(tmp_path):
     repo = repository(tmp_path)
     assert cli(

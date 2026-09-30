@@ -104,7 +104,7 @@ def _main(argv=None) -> int:
     )
     architecture_publish = architecture_sub.add_parser("publish")
     architecture_publish.add_argument("--file", required=True, dest="source_file")
-    for command in ("validate", "check"):
+    for command in ("validate", "check", "summary"):
         architecture_read = architecture_sub.add_parser(command)
         architecture_read.add_argument(
             "--json", dest="architecture_json", action="store_true"

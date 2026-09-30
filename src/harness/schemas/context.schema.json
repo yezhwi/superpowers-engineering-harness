@@ -29,7 +29,8 @@
         "observability": {"type": ["object", "null"]},
         "alignment": {"type": ["object", "null"]},
         "evidence": {"$ref": "#/definitions/records"},
-        "gate": {"type": "object"}
+        "gate": {"type": "object"},
+        "architecture": {"$ref": "#/definitions/architecture"}
       }
     },
     "working": {
@@ -46,6 +47,36 @@
     "hash": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
     "versions": {"type": "object", "additionalProperties": {"anyOf": [{"type": "null"}, {"$ref": "#/definitions/hash"}]}},
     "records": {"type": "array", "items": {"type": "object"}},
+    "architecture": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["status", "fingerprint", "declared_modules", "relevant_modules"],
+          "additionalProperties": false,
+          "properties": {
+            "status": {"const": "current"},
+            "fingerprint": {"$ref": "#/definitions/hash"},
+            "declared_modules": {"$ref": "#/definitions/module_ids"},
+            "relevant_modules": {"$ref": "#/definitions/modules"}
+          }
+        },
+        {
+          "type": "object",
+          "required": ["status", "fingerprint", "declared_modules", "relevant_modules", "blockers"],
+          "additionalProperties": false,
+          "properties": {
+            "status": {"const": "missing"},
+            "fingerprint": {"type": "null"},
+            "declared_modules": {"const": []},
+            "relevant_modules": {"const": []},
+            "blockers": {"const": ["ARCHITECTURE_REQUIRED"]}
+          }
+        }
+      ]
+    },
+    "module_ids": {"type": "array", "uniqueItems": true, "maxItems": 64, "items": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"}},
+    "dependency_ids": {"type": "array", "uniqueItems": true, "maxItems": 32, "items": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"}},
+    "modules": {"type": "array", "uniqueItems": true, "maxItems": 256, "items": {"type": "object", "required": ["id", "name", "responsibility", "depends_on"], "additionalProperties": false, "properties": {"id": {"type": "string"}, "name": {"type": "string"}, "responsibility": {"type": "string"}, "depends_on": {"$ref": "#/definitions/dependency_ids"}}}},
     "reference": {"type": "object", "required": ["ref", "sha256"], "additionalProperties": false, "properties": {"ref": {"type": "string", "minLength": 1}, "sha256": {"$ref": "#/definitions/hash"}}}
   }
 }
