@@ -145,7 +145,11 @@ def test_required_architecture_is_authoritative_and_shares_gate_assessment(harne
 
     source, _ = load_and_build(harness)
 
-    assert source.architecture == architecture
+    from harness.architecture import architecture_document
+
+    assert source.architecture == architecture_document(
+        source.architecture_assessment.model
+    )
     assert source.architecture_assessment is source.gate.architecture_assessment
     assert source.architecture_assessment.model is not None
     assert source.references["architecture.yaml"]["ref"] == ".harness/architecture.yaml"
@@ -162,6 +166,35 @@ def test_required_missing_architecture_remains_none_with_shared_blocker(harness)
         "ARCHITECTURE_REQUIRED"
     ]
     assert source.references["architecture.yaml"] is None
+
+
+def test_architecture_document_preserves_optional_ownership_semantics():
+    from harness.architecture import (
+        architecture_document,
+        architecture_fingerprint,
+        load_architecture_document,
+    )
+
+    source = {
+        "version": 1,
+        "modules": [{
+            "id": "app", "name": "Application", "responsibility": "Run app.",
+            "depends_on": [],
+            "evidence": [{"type": "source", "path": "src/app.py"}],
+        }],
+        "ownership": [{
+            "id": "OWN-001", "pattern": "src/**", "kind": "production",
+            "modules": ["app"], "allow_empty": False,
+            "empty_reason": "Explicit non-empty ownership.",
+        }],
+    }
+    model = load_architecture_document(source)
+
+    projected = architecture_document(model)
+
+    assert projected["ownership"][0]["allow_empty"] is False
+    assert projected["ownership"][0]["empty_reason"] == source["ownership"][0]["empty_reason"]
+    assert architecture_fingerprint(load_architecture_document(projected)) == architecture_fingerprint(model)
 
 
 def test_required_architecture_projects_exact_current_control_shape(harness):

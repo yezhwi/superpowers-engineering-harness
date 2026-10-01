@@ -269,9 +269,9 @@ def architecture_document(model: ArchitectureModel) -> dict:
             "pattern": rule.pattern,
             "kind": rule.kind,
             "modules": list(rule.modules),
+            "allow_empty": rule.allow_empty,
         }
-        if rule.allow_empty:
-            record["allow_empty"] = True
+        if rule.empty_reason is not None:
             record["empty_reason"] = rule.empty_reason
         ownership.append(record)
     return {"version": model.version, "modules": modules, "ownership": ownership}
