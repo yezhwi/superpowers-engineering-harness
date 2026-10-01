@@ -1670,7 +1670,7 @@ def cmd_architecture_benchmark_compare(
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
-    print(json.dumps(report, indent=2, sort_keys=True, ensure_ascii=False))
+    print(json.dumps(report, indent=2, sort_keys=False, ensure_ascii=False))
     return 0
 
 

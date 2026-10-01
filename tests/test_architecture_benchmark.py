@@ -389,6 +389,21 @@ def test_context_recovery_exact_match_and_correctness_precede_cost(tmp_path):
     assert report["baseline"]["metrics"]["context_factual_recovery"] == metric(0, 2)
     assert report["adaptive"]["metrics"]["context_factual_recovery"] == metric(1, 2)
     assert report["status"] == "CORRECTNESS_IMPROVED"
+    assert list(report)[:5] == [
+        "experiment",
+        "treatment",
+        "status",
+        "confidence",
+        "correctness_precedes_efficiency",
+    ]
+    assert report["treatment"] == fixture["treatment"]
+    assert report["fixtures"] == [
+        {
+            "id": fixture["id"],
+            "baseline_runs": 3,
+            "adaptive_runs": 3,
+        }
+    ]
 
     # Cheaper adaptive runs cannot hide lower factual recovery.
     write_artifact(tmp_path / "baseline", fixture, "baseline", repeated({"projected_modules": expected}))
@@ -425,6 +440,31 @@ def test_comparison_rejects_cross_experiment_fixture_selection(tmp_path):
     assert report["status"] == INCONCLUSIVE
 
 
+def test_architecture_report_orders_fixture_rows_deterministically(tmp_path):
+    fixtures = tmp_path / "fixtures"
+    rows = [recovery_fixture("z-case"), recovery_fixture("a-case")]
+    for fixture in rows:
+        write_fixture(fixtures / "context", fixture, f"{fixture['id']}.yaml")
+        observed = {"projected_modules": fixture["expected"]["projected_modules"]}
+        write_artifact(tmp_path / "baseline", fixture, "baseline", repeated(observed))
+        write_artifact(tmp_path / "adaptive", fixture, "adaptive", repeated(observed))
+
+    report = compare_architecture_experiment(
+        fixtures,
+        tmp_path / "baseline",
+        tmp_path / "adaptive",
+        experiment="context_recovery",
+    )
+
+    assert [row["id"] for row in report["fixtures"]] == ["a-case", "z-case"]
+    assert report["baseline"]["efficiency"]["median_tokens"] == 102.0
+    assert report["baseline"]["efficiency"]["tool_calls_per_success"] == 12.0
+
+
+def test_repository_contains_no_synthetic_architecture_run_artifacts():
+    assert not list((REPO / "benchmarks/architecture").rglob("*.json"))
+
+
 def test_architecture_compare_cli_emits_json_without_mutating_harness(tmp_path):
     fixture = recovery_fixture()
     fixtures = tmp_path / "fixtures"
@@ -453,9 +493,19 @@ def test_architecture_compare_cli_emits_json_without_mutating_harness(tmp_path):
     )
 
     assert result.returncode == 0
-    assert __import__("json").loads(result.stdout) == {
-        "confidence": "high",
-        "experiment": "context_recovery",
-        "status": INCONCLUSIVE,
+    report = __import__("json").loads(result.stdout)
+    assert result.stdout.index('"status"') < result.stdout.index('"efficiency"')
+    assert report["experiment"] == "context_recovery"
+    assert report["treatment"] == fixture["treatment"]
+    assert report["status"] == INCONCLUSIVE
+    assert report["fixtures"] == [
+        {"id": fixture["id"], "baseline_runs": 0, "adaptive_runs": 0}
+    ]
+    assert report["baseline"]["metrics"]["context_factual_recovery"] == {
+        "numerator": None,
+        "denominator": 2,
+        "not_applicable": 0,
+        "value": INCONCLUSIVE,
     }
+    assert report["baseline"]["efficiency"] == INCONCLUSIVE
     assert not (tmp_path / ".harness").exists()

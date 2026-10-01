@@ -9,7 +9,8 @@
 - Preserve source isolation: FAST/Q1 and mode off do not read Architecture artifacts or schemas and do not execute Architecture resolver or Git collection.
 - Add Architecture Context Projection P1 for Q2/Q3 required mode: shared Gate assessment, deterministic declared-plus-one-hop module summaries, body-free `harness architecture summary`, conditional freshness, finite read scope, and projection version 4.
 - Keep required-missing Architecture as blocker data, reject malformed present sources and capture races, and preserve read-only restart/validate/explain behavior without adding another Gate or cache authority.
-- Drift Detection and Context Recovery experiments remain deferred to later v0.3.0 phases.
+- Add Architecture Evaluation P2: independent Drift Detection and Context Recovery corpora, strict one-treatment comparisons, three-run completeness, exact correctness and declaration-quality metrics, and runtime token/tool-call reporting.
+- No measured benchmark improvement is claimed; repository report template remains `PENDING` until accepted external run artifacts are supplied.
 
 ## 0.2.10
 

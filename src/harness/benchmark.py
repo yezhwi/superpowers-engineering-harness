@@ -592,6 +592,103 @@ def _experiment_status(experiment: str, baseline: dict, adaptive: dict) -> str:
     return "CORRECTNESS_IMPROVED" if improved else "CORRECTNESS_PRESERVED"
 
 
+def _architecture_run_count(path: Path) -> int:
+    try:
+        document = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return 0
+    runs = document.get("runs") if isinstance(document, dict) else None
+    return len(runs) if isinstance(runs, list) else 0
+
+
+def _architecture_report_header(
+    experiment: str, fixtures: list[dict], baseline: Path, adaptive: Path
+) -> dict:
+    return {
+        "experiment": experiment,
+        "treatment": fixtures[0]["treatment"],
+        "status": INCONCLUSIVE,
+        "confidence": "high",
+        "correctness_precedes_efficiency": True,
+        "fixtures": [
+            {
+                "id": row["id"],
+                "baseline_runs": _architecture_run_count(
+                    baseline / f"{row['id']}.json"
+                ),
+                "adaptive_runs": _architecture_run_count(
+                    adaptive / f"{row['id']}.json"
+                ),
+            }
+            for row in fixtures
+        ],
+    }
+
+
+def _declaration_quality(fixtures: list[dict]) -> dict:
+    expected_modules = sum(
+        len(row["expected"]["expected_modules"]) for row in fixtures
+    )
+    absent_modules = sum(
+        len(
+            set(row["expected"]["expected_modules"])
+            - set(row["inputs"]["task"]["declared_modules"])
+        )
+        for row in fixtures
+    )
+    return {
+        "missed_impact_proxy": _count_metric(
+            absent_modules,
+            expected_modules,
+            sum(not row["expected"]["expected_modules"] for row in fixtures),
+        )
+    }
+
+
+def _pending_arm(experiment: str, fixtures: list[dict]) -> dict:
+    if experiment == "drift_detection":
+        metrics = {
+            "drift_recall": {
+                "numerator": None,
+                "denominator": sum(
+                    row["expected"]["label"] == "drift" for row in fixtures
+                ),
+                "not_applicable": 0,
+                "value": INCONCLUSIVE,
+            },
+            "diagnostic_precision": {
+                "numerator": None,
+                "denominator": None,
+                "not_applicable": None,
+                "value": INCONCLUSIVE,
+            },
+            "false_positive_rate": {
+                "numerator": None,
+                "denominator": sum(
+                    row["expected"]["label"] == "clean" for row in fixtures
+                ),
+                "not_applicable": 0,
+                "value": INCONCLUSIVE,
+            },
+        }
+    else:
+        metrics = {
+            "context_factual_recovery": {
+                "numerator": None,
+                "denominator": sum(
+                    len(row["expected"]["projected_modules"]) for row in fixtures
+                ),
+                "not_applicable": 0,
+                "value": INCONCLUSIVE,
+            }
+        }
+    return {
+        "metrics": metrics,
+        "integrity_failures": None,
+        "efficiency": INCONCLUSIVE,
+    }
+
+
 def compare_architecture_experiment(
     fixtures: Path,
     baseline: Path,
@@ -611,6 +708,7 @@ def compare_architecture_experiment(
         return {"experiment": experiment, "status": INCONCLUSIVE, "confidence": "high"}
     if not selected:
         return {"experiment": experiment, "status": INCONCLUSIVE, "confidence": "high"}
+    report = _architecture_report_header(experiment, selected, baseline, adaptive)
     baseline_artifacts = [
         _architecture_artifact(baseline / f"{row['id']}.json", row, "baseline", experiment)
         for row in selected
@@ -620,39 +718,26 @@ def compare_architecture_experiment(
         for row in selected
     ]
     if any(item is None for item in baseline_artifacts + adaptive_artifacts):
-        return {"experiment": experiment, "status": INCONCLUSIVE, "confidence": "high"}
+        report["baseline"] = _pending_arm(experiment, selected)
+        report["adaptive"] = _pending_arm(experiment, selected)
+        if experiment == "drift_detection":
+            report["declaration_quality"] = _declaration_quality(selected)
+        return report
     baseline_valid = [item for item in baseline_artifacts if item is not None]
     adaptive_valid = [item for item in adaptive_artifacts if item is not None]
     if experiment == "drift_detection":
         baseline_report = _drift_arm(selected, baseline_valid)
         adaptive_report = _drift_arm(selected, adaptive_valid)
-        expected_modules = sum(len(row["expected"]["expected_modules"]) for row in selected)
-        absent_modules = sum(
-            len(
-                set(row["expected"]["expected_modules"])
-                - set(row["inputs"]["task"]["declared_modules"])
-            )
-            for row in selected
-        )
-        declaration_quality = {
-            "missed_impact_proxy": _count_metric(
-                absent_modules,
-                expected_modules,
-                sum(not row["expected"]["expected_modules"] for row in selected),
-            )
-        }
+        declaration_quality = _declaration_quality(selected)
     else:
         baseline_report = _context_arm(selected, baseline_valid)
         adaptive_report = _context_arm(selected, adaptive_valid)
         declaration_quality = None
-    report = {
-        "experiment": experiment,
-        "status": _experiment_status(experiment, baseline_report, adaptive_report),
-        "confidence": "high",
-        "correctness_precedes_efficiency": True,
-        "baseline": baseline_report,
-        "adaptive": adaptive_report,
-    }
+    report["status"] = _experiment_status(
+        experiment, baseline_report, adaptive_report
+    )
+    report["baseline"] = baseline_report
+    report["adaptive"] = adaptive_report
     if declaration_quality is not None:
         report["declaration_quality"] = declaration_quality
     return report

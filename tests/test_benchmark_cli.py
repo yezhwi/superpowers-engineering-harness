@@ -81,3 +81,26 @@ def test_architecture_corpus_cli_maps_invalid_input_to_stable_error(tmp_path):
 
     assert result.returncode == 2
     assert result.stderr == "ARCHITECTURE_BENCHMARK_CORPUS_INVALID\n"
+
+
+def test_architecture_benchmark_template_is_pending_and_claim_free():
+    template = (
+        REPO / "docs/superpowers/reports/v030-architecture-benchmark-template.md"
+    ).read_text()
+
+    assert "Status: PENDING" in template
+    assert "drift_detection" in template
+    assert "context_recovery" in template
+    assert "numerator" in template
+    assert "denominator" in template
+    assert "not_applicable" in template
+    assert "At least three independent runs per fixture and arm" in template
+    assert "No measured improvement is claimed" in template
+
+
+def test_changelog_marks_architecture_p2_delivered_without_measurement_claim():
+    changelog = (REPO / "CHANGELOG.md").read_text()
+
+    assert "Architecture Evaluation P2" in changelog
+    assert "remain deferred" not in changelog
+    assert "No measured benchmark improvement is claimed" in changelog
