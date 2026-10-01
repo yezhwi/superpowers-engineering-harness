@@ -1,6 +1,8 @@
 """P2 benchmark corpus contract tests."""
 
 from pathlib import Path
+import subprocess
+import sys
 
 from harness.benchmark import validate_corpus
 
@@ -30,3 +32,52 @@ def test_plan_reconciliation_p2_benchmark_corpus():
         <= set(row["required_correctness"])
         for row in p2.values()
     )
+
+
+def test_architecture_corpus_cli_validates_without_harness_state(tmp_path):
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "harness.cli",
+            "benchmark",
+            "architecture-corpus",
+            "validate",
+            "--corpus",
+            str(REPO / "benchmarks/architecture"),
+        ],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        env={"PYTHONPATH": str(REPO / "src")},
+    )
+
+    assert result.returncode == 0
+    assert result.stdout == "ARCHITECTURE_BENCHMARK_CORPUS_VALID: 10\n"
+    assert not (tmp_path / ".harness").exists()
+
+
+def test_architecture_corpus_cli_maps_invalid_input_to_stable_error(tmp_path):
+    corpus = tmp_path / "corpus"
+    corpus.mkdir()
+    (corpus / "bad.txt").write_text("bad")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "harness.cli",
+            "benchmark",
+            "architecture-corpus",
+            "validate",
+            "--corpus",
+            str(corpus),
+        ],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        env={"PYTHONPATH": str(REPO / "src")},
+    )
+
+    assert result.returncode == 2
+    assert result.stderr == "ARCHITECTURE_BENCHMARK_CORPUS_INVALID\n"

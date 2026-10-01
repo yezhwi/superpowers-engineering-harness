@@ -267,6 +267,12 @@ def _main(argv=None) -> int:
     corpus_sub = p_corpus.add_subparsers(dest="corpus_command")
     p_corpus_validate = corpus_sub.add_parser("validate")
     p_corpus_validate.add_argument("--corpus", required=True)
+    p_architecture_corpus = benchmark_sub.add_parser("architecture-corpus")
+    architecture_corpus_sub = p_architecture_corpus.add_subparsers(
+        dest="architecture_corpus_command"
+    )
+    p_architecture_corpus_validate = architecture_corpus_sub.add_parser("validate")
+    p_architecture_corpus_validate.add_argument("--corpus", required=True)
     sub.add_parser("resume", help="recover BLOCKED task from typed blocker")
     p_decision = sub.add_parser("decision", help="manage persisted user decisions")
     decision_sub = p_decision.add_subparsers(dest="decision_command")
@@ -545,6 +551,14 @@ def _main(argv=None) -> int:
         and args.corpus_command == "validate"
     ):
         return controlplane.cmd_benchmark_corpus_validate(Path(args.corpus))
+    if (
+        args.subcommand == "benchmark"
+        and args.benchmark_command == "architecture-corpus"
+        and args.architecture_corpus_command == "validate"
+    ):
+        return controlplane.cmd_architecture_benchmark_corpus_validate(
+            Path(args.corpus)
+        )
     if args.subcommand == "resume":
         return controlplane.cmd_resume()
     if args.subcommand == "decision":

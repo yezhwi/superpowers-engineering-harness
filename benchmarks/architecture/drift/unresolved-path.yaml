@@ -1,0 +1,23 @@
+version: 1
+id: drift-unresolved-path
+experiment: drift_detection
+scenario: unresolved path
+treatment:
+  name: architecture_gate
+  baseline: {architecture_mode: "off"}
+  adaptive: {architecture_mode: required}
+inputs:
+  task: {declared_modules: [app], protected_paths: [], adopted_paths: []}
+  architecture:
+    version: 1
+    modules:
+    - {id: app, name: Application, responsibility: Run application behavior., depends_on: [], evidence: [{type: source, path: src/app.py}]}
+    ownership:
+    - {id: OWN-001, pattern: 'src/app/**', kind: production, modules: [app]}
+  git: [{path: src/unknown/change.py, kind: worktree}]
+expected:
+  label: drift
+  blockers: [{code: ARCHITECTURE_PATH_UNRESOLVED, source: 'path:src/unknown/change.py'}]
+  diagnostics: [{code: ARCHITECTURE_PATH_UNRESOLVED, source: 'path:src/unknown/change.py'}]
+  expected_modules: []
+  declaration_quality: complete

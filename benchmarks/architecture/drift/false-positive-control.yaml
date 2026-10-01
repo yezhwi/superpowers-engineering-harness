@@ -1,0 +1,23 @@
+version: 1
+id: drift-false-positive-control
+experiment: drift_detection
+scenario: false positive control
+treatment:
+  name: architecture_gate
+  baseline: {architecture_mode: "off"}
+  adaptive: {architecture_mode: required}
+inputs:
+  task: {declared_modules: [app], protected_paths: [], adopted_paths: []}
+  architecture:
+    version: 1
+    modules:
+    - {id: app, name: Application, responsibility: Run application behavior., depends_on: [], evidence: [{type: source, path: src/app.py}]}
+    ownership:
+    - {id: OWN-001, pattern: 'tests/**', kind: production, modules: [app]}
+  git: [{path: tests/test_app.py, kind: worktree}]
+expected:
+  label: clean
+  blockers: []
+  diagnostics: []
+  expected_modules: [app]
+  declaration_quality: complete

@@ -1,0 +1,25 @@
+version: 1
+id: drift-ambiguous-ownership
+experiment: drift_detection
+scenario: ambiguous ownership
+treatment:
+  name: architecture_gate
+  baseline: {architecture_mode: "off"}
+  adaptive: {architecture_mode: required}
+inputs:
+  task: {declared_modules: [app], protected_paths: [], adopted_paths: []}
+  architecture:
+    version: 1
+    modules:
+    - {id: app, name: Application, responsibility: Run application behavior., depends_on: [], evidence: [{type: source, path: src/app.py}]}
+    - {id: shared, name: Shared, responsibility: Provide shared behavior., depends_on: [], evidence: [{type: source, path: src/shared.py}]}
+    ownership:
+    - {id: OWN-001, pattern: 'src/*/**', kind: production, modules: [app]}
+    - {id: OWN-002, pattern: 'src/*/**', kind: production, modules: [shared]}
+  git: [{path: src/app/change.py, kind: worktree}]
+expected:
+  label: drift
+  blockers: [{code: ARCHITECTURE_OWNERSHIP_AMBIGUOUS, source: 'path:src/app/change.py'}]
+  diagnostics: [{code: ARCHITECTURE_OWNERSHIP_AMBIGUOUS, source: 'path:src/app/change.py'}]
+  expected_modules: []
+  declaration_quality: complete

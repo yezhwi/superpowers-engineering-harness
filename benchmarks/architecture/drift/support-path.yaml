@@ -1,0 +1,23 @@
+version: 1
+id: drift-support-path
+experiment: drift_detection
+scenario: support path
+treatment:
+  name: architecture_gate
+  baseline: {architecture_mode: "off"}
+  adaptive: {architecture_mode: required}
+inputs:
+  task: {declared_modules: [], protected_paths: [], adopted_paths: []}
+  architecture:
+    version: 1
+    modules:
+    - {id: app, name: Application, responsibility: Run application behavior., depends_on: [], evidence: [{type: source, path: src/app.py}]}
+    ownership:
+    - {id: OWN-001, pattern: 'docs/**', kind: support, modules: []}
+  git: [{path: docs/guide.md, kind: worktree}]
+expected:
+  label: clean
+  blockers: []
+  diagnostics: []
+  expected_modules: []
+  declaration_quality: complete

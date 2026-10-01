@@ -1,0 +1,23 @@
+version: 1
+id: context-recovery
+experiment: context_recovery
+scenario: context recovery
+treatment:
+  name: architecture_projection
+  baseline: {architecture_projection: omitted}
+  adaptive: {architecture_projection: included}
+inputs:
+  task: {declared_modules: [app], protected_paths: [], adopted_paths: []}
+  architecture:
+    version: 1
+    modules:
+    - {id: app, name: Application, responsibility: Run application behavior., depends_on: [shared], evidence: [{type: source, path: src/app.py}]}
+    - {id: shared, name: Shared, responsibility: Provide shared behavior., depends_on: [], evidence: [{type: source, path: src/shared.py}]}
+    ownership:
+    - {id: OWN-001, pattern: 'src/app/**', kind: production, modules: [app]}
+    - {id: OWN-002, pattern: 'src/shared/**', kind: production, modules: [shared]}
+  git: []
+expected:
+  projected_modules:
+  - {id: app, responsibility: Run application behavior., depends_on: [shared]}
+  - {id: shared, responsibility: Provide shared behavior., depends_on: []}

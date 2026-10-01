@@ -2,10 +2,12 @@
 
 import json
 import math
-from pathlib import Path
+import re
+from pathlib import Path, PurePosixPath
 
 import yaml
 
+from harness.architecture import ArchitectureError, load_architecture_document
 from harness.telemetry import TelemetryError, normalize_usage
 
 INCONCLUSIVE = "INCONCLUSIVE"
@@ -182,6 +184,141 @@ def validate_corpus(corpus: Path) -> list[dict]:
         return rows
     except (OSError, TypeError, yaml.YAMLError, ValueError) as exc:
         raise ValueError("BENCHMARK_CORPUS_INVALID") from exc
+
+
+_ARCHITECTURE_FIXTURE_KEYS = {
+    "version", "id", "experiment", "scenario", "treatment", "inputs", "expected"
+}
+_ARCHITECTURE_TASK_KEYS = {"declared_modules", "protected_paths", "adopted_paths"}
+_GIT_KINDS = {"committed", "cached", "worktree", "untracked"}
+
+
+def _exact_keys(value: object, keys: set[str]) -> bool:
+    return isinstance(value, dict) and set(value) == keys
+
+
+def _fixture_path(value: object) -> bool:
+    if not isinstance(value, str) or not value or "\\" in value:
+        return False
+    parts = PurePosixPath(value).parts
+    return not value.startswith("/") and all(part not in {"", ".", ".."} for part in parts)
+
+
+def _string_list(value: object, *, paths: bool = False) -> bool:
+    return (
+        isinstance(value, list)
+        and len(value) == len(set(value))
+        and all((_fixture_path(item) if paths else isinstance(item, str) and bool(item)) for item in value)
+    )
+
+
+def _validate_architecture_fixture(data: object, directory: str) -> dict:
+    if not _exact_keys(data, _ARCHITECTURE_FIXTURE_KEYS):
+        raise ValueError
+    assert isinstance(data, dict)
+    experiment = data["experiment"]
+    if (
+        data["version"] != 1
+        or not isinstance(data["id"], str)
+        or re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", data["id"]) is None
+        or not isinstance(data["scenario"], str)
+        or not data["scenario"]
+        or (directory, experiment) not in {
+            ("drift", "drift_detection"),
+            ("context", "context_recovery"),
+        }
+    ):
+        raise ValueError
+
+    inputs = data["inputs"]
+    if not _exact_keys(inputs, {"task", "architecture", "git"}):
+        raise ValueError
+    task = inputs["task"]
+    if not _exact_keys(task, _ARCHITECTURE_TASK_KEYS) or not all(
+        _string_list(task[key], paths=key != "declared_modules")
+        for key in _ARCHITECTURE_TASK_KEYS
+    ):
+        raise ValueError
+    load_architecture_document(inputs["architecture"])
+    git = inputs["git"]
+    if not isinstance(git, list) or any(
+        not _exact_keys(record, {"path", "kind"})
+        or not _fixture_path(record["path"])
+        or record["kind"] not in _GIT_KINDS
+        for record in git
+    ):
+        raise ValueError
+
+    treatment = data["treatment"]
+    expected = data["expected"]
+    if experiment == "drift_detection":
+        if treatment != {
+            "name": "architecture_gate",
+            "baseline": {"architecture_mode": "off"},
+            "adaptive": {"architecture_mode": "required"},
+        } or not _exact_keys(
+            expected,
+            {"label", "blockers", "diagnostics", "expected_modules", "declaration_quality"},
+        ):
+            raise ValueError
+        if expected["label"] not in {"drift", "clean"} or expected[
+            "declaration_quality"
+        ] not in {"complete", "omits_true_owner"}:
+            raise ValueError
+        for key in ("blockers", "diagnostics"):
+            if not isinstance(expected[key], list) or any(
+                not _exact_keys(item, {"code", "source"})
+                or not all(isinstance(item[field], str) and item[field] for field in item)
+                for item in expected[key]
+            ):
+                raise ValueError
+        if not _string_list(expected["expected_modules"]):
+            raise ValueError
+    else:
+        if treatment != {
+            "name": "architecture_projection",
+            "baseline": {"architecture_projection": "omitted"},
+            "adaptive": {"architecture_projection": "included"},
+        } or not _exact_keys(expected, {"projected_modules"}):
+            raise ValueError
+        projected = expected["projected_modules"]
+        if not isinstance(projected, list) or any(
+            not _exact_keys(item, {"id", "responsibility", "depends_on"})
+            or not isinstance(item["id"], str)
+            or not item["id"]
+            or not isinstance(item["responsibility"], str)
+            or not item["responsibility"]
+            or not _string_list(item["depends_on"])
+            for item in projected
+        ):
+            raise ValueError
+    return data
+
+
+def validate_architecture_corpus(corpus: Path) -> list[dict]:
+    """Validate independent Architecture experiment fixtures without repository I/O."""
+    rows: list[dict] = []
+    try:
+        if not corpus.is_dir():
+            raise ValueError
+        for directory in sorted(corpus.iterdir()):
+            if not directory.is_dir():
+                raise ValueError
+            if directory.name not in {"drift", "context"}:
+                raise ValueError
+            for path in sorted(directory.iterdir()):
+                if not path.is_file() or path.suffix != ".yaml":
+                    raise ValueError
+                rows.append(
+                    _validate_architecture_fixture(
+                        yaml.safe_load(path.read_text()), directory.name
+                    )
+                )
+        if len({row["id"] for row in rows}) != len(rows):
+            raise ValueError
+        return sorted(rows, key=lambda row: row["id"])
+    except (ArchitectureError, OSError, TypeError, yaml.YAMLError, ValueError) as exc:
+        raise ValueError("ARCHITECTURE_BENCHMARK_CORPUS_INVALID") from exc
 
 
 def _artifact_data(path: Path, fixture_id: str, mode: str) -> dict | None:

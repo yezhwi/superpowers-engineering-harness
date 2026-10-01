@@ -1650,6 +1650,16 @@ def cmd_benchmark_corpus_validate(corpus: Path) -> int:
     return 0
 
 
+def cmd_architecture_benchmark_corpus_validate(corpus: Path) -> int:
+    try:
+        rows = benchmark.validate_architecture_corpus(corpus)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    print(f"ARCHITECTURE_BENCHMARK_CORPUS_VALID: {len(rows)}")
+    return 0
+
+
 def cmd_benchmark_alignment(records: Path) -> int:
     """Report alignment metrics from explicitly supplied persisted records only."""
     try:
