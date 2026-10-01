@@ -183,9 +183,11 @@ def assess_architecture(
             continue
         for evidence in module.evidence:
             evidence_path = harness_dir.parent / evidence.path
-            if source_access.is_symlink(evidence_path):
+            if source_access.declared_symlink_beneath(
+                evidence_path, harness_dir.parent
+            ):
                 raise ArchitectureGateError("ARCHITECTURE_EVIDENCE_INVALID")
-            if evidence.path not in current_paths or not source_access.is_regular_file_beneath(
+            if evidence.path not in current_paths or not source_access.declared_regular_file_beneath(
                 evidence_path, harness_dir.parent
             ):
                 blockers.append(

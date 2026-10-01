@@ -115,6 +115,12 @@ _SCOPES: ContextVar[tuple[_Scope, ...]] = ContextVar(
 _PACKAGE_OPEN: ContextVar[Path | None] = ContextVar(
     "harness_package_open", default=None
 )
+_BENEATH_OPEN: ContextVar[frozenset[Path]] = ContextVar(
+    "harness_beneath_open", default=frozenset()
+)
+_BENEATH_FD: ContextVar[int | None] = ContextVar(
+    "harness_beneath_fd", default=None
+)
 _INSTALL_LOCK = Lock()
 _INSTALLED = False
 
@@ -163,10 +169,12 @@ def _audit(event: str, args: tuple) -> None:
         return
     path = args[0]
     if isinstance(path, int):
-        # No provenance proof for a pre-opened descriptor in an active scope.
+        if path == _BENEATH_FD.get():
+            return
+        # No provenance proof for any other pre-opened descriptor.
         _deny(_SCOPES.get()[-1])
     candidate = Path(os.path.abspath(os.fsdecode(path)))
-    if candidate == _PACKAGE_OPEN.get():
+    if candidate == _PACKAGE_OPEN.get() or candidate in _BENEATH_OPEN.get():
         return
     _check(candidate)
 
@@ -274,35 +282,44 @@ def _open_beneath(path: Path, root: Path) -> int:
     nofollow = getattr(os, "O_NOFOLLOW", None)
     if nofollow is None:
         raise OSError("O_NOFOLLOW is unavailable")
-    directory = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
+    internal_paths = frozenset(
+        {root, *(Path(os.path.abspath(part)) for part in relative.parts)}
+    )
+    token = _BENEATH_OPEN.set(internal_paths)
     try:
-        for part in relative.parts[:-1]:
-            child = os.open(
-                part,
-                os.O_RDONLY | os.O_DIRECTORY | nofollow,
+        directory = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            for part in relative.parts[:-1]:
+                child = os.open(
+                    part,
+                    os.O_RDONLY | os.O_DIRECTORY | nofollow,
+                    dir_fd=directory,
+                )
+                os.close(directory)
+                directory = child
+            return os.open(
+                relative.parts[-1],
+                os.O_RDONLY | os.O_NONBLOCK | nofollow,
                 dir_fd=directory,
             )
+        finally:
             os.close(directory)
-            directory = child
-        return os.open(
-            relative.parts[-1],
-            os.O_RDONLY | os.O_NONBLOCK | nofollow,
-            dir_fd=directory,
-        )
     finally:
-        os.close(directory)
+        _BENEATH_OPEN.reset(token)
 
 
 def read_regular_bytes_beneath(path: Path, root: Path) -> bytes:
     """Read one regular file beneath root without following symlinks."""
     _check(path, explicit=True)
     descriptor = _open_beneath(path, root)
+    token = _BENEATH_FD.set(descriptor)
     try:
         if not stat.S_ISREG(os.fstat(descriptor).st_mode):
             raise OSError("source is not a regular file")
         with os.fdopen(descriptor, "rb", closefd=False) as stream:
             content = stream.read()
     finally:
+        _BENEATH_FD.reset(token)
         os.close(descriptor)
     _observe(path, "bytes", _hash(content))
     return content
@@ -345,6 +362,32 @@ def is_regular_file_beneath(path: Path, root: Path) -> bool:
             os.close(descriptor)
     _observe(path, "is_file", result)
     return result
+
+
+def declared_regular_file_beneath(path: Path, root: Path) -> bool:
+    """Check metadata for one path explicitly declared by validated source."""
+    path = Path(path).absolute()
+    root = Path(root).absolute()
+    try:
+        path.relative_to(root)
+        descriptor = _open_beneath(path, root)
+    except (OSError, ValueError):
+        return False
+    try:
+        return stat.S_ISREG(os.fstat(descriptor).st_mode)
+    finally:
+        os.close(descriptor)
+
+
+def declared_symlink_beneath(path: Path, root: Path) -> bool:
+    """Check symlink metadata for one path explicitly declared by validated source."""
+    path = Path(path).absolute()
+    root = Path(root).absolute()
+    try:
+        path.relative_to(root)
+    except ValueError:
+        return True
+    return path.is_symlink()
 
 
 def is_regular_file_nofollow(path: Path) -> bool:

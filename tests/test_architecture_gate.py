@@ -223,16 +223,20 @@ def test_evidence_symlink_swap_during_metadata_check_fails_closed(tmp_path, monk
     evidence = root / "src/app.py"
     outside = tmp_path / "outside.py"
     outside.write_text("print('outside')")
-    original_is_symlink = architecture_gate.source_access.is_symlink
+    original_is_symlink = architecture_gate.source_access.declared_symlink_beneath
 
-    def swap_after_check(path):
-        result = original_is_symlink(path)
+    def swap_after_check(path, repo_root):
+        result = original_is_symlink(path, repo_root)
         if Path(path) == evidence:
             evidence.unlink()
             evidence.symlink_to(outside)
         return result
 
-    monkeypatch.setattr(architecture_gate.source_access, "is_symlink", swap_after_check)
+    monkeypatch.setattr(
+        architecture_gate.source_access,
+        "declared_symlink_beneath",
+        swap_after_check,
+    )
 
     assessment = architecture_gate.assess_architecture(
         harness, task, gate, allow_preflight=True

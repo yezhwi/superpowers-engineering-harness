@@ -59,6 +59,44 @@ def test_enabled_plan_artifacts_are_conditional_named_freshness_inputs(harness):
     assert freshness.capture(harness)["plan_hash"] is None
 
 
+def test_required_architecture_is_conditional_named_freshness_input(harness):
+    test_context_builder.enable_required_architecture(harness)
+
+    before = freshness.capture(harness)
+    assert before["projection_version"] == 4
+    assert before["files"]["architecture.yaml"].startswith("sha256:")
+
+    (harness / "architecture.yaml").write_text(
+        (harness / "architecture.yaml").read_text() + "\n"
+    )
+    assert freshness.capture(harness) != before
+
+
+def test_fast_and_off_capture_do_not_include_architecture_source(harness):
+    assert "architecture.yaml" not in freshness.capture(harness)["files"]
+
+    test_context_builder.set_profile(harness, "Q2")
+    assert "architecture.yaml" not in freshness.capture(harness)["files"]
+
+
+def test_architecture_module_ids_never_enter_declared_path_resolution(harness, monkeypatch):
+    test_context_builder.enable_required_architecture(harness)
+    seen = []
+    original = freshness.contained_path
+
+    def recording_contained_path(root, ref):
+        seen.append(ref)
+        return original(root, ref)
+
+    monkeypatch.setattr(freshness, "contained_path", recording_contained_path)
+
+    result = freshness.capture(harness)
+
+    assert result["files"]["architecture.yaml"]
+    assert "app" not in seen
+    assert not any(ref.endswith("/app") for ref in seen)
+
+
 def test_new_canonical_member_after_freeze_rejects_capture(harness, monkeypatch):
     original = freshness._capture_versions
 

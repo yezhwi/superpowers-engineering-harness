@@ -44,7 +44,7 @@ def test_random_canonical_control_source_mutations_stale_then_regenerate(harness
         harness / "requirements.yaml",
         harness / "invariants.yaml",
         next((harness / "findings").glob("*.yaml")),
-        next((harness / "decisions").glob("*.yaml")),
+        harness / "decisions/index.yaml",
     ]
 
     for path in random.Random(28).sample(candidates, len(candidates)):

@@ -445,6 +445,54 @@ def test_explicitly_referenced_ignored_file_changes_stale_context(harness, decla
         validate(harness, document)
 
 
+def test_required_architecture_context_uses_projection_v4_and_rejects_v3(harness):
+    test_context_builder.enable_required_architecture(harness)
+    document = build(harness)
+
+    assert document["generated_from"]["projection_version"] == 4
+    old = copy.deepcopy(document)
+    old["generated_from"]["projection_version"] = 3
+    old["context_hash"] = "sha256:" + "0" * 64
+
+    with pytest.raises(ContextBuildError, match="CONTEXT_SCHEMA_INVALID"):
+        validate(harness, old)
+
+
+def test_architecture_change_during_context_load_is_rejected(harness, monkeypatch):
+    test_context_builder.enable_required_architecture(harness)
+    from harness.context import integrity
+
+    original = integrity.FileContextSource.load
+
+    def change_after_load(source):
+        loaded = original(source)
+        path = harness / "architecture.yaml"
+        path.write_text(path.read_text() + "\n")
+        return loaded
+
+    monkeypatch.setattr(integrity.FileContextSource, "load", change_after_load)
+
+    with pytest.raises(ContextBuildError, match="CONTEXT_STALE"):
+        build(harness)
+
+
+def test_architecture_delete_during_context_load_is_rejected(harness, monkeypatch):
+    test_context_builder.enable_required_architecture(harness)
+    from harness.context import integrity
+
+    original = integrity.FileContextSource.load
+
+    def delete_after_load(source):
+        loaded = original(source)
+        (harness / "architecture.yaml").unlink()
+        return loaded
+
+    monkeypatch.setattr(integrity.FileContextSource, "load", delete_after_load)
+
+    with pytest.raises(ContextBuildError, match="CONTEXT_STALE"):
+        build(harness)
+
+
 def test_malformed_record_id_cannot_crash_integrity(harness):
     add_core_records(harness)
     document = build(harness)
