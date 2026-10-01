@@ -140,7 +140,7 @@ def test_off_downgrade_from_required_seal_is_contract_change_before_artifact(tmp
     assert assessment.blockers[0].source == "artifact:.harness/alignment-freeze.yaml"
 
 
-def test_required_seal_mismatch_is_terminal_contract_change_before_artifact(tmp_path):
+def test_required_mode_validates_malformed_artifact_before_off_seal_mismatch(tmp_path):
     from harness import architecture_gate
 
     _root, harness, task, gate = fixture(tmp_path)
@@ -152,10 +152,13 @@ def test_required_seal_mismatch_is_terminal_contract_change_before_artifact(tmp_
     seal_path.write_text(yaml.safe_dump(seal))
     (harness / "architecture.yaml").write_text("malformed: [")
 
-    assessment = architecture_gate.assess_architecture(harness, task, gate, allow_preflight=True)
-
-    assert assessment.blockers[0].code == "CONTRACT_CHANGED"
-    assert assessment.blockers[0].source == "artifact:.harness/alignment-freeze.yaml"
+    with pytest.raises(
+        architecture_gate.ArchitectureGateError,
+        match="ARCHITECTURE_SCHEMA_INVALID",
+    ):
+        architecture_gate.assess_architecture(
+            harness, task, gate, allow_preflight=True
+        )
 
 
 def test_scope_invalid_evidence_invalid_unresolved_and_ambiguous_blockers(tmp_path):

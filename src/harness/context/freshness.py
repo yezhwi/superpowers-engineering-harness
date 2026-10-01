@@ -299,6 +299,10 @@ def capture(harness_dir: Path) -> dict:
             plan_sources,
             architecture_sources,
         ):
+            if _architecture_source_names(harness_dir) != architecture_sources:
+                raise ContextBuildError(
+                    "CONTEXT_STALE", "Architecture mode changed during capture"
+                )
             return _capture_versions(
                 harness_dir,
                 root,
@@ -362,7 +366,13 @@ def _capture_versions(
         for name in sorted(declared_paths | discovered):
             declared[name] = file_version(contained_path(root, name))
         current = snapshot(root)
-        resource_versions = schema_versions()
+        resource_versions = schema_versions(
+            exclude=(
+                frozenset()
+                if architecture_sources
+                else frozenset({"architecture.schema.json"})
+            )
+        )
     except (OSError, ValueError, yaml.YAMLError, WorkspaceError) as exc:
         if isinstance(exc, ContextBuildError):
             raise

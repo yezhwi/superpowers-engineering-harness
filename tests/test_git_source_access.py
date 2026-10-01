@@ -46,6 +46,35 @@ def test_arbitrary_fd_is_still_denied_after_git_query(harness):
     assert queried
 
 
+def test_beneath_open_capability_cannot_be_reused_by_reentrant_open(
+    harness, monkeypatch
+):
+    from harness import source_access
+
+    root = harness.parent
+    target = harness / "architecture.yaml"
+    target.write_text("allowed")
+    secret = root / "architecture.yaml"
+    secret.write_text("SECRET")
+    captured = []
+    original = source_access.os.open
+    attempted = False
+
+    def reentrant_open(path, *args, **kwargs):
+        nonlocal attempted
+        if not attempted:
+            attempted = True
+            captured.append(secret.read_text())
+        return original(path, *args, **kwargs)
+
+    monkeypatch.setattr(source_access.os, "open", reentrant_open)
+
+    with pytest.raises(ContextBuildError, match="CONTEXT_REFERENCE_BROKEN"):
+        with source_scope(root, allowed=[target], absolute_only=True):
+            source_access.read_regular_bytes_beneath(target, root)
+    assert captured == []
+
+
 def test_capture_handles_large_stdout_and_stderr(harness, monkeypatch):
     import sys
 

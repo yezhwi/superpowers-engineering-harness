@@ -230,6 +230,11 @@ def _check_document(source: AuthoritativeContext, document: dict, root: Path) ->
     expected = build_control_core(source)
     for field in ("contracts", "observability", "plan_reconciliation"):
         _same(core[field], expected[field], f"altered {field}")
+    _same(
+        core.get("architecture"),
+        expected.get("architecture"),
+        "altered architecture",
+    )
     selected = DeterministicSelector().select(source, policy, mode=document["mode"])
     _same(document["working"], selected.working, "altered working candidates")
     _same(document["references"], source.references, "altered references")

@@ -607,7 +607,12 @@ def test_summary_cli_matches_bounded_context_projection_and_is_read_only(tmp_pat
             "responsibility": "Run application logic.", "depends_on": [],
         }],
     }
+    expected = json.loads(result.stdout)
+    text = cli(repo, "architecture", "summary")
+    assert text.returncode == 0, text.stderr
+    assert yaml.safe_load(text.stdout) == expected
     assert "SECRET_BODY" not in result.stdout
+    assert "SECRET_BODY" not in text.stdout
     assert harness_bytes(repo) == before
 
 
@@ -677,6 +682,26 @@ def test_check_reports_same_attributable_changes_assessed_by_gate(tmp_path):
 
     assert report["status"] == "valid"
     assert any(change["path"] == "src/app.py" for change in report["changes"])
+
+
+def test_check_wraps_assessment_value_error_as_stable_architecture_error(
+    tmp_path, monkeypatch
+):
+    from harness import architecture_gate
+
+    repo = repository(tmp_path)
+    harness = repo / ".harness"
+
+    def invalid_assessment(*args, **kwargs):
+        raise ValueError("unsafe internal detail")
+
+    monkeypatch.setattr(architecture_gate, "assess_architecture", invalid_assessment)
+
+    with pytest.raises(ArchitectureError) as exc:
+        architecture_store.check_architecture(harness)
+
+    assert exc.value.code == "ARCHITECTURE_CHECK_INVALID"
+    assert str(exc.value) == "ARCHITECTURE_CHECK_INVALID"
 
 
 def test_check_wraps_malformed_gate_as_stable_architecture_error(tmp_path):

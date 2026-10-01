@@ -355,13 +355,7 @@ def cmd_architecture(args) -> int:
             if args.architecture_json:
                 print(json.dumps(report, indent=2, sort_keys=True, ensure_ascii=False))
             else:
-                print(f"Architecture summary: {report['status'].upper()}")
-                print(f"Fingerprint: {report['fingerprint'] or '-'}")
-                print(
-                    "Declared modules: "
-                    + (", ".join(report["declared_modules"]) or "-")
-                )
-                print(f"Relevant modules: {len(report['relevant_modules'])}")
+                print(yaml.safe_dump(report, sort_keys=False).rstrip())
             return 0
         if command == "check":
             report = architecture_store.check_architecture(harness_dir)

@@ -29,6 +29,8 @@ class _Scope:
     stale: bool = False
     observations: dict = field(default_factory=dict)
     resources: dict[str, str] = field(default_factory=dict)
+    resource_authority: dict[str, str] | None = None
+    absolute_only: bool = False
 
 
 class SourceObservations:
@@ -115,12 +117,6 @@ _SCOPES: ContextVar[tuple[_Scope, ...]] = ContextVar(
 _PACKAGE_OPEN: ContextVar[Path | None] = ContextVar(
     "harness_package_open", default=None
 )
-_BENEATH_OPEN: ContextVar[frozenset[Path]] = ContextVar(
-    "harness_beneath_open", default=frozenset()
-)
-_BENEATH_FD: ContextVar[int | None] = ContextVar(
-    "harness_beneath_fd", default=None
-)
 _INSTALL_LOCK = Lock()
 _INSTALLED = False
 
@@ -164,18 +160,54 @@ def _check(path: Path, *, explicit: bool = False) -> None:
             _deny(scope)
 
 
+def _trusted_beneath_open(candidate: Path) -> bool:
+    """Bind audit exemption to immediate secure-adapter frame, never lexical token."""
+    try:
+        caller = sys._getframe(2)
+    except ValueError:
+        return False
+    if caller.f_code is not _open_beneath.__code__:
+        return False
+    root = caller.f_locals.get("root")
+    relative = caller.f_locals.get("relative")
+    if not isinstance(root, Path) or not isinstance(relative, Path):
+        return False
+    expected = {root, *(Path(os.path.abspath(part)) for part in relative.parts)}
+    return candidate in expected
+
+
+def _trusted_beneath_fd(descriptor: int) -> bool:
+    """Accept only fdopen directly issued by regular-file secure adapter."""
+    try:
+        caller = sys._getframe(2)
+        adapter = caller.f_back
+    except (ValueError, AttributeError):
+        return False
+    return (
+        caller.f_code.co_name == "fdopen"
+        and adapter is not None
+        and adapter.f_code is read_regular_bytes_beneath.__code__
+        and descriptor == adapter.f_locals.get("descriptor")
+    )
+
+
 def _audit(event: str, args: tuple) -> None:
     if event != "open" or not _SCOPES.get():
         return
     path = args[0]
     if isinstance(path, int):
-        if path == _BENEATH_FD.get():
+        if _trusted_beneath_fd(path):
             return
         # No provenance proof for any other pre-opened descriptor.
         _deny(_SCOPES.get()[-1])
-    candidate = Path(os.path.abspath(os.fsdecode(path)))
-    if candidate == _PACKAGE_OPEN.get() or candidate in _BENEATH_OPEN.get():
+    raw_path = Path(os.fsdecode(path))
+    candidate = Path(os.path.abspath(raw_path))
+    if candidate == _PACKAGE_OPEN.get() or _trusted_beneath_open(candidate):
         return
+    if not raw_path.is_absolute():
+        for scope in _SCOPES.get():
+            if scope.absolute_only:
+                _deny(scope)
     _check(candidate)
 
 
@@ -189,6 +221,14 @@ def _package_open(path: Path):
         _PACKAGE_OPEN.reset(token)
 
 
+def require_resource_authority(name: str) -> None:
+    """Reject a versioned resource before package bytes are accessed."""
+    for scope in _SCOPES.get():
+        authority = scope.resource_authority
+        if authority is not None and name not in authority:
+            _deny(scope)
+
+
 def reject_resource() -> None:
     for scope in _SCOPES.get():
         scope.violated = True
@@ -198,6 +238,12 @@ def reject_resource() -> None:
 def observe_resource(name: str, content: bytes) -> None:
     version = _hash(content)
     for scope in _SCOPES.get():
+        authority = scope.resource_authority
+        if authority is not None:
+            if name not in authority:
+                _deny(scope)
+            if authority[name] != version:
+                _stale()
         if name in scope.resources and scope.resources[name] != version:
             _stale()
         scope.resources[name] = version
@@ -212,7 +258,14 @@ def _install() -> None:
 
 
 @contextmanager
-def source_scope(root: Path, *, allowed, member_rules=()):
+def source_scope(
+    root: Path,
+    *,
+    allowed,
+    member_rules=(),
+    resource_versions: dict[str, str] | None = None,
+    absolute_only: bool = False,
+):
     """Restrict open under root; nested scopes cannot override outer denials.
 
     sticky violation survives a consumer swallowing the immediate exception.
@@ -241,7 +294,15 @@ def source_scope(root: Path, *, allowed, member_rules=()):
             )
         declared.add(directory)
         rules.append((directory, pattern))
-    scope = _Scope(root, frozenset(declared), tuple(rules))
+    scope = _Scope(
+        root,
+        frozenset(declared),
+        tuple(rules),
+        resource_authority=(
+            dict(resource_versions) if resource_versions is not None else None
+        ),
+        absolute_only=absolute_only,
+    )
     token = _SCOPES.set((*_SCOPES.get(), scope))
     try:
         yield SourceObservations(scope)
@@ -282,44 +343,35 @@ def _open_beneath(path: Path, root: Path) -> int:
     nofollow = getattr(os, "O_NOFOLLOW", None)
     if nofollow is None:
         raise OSError("O_NOFOLLOW is unavailable")
-    internal_paths = frozenset(
-        {root, *(Path(os.path.abspath(part)) for part in relative.parts)}
-    )
-    token = _BENEATH_OPEN.set(internal_paths)
+    directory = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
     try:
-        directory = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
-        try:
-            for part in relative.parts[:-1]:
-                child = os.open(
-                    part,
-                    os.O_RDONLY | os.O_DIRECTORY | nofollow,
-                    dir_fd=directory,
-                )
-                os.close(directory)
-                directory = child
-            return os.open(
-                relative.parts[-1],
-                os.O_RDONLY | os.O_NONBLOCK | nofollow,
+        for part in relative.parts[:-1]:
+            child = os.open(
+                part,
+                os.O_RDONLY | os.O_DIRECTORY | nofollow,
                 dir_fd=directory,
             )
-        finally:
             os.close(directory)
+            directory = child
+        return os.open(
+            relative.parts[-1],
+            os.O_RDONLY | os.O_NONBLOCK | nofollow,
+            dir_fd=directory,
+        )
     finally:
-        _BENEATH_OPEN.reset(token)
+        os.close(directory)
 
 
 def read_regular_bytes_beneath(path: Path, root: Path) -> bytes:
     """Read one regular file beneath root without following symlinks."""
     _check(path, explicit=True)
     descriptor = _open_beneath(path, root)
-    token = _BENEATH_FD.set(descriptor)
     try:
         if not stat.S_ISREG(os.fstat(descriptor).st_mode):
             raise OSError("source is not a regular file")
         with os.fdopen(descriptor, "rb", closefd=False) as stream:
             content = stream.read()
     finally:
-        _BENEATH_FD.reset(token)
         os.close(descriptor)
     _observe(path, "bytes", _hash(content))
     return content

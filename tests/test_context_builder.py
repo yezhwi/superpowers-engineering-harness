@@ -294,6 +294,22 @@ def test_architecture_summary_projects_legal_256_module_bound_without_truncation
     assert {module["id"] for module in summary["relevant_modules"]} == {f"m{i}" for i in range(256)}
 
 
+def test_required_malformed_architecture_is_validated_before_seal_drift(harness):
+    from harness.context.model import ContextBuildError
+
+    enable_required_architecture(harness)
+    seal_path = harness / "alignment-freeze.yaml"
+    seal = yaml.safe_load(seal_path.read_text())
+    seal["declared_modules"] = []
+    write_yaml(seal_path, seal)
+    (harness / "architecture.yaml").write_text("modules: [")
+
+    with pytest.raises(
+        ContextBuildError, match="CONTEXT_SCHEMA_INVALID.*ARCHITECTURE"
+    ):
+        load_and_build(harness)
+
+
 def test_required_malformed_architecture_is_context_schema_invalid(harness):
     from harness.context.model import ContextBuildError
     from harness.context.source import FileContextSource

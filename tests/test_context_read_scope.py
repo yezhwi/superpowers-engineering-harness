@@ -40,6 +40,53 @@ def test_cold_q2_off_context_import_stays_inside_source_scope(harness):
     assert result.returncode == 0, result.stderr
 
 
+def test_context_scope_rejects_same_name_dir_fd_read_from_harness(harness):
+    from harness.context.read_scope import context_read_scope
+
+    product = harness.parent / "collision.txt"
+    hidden = harness / "collision.txt"
+    product.write_text("allowed product")
+    hidden.write_text("undeclared control")
+    versions = {
+        "files": {"current-task.yaml": "sha256:" + "0" * 64},
+        "declared_files": {"collision.txt": "sha256:" + "0" * 64},
+        "schema_resources": {},
+    }
+
+    directory = os.open(harness, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        with pytest.raises(ContextBuildError, match="CONTEXT_REFERENCE_BROKEN"):
+            with context_read_scope(harness, versions):
+                descriptor = os.open("collision.txt", os.O_RDONLY, dir_fd=directory)
+                os.close(descriptor)
+    finally:
+        os.close(directory)
+
+
+def test_off_context_scope_rejects_unversioned_architecture_schema(
+    harness, monkeypatch
+):
+    from harness import schema_resources
+    from harness.context.freshness import capture
+    from harness.context.read_scope import context_read_scope
+
+    versions = capture(harness)
+    assert "architecture.schema.json" not in versions["schema_resources"]
+    reads = []
+    original = schema_resources._resource_bytes
+
+    def recording_resource(name):
+        reads.append(name)
+        return original(name)
+
+    monkeypatch.setattr(schema_resources, "_resource_bytes", recording_resource)
+
+    with pytest.raises(ContextBuildError, match="CONTEXT_REFERENCE_BROKEN"):
+        with context_read_scope(harness, versions):
+            schema_resources.read_schema("architecture.schema.json")
+    assert "architecture.schema.json" not in reads
+
+
 @pytest.mark.parametrize("swallow", [False, True])
 def test_unregistered_gate_read_prevents_context_publication(
     harness, monkeypatch, swallow

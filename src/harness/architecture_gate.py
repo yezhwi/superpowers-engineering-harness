@@ -108,6 +108,20 @@ def assess_architecture(
     git = task.get("git")
     if not isinstance(task_metadata, dict) or not isinstance(git, dict):
         raise ArchitectureGateError("ARCHITECTURE_TASK_INVALID")
+    artifact = harness_dir / "architecture.yaml"
+    if source_access.is_symlink(artifact):
+        raise ArchitectureGateError("ARCHITECTURE_SCHEMA_INVALID")
+    artifact_present = source_access.exists(artifact)
+    model = None
+    if artifact_present:
+        if not source_access.is_file(artifact):
+            raise ArchitectureGateError("ARCHITECTURE_SCHEMA_INVALID")
+        try:
+            model = load_architecture(harness_dir, required=True)
+        except ArchitectureError as exc:
+            raise ArchitectureGateError(str(exc)) from exc
+        assert model is not None
+
     if (
         seal is None
         or seal.get("version") != 2
@@ -130,10 +144,7 @@ def assess_architecture(
     if sorted(seal["declared_modules"]) != sorted(declared):
         return _contract_changed("declared Architecture modules changed")
 
-    artifact = harness_dir / "architecture.yaml"
-    if source_access.is_symlink(artifact):
-        raise ArchitectureGateError("ARCHITECTURE_SCHEMA_INVALID")
-    if not source_access.exists(artifact):
+    if not artifact_present:
         return ArchitectureAssessment(
             (
                 _block(
@@ -147,12 +158,6 @@ def assess_architecture(
             (),
             seal["architecture_fingerprint"],
         )
-    if not source_access.is_file(artifact):
-        raise ArchitectureGateError("ARCHITECTURE_SCHEMA_INVALID")
-    try:
-        model = load_architecture(harness_dir, required=True)
-    except ArchitectureError as exc:
-        raise ArchitectureGateError(str(exc)) from exc
     assert model is not None
     fingerprint = architecture_fingerprint(model)
     if fingerprint != seal["architecture_fingerprint"]:

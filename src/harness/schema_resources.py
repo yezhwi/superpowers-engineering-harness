@@ -57,13 +57,14 @@ def _resource_bytes(name: str) -> bytes:
 def read_schema(name: str) -> dict:
     from harness import source_access
 
+    source_access.require_resource_authority(name)
     content = _resource_bytes(name)
     source_access.observe_resource(name, content)
     return json.loads(content)
 
 
-def schema_versions() -> dict[str, str]:
+def schema_versions(*, exclude: frozenset[str] = frozenset()) -> dict[str, str]:
     return {
         name: "sha256:" + hashlib.sha256(_resource_bytes(name)).hexdigest()
-        for name in sorted(SCHEMA_NAMES)
+        for name in sorted(set(SCHEMA_NAMES) - exclude)
     }

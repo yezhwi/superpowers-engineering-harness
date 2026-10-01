@@ -79,6 +79,54 @@ def test_fast_and_off_capture_do_not_include_architecture_source(harness):
     assert "architecture.yaml" not in freshness.capture(harness)["files"]
 
 
+def test_architecture_schema_bytes_are_conditional_freshness_inputs(harness, monkeypatch):
+    from harness import schema_resources
+
+    seen = []
+    original = schema_resources._resource_bytes
+
+    def recording_resource(name):
+        seen.append(name)
+        return original(name)
+
+    monkeypatch.setattr(schema_resources, "_resource_bytes", recording_resource)
+
+    freshness.capture(harness)
+    assert "architecture.schema.json" not in seen
+
+    seen.clear()
+    test_context_builder.set_profile(harness, "Q2")
+    freshness.capture(harness)
+    assert "architecture.schema.json" not in seen
+
+    seen.clear()
+    test_context_builder.enable_required_architecture(harness)
+    freshness.capture(harness)
+    assert "architecture.schema.json" in seen
+
+
+def test_required_to_off_race_rejects_before_architecture_versioning(harness, monkeypatch):
+    test_context_builder.enable_required_architecture(harness)
+    gate_path = harness / "gate.yaml"
+    original = freshness._architecture_source_names
+    calls = 0
+
+    def switch_mode(root):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            gate = yaml.safe_load(gate_path.read_text())
+            gate["gate"]["architecture"]["mode"] = "off"
+            gate_path.write_text(yaml.safe_dump(gate, sort_keys=False))
+        return original(root)
+
+    monkeypatch.setattr(freshness, "_architecture_source_names", switch_mode)
+
+    with pytest.raises(ContextBuildError, match="CONTEXT_STALE"):
+        freshness.capture(harness)
+    assert calls == 2
+
+
 def test_architecture_module_ids_never_enter_declared_path_resolution(harness, monkeypatch):
     test_context_builder.enable_required_architecture(harness)
     seen = []

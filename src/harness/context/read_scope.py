@@ -9,8 +9,7 @@ from harness.source_access import source_scope
 @contextmanager
 def context_read_scope(harness_dir: Path, versions: dict):
     root = harness_dir.absolute().parent
-    allowed = {root, harness_dir}
-    allowed.update(harness_dir / name for name in versions["files"])
+    allowed = {harness_dir / name for name in versions["files"]}
     allowed.update(
         {harness_dir / name for name in ("alignment.yaml", "alignment-freeze.yaml")}
     )
@@ -24,5 +23,11 @@ def context_read_scope(harness_dir: Path, versions: dict):
             ("interface-contracts", "INT-*.yaml"),
         )
     ]
-    with source_scope(root, allowed=allowed, member_rules=rules) as observed:
+    with source_scope(
+        root,
+        allowed=allowed,
+        member_rules=rules,
+        resource_versions=versions["schema_resources"],
+        absolute_only=True,
+    ) as observed:
         yield observed

@@ -458,6 +458,32 @@ def test_required_architecture_context_uses_projection_v4_and_rejects_v3(harness
         validate(harness, old)
 
 
+@pytest.mark.parametrize("mode", ["required", "off"])
+def test_architecture_projection_tampering_is_rejected_even_with_rehashed_context(
+    harness, mode
+):
+    from harness.context.freshness import digest
+
+    if mode == "required":
+        test_context_builder.enable_required_architecture(harness)
+    document = build(harness)
+    if mode == "required":
+        document["control"]["architecture"]["declared_modules"] = []
+    else:
+        document["control"]["architecture"] = {
+            "status": "current",
+            "fingerprint": "sha256:" + "0" * 64,
+            "declared_modules": [],
+            "relevant_modules": [],
+        }
+    document["context_hash"] = digest(
+        {key: value for key, value in document.items() if key != "context_hash"}
+    )
+
+    with pytest.raises(ContextBuildError, match="CONTEXT_INACCURATE"):
+        validate(harness, document)
+
+
 def test_architecture_change_during_context_load_is_rejected(harness, monkeypatch):
     test_context_builder.enable_required_architecture(harness)
     from harness.context import integrity

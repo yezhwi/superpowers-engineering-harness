@@ -248,6 +248,7 @@ def _architecture_assessment(harness_dir: Path):
         yaml.YAMLError,
         KeyError,
         TypeError,
+        ValueError,
     ) as exc:
         raise ArchitectureError("ARCHITECTURE_CHECK_INVALID") from exc
 
