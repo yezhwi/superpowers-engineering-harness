@@ -1,5 +1,6 @@
 """Deterministic local benchmark fixture reporting."""
 
+import hashlib
 import json
 import math
 import re
@@ -231,7 +232,9 @@ def _validate_architecture_fixture(data: object, directory: str) -> dict:
         raise ValueError
 
     inputs = data["inputs"]
-    if not _exact_keys(inputs, {"task", "architecture", "git"}):
+    if not _exact_keys(inputs, {"task", "architecture", "git", "token_budget"}):
+        raise ValueError
+    if type(inputs["token_budget"]) is not int or inputs["token_budget"] <= 0:
         raise ValueError
     task = inputs["task"]
     if not _exact_keys(task, _ARCHITECTURE_TASK_KEYS) or not all(
@@ -319,6 +322,340 @@ def validate_architecture_corpus(corpus: Path) -> list[dict]:
         return sorted(rows, key=lambda row: row["id"])
     except (ArchitectureError, OSError, TypeError, yaml.YAMLError, ValueError) as exc:
         raise ValueError("ARCHITECTURE_BENCHMARK_CORPUS_INVALID") from exc
+
+
+def architecture_fixture_fingerprint(fixture: dict) -> str:
+    """Fingerprint immutable experiment inputs, excluding treatment and labels."""
+    payload = json.dumps(
+        fixture["inputs"], sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    ).encode()
+    return "sha256:" + hashlib.sha256(payload).hexdigest()
+
+
+def _count_metric(numerator: int, denominator: int, not_applicable: int = 0) -> dict:
+    return {
+        "numerator": numerator,
+        "denominator": denominator,
+        "not_applicable": not_applicable,
+        "value": numerator / denominator if denominator else "not_applicable",
+    }
+
+
+def _identity_records(value: object) -> list[dict] | None:
+    if not isinstance(value, list) or any(
+        not _exact_keys(item, {"code", "source"})
+        or not all(isinstance(item[key], str) and item[key] for key in item)
+        for item in value
+    ):
+        return None
+    identities = [(item["code"], item["source"]) for item in value]
+    return value if len(identities) == len(set(identities)) else None
+
+
+def _projected_records(value: object) -> list[dict] | None:
+    if not isinstance(value, list) or any(
+        not _exact_keys(item, {"id", "responsibility", "depends_on"})
+        or not isinstance(item["id"], str)
+        or not item["id"]
+        or not isinstance(item["responsibility"], str)
+        or not item["responsibility"]
+        or not _string_list(item["depends_on"])
+        for item in value
+    ):
+        return None
+    identities = [item["id"] for item in value]
+    return value if len(identities) == len(set(identities)) else None
+
+
+def _architecture_artifact(
+    path: Path, fixture: dict, arm: str, experiment: str
+) -> dict | None:
+    try:
+        artifact = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not _exact_keys(
+        artifact,
+        {
+            "version", "fixture_id", "experiment", "arm", "treatment",
+            "input_fingerprint", "inputs", "runs",
+        },
+    ) or (
+        artifact["version"] != 1
+        or artifact["fixture_id"] != fixture["id"]
+        or artifact["experiment"] != experiment
+        or artifact["arm"] != arm
+        or artifact["treatment"] != fixture["treatment"][arm]
+        or artifact["input_fingerprint"] != architecture_fixture_fingerprint(fixture)
+        or artifact["inputs"] != fixture["inputs"]
+        or not isinstance(artifact["runs"], list)
+        or len(artifact["runs"]) < 3
+    ):
+        return None
+    run_ids: list[str] = []
+    normalized: list[dict] = []
+    for run in artifact["runs"]:
+        if not _exact_keys(
+            run, {"run_id", "success", "integrity", "observed", "usage"}
+        ) or (
+            not isinstance(run["run_id"], str)
+            or not run["run_id"]
+            or type(run["success"]) is not bool
+            or type(run["integrity"]) is not bool
+        ):
+            return None
+        try:
+            usage = normalize_usage(run["usage"])
+        except TelemetryError:
+            return None
+        if (
+            usage["source"] not in {"runtime", "provider"}
+            or type(usage["total_tokens"]) is not int
+            or type(usage["tool_calls"]) is not int
+        ):
+            return None
+        observed = run["observed"]
+        if experiment == "drift_detection":
+            if not _exact_keys(observed, {"blocked", "blockers", "diagnostics"}):
+                return None
+            blockers = _identity_records(observed["blockers"])
+            diagnostics = _identity_records(observed["diagnostics"])
+            if type(observed["blocked"]) is not bool or blockers is None or diagnostics is None:
+                return None
+        elif not _exact_keys(observed, {"projected_modules"}) or _projected_records(
+            observed["projected_modules"]
+        ) is None:
+            return None
+        run_ids.append(run["run_id"])
+        normalized.append(
+            {
+                **run,
+                "total_tokens": usage["total_tokens"],
+                "tool_calls": usage["tool_calls"],
+            }
+        )
+    if len(run_ids) != len(set(run_ids)):
+        return None
+    first = json.dumps(normalized[0]["observed"], sort_keys=True)
+    if any(json.dumps(run["observed"], sort_keys=True) != first for run in normalized[1:]):
+        return None
+    return {**artifact, "runs": normalized}
+
+
+def _efficiency(artifact: dict) -> dict | str:
+    return summarize_runs(artifact["runs"])
+
+
+def _record_identities(records: list[dict]) -> set[tuple[str, str]]:
+    return {(item["code"], item["source"]) for item in records}
+
+
+def _drift_arm(fixtures: list[dict], artifacts: list[dict]) -> dict:
+    drift_total = drift_correct = clean_total = clean_blocked = 0
+    diagnostic_correct = diagnostic_emitted = diagnostic_na = 0
+    integrity_failures = 0
+    for fixture, artifact in zip(fixtures, artifacts):
+        observed = artifact["runs"][0]["observed"]
+        expected = fixture["expected"]
+        integrity_failures += sum(not run["integrity"] for run in artifact["runs"])
+        if expected["label"] == "drift":
+            drift_total += 1
+            emitted_blockers = _record_identities(observed["blockers"])
+            expected_blockers = _record_identities(expected["blockers"])
+            drift_correct += bool(observed["blocked"] and expected_blockers <= emitted_blockers)
+        else:
+            clean_total += 1
+            clean_blocked += observed["blocked"]
+        diagnostic_codes = {
+            "ARCHITECTURE_OWNERSHIP_UNRESOLVED",
+            "ARCHITECTURE_OWNERSHIP_AMBIGUOUS",
+        }
+        emitted = {
+            identity
+            for identity in _record_identities(observed["diagnostics"])
+            if identity[0] in diagnostic_codes
+        }
+        labeled = {
+            identity
+            for identity in _record_identities(expected["diagnostics"])
+            if identity[0] in diagnostic_codes
+        }
+        if emitted:
+            diagnostic_emitted += len(emitted)
+            diagnostic_correct += len(emitted & labeled)
+        else:
+            diagnostic_na += 1
+    return {
+        "metrics": {
+            "drift_recall": _count_metric(
+                drift_correct, drift_total, int(drift_total == 0)
+            ),
+            "diagnostic_precision": _count_metric(
+                diagnostic_correct, diagnostic_emitted, diagnostic_na
+            ),
+            "false_positive_rate": _count_metric(
+                clean_blocked, clean_total, int(clean_total == 0)
+            ),
+        },
+        "integrity_failures": integrity_failures,
+        "efficiency": summarize_runs(
+            [run for artifact in artifacts for run in artifact["runs"]]
+        ),
+    }
+
+
+def _projected_identity(item: dict) -> tuple[str, str, tuple[str, ...]]:
+    return item["id"], item["responsibility"], tuple(item["depends_on"])
+
+
+def _context_arm(fixtures: list[dict], artifacts: list[dict]) -> dict:
+    numerator = denominator = unexpected = integrity_failures = 0
+    not_applicable = 0
+    for fixture, artifact in zip(fixtures, artifacts):
+        expected = {
+            _projected_identity(item) for item in fixture["expected"]["projected_modules"]
+        }
+        observed = {
+            _projected_identity(item)
+            for item in artifact["runs"][0]["observed"]["projected_modules"]
+        }
+        numerator += len(expected & observed)
+        denominator += len(expected)
+        unexpected += len(observed - expected)
+        not_applicable += int(not expected)
+        integrity_failures += sum(not run["integrity"] for run in artifact["runs"])
+    return {
+        "metrics": {
+            "context_factual_recovery": _count_metric(
+                numerator, denominator, not_applicable
+            )
+        },
+        "unexpected_records": unexpected,
+        "integrity_failures": integrity_failures,
+        "efficiency": summarize_runs(
+            [run for artifact in artifacts for run in artifact["runs"]]
+        ),
+    }
+
+
+def _metric_value(metric: dict, *, default: float) -> float:
+    value = metric["value"]
+    return default if value == "not_applicable" else float(value)
+
+
+def _experiment_status(experiment: str, baseline: dict, adaptive: dict) -> str:
+    if adaptive["integrity_failures"]:
+        return "FAIL"
+    if experiment == "context_recovery":
+        baseline_value = _metric_value(
+            baseline["metrics"]["context_factual_recovery"], default=1.0
+        )
+        adaptive_value = _metric_value(
+            adaptive["metrics"]["context_factual_recovery"], default=1.0
+        )
+        if (
+            adaptive_value < baseline_value
+            or adaptive["unexpected_records"] > baseline["unexpected_records"]
+        ):
+            return "FAIL"
+        return "CORRECTNESS_IMPROVED" if adaptive_value > baseline_value else "CORRECTNESS_PRESERVED"
+
+    b = baseline["metrics"]
+    a = adaptive["metrics"]
+    baseline_recall = _metric_value(b["drift_recall"], default=1.0)
+    adaptive_recall = _metric_value(a["drift_recall"], default=1.0)
+    baseline_precision = b["diagnostic_precision"]["value"]
+    adaptive_precision = a["diagnostic_precision"]["value"]
+    precision_comparable = (
+        baseline_precision != "not_applicable"
+        and adaptive_precision != "not_applicable"
+    )
+    baseline_fpr = _metric_value(b["false_positive_rate"], default=0.0)
+    adaptive_fpr = _metric_value(a["false_positive_rate"], default=0.0)
+    if (
+        adaptive_recall < baseline_recall
+        or (
+            precision_comparable
+            and float(adaptive_precision) < float(baseline_precision)
+        )
+        or adaptive_fpr > baseline_fpr
+    ):
+        return "FAIL"
+    improved = (
+        adaptive_recall > baseline_recall
+        or (
+            precision_comparable
+            and float(adaptive_precision) > float(baseline_precision)
+        )
+        or adaptive_fpr < baseline_fpr
+    )
+    return "CORRECTNESS_IMPROVED" if improved else "CORRECTNESS_PRESERVED"
+
+
+def compare_architecture_experiment(
+    fixtures: Path,
+    baseline: Path,
+    adaptive: Path,
+    *,
+    experiment: str,
+) -> dict:
+    """Compare one Architecture treatment while keeping experiments separate."""
+    if experiment not in {"drift_detection", "context_recovery"}:
+        raise ValueError("ARCHITECTURE_BENCHMARK_EXPERIMENT_INVALID")
+    try:
+        selected = [
+            row for row in validate_architecture_corpus(fixtures)
+            if row["experiment"] == experiment
+        ]
+    except ValueError:
+        return {"experiment": experiment, "status": INCONCLUSIVE, "confidence": "high"}
+    if not selected:
+        return {"experiment": experiment, "status": INCONCLUSIVE, "confidence": "high"}
+    baseline_artifacts = [
+        _architecture_artifact(baseline / f"{row['id']}.json", row, "baseline", experiment)
+        for row in selected
+    ]
+    adaptive_artifacts = [
+        _architecture_artifact(adaptive / f"{row['id']}.json", row, "adaptive", experiment)
+        for row in selected
+    ]
+    if any(item is None for item in baseline_artifacts + adaptive_artifacts):
+        return {"experiment": experiment, "status": INCONCLUSIVE, "confidence": "high"}
+    baseline_valid = [item for item in baseline_artifacts if item is not None]
+    adaptive_valid = [item for item in adaptive_artifacts if item is not None]
+    if experiment == "drift_detection":
+        baseline_report = _drift_arm(selected, baseline_valid)
+        adaptive_report = _drift_arm(selected, adaptive_valid)
+        expected_modules = sum(len(row["expected"]["expected_modules"]) for row in selected)
+        absent_modules = sum(
+            len(
+                set(row["expected"]["expected_modules"])
+                - set(row["inputs"]["task"]["declared_modules"])
+            )
+            for row in selected
+        )
+        declaration_quality = {
+            "missed_impact_proxy": _count_metric(
+                absent_modules,
+                expected_modules,
+                sum(not row["expected"]["expected_modules"] for row in selected),
+            )
+        }
+    else:
+        baseline_report = _context_arm(selected, baseline_valid)
+        adaptive_report = _context_arm(selected, adaptive_valid)
+        declaration_quality = None
+    report = {
+        "experiment": experiment,
+        "status": _experiment_status(experiment, baseline_report, adaptive_report),
+        "confidence": "high",
+        "correctness_precedes_efficiency": True,
+        "baseline": baseline_report,
+        "adaptive": adaptive_report,
+    }
+    if declaration_quality is not None:
+        report["declaration_quality"] = declaration_quality
+    return report
 
 
 def _artifact_data(path: Path, fixture_id: str, mode: str) -> dict | None:

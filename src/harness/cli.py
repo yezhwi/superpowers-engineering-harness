@@ -273,6 +273,13 @@ def _main(argv=None) -> int:
     )
     p_architecture_corpus_validate = architecture_corpus_sub.add_parser("validate")
     p_architecture_corpus_validate.add_argument("--corpus", required=True)
+    p_architecture_compare = benchmark_sub.add_parser("architecture-compare")
+    p_architecture_compare.add_argument(
+        "--experiment", choices=["drift_detection", "context_recovery"], required=True
+    )
+    p_architecture_compare.add_argument("--fixtures", required=True)
+    p_architecture_compare.add_argument("--baseline", required=True)
+    p_architecture_compare.add_argument("--adaptive", required=True)
     sub.add_parser("resume", help="recover BLOCKED task from typed blocker")
     p_decision = sub.add_parser("decision", help="manage persisted user decisions")
     decision_sub = p_decision.add_subparsers(dest="decision_command")
@@ -558,6 +565,16 @@ def _main(argv=None) -> int:
     ):
         return controlplane.cmd_architecture_benchmark_corpus_validate(
             Path(args.corpus)
+        )
+    if (
+        args.subcommand == "benchmark"
+        and args.benchmark_command == "architecture-compare"
+    ):
+        return controlplane.cmd_architecture_benchmark_compare(
+            Path(args.fixtures),
+            Path(args.baseline),
+            Path(args.adaptive),
+            args.experiment,
         )
     if args.subcommand == "resume":
         return controlplane.cmd_resume()

@@ -7,6 +7,7 @@ treatment:
   baseline: {architecture_mode: "off"}
   adaptive: {architecture_mode: required}
 inputs:
+  token_budget: 4096
   task: {declared_modules: [app], protected_paths: [], adopted_paths: []}
   architecture:
     version: 1

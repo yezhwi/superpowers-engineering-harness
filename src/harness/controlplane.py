@@ -1660,6 +1660,20 @@ def cmd_architecture_benchmark_corpus_validate(corpus: Path) -> int:
     return 0
 
 
+def cmd_architecture_benchmark_compare(
+    fixtures: Path, baseline: Path, adaptive: Path, experiment: str
+) -> int:
+    try:
+        report = benchmark.compare_architecture_experiment(
+            fixtures, baseline, adaptive, experiment=experiment
+        )
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    print(json.dumps(report, indent=2, sort_keys=True, ensure_ascii=False))
+    return 0
+
+
 def cmd_benchmark_alignment(records: Path) -> int:
     """Report alignment metrics from explicitly supplied persisted records only."""
     try:
