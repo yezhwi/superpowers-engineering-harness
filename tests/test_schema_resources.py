@@ -130,12 +130,30 @@ def test_resource_symlink_outside_schema_root_is_rejected(tmp_path, monkeypatch)
         schema_resources.read_schema("decision.schema.json")
 
 
-def test_architecture_p0_modules_are_installed_package_imports():
-    from harness.architecture import load_architecture_document
+def test_context_schema_registers_optional_architecture_projection_v4():
+    from harness.schema_resources import read_schema
+
+    schema = read_schema("context.schema.json")
+    control = schema["properties"]["control"]
+    assert "architecture" not in control["required"]
+    assert control["properties"]["architecture"] == {
+        "$ref": "#/definitions/architecture"
+    }
+    assert schema["properties"]["generated_from"]["properties"][
+        "projection_version"
+    ] == {"const": 4}
+
+
+def test_architecture_p1_modules_are_installed_package_imports():
+    from harness.architecture import (
+        architecture_context_summary,
+        load_architecture_document,
+    )
     from harness.architecture_gate import assess_architecture
     from harness.architecture_store import load_architecture
 
     assert callable(load_architecture_document)
+    assert callable(architecture_context_summary)
     assert callable(load_architecture)
     assert callable(assess_architecture)
 

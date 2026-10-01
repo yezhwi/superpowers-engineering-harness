@@ -13,6 +13,13 @@ from harness.context.store import generate_context
 harness = test_context_builder.harness
 
 
+def write_q2_alignment(root):
+    task = yaml.safe_load((root / "current-task.yaml").read_text())
+    alignment = test_context_builder._frozen_alignment(task["task"]["id"])
+    write_yaml(root / "alignment.yaml", alignment)
+    test_context_builder._write_matching_seal(root, alignment)
+
+
 def test_failed_tests_outside_working_set_expand_once(harness):
     path = write_evidence(harness.parent, harness, "unit_test", exit_code=1)
     record = json.loads(path.read_text())
@@ -63,6 +70,20 @@ def test_failure_omitted_only_in_compact_can_record_event(harness):
     assert document["expansions"][0]["trigger"] == "TEST_FAILURE_OUTSIDE_WORKING_SET"
 
 
+def test_required_architecture_projection_survives_context_expansion(harness):
+    test_context_builder.enable_required_architecture(harness)
+    path = write_evidence(harness.parent, harness, "unit_test", exit_code=1)
+    record = json.loads(path.read_text())
+    record["covered_tests"] = ["tests/outside.py::test_failure"]
+    path.write_text(json.dumps(record))
+
+    document = generate_context(harness, mode="compact")
+
+    assert document["policy"] == "EXPANDED"
+    assert document["control"]["architecture"]["status"] == "current"
+    assert document["control"]["architecture"]["declared_modules"] == ["app"]
+
+
 def test_passing_evidence_does_not_trigger_expansion(harness):
     path = write_evidence(harness.parent, harness, "unit_test")
     record = json.loads(path.read_text())
@@ -86,6 +107,7 @@ def test_invalid_risk_history_fails_without_writes(harness, history):
     task = yaml.safe_load(path.read_text())
     task["risk"].update(level="Q2", profile="STANDARD", escalation_history=history)
     write_yaml(path, task)
+    write_q2_alignment(harness)
     before = path.read_bytes()
     with pytest.raises(ContextBuildError, match="CONTEXT_POLICY_MISMATCH"):
         generate_context(harness)
@@ -104,6 +126,7 @@ def test_risk_escalation_event_follows_risk_without_extra_policy_step(harness):
         ],
     )
     write_yaml(path, task)
+    write_q2_alignment(harness)
     document = generate_context(harness)
     (event,) = document["expansions"]
     assert event["trigger"] == "RISK_ESCALATED"

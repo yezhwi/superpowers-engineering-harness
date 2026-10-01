@@ -10,7 +10,11 @@ import pytest
 import test_context_builder
 import yaml
 
-from test_context_builder import enable_plan_reconciliation, write_plan_artifacts
+from test_context_builder import (
+    enable_plan_reconciliation,
+    enable_required_architecture,
+    write_plan_artifacts,
+)
 
 from harness.context.store import load_context
 
@@ -74,6 +78,74 @@ def test_fast_ad_hoc_plan_artifacts_remain_outside_saved_context_authority(harne
     (harness / "plan.yaml").write_text("still: malformed: [")
     (harness / "plan-execution.yaml").write_text("changed: [")
     assert validate_context(harness, document)["freshness"] is True
+
+
+def test_required_architecture_current_survives_fresh_process_validate_and_explain(harness):
+    enable_required_architecture(harness)
+
+    generated = cli(harness.parent, "context", "--compact", "--json")
+    assert generated.returncode == 0, generated.stderr
+    document = json.loads(generated.stdout)
+    assert document["control"]["architecture"]["status"] == "current"
+    assert document["control"]["architecture"]["declared_modules"] == ["app"]
+
+    validated = cli(harness.parent, "context", "validate", "--json")
+    explained = cli(harness.parent, "context", "explain", "--json")
+    assert validated.returncode == 0, validated.stderr
+    assert json.loads(validated.stdout)["integrity"]["freshness"] is True
+    assert explained.returncode == 0, explained.stderr
+    assert load_context(harness)[0]["control"]["architecture"] == document["control"]["architecture"]
+
+
+def test_required_missing_architecture_publishes_fixed_blocked_projection(harness):
+    from harness.context.store import generate_context
+
+    enable_required_architecture(harness, write_artifact=False)
+
+    document = generate_context(harness, mode="compact")
+
+    assert document["control"]["architecture"] == {
+        "status": "missing",
+        "fingerprint": None,
+        "declared_modules": [],
+        "relevant_modules": [],
+        "blockers": ["ARCHITECTURE_REQUIRED"],
+    }
+    assert any(
+        blocker["code"] == "ARCHITECTURE_REQUIRED"
+        for blocker in document["control"]["blockers"]
+    )
+
+
+def test_required_malformed_architecture_never_replaces_saved_context(harness):
+    enable_required_architecture(harness)
+    assert cli(harness.parent, "context", "--json").returncode == 0
+    before = {
+        path.name: path.read_bytes()
+        for path in (harness / "context").iterdir()
+    }
+    (harness / "architecture.yaml").write_text("modules: [")
+
+    failed = cli(harness.parent, "context", "--json")
+
+    assert failed.returncode == 2
+    assert "CONTEXT_SCHEMA_INVALID" in failed.stderr
+    assert {
+        path.name: path.read_bytes()
+        for path in (harness / "context").iterdir()
+    } == before
+
+
+def test_required_architecture_change_stales_saved_context(harness):
+    enable_required_architecture(harness)
+    assert cli(harness.parent, "context", "--json").returncode == 0
+    with (harness / "architecture.yaml").open("a") as stream:
+        stream.write("\n")
+
+    stale = cli(harness.parent, "context", "validate")
+
+    assert stale.returncode == 2
+    assert "CONTEXT_STALE" in stale.stderr
 
 
 def test_classify_compact_stale_regenerate_and_evidence_review_input(harness):

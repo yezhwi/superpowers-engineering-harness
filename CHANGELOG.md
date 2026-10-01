@@ -7,7 +7,9 @@
 - Add Alignment seal v2 with explicit Architecture mode, fingerprint, and declared module scope; retain controlled legacy v1 compatibility only for off-mode phase entry.
 - Add atomic Architecture publication and scope commands, trusted task-replacement mode preservation, stable repairable blockers, and state-aware preflight guidance.
 - Preserve source isolation: FAST/Q1 and mode off do not read Architecture artifacts or schemas and do not execute Architecture resolver or Git collection.
-- Context projection, Drift Detection experiments, and Context Recovery experiments remain deferred to later v0.3.0 phases.
+- Add Architecture Context Projection P1 for Q2/Q3 required mode: shared Gate assessment, deterministic declared-plus-one-hop module summaries, body-free `harness architecture summary`, conditional freshness, finite read scope, and projection version 4.
+- Keep required-missing Architecture as blocker data, reject malformed present sources and capture races, and preserve read-only restart/validate/explain behavior without adding another Gate or cache authority.
+- Drift Detection and Context Recovery experiments remain deferred to later v0.3.0 phases.
 
 ## 0.2.10
 
