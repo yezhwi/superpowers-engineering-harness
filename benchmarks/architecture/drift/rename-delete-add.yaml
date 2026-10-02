@@ -18,11 +18,11 @@ inputs:
     - {id: OWN-001, pattern: 'src/app/**', kind: production, modules: [app]}
     - {id: OWN-002, pattern: 'src/shared/**', kind: production, modules: [shared]}
   git:
-  - {path: src/app/old.py, kind: committed}
-  - {path: src/shared/new.py, kind: worktree}
+  - {path: src/app/old.py, kind: deleted}
+  - {path: src/shared/new.py, kind: added}
 expected:
   label: drift
-  blockers: [{code: ARCHITECTURE_SCOPE_DRIFT, source: 'module:shared'}]
+  blockers: [{code: ARCHITECTURE_SCOPE_DRIFT, source: 'path:src/shared/new.py|module:shared'}]
   diagnostics: []
   expected_modules: [app, shared]
   declaration_quality: complete

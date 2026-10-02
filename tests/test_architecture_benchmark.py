@@ -8,6 +8,7 @@ import sys
 import pytest
 import yaml
 
+from harness.architecture import architecture_fingerprint, load_architecture_document
 from harness.benchmark import (
     INCONCLUSIVE,
     architecture_fixture_fingerprint,
@@ -73,12 +74,15 @@ def drift_fixture(identifier="drift-case"):
                 "adopted_paths": [],
             },
             "architecture": architecture_model(),
-            "git": [{"path": "src/shared/change.py", "kind": "worktree"}],
+            "git": [{"path": "src/shared/change.py", "kind": "modified"}],
         },
         "expected": {
             "label": "drift",
             "blockers": [
-                {"code": "ARCHITECTURE_SCOPE_DRIFT", "source": "module:shared"}
+                {
+                    "code": "ARCHITECTURE_SCOPE_DRIFT",
+                    "source": "path:src/shared/change.py|module:shared",
+                }
             ],
             "diagnostics": [],
             "expected_modules": ["shared"],
@@ -107,6 +111,23 @@ def recovery_fixture(identifier="recovery-case"):
                 "adopted_paths": [],
             },
             "architecture": model,
+            "architecture_mode": "required",
+            "architecture_assessment": {
+                "status": "current",
+                "fingerprint": architecture_fingerprint(
+                    load_architecture_document(model)
+                ),
+                "declared_modules": ["app"],
+                "relevant_modules": [
+                    {
+                        "id": module["id"],
+                        "name": module["name"],
+                        "responsibility": module["responsibility"],
+                        "depends_on": module["depends_on"],
+                    }
+                    for module in model["modules"]
+                ],
+            },
             "git": [],
         },
         "expected": {
@@ -161,12 +182,17 @@ def test_architecture_corpus_is_independent_from_q0_q3_distribution():
     "mutation",
     [
         lambda row: row.update(unexpected=True),
+        lambda row: row.update(version=True),
         lambda row: row["treatment"].update(
             baseline={"architecture_mode": "required"}
         ),
         lambda row: row["inputs"]["architecture"]["modules"][0].update(id="src/app"),
+        lambda row: row["inputs"]["task"].update(declared_modules=["src/app"]),
+        lambda row: row["expected"].update(expected_modules=["src/app"]),
+        lambda row: row["inputs"]["git"][0].update(path="src/\ud800.py"),
         lambda row: row["inputs"]["architecture"]["ownership"][0].update(id="bad"),
         lambda row: row["expected"].update(unknown=True),
+        lambda row: row["expected"]["blockers"][0].update(source="module:shared"),
     ],
 )
 def test_architecture_corpus_rejects_unknown_fields_treatment_and_model_ids(
@@ -207,7 +233,11 @@ def write_artifact(root, fixture, arm, observations, *, usage_source="runtime"):
     for index, observed in enumerate(observations, 1):
         runs.append(
             {
-                "run_id": f"{arm}-{index}",
+                "run_id": f"{fixture['id']}-{arm}-{index}",
+                "provenance": {
+                    "session_id": f"session-{fixture['id']}-{arm}-{index}",
+                    "started_at": f"2026-10-01T00:00:0{index}Z",
+                },
                 "success": True,
                 "integrity": True,
                 "observed": observed,
@@ -316,7 +346,10 @@ def test_scope_drift_blocker_does_not_count_as_diagnostic_precision(tmp_path):
         "blocked": True,
         "blockers": fixture["expected"]["blockers"],
         "diagnostics": [
-            {"code": "ARCHITECTURE_SCOPE_DRIFT", "source": "module:shared"}
+            {
+                "code": "ARCHITECTURE_SCOPE_DRIFT",
+                "source": "path:src/shared/change.py|module:shared",
+            }
         ],
     }
     write_artifact(tmp_path / "baseline", fixture, "baseline", repeated(observed))
@@ -333,7 +366,9 @@ def test_scope_drift_blocker_does_not_count_as_diagnostic_precision(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "defect", ["two_runs", "fingerprint", "inputs", "estimated", "arm"]
+    "defect", [
+        "two_runs", "fingerprint", "inputs", "input_type", "estimated", "arm"
+    ]
 )
 def test_comparison_is_inconclusive_for_incomplete_or_mismatched_runs(
     tmp_path, defect
@@ -351,10 +386,12 @@ def test_comparison_is_inconclusive_for_incomplete_or_mismatched_runs(
         usage_source="estimated" if defect == "estimated" else "runtime",
     )
     path = tmp_path / "adaptive" / f"{fixture['id']}.json"
-    if defect in {"fingerprint", "inputs", "arm"}:
+    if defect in {"fingerprint", "inputs", "input_type", "arm"}:
         document = __import__("json").loads(path.read_text())
         if defect == "inputs":
             document["inputs"]["token_budget"] += 1
+        elif defect == "input_type":
+            document["inputs"]["token_budget"] = 4096.0
         else:
             document["input_fingerprint" if defect == "fingerprint" else "arm"] = "wrong"
         path.write_text(__import__("json").dumps(document))
@@ -413,6 +450,7 @@ def test_context_recovery_exact_match_and_correctness_precede_cost(tmp_path):
     for run in document["runs"]:
         run["usage"]["total_tokens"] = 1
         run["usage"]["tool_calls"] = 1
+        run["usage"]["source"] = "estimated"
     adaptive_path.write_text(__import__("json").dumps(document))
 
     cheaper = compare_architecture_experiment(
@@ -423,6 +461,8 @@ def test_context_recovery_exact_match_and_correctness_precede_cost(tmp_path):
     )
     assert cheaper["status"] == "FAIL"
     assert cheaper["correctness_precedes_efficiency"] is True
+    assert cheaper["baseline"]["efficiency"] == INCONCLUSIVE
+    assert cheaper["adaptive"]["efficiency"] == INCONCLUSIVE
 
 
 def test_comparison_rejects_cross_experiment_fixture_selection(tmp_path):
@@ -438,6 +478,479 @@ def test_comparison_rejects_cross_experiment_fixture_selection(tmp_path):
     )
 
     assert report["status"] == INCONCLUSIVE
+
+
+def test_baseline_integrity_failure_is_inconclusive_and_suppresses_efficiency(tmp_path):
+    fixture = recovery_fixture()
+    fixtures = tmp_path / "fixtures"
+    write_fixture(fixtures / "context", fixture)
+    observed = {"projected_modules": fixture["expected"]["projected_modules"]}
+    write_artifact(tmp_path / "baseline", fixture, "baseline", repeated(observed))
+    write_artifact(tmp_path / "adaptive", fixture, "adaptive", repeated(observed))
+    path = tmp_path / "baseline" / f"{fixture['id']}.json"
+    document = __import__("json").loads(path.read_text())
+    document["runs"][0]["integrity"] = False
+    path.write_text(__import__("json").dumps(document))
+
+    report = compare_architecture_experiment(
+        fixtures, tmp_path / "baseline", tmp_path / "adaptive",
+        experiment="context_recovery",
+    )
+
+    assert report["status"] == INCONCLUSIVE
+    assert report["baseline"]["efficiency"] == INCONCLUSIVE
+    assert report["adaptive"]["efficiency"] == INCONCLUSIVE
+
+
+@pytest.mark.parametrize("usage_defect", ["estimated", "missing"])
+def test_adaptive_integrity_failure_fails_and_suppresses_efficiency(
+    tmp_path, usage_defect
+):
+    fixture = recovery_fixture()
+    fixtures = tmp_path / "fixtures"
+    write_fixture(fixtures / "context", fixture)
+    observed = {"projected_modules": fixture["expected"]["projected_modules"]}
+    write_artifact(tmp_path / "baseline", fixture, "baseline", repeated(observed))
+    write_artifact(tmp_path / "adaptive", fixture, "adaptive", repeated(observed))
+    path = tmp_path / "adaptive" / f"{fixture['id']}.json"
+    document = __import__("json").loads(path.read_text())
+    document["runs"][0]["integrity"] = False
+    if usage_defect == "estimated":
+        document["runs"][0]["usage"]["source"] = "estimated"
+    else:
+        del document["runs"][0]["usage"]
+    path.write_text(__import__("json").dumps(document))
+
+    report = compare_architecture_experiment(
+        fixtures, tmp_path / "baseline", tmp_path / "adaptive",
+        experiment="context_recovery",
+    )
+
+    assert report["status"] == "FAIL"
+    assert report["baseline"]["efficiency"] == INCONCLUSIVE
+    assert report["adaptive"]["efficiency"] == INCONCLUSIVE
+
+
+def test_supported_nonprecision_blocker_is_scored_not_rejected(tmp_path):
+    fixture = drift_fixture()
+    fixture["expected"] = {
+        "label": "clean",
+        "blockers": [],
+        "diagnostics": [],
+        "expected_modules": ["app"],
+        "declaration_quality": "complete",
+    }
+    fixtures = tmp_path / "fixtures"
+    write_fixture(fixtures / "drift", fixture)
+    observed = {
+        "blocked": True,
+        "blockers": [
+            {"code": "ARCHITECTURE_OWNERSHIP_EMPTY", "source": "ownership:OWN-001"}
+        ],
+        "diagnostics": [],
+    }
+    write_artifact(
+        tmp_path / "baseline",
+        fixture,
+        "baseline",
+        repeated({"blocked": False, "blockers": [], "diagnostics": []}),
+    )
+    write_artifact(tmp_path / "adaptive", fixture, "adaptive", repeated(observed))
+
+    report = compare_architecture_experiment(
+        fixtures, tmp_path / "baseline", tmp_path / "adaptive",
+        experiment="drift_detection",
+    )
+    assert report["status"] == "FAIL"
+    assert report["adaptive"]["metrics"]["false_positive_rate"] == metric(1, 1)
+
+
+def test_adaptive_incorrect_diagnostic_fails_when_baseline_is_not_applicable(tmp_path):
+    fixture = drift_fixture()
+    fixture["expected"]["diagnostics"] = [
+        {"code": "ARCHITECTURE_OWNERSHIP_UNRESOLVED", "source": "path:src/x.py"}
+    ]
+    fixtures = tmp_path / "fixtures"
+    write_fixture(fixtures / "drift", fixture)
+    baseline_seen = {"blocked": False, "blockers": [], "diagnostics": []}
+    adaptive_seen = {
+        "blocked": True,
+        "blockers": fixture["expected"]["blockers"],
+        "diagnostics": [
+            {"code": "ARCHITECTURE_OWNERSHIP_UNRESOLVED", "source": "path:wrong.py"}
+        ],
+    }
+    write_artifact(tmp_path / "baseline", fixture, "baseline", repeated(baseline_seen))
+    write_artifact(tmp_path / "adaptive", fixture, "adaptive", repeated(adaptive_seen))
+
+    report = compare_architecture_experiment(
+        fixtures, tmp_path / "baseline", tmp_path / "adaptive",
+        experiment="drift_detection",
+    )
+
+    assert report["status"] == "FAIL"
+    assert report["adaptive"]["efficiency"] == INCONCLUSIVE
+
+
+@pytest.mark.parametrize(
+    ("experiment", "field", "value"),
+    [
+        ("drift_detection", "diagnostics", [{"code": "UNKNOWN", "source": "bad"}]),
+        (
+            "context_recovery",
+            "projected_modules",
+            [{"id": "src/app", "responsibility": "bad", "depends_on": []}],
+        ),
+    ],
+)
+def test_malformed_observed_identity_is_inconclusive(tmp_path, experiment, field, value):
+    fixture = drift_fixture() if experiment == "drift_detection" else recovery_fixture()
+    directory = "drift" if experiment == "drift_detection" else "context"
+    fixtures = tmp_path / "fixtures"
+    write_fixture(fixtures / directory, fixture)
+    observed = (
+        {"blocked": False, "blockers": [], "diagnostics": []}
+        if experiment == "drift_detection"
+        else {"projected_modules": []}
+    )
+    observed[field] = value
+    write_artifact(tmp_path / "baseline", fixture, "baseline", repeated(observed))
+    write_artifact(tmp_path / "adaptive", fixture, "adaptive", repeated(observed))
+
+    report = compare_architecture_experiment(
+        fixtures, tmp_path / "baseline", tmp_path / "adaptive",
+        experiment=experiment,
+    )
+    assert report["status"] == INCONCLUSIVE
+
+
+def test_reused_run_provenance_across_arms_is_inconclusive(tmp_path):
+    fixture = recovery_fixture()
+    fixtures = tmp_path / "fixtures"
+    write_fixture(fixtures / "context", fixture)
+    observed = {"projected_modules": fixture["expected"]["projected_modules"]}
+    write_artifact(tmp_path / "baseline", fixture, "baseline", repeated(observed))
+    write_artifact(tmp_path / "adaptive", fixture, "adaptive", repeated(observed))
+    baseline = __import__("json").loads(
+        (tmp_path / "baseline" / f"{fixture['id']}.json").read_text()
+    )
+    path = tmp_path / "adaptive" / f"{fixture['id']}.json"
+    adaptive = __import__("json").loads(path.read_text())
+    adaptive["runs"][0]["provenance"] = baseline["runs"][0]["provenance"]
+    path.write_text(__import__("json").dumps(adaptive))
+
+    report = compare_architecture_experiment(
+        fixtures, tmp_path / "baseline", tmp_path / "adaptive",
+        experiment="context_recovery",
+    )
+    assert report["status"] == INCONCLUSIVE
+
+
+def test_context_fixture_requires_current_required_assessment(tmp_path):
+    fixture = recovery_fixture()
+    fixture["inputs"]["architecture_mode"] = "off"
+    write_fixture(tmp_path / "context", fixture)
+
+    with pytest.raises(ValueError, match="ARCHITECTURE_BENCHMARK_CORPUS_INVALID"):
+        validate_architecture_corpus(tmp_path)
+
+
+def test_boolean_artifact_version_is_inconclusive(tmp_path):
+    fixture = recovery_fixture()
+    fixtures = tmp_path / "fixtures"
+    write_fixture(fixtures / "context", fixture)
+    observed = {"projected_modules": fixture["expected"]["projected_modules"]}
+    write_artifact(tmp_path / "baseline", fixture, "baseline", repeated(observed))
+    write_artifact(tmp_path / "adaptive", fixture, "adaptive", repeated(observed))
+    path = tmp_path / "adaptive" / f"{fixture['id']}.json"
+    document = __import__("json").loads(path.read_text())
+    document["version"] = True
+    path.write_text(__import__("json").dumps(document))
+
+    report = compare_architecture_experiment(
+        fixtures, tmp_path / "baseline", tmp_path / "adaptive",
+        experiment="context_recovery",
+    )
+    assert report["status"] == INCONCLUSIVE
+
+
+def test_invalid_utf8_artifact_is_inconclusive(tmp_path):
+    fixture = recovery_fixture()
+    fixtures = tmp_path / "fixtures"
+    write_fixture(fixtures / "context", fixture)
+    observed = {"projected_modules": fixture["expected"]["projected_modules"]}
+    write_artifact(tmp_path / "baseline", fixture, "baseline", repeated(observed))
+    write_artifact(tmp_path / "adaptive", fixture, "adaptive", repeated(observed))
+    (tmp_path / "adaptive" / f"{fixture['id']}.json").write_bytes(b"\xff")
+
+    report = compare_architecture_experiment(
+        fixtures, tmp_path / "baseline", tmp_path / "adaptive",
+        experiment="context_recovery",
+    )
+    assert report["status"] == INCONCLUSIVE
+
+
+def test_context_ground_truth_must_equal_assessment_projection(tmp_path):
+    fixture = recovery_fixture()
+    fixture["expected"]["projected_modules"] = [
+        fixture["expected"]["projected_modules"][1]
+    ]
+    write_fixture(tmp_path / "context", fixture)
+
+    with pytest.raises(ValueError, match="ARCHITECTURE_BENCHMARK_CORPUS_INVALID"):
+        validate_architecture_corpus(tmp_path)
+
+
+def test_diagnostic_precision_becoming_not_applicable_is_regression(tmp_path):
+    fixture = drift_fixture()
+    expected = {
+        "code": "ARCHITECTURE_OWNERSHIP_UNRESOLVED",
+        "source": "path:src/expected.py",
+    }
+    fixture["expected"]["diagnostics"] = [expected]
+    fixtures = tmp_path / "fixtures"
+    write_fixture(fixtures / "drift", fixture)
+    blockers = fixture["expected"]["blockers"]
+    write_artifact(
+        tmp_path / "baseline", fixture, "baseline",
+        repeated({"blocked": True, "blockers": blockers, "diagnostics": [expected]}),
+    )
+    write_artifact(
+        tmp_path / "adaptive", fixture, "adaptive",
+        repeated({"blocked": True, "blockers": blockers, "diagnostics": []}),
+    )
+
+    report = compare_architecture_experiment(
+        fixtures, tmp_path / "baseline", tmp_path / "adaptive",
+        experiment="drift_detection",
+    )
+    assert report["status"] == "FAIL"
+
+
+def test_improved_nonperfect_diagnostic_precision_is_not_a_regression(tmp_path):
+    fixture = drift_fixture()
+    expected_diagnostic = {
+        "code": "ARCHITECTURE_OWNERSHIP_UNRESOLVED",
+        "source": "path:src/expected.py",
+    }
+    fixture["expected"]["diagnostics"] = [expected_diagnostic]
+    fixtures = tmp_path / "fixtures"
+    write_fixture(fixtures / "drift", fixture)
+    wrong_one = {
+        "code": "ARCHITECTURE_OWNERSHIP_UNRESOLVED",
+        "source": "path:src/wrong-one.py",
+    }
+    wrong_two = {
+        "code": "ARCHITECTURE_OWNERSHIP_AMBIGUOUS",
+        "source": "path:src/wrong-two.py",
+    }
+    blockers = fixture["expected"]["blockers"]
+    write_artifact(
+        tmp_path / "baseline",
+        fixture,
+        "baseline",
+        repeated({"blocked": True, "blockers": blockers, "diagnostics": [wrong_one, wrong_two]}),
+    )
+    write_artifact(
+        tmp_path / "adaptive",
+        fixture,
+        "adaptive",
+        repeated({"blocked": True, "blockers": blockers, "diagnostics": [expected_diagnostic, wrong_one]}),
+    )
+
+    report = compare_architecture_experiment(
+        fixtures, tmp_path / "baseline", tmp_path / "adaptive",
+        experiment="drift_detection",
+    )
+
+    assert report["status"] == "CORRECTNESS_IMPROVED"
+    assert report["adaptive"]["efficiency"] != INCONCLUSIVE
+
+
+@pytest.mark.parametrize(
+    "source", ["path:.", "path:./wrong.py", "path:a//b", "path:a/"]
+)
+def test_noncanonical_observed_path_identity_is_inconclusive(tmp_path, source):
+    fixture = drift_fixture()
+    fixtures = tmp_path / "fixtures"
+    write_fixture(fixtures / "drift", fixture)
+    observed = {
+        "blocked": True,
+        "blockers": fixture["expected"]["blockers"],
+        "diagnostics": [
+            {"code": "ARCHITECTURE_OWNERSHIP_UNRESOLVED", "source": source}
+        ],
+    }
+    write_artifact(tmp_path / "baseline", fixture, "baseline", repeated(observed))
+    write_artifact(tmp_path / "adaptive", fixture, "adaptive", repeated(observed))
+
+    report = compare_architecture_experiment(
+        fixtures, tmp_path / "baseline", tmp_path / "adaptive",
+        experiment="drift_detection",
+    )
+    assert report["status"] == INCONCLUSIVE
+
+
+@pytest.mark.parametrize(
+    ("timestamp", "expected_status"),
+    [
+        ("2026-10-01T00:00:01+00:00", "CORRECTNESS_PRESERVED"),
+        ("2026-10-01t00:00:01z", "CORRECTNESS_PRESERVED"),
+        ("1990-12-31T23:59:60Z", "CORRECTNESS_PRESERVED"),
+        ("2026-10-01T00:00:60Z", INCONCLUSIVE),
+        ("0001-01-01T00:00:60Z", INCONCLUSIVE),
+        ("2026-99-99T99:99:99Z", INCONCLUSIVE),
+        ("2026-10-01T00:00:01+00:60", INCONCLUSIVE),
+    ],
+)
+def test_provenance_timestamp_uses_rfc3339_calendar_validation(
+    tmp_path, timestamp, expected_status
+):
+    fixture = recovery_fixture()
+    fixtures = tmp_path / "fixtures"
+    write_fixture(fixtures / "context", fixture)
+    observed = {"projected_modules": fixture["expected"]["projected_modules"]}
+    write_artifact(tmp_path / "baseline", fixture, "baseline", repeated(observed))
+    write_artifact(tmp_path / "adaptive", fixture, "adaptive", repeated(observed))
+    path = tmp_path / "adaptive" / f"{fixture['id']}.json"
+    document = __import__("json").loads(path.read_text())
+    document["runs"][0]["provenance"]["started_at"] = timestamp
+    path.write_text(__import__("json").dumps(document))
+
+    report = compare_architecture_experiment(
+        fixtures, tmp_path / "baseline", tmp_path / "adaptive",
+        experiment="context_recovery",
+    )
+    assert report["status"] == expected_status
+
+
+@pytest.mark.parametrize(
+    ("experiment", "mutation"),
+    [
+        (
+            "drift_detection",
+            lambda document: document["runs"][0]["observed"]["blockers"][0].update(
+                code=[]
+            ),
+        ),
+        (
+            "context_recovery",
+            lambda document: document["runs"][0]["observed"]["projected_modules"][0].update(
+                depends_on=[[]]
+            ),
+        ),
+    ],
+)
+def test_unhashable_observed_identity_is_inconclusive(tmp_path, experiment, mutation):
+    fixture = drift_fixture() if experiment == "drift_detection" else recovery_fixture()
+    directory = "drift" if experiment == "drift_detection" else "context"
+    fixtures = tmp_path / "fixtures"
+    write_fixture(fixtures / directory, fixture)
+    observed = (
+        {
+            "blocked": True,
+            "blockers": fixture["expected"]["blockers"],
+            "diagnostics": [],
+        }
+        if experiment == "drift_detection"
+        else {"projected_modules": fixture["expected"]["projected_modules"]}
+    )
+    write_artifact(tmp_path / "baseline", fixture, "baseline", repeated(observed))
+    write_artifact(tmp_path / "adaptive", fixture, "adaptive", repeated(observed))
+    path = tmp_path / "adaptive" / f"{fixture['id']}.json"
+    document = __import__("json").loads(path.read_text())
+    mutation(document)
+    path.write_text(__import__("json").dumps(document))
+
+    report = compare_architecture_experiment(
+        fixtures, tmp_path / "baseline", tmp_path / "adaptive",
+        experiment=experiment,
+    )
+    assert report["status"] == INCONCLUSIVE
+
+
+def test_invalid_efficiency_success_does_not_mask_context_regression(tmp_path):
+    fixture = recovery_fixture()
+    fixtures = tmp_path / "fixtures"
+    write_fixture(fixtures / "context", fixture)
+    expected = {"projected_modules": fixture["expected"]["projected_modules"]}
+    empty = {"projected_modules": []}
+    write_artifact(tmp_path / "baseline", fixture, "baseline", repeated(expected))
+    write_artifact(tmp_path / "adaptive", fixture, "adaptive", repeated(empty))
+    path = tmp_path / "adaptive" / f"{fixture['id']}.json"
+    document = __import__("json").loads(path.read_text())
+    document["runs"][0]["success"] = "bad"
+    path.write_text(__import__("json").dumps(document))
+
+    report = compare_architecture_experiment(
+        fixtures, tmp_path / "baseline", tmp_path / "adaptive",
+        experiment="context_recovery",
+    )
+    assert report["status"] == "FAIL"
+    assert report["adaptive"]["efficiency"] == INCONCLUSIVE
+
+
+def test_adaptive_integrity_failure_wins_when_both_arms_fail_integrity(tmp_path):
+    fixture = recovery_fixture()
+    fixtures = tmp_path / "fixtures"
+    write_fixture(fixtures / "context", fixture)
+    observed = {"projected_modules": fixture["expected"]["projected_modules"]}
+    for arm in ("baseline", "adaptive"):
+        write_artifact(tmp_path / arm, fixture, arm, repeated(observed))
+        path = tmp_path / arm / f"{fixture['id']}.json"
+        document = __import__("json").loads(path.read_text())
+        document["runs"][0]["integrity"] = False
+        path.write_text(__import__("json").dumps(document))
+
+    report = compare_architecture_experiment(
+        fixtures, tmp_path / "baseline", tmp_path / "adaptive",
+        experiment="context_recovery",
+    )
+    assert report["status"] == "FAIL"
+
+
+def test_other_experiment_artifact_cannot_change_selected_verdict(tmp_path):
+    drift = drift_fixture("drift-global")
+    context = recovery_fixture("context-global")
+    context["version"] = True
+    fixtures = tmp_path / "fixtures"
+    write_fixture(fixtures / "drift", drift, "drift.yaml")
+    write_fixture(fixtures / "context", context, "context.yaml")
+    drift_seen = {
+        "blocked": True,
+        "blockers": drift["expected"]["blockers"],
+        "diagnostics": [],
+    }
+    context_seen = {"projected_modules": context["expected"]["projected_modules"]}
+    for arm in ("baseline", "adaptive"):
+        write_artifact(tmp_path / arm, drift, arm, repeated(drift_seen))
+        write_artifact(tmp_path / arm, context, arm, repeated(context_seen))
+    drift_artifact = __import__("json").loads(
+        (tmp_path / "baseline" / f"{drift['id']}.json").read_text()
+    )
+    path = tmp_path / "baseline" / f"{context['id']}.json"
+    context_artifact = __import__("json").loads(path.read_text())
+    context_artifact["runs"][0]["run_id"] = drift_artifact["runs"][0]["run_id"]
+    context_artifact["runs"][0]["provenance"] = drift_artifact["runs"][0]["provenance"]
+    context_artifact["runs"][0]["observed"]["projected_modules"][0]["id"] = "src/bad"
+    path.write_text(__import__("json").dumps(context_artifact))
+
+    report = compare_architecture_experiment(
+        fixtures, tmp_path / "baseline", tmp_path / "adaptive",
+        experiment="drift_detection",
+    )
+    assert report["status"] == "CORRECTNESS_PRESERVED"
+
+
+def test_scope_invalid_identity_enforces_module_id_length(tmp_path):
+    fixture = drift_fixture()
+    fixture["expected"]["blockers"] = [
+        {"code": "ARCHITECTURE_SCOPE_INVALID", "source": "module:" + "a" * 65}
+    ]
+    write_fixture(tmp_path / "drift", fixture)
+
+    with pytest.raises(ValueError, match="ARCHITECTURE_BENCHMARK_CORPUS_INVALID"):
+        validate_architecture_corpus(tmp_path)
 
 
 def test_architecture_report_orders_fixture_rows_deterministically(tmp_path):

@@ -17,7 +17,7 @@ inputs:
     ownership:
     - {id: OWN-001, pattern: 'src/*/**', kind: production, modules: [app]}
     - {id: OWN-002, pattern: 'src/*/**', kind: production, modules: [shared]}
-  git: [{path: src/app/change.py, kind: worktree}]
+  git: [{path: src/app/change.py, kind: modified}]
 expected:
   label: drift
   blockers: [{code: ARCHITECTURE_OWNERSHIP_AMBIGUOUS, source: 'path:src/app/change.py'}]

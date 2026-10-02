@@ -17,10 +17,10 @@ inputs:
     ownership:
     - {id: OWN-001, pattern: 'src/app/**', kind: production, modules: [app]}
     - {id: OWN-002, pattern: 'src/shared/**', kind: production, modules: [shared]}
-  git: [{path: src/shared/change.py, kind: worktree}]
+  git: [{path: src/shared/change.py, kind: modified}]
 expected:
   label: drift
-  blockers: [{code: ARCHITECTURE_SCOPE_DRIFT, source: 'module:shared'}]
+  blockers: [{code: ARCHITECTURE_SCOPE_DRIFT, source: 'path:src/shared/change.py|module:shared'}]
   diagnostics: []
   expected_modules: [shared]
   declaration_quality: omits_true_owner

@@ -16,10 +16,10 @@ inputs:
     - {id: shared, name: Shared, responsibility: Provide shared behavior., depends_on: [], evidence: [{type: source, path: src/shared.py}]}
     ownership:
     - {id: OWN-001, pattern: 'src/shared/**', kind: shared, modules: [app, shared]}
-  git: [{path: src/shared/change.py, kind: worktree}]
+  git: [{path: src/shared/change.py, kind: modified}]
 expected:
   label: drift
-  blockers: [{code: ARCHITECTURE_SCOPE_DRIFT, source: 'module:shared'}]
+  blockers: [{code: ARCHITECTURE_SCOPE_DRIFT, source: 'path:src/shared/change.py|module:shared'}]
   diagnostics: []
   expected_modules: [app, shared]
   declaration_quality: complete

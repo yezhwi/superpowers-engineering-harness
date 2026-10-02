@@ -15,7 +15,7 @@ inputs:
     - {id: app, name: Application, responsibility: Run application behavior., depends_on: [], evidence: [{type: source, path: src/app.py}]}
     ownership:
     - {id: OWN-001, pattern: 'docs/**', kind: support, modules: []}
-  git: [{path: docs/guide.md, kind: worktree}]
+  git: [{path: docs/guide.md, kind: modified}]
 expected:
   label: clean
   blockers: []

@@ -4,11 +4,16 @@ import hashlib
 import json
 import math
 import re
+from datetime import datetime, timedelta, timezone
 from pathlib import Path, PurePosixPath
 
 import yaml
 
-from harness.architecture import ArchitectureError, load_architecture_document
+from harness.architecture import (
+    ArchitectureError,
+    architecture_fingerprint,
+    load_architecture_document,
+)
 from harness.telemetry import TelemetryError, normalize_usage
 
 INCONCLUSIVE = "INCONCLUSIVE"
@@ -191,25 +196,79 @@ _ARCHITECTURE_FIXTURE_KEYS = {
     "version", "id", "experiment", "scenario", "treatment", "inputs", "expected"
 }
 _ARCHITECTURE_TASK_KEYS = {"declared_modules", "protected_paths", "adopted_paths"}
-_GIT_KINDS = {"committed", "cached", "worktree", "untracked"}
+_GIT_KINDS = {"added", "modified", "deleted", "untracked"}
+_MODULE_ID = re.compile(r"[a-z][a-z0-9]*(?:-[a-z0-9]+)*")
+_DIAGNOSTIC_CODES = {
+    "ARCHITECTURE_OWNERSHIP_UNRESOLVED",
+    "ARCHITECTURE_OWNERSHIP_AMBIGUOUS",
+}
+_LEAP_SECOND_DATES = {
+    "1972-06-30", "1972-12-31", "1973-12-31", "1974-12-31",
+    "1975-12-31", "1976-12-31", "1977-12-31", "1978-12-31",
+    "1979-12-31", "1981-06-30", "1982-06-30", "1983-06-30",
+    "1985-06-30", "1987-12-31", "1989-12-31", "1990-12-31",
+    "1992-06-30", "1993-06-30", "1994-06-30", "1995-12-31",
+    "1997-06-30", "1998-12-31", "2005-12-31", "2008-12-31",
+    "2012-06-30", "2015-06-30", "2016-12-31",
+}
+_IDENTITY_CODES = _DIAGNOSTIC_CODES | {
+    "ARCHITECTURE_REQUIRED",
+    "ARCHITECTURE_SCOPE_INVALID",
+    "ARCHITECTURE_EVIDENCE_INVALID",
+    "ARCHITECTURE_SCOPE_DRIFT",
+    "ARCHITECTURE_OWNERSHIP_EMPTY",
+}
 
 
 def _exact_keys(value: object, keys: set[str]) -> bool:
     return isinstance(value, dict) and set(value) == keys
 
 
-def _fixture_path(value: object) -> bool:
-    if not isinstance(value, str) or not value or "\\" in value:
+def _valid_text(value: object) -> bool:
+    if not isinstance(value, str) or not value:
         return False
-    parts = PurePosixPath(value).parts
-    return not value.startswith("/") and all(part not in {"", ".", ".."} for part in parts)
+    try:
+        value.encode("utf-8")
+    except UnicodeError:
+        return False
+    return True
+
+
+def _fixture_path(value: object, *, allow_patterns: bool = False) -> bool:
+    if (
+        not _valid_text(value)
+        or "\\" in value
+        or value in {".", ".."}
+        or value.startswith("/")
+        or str(PurePosixPath(value)) != value
+        or (not allow_patterns and any(char in value for char in "*?[]{}"))
+    ):
+        return False
+    return all(part not in {"", ".", ".."} for part in PurePosixPath(value).parts)
 
 
 def _string_list(value: object, *, paths: bool = False) -> bool:
+    if not isinstance(value, list) or not all(_valid_text(item) for item in value):
+        return False
+    return len(value) == len(set(value)) and (
+        not paths
+        or all(_fixture_path(item, allow_patterns=True) for item in value)
+    )
+
+
+def _valid_module_id(value: object) -> bool:
+    return (
+        _valid_text(value)
+        and len(value) <= 64
+        and _MODULE_ID.fullmatch(value) is not None
+    )
+
+
+def _module_id_list(value: object) -> bool:
     return (
         isinstance(value, list)
+        and all(_valid_module_id(item) for item in value)
         and len(value) == len(set(value))
-        and all((_fixture_path(item) if paths else isinstance(item, str) and bool(item)) for item in value)
     )
 
 
@@ -219,7 +278,8 @@ def _validate_architecture_fixture(data: object, directory: str) -> dict:
     assert isinstance(data, dict)
     experiment = data["experiment"]
     if (
-        data["version"] != 1
+        type(data["version"]) is not int
+        or data["version"] != 1
         or not isinstance(data["id"], str)
         or re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", data["id"]) is None
         or not isinstance(data["scenario"], str)
@@ -232,17 +292,50 @@ def _validate_architecture_fixture(data: object, directory: str) -> dict:
         raise ValueError
 
     inputs = data["inputs"]
-    if not _exact_keys(inputs, {"task", "architecture", "git", "token_budget"}):
+    input_keys = {"task", "architecture", "git", "token_budget"}
+    if experiment == "context_recovery":
+        input_keys.update({"architecture_mode", "architecture_assessment"})
+    if not _exact_keys(inputs, input_keys):
         raise ValueError
     if type(inputs["token_budget"]) is not int or inputs["token_budget"] <= 0:
         raise ValueError
     task = inputs["task"]
-    if not _exact_keys(task, _ARCHITECTURE_TASK_KEYS) or not all(
-        _string_list(task[key], paths=key != "declared_modules")
-        for key in _ARCHITECTURE_TASK_KEYS
+    if (
+        not _exact_keys(task, _ARCHITECTURE_TASK_KEYS)
+        or not _module_id_list(task["declared_modules"])
+        or not all(
+            _string_list(task[key], paths=True)
+            for key in ("protected_paths", "adopted_paths")
+        )
     ):
         raise ValueError
-    load_architecture_document(inputs["architecture"])
+    model = load_architecture_document(inputs["architecture"])
+    model_ids = {module.id for module in model.modules}
+    if experiment == "context_recovery":
+        assessment = inputs["architecture_assessment"]
+        declared = sorted(task["declared_modules"])
+        by_id = {module.id: module for module in model.modules}
+        if not set(declared) <= model_ids:
+            raise ValueError
+        relevant = set(declared)
+        for module_id in declared:
+            relevant.update(by_id[module_id].depends_on)
+        relevant_records = [
+            {
+                "id": by_id[module_id].id,
+                "name": by_id[module_id].name,
+                "responsibility": by_id[module_id].responsibility,
+                "depends_on": sorted(by_id[module_id].depends_on),
+            }
+            for module_id in sorted(relevant)
+        ]
+        if inputs["architecture_mode"] != "required" or assessment != {
+            "status": "current",
+            "fingerprint": architecture_fingerprint(model),
+            "declared_modules": declared,
+            "relevant_modules": relevant_records,
+        }:
+            raise ValueError
     git = inputs["git"]
     if not isinstance(git, list) or any(
         not _exact_keys(record, {"path", "kind"})
@@ -269,13 +362,17 @@ def _validate_architecture_fixture(data: object, directory: str) -> dict:
         ] not in {"complete", "omits_true_owner"}:
             raise ValueError
         for key in ("blockers", "diagnostics"):
-            if not isinstance(expected[key], list) or any(
-                not _exact_keys(item, {"code", "source"})
-                or not all(isinstance(item[field], str) and item[field] for field in item)
-                for item in expected[key]
+            records = _identity_records(
+                expected[key],
+                model_ids=model_ids,
+                ownership_ids={rule.id for rule in model.ownership},
+            )
+            if records is None or (
+                key == "diagnostics"
+                and any(item["code"] not in _DIAGNOSTIC_CODES for item in records)
             ):
                 raise ValueError
-        if not _string_list(expected["expected_modules"]):
+        if not _module_id_list(expected["expected_modules"]):
             raise ValueError
     else:
         if treatment != {
@@ -285,14 +382,17 @@ def _validate_architecture_fixture(data: object, directory: str) -> dict:
         } or not _exact_keys(expected, {"projected_modules"}):
             raise ValueError
         projected = expected["projected_modules"]
-        if not isinstance(projected, list) or any(
-            not _exact_keys(item, {"id", "responsibility", "depends_on"})
-            or not isinstance(item["id"], str)
-            or not item["id"]
-            or not isinstance(item["responsibility"], str)
-            or not item["responsibility"]
-            or not _string_list(item["depends_on"])
-            for item in projected
+        canonical_projection = [
+            {
+                "id": record["id"],
+                "responsibility": record["responsibility"],
+                "depends_on": record["depends_on"],
+            }
+            for record in relevant_records
+        ]
+        if (
+            _projected_records(projected, model_ids=model_ids) is None
+            or projected != canonical_projection
         ):
             raise ValueError
     return data
@@ -320,16 +420,55 @@ def validate_architecture_corpus(corpus: Path) -> list[dict]:
         if len({row["id"] for row in rows}) != len(rows):
             raise ValueError
         return sorted(rows, key=lambda row: row["id"])
-    except (ArchitectureError, OSError, TypeError, yaml.YAMLError, ValueError) as exc:
+    except (
+        ArchitectureError, OSError, UnicodeError, TypeError, yaml.YAMLError, ValueError
+    ) as exc:
+        raise ValueError("ARCHITECTURE_BENCHMARK_CORPUS_INVALID") from exc
+
+
+def _architecture_inputs_fingerprint(inputs: object) -> str:
+    payload = json.dumps(
+        inputs,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+    ).encode()
+    return "sha256:" + hashlib.sha256(payload).hexdigest()
+
+
+def _validate_architecture_experiment_fixtures(
+    corpus: Path, experiment: str
+) -> list[dict]:
+    directory_name = {
+        "drift_detection": "drift",
+        "context_recovery": "context",
+    }[experiment]
+    rows: list[dict] = []
+    try:
+        directory = corpus / directory_name
+        if not directory.is_dir():
+            raise ValueError
+        for path in sorted(directory.iterdir()):
+            if not path.is_file() or path.suffix != ".yaml":
+                raise ValueError
+            rows.append(
+                _validate_architecture_fixture(
+                    yaml.safe_load(path.read_text()), directory_name
+                )
+            )
+        if len({row["id"] for row in rows}) != len(rows):
+            raise ValueError
+        return sorted(rows, key=lambda row: row["id"])
+    except (
+        ArchitectureError, OSError, UnicodeError, TypeError, yaml.YAMLError, ValueError
+    ) as exc:
         raise ValueError("ARCHITECTURE_BENCHMARK_CORPUS_INVALID") from exc
 
 
 def architecture_fixture_fingerprint(fixture: dict) -> str:
     """Fingerprint immutable experiment inputs, excluding treatment and labels."""
-    payload = json.dumps(
-        fixture["inputs"], sort_keys=True, separators=(",", ":"), ensure_ascii=False
-    ).encode()
-    return "sha256:" + hashlib.sha256(payload).hexdigest()
+    return _architecture_inputs_fingerprint(fixture["inputs"])
 
 
 def _count_metric(numerator: int, denominator: int, not_applicable: int = 0) -> dict:
@@ -341,25 +480,58 @@ def _count_metric(numerator: int, denominator: int, not_applicable: int = 0) -> 
     }
 
 
-def _identity_records(value: object) -> list[dict] | None:
+def _valid_result_identity(
+    item: object, model_ids: set[str], ownership_ids: set[str]
+) -> bool:
+    if not _exact_keys(item, {"code", "source"}):
+        return False
+    code = item["code"]
+    source = item["source"]
+    if not isinstance(code, str) or code not in _IDENTITY_CODES or not isinstance(source, str):
+        return False
+    if code in _DIAGNOSTIC_CODES or code == "ARCHITECTURE_EVIDENCE_INVALID":
+        return source.startswith("path:") and _fixture_path(source.removeprefix("path:"))
+    if code == "ARCHITECTURE_REQUIRED":
+        return source == "artifact:.harness/architecture.yaml"
+    if code == "ARCHITECTURE_SCOPE_INVALID":
+        module_id = source.removeprefix("module:")
+        return source.startswith("module:") and _valid_module_id(module_id)
+    if code == "ARCHITECTURE_OWNERSHIP_EMPTY":
+        ownership_id = source.removeprefix("ownership:")
+        return source.startswith("ownership:") and ownership_id in ownership_ids
+    match = re.fullmatch(r"path:(.+)\|module:([a-z][a-z0-9]*(?:-[a-z0-9]+)*)", source)
+    return bool(
+        match
+        and _fixture_path(match.group(1))
+        and match.group(2) in model_ids
+    )
+
+
+def _identity_records(
+    value: object, *, model_ids: set[str], ownership_ids: set[str]
+) -> list[dict] | None:
     if not isinstance(value, list) or any(
-        not _exact_keys(item, {"code", "source"})
-        or not all(isinstance(item[key], str) and item[key] for key in item)
-        for item in value
+        not _valid_result_identity(item, model_ids, ownership_ids) for item in value
     ):
         return None
     identities = [(item["code"], item["source"]) for item in value]
     return value if len(identities) == len(set(identities)) else None
 
 
-def _projected_records(value: object) -> list[dict] | None:
+def _projected_records(
+    value: object, *, model_ids: set[str]
+) -> list[dict] | None:
     if not isinstance(value, list) or any(
         not _exact_keys(item, {"id", "responsibility", "depends_on"})
-        or not isinstance(item["id"], str)
-        or not item["id"]
+        or not _valid_module_id(item["id"])
+        or item["id"] not in model_ids
         or not isinstance(item["responsibility"], str)
         or not item["responsibility"]
         or not _string_list(item["depends_on"])
+        or any(
+            not _valid_module_id(dependency) or dependency not in model_ids
+            for dependency in item["depends_on"]
+        )
         for item in value
     ):
         return None
@@ -367,12 +539,49 @@ def _projected_records(value: object) -> list[dict] | None:
     return value if len(identities) == len(set(identities)) else None
 
 
+def _valid_rfc3339(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    match = re.fullmatch(
+        r"\d{4}-\d{2}-\d{2}[Tt]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:(?P<z>[Zz])|(?P<sign>[+-])(?P<hour>\d{2}):(?P<minute>\d{2}))",
+        value,
+    )
+    if match is None or (
+        match.group("z") is None
+        and (int(match.group("hour")) > 23 or int(match.group("minute")) > 59)
+    ):
+        return False
+    normalized = value.replace("t", "T")
+    if normalized.endswith(("Z", "z")):
+        normalized = normalized[:-1] + "+00:00"
+    leap_second = normalized[17:19] == "60"
+    if leap_second:
+        normalized = normalized[:17] + "59" + normalized[19:]
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return False
+    if parsed.tzinfo is None:
+        return False
+    if leap_second:
+        try:
+            boundary = (parsed + timedelta(seconds=1)).astimezone(timezone.utc)
+            previous_date = (boundary.date() - timedelta(days=1)).isoformat()
+        except OverflowError:
+            return False
+        return (
+            boundary.hour == boundary.minute == boundary.second == 0
+            and previous_date in _LEAP_SECOND_DATES
+        )
+    return True
+
+
 def _architecture_artifact(
     path: Path, fixture: dict, arm: str, experiment: str
 ) -> dict | None:
     try:
         artifact = json.loads(path.read_text())
-    except (OSError, json.JSONDecodeError):
+    except (OSError, UnicodeError, json.JSONDecodeError):
         return None
     if not _exact_keys(
         artifact,
@@ -380,70 +589,111 @@ def _architecture_artifact(
             "version", "fixture_id", "experiment", "arm", "treatment",
             "input_fingerprint", "inputs", "runs",
         },
-    ) or (
-        artifact["version"] != 1
+    ):
+        return None
+    try:
+        persisted_input_fingerprint = _architecture_inputs_fingerprint(
+            artifact["inputs"]
+        )
+    except (TypeError, ValueError, UnicodeError):
+        return None
+    if (
+        type(artifact["version"]) is not int
+        or artifact["version"] != 1
         or artifact["fixture_id"] != fixture["id"]
         or artifact["experiment"] != experiment
         or artifact["arm"] != arm
         or artifact["treatment"] != fixture["treatment"][arm]
         or artifact["input_fingerprint"] != architecture_fixture_fingerprint(fixture)
+        or persisted_input_fingerprint != artifact["input_fingerprint"]
         or artifact["inputs"] != fixture["inputs"]
         or not isinstance(artifact["runs"], list)
         or len(artifact["runs"]) < 3
     ):
         return None
+    model_ids = {
+        module["id"] for module in fixture["inputs"]["architecture"]["modules"]
+    }
+    ownership_ids = {
+        rule["id"] for rule in fixture["inputs"]["architecture"]["ownership"]
+    }
     run_ids: list[str] = []
+    session_ids: list[str] = []
     normalized: list[dict] = []
+    efficiency_valid = True
+    correctness_run_keys = {"run_id", "provenance", "integrity", "observed"}
+    efficiency_run_keys = {"success", "usage"}
     for run in artifact["runs"]:
-        if not _exact_keys(
-            run, {"run_id", "success", "integrity", "observed", "usage"}
+        if not isinstance(run, dict) or (
+            not correctness_run_keys <= set(run)
+            or not set(run) <= correctness_run_keys | efficiency_run_keys
         ) or (
             not isinstance(run["run_id"], str)
             or not run["run_id"]
-            or type(run["success"]) is not bool
+            or not _exact_keys(run["provenance"], {"session_id", "started_at"})
+            or not isinstance(run["provenance"]["session_id"], str)
+            or not run["provenance"]["session_id"]
+            or not _valid_rfc3339(run["provenance"]["started_at"])
             or type(run["integrity"]) is not bool
         ):
             return None
+        usage = None
         try:
-            usage = normalize_usage(run["usage"])
+            if "usage" in run:
+                usage = normalize_usage(run["usage"])
         except TelemetryError:
-            return None
-        if (
-            usage["source"] not in {"runtime", "provider"}
-            or type(usage["total_tokens"]) is not int
-            or type(usage["tool_calls"]) is not int
-        ):
-            return None
+            pass
+        run_efficiency_valid = bool(
+            usage is not None
+            and type(run.get("success")) is bool
+            and usage["source"] in {"runtime", "provider"}
+            and type(usage["total_tokens"]) is int
+            and type(usage["tool_calls"]) is int
+        )
+        efficiency_valid = efficiency_valid and run_efficiency_valid
         observed = run["observed"]
         if experiment == "drift_detection":
             if not _exact_keys(observed, {"blocked", "blockers", "diagnostics"}):
                 return None
-            blockers = _identity_records(observed["blockers"])
-            diagnostics = _identity_records(observed["diagnostics"])
+            blockers = _identity_records(
+                observed["blockers"],
+                model_ids=model_ids,
+                ownership_ids=ownership_ids,
+            )
+            diagnostics = _identity_records(
+                observed["diagnostics"],
+                model_ids=model_ids,
+                ownership_ids=ownership_ids,
+            )
             if type(observed["blocked"]) is not bool or blockers is None or diagnostics is None:
                 return None
         elif not _exact_keys(observed, {"projected_modules"}) or _projected_records(
-            observed["projected_modules"]
+            observed["projected_modules"], model_ids=model_ids
         ) is None:
             return None
         run_ids.append(run["run_id"])
+        session_ids.append(run["provenance"]["session_id"])
         normalized.append(
             {
                 **run,
-                "total_tokens": usage["total_tokens"],
-                "tool_calls": usage["tool_calls"],
+                "success": run.get("success") if run_efficiency_valid else None,
+                "total_tokens": usage["total_tokens"] if run_efficiency_valid else None,
+                "tool_calls": usage["tool_calls"] if run_efficiency_valid else None,
             }
         )
-    if len(run_ids) != len(set(run_ids)):
+    if (
+        len(run_ids) != len(set(run_ids))
+        or len(session_ids) != len(set(session_ids))
+    ):
         return None
     first = json.dumps(normalized[0]["observed"], sort_keys=True)
     if any(json.dumps(run["observed"], sort_keys=True) != first for run in normalized[1:]):
         return None
-    return {**artifact, "runs": normalized}
-
-
-def _efficiency(artifact: dict) -> dict | str:
-    return summarize_runs(artifact["runs"])
+    return {
+        **artifact,
+        "runs": normalized,
+        "efficiency_valid": efficiency_valid,
+    }
 
 
 def _record_identities(records: list[dict]) -> set[tuple[str, str]]:
@@ -498,8 +748,12 @@ def _drift_arm(fixtures: list[dict], artifacts: list[dict]) -> dict:
             ),
         },
         "integrity_failures": integrity_failures,
-        "efficiency": summarize_runs(
-            [run for artifact in artifacts for run in artifact["runs"]]
+        "efficiency": (
+            summarize_runs(
+                [run for artifact in artifacts for run in artifact["runs"]]
+            )
+            if all(artifact["efficiency_valid"] for artifact in artifacts)
+            else INCONCLUSIVE
         ),
     }
 
@@ -532,8 +786,12 @@ def _context_arm(fixtures: list[dict], artifacts: list[dict]) -> dict:
         },
         "unexpected_records": unexpected,
         "integrity_failures": integrity_failures,
-        "efficiency": summarize_runs(
-            [run for artifact in artifacts for run in artifact["runs"]]
+        "efficiency": (
+            summarize_runs(
+                [run for artifact in artifacts for run in artifact["runs"]]
+            )
+            if all(artifact["efficiency_valid"] for artifact in artifacts)
+            else INCONCLUSIVE
         ),
     }
 
@@ -546,6 +804,8 @@ def _metric_value(metric: dict, *, default: float) -> float:
 def _experiment_status(experiment: str, baseline: dict, adaptive: dict) -> str:
     if adaptive["integrity_failures"]:
         return "FAIL"
+    if baseline["integrity_failures"]:
+        return INCONCLUSIVE
     if experiment == "context_recovery":
         baseline_value = _metric_value(
             baseline["metrics"]["context_factual_recovery"], default=1.0
@@ -572,8 +832,19 @@ def _experiment_status(experiment: str, baseline: dict, adaptive: dict) -> str:
     )
     baseline_fpr = _metric_value(b["false_positive_rate"], default=0.0)
     adaptive_fpr = _metric_value(a["false_positive_rate"], default=0.0)
+    adaptive_precision_regresses_from_na = (
+        baseline_precision == "not_applicable"
+        and adaptive_precision != "not_applicable"
+        and float(adaptive_precision) < 1.0
+    )
+    adaptive_precision_becomes_na = (
+        baseline_precision != "not_applicable"
+        and adaptive_precision == "not_applicable"
+    )
     if (
         adaptive_recall < baseline_recall
+        or adaptive_precision_regresses_from_na
+        or adaptive_precision_becomes_na
         or (
             precision_comparable
             and float(adaptive_precision) < float(baseline_precision)
@@ -595,7 +866,7 @@ def _experiment_status(experiment: str, baseline: dict, adaptive: dict) -> str:
 def _architecture_run_count(path: Path) -> int:
     try:
         document = json.loads(path.read_text())
-    except (OSError, json.JSONDecodeError):
+    except (OSError, UnicodeError, json.JSONDecodeError):
         return 0
     runs = document.get("runs") if isinstance(document, dict) else None
     return len(runs) if isinstance(runs, list) else 0
@@ -700,10 +971,7 @@ def compare_architecture_experiment(
     if experiment not in {"drift_detection", "context_recovery"}:
         raise ValueError("ARCHITECTURE_BENCHMARK_EXPERIMENT_INVALID")
     try:
-        selected = [
-            row for row in validate_architecture_corpus(fixtures)
-            if row["experiment"] == experiment
-        ]
+        selected = _validate_architecture_experiment_fixtures(fixtures, experiment)
     except ValueError:
         return {"experiment": experiment, "status": INCONCLUSIVE, "confidence": "high"}
     if not selected:
@@ -725,6 +993,22 @@ def compare_architecture_experiment(
         return report
     baseline_valid = [item for item in baseline_artifacts if item is not None]
     adaptive_valid = [item for item in adaptive_artifacts if item is not None]
+    all_runs = [
+        run
+        for artifact in baseline_valid + adaptive_valid
+        for run in artifact["runs"]
+    ]
+    run_ids = [run["run_id"] for run in all_runs]
+    session_ids = [run["provenance"]["session_id"] for run in all_runs]
+    if (
+        len(run_ids) != len(set(run_ids))
+        or len(session_ids) != len(set(session_ids))
+    ):
+        report["baseline"] = _pending_arm(experiment, selected)
+        report["adaptive"] = _pending_arm(experiment, selected)
+        if experiment == "drift_detection":
+            report["declaration_quality"] = _declaration_quality(selected)
+        return report
     if experiment == "drift_detection":
         baseline_report = _drift_arm(selected, baseline_valid)
         adaptive_report = _drift_arm(selected, adaptive_valid)
@@ -736,6 +1020,14 @@ def compare_architecture_experiment(
     report["status"] = _experiment_status(
         experiment, baseline_report, adaptive_report
     )
+    if report["status"] != "FAIL" and (
+        baseline_report["efficiency"] == INCONCLUSIVE
+        or adaptive_report["efficiency"] == INCONCLUSIVE
+    ):
+        report["status"] = INCONCLUSIVE
+    if report["status"] in {"FAIL", INCONCLUSIVE}:
+        baseline_report["efficiency"] = INCONCLUSIVE
+        adaptive_report["efficiency"] = INCONCLUSIVE
     report["baseline"] = baseline_report
     report["adaptive"] = adaptive_report
     if declaration_quality is not None:

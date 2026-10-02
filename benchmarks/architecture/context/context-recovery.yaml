@@ -17,6 +17,14 @@ inputs:
     ownership:
     - {id: OWN-001, pattern: 'src/app/**', kind: production, modules: [app]}
     - {id: OWN-002, pattern: 'src/shared/**', kind: production, modules: [shared]}
+  architecture_mode: required
+  architecture_assessment:
+    status: current
+    fingerprint: sha256:a45edd94b85b47a1ed6e0ef2da003bb5d0873863966fae77535d5b70ba55e85a
+    declared_modules: [app]
+    relevant_modules:
+    - {id: app, name: Application, responsibility: Run application behavior., depends_on: [shared]}
+    - {id: shared, name: Shared, responsibility: Provide shared behavior., depends_on: []}
   git: []
 expected:
   projected_modules:

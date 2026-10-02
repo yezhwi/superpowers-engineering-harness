@@ -25,7 +25,7 @@ inputs:
       pattern: src/app/**
       kind: production
       modules: [app]
-  git: [{path: src/app/change.py, kind: worktree}]
+  git: [{path: src/app/change.py, kind: modified}]
 expected:
   label: clean
   blockers: []
