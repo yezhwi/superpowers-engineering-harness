@@ -1,6 +1,6 @@
 {
 	"name": "superpowers-engineering-harness",
-	"version": "0.2.10",
+	"version": "0.3.0",
 	"description": "Pi skills for deterministic, evidence-backed engineering workflows; requires the separately installed Harness CLI.",
 	"license": "Apache-2.0",
 	"author": {
@@ -22,6 +22,8 @@
 		"skills",
 		"docs/architecture.md",
 		"docs/Superpowers-Engineering-Harness-v0.2.10-Implementation-Contract.md",
+		"docs/Superpowers-Engineering-Harness-v0.3.0-Architecture-Scope-and-Drift-Design.md",
+		"docs/superpowers/reports/v030-architecture-benchmark-template.md",
 		"docs/2026-09-07-evidence-freshness-and-test-path-binding-issues.md",
 		"docs/superpowers/specs/2026-08-26-v022-flow-hardening-design.md",
 		"docs/superpowers/specs/2026-08-25-v02-minimal-complexity-design.md",

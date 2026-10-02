@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.3.0
+
 - Add Architecture Scope Gate P0: operator-authored canonical Architecture YAML, deterministic ownership resolution, bounded models, and stable fingerprints.
 - Add typed four-layer Git attribution across committed, staged, worktree, and untracked changes while excluding `.harness` control-plane state.
 - Add Alignment seal v2 with explicit Architecture mode, fingerprint, and declared module scope; retain controlled legacy v1 compatibility only for off-mode phase entry.
@@ -11,6 +13,12 @@
 - Keep required-missing Architecture as blocker data, reject malformed present sources and capture races, and preserve read-only restart/validate/explain behavior without adding another Gate or cache authority.
 - Add Architecture Evaluation P2: independent Drift Detection and Context Recovery corpora, strict one-treatment comparisons, three-run completeness, exact correctness and declaration-quality metrics, and runtime token/tool-call reporting.
 - No measured benchmark improvement is claimed; repository report template remains `PENDING` until accepted external run artifacts are supplied.
+
+### Install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/yezhwi/superpowers-engineering-harness/main/scripts/install-pi.sh | bash -s -- v0.3.0
+```
 
 ## 0.2.10
 
