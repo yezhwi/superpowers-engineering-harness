@@ -1,4 +1,4 @@
-# Superpowers Engineering Harness v0.2.10
+# Superpowers Engineering Harness v0.3.0
 
 [English](README.md)
 
@@ -27,7 +27,7 @@ curl -fsSL https://raw.githubusercontent.com/yezhwi/superpowers-engineering-harn
 需要固定版本时：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/yezhwi/superpowers-engineering-harness/main/scripts/install-pi.sh | bash -s -- v0.2.10
+curl -fsSL https://raw.githubusercontent.com/yezhwi/superpowers-engineering-harness/main/scripts/install-pi.sh | bash -s -- v0.3.0
 ```
 
 安装器检查是否已配置 Superpowers，仅在缺失时安装；同时协调固定版本的 Harness Pi skills，把匹配 Python CLI 安装到隔离用户环境，并暴露 `~/.local/bin/harness`。如果 `~/.local/bin` 不在 `PATH`，安装器会给出提示。重复安装相同版本保持幂等。若本地安全策略要求，请先审查下载脚本再执行。
@@ -60,7 +60,7 @@ curl -fsSL https://raw.githubusercontent.com/yezhwi/superpowers-engineering-harn
 需要固定版本时：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/yezhwi/superpowers-engineering-harness/main/scripts/install-agy.sh | bash -s -- v0.2.10
+curl -fsSL https://raw.githubusercontent.com/yezhwi/superpowers-engineering-harness/main/scripts/install-agy.sh | bash -s -- v0.3.0
 ```
 
 安装器更新 `~/.gemini/antigravity-cli/skills/` 下 Harness 自己的 skills，保留无关全局 skills；不会初始化项目。每个 Git 项目中单独运行一次 `harness init`，再用 `agy` 启动 AGY；首次会话可用 `/engineering-harness` 显式调用 Harness。
@@ -211,9 +211,13 @@ v0.2.9  实现前 Alignment 闭环与冻结
   ↓
 v0.2.10 Canonical Plan execution reconciliation
         + Q3 journal + Context/status + mechanical projections
+  ↓
+v0.3.0  Architecture Scope Gate P0
+        + Architecture Context Projection P1
+        + Architecture Evaluation P2
 ```
 
-`v0.2.10 current release`；既有 risk-adaptive、Context 与 Alignment safeguard 均保留。v0.2.10 新增确定性 Plan Reconciliation：canonical execution artifacts、Q3 task-level journal、权威 Context/status 投影、受限 Markdown 同步、有界 Q3 自动 COMPLETE proof，以及复用单次 assessment 的 Gate preflight 报告。它不把 Markdown 当作 Gate truth、不合成执行历史，也不推断 SKIPPED/SUPERSEDED 的语义理由。见 [v0.2.10 实现契约](docs/Superpowers-Engineering-Harness-v0.2.10-Implementation-Contract.md)。
+`v0.3.0 current release`；既有 risk-adaptive、Context、Alignment 与 Plan Reconciliation safeguard 均保留。v0.3.0 新增 operator-authored Architecture model、确定性 ownership 与 Git attribution、Alignment seal v2、required-mode scope checks、有界 declared-plus-one-hop Context projection，以及彼此独立的 Drift Detection 与 Context Recovery experiments。Benchmark 结果保持 `PENDING`，直到外部 accepted run artifacts 为每个 fixture/arm 提供至少三次运行。不声明任何实测 benchmark 改进。见 [v0.3.0 架构设计](docs/Superpowers-Engineering-Harness-v0.3.0-Architecture-Scope-and-Drift-Design.md)。
 
 **Routing：** Q0 直接回答、不创建 task；Q1 / FAST 使用 RED/fix/GREEN/Light Gate；Q2 / STANDARD 与 Q3 / STRICT 使用完整 contract/review/Gate 流程。
 

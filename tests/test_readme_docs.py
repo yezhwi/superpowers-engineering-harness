@@ -18,7 +18,7 @@ def test_readmes_document_agy_quick_start():
         text = (REPO / name).read_text(encoding="utf-8")
         assert heading in text
         assert "scripts/install-agy.sh" in text
-        assert "bash -s -- v0.2.10" in text
+        assert "bash -s -- v0.3.0" in text
         assert "agy" in text
 
 
@@ -70,6 +70,11 @@ def test_npm_pack_contains_core_skill_and_linked_docs():
         "docs/Superpowers-Engineering-Harness-v0.2.10-Implementation-Contract.md"
         in paths
     )
+    assert (
+        "docs/Superpowers-Engineering-Harness-v0.3.0-Architecture-Scope-and-Drift-Design.md"
+        in paths
+    )
+    assert "docs/superpowers/reports/v030-architecture-benchmark-template.md" in paths
     assert not any("Architecture-Awareness" in path for path in paths)
 
 
@@ -99,7 +104,7 @@ def test_readmes_document_matching_skills_and_cli_install_without_full_suite():
         assert f"curl -fsSL {base}/main/scripts/install-pi.sh | bash" in text
         assert (
             f"curl -fsSL {base}/main/scripts/install-pi.sh "
-            "| bash -s -- v0.2.10"
+            "| bash -s -- v0.3.0"
         ) in text
         assert "Superpowers" in text
         assert "isolated" in text.lower() or "隔离" in text
@@ -188,8 +193,16 @@ def test_readmes_document_risk_profiles_and_independent_authorization():
 def test_docs_identify_current_adaptive_release():
     for path in (REPO / "README.md", REPO / "README.zh-CN.md"):
         text = path.read_text()
-        assert "v0.2.10 current release" in text
-        assert "v0.2.10 implementation contract" in text or "v0.2.10 实现契约" in text
+        assert text.startswith("# Superpowers Engineering Harness v0.3.0\n")
+        assert "v0.3.0 current release" in text
+        assert "v0.3.0 architecture design" in text or "v0.3.0 架构设计" in text
+        assert "Architecture Scope Gate P0" in text
+        assert "Architecture Context Projection P1" in text
+        assert "Architecture Evaluation P2" in text
+        assert (
+            "No measured benchmark improvement is claimed" in text
+            or "不声明任何实测 benchmark 改进" in text
+        )
         assert "INCONCLUSIVE" in text
         assert "risk-adaptive" in text
         assert "Q1 / FAST" in text and "Q2 / STANDARD" in text and "Q3 / STRICT" in text
