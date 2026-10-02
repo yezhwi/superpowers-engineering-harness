@@ -276,6 +276,34 @@ def metric(numerator, denominator, not_applicable=0):
     }
 
 
+def test_drift_fixture_rejects_unknown_declared_module(tmp_path):
+    fixture = drift_fixture()
+    fixture["inputs"]["task"]["declared_modules"] = ["ghost"]
+    write_fixture(tmp_path / "drift", fixture)
+
+    with pytest.raises(ValueError, match="ARCHITECTURE_BENCHMARK_CORPUS_INVALID"):
+        validate_architecture_corpus(tmp_path)
+
+
+def test_independent_run_variance_uses_unique_mode(tmp_path):
+    fixture = recovery_fixture()
+    fixtures = tmp_path / "fixtures"
+    write_fixture(fixtures / "context", fixture)
+    full = {"projected_modules": fixture["expected"]["projected_modules"]}
+    partial = {"projected_modules": fixture["expected"]["projected_modules"][:1]}
+    write_artifact(tmp_path / "baseline", fixture, "baseline", [full, full, partial])
+    write_artifact(tmp_path / "adaptive", fixture, "adaptive", [full, partial, full])
+
+    report = compare_architecture_experiment(
+        fixtures, tmp_path / "baseline", tmp_path / "adaptive",
+        experiment="context_recovery",
+    )
+
+    assert report["status"] == "CORRECTNESS_PRESERVED"
+    assert report["baseline"]["metrics"]["context_factual_recovery"] == metric(2, 2)
+    assert report["adaptive"]["metrics"]["context_factual_recovery"] == metric(2, 2)
+
+
 def test_declaration_quality_case_is_excluded_from_detector_metrics(tmp_path):
     fixture = drift_fixture()
     fixture["expected"]["label"] = "declaration_quality"

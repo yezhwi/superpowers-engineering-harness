@@ -311,12 +311,12 @@ def _validate_architecture_fixture(data: object, directory: str) -> dict:
         raise ValueError
     model = load_architecture_document(inputs["architecture"])
     model_ids = {module.id for module in model.modules}
+    if not set(task["declared_modules"]) <= model_ids:
+        raise ValueError
     if experiment == "context_recovery":
         assessment = inputs["architecture_assessment"]
         declared = sorted(task["declared_modules"])
         by_id = {module.id: module for module in model.modules}
-        if not set(declared) <= model_ids:
-            raise ValueError
         relevant = set(declared)
         for module_id in declared:
             relevant.update(by_id[module_id].depends_on)
@@ -688,12 +688,22 @@ def _architecture_artifact(
         or len(session_ids) != len(set(session_ids))
     ):
         return None
-    first = json.dumps(normalized[0]["observed"], sort_keys=True)
-    if any(json.dumps(run["observed"], sort_keys=True) != first for run in normalized[1:]):
+    observed_by_key: dict[str, dict] = {}
+    observed_counts: dict[str, int] = {}
+    for run in normalized:
+        key = json.dumps(
+            run["observed"], sort_keys=True, separators=(",", ":"), ensure_ascii=False
+        )
+        observed_by_key[key] = run["observed"]
+        observed_counts[key] = observed_counts.get(key, 0) + 1
+    highest_count = max(observed_counts.values())
+    modes = [key for key, count in observed_counts.items() if count == highest_count]
+    if len(modes) != 1:
         return None
     return {
         **artifact,
         "runs": normalized,
+        "representative_observed": observed_by_key[modes[0]],
         "efficiency_valid": efficiency_valid,
     }
 
@@ -708,7 +718,7 @@ def _drift_arm(fixtures: list[dict], artifacts: list[dict]) -> dict:
     diagnostic_correct = diagnostic_emitted = diagnostic_na = 0
     integrity_failures = 0
     for fixture, artifact in zip(fixtures, artifacts):
-        observed = artifact["runs"][0]["observed"]
+        observed = artifact["representative_observed"]
         expected = fixture["expected"]
         integrity_failures += sum(not run["integrity"] for run in artifact["runs"])
         if expected["label"] == "declaration_quality":
@@ -777,7 +787,7 @@ def _context_arm(fixtures: list[dict], artifacts: list[dict]) -> dict:
         }
         observed = {
             _projected_identity(item)
-            for item in artifact["runs"][0]["observed"]["projected_modules"]
+            for item in artifact["representative_observed"]["projected_modules"]
         }
         numerator += len(expected & observed)
         denominator += len(expected)
