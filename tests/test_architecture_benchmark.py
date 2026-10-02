@@ -192,6 +192,7 @@ def test_architecture_corpus_is_independent_from_q0_q3_distribution():
         lambda row: row["inputs"]["git"][0].update(path="src/\ud800.py"),
         lambda row: row["inputs"]["architecture"]["ownership"][0].update(id="bad"),
         lambda row: row["expected"].update(unknown=True),
+        lambda row: row["expected"].update(declaration_quality="omits_true_owner"),
         lambda row: row["expected"]["blockers"][0].update(source="module:shared"),
     ],
 )

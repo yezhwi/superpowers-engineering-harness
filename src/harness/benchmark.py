@@ -361,7 +361,10 @@ def _validate_architecture_fixture(data: object, directory: str) -> dict:
             "drift", "clean", "declaration_quality"
         } or expected["declaration_quality"] not in {
             "complete", "omits_true_owner"
-        }:
+        } or (
+            (expected["label"] == "declaration_quality")
+            != (expected["declaration_quality"] == "omits_true_owner")
+        ):
             raise ValueError
         for key in ("blockers", "diagnostics"):
             records = _identity_records(
