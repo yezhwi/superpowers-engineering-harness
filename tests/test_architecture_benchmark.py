@@ -276,6 +276,30 @@ def metric(numerator, denominator, not_applicable=0):
     }
 
 
+def test_declaration_quality_case_is_excluded_from_detector_metrics(tmp_path):
+    fixture = drift_fixture()
+    fixture["expected"]["label"] = "declaration_quality"
+    fixture["expected"]["declaration_quality"] = "omits_true_owner"
+    fixture["expected"]["expected_modules"] = ["shared"]
+    fixtures = tmp_path / "fixtures"
+    write_fixture(fixtures / "drift", fixture)
+    observed = {"blocked": False, "blockers": [], "diagnostics": []}
+    write_artifact(tmp_path / "baseline", fixture, "baseline", repeated(observed))
+    write_artifact(tmp_path / "adaptive", fixture, "adaptive", repeated(observed))
+
+    report = compare_architecture_experiment(
+        fixtures, tmp_path / "baseline", tmp_path / "adaptive",
+        experiment="drift_detection",
+    )
+
+    assert report["adaptive"]["metrics"] == {
+        "drift_recall": metric(0, 0, 1),
+        "diagnostic_precision": metric(0, 0, 0),
+        "false_positive_rate": metric(0, 0, 1),
+    }
+    assert report["declaration_quality"]["missed_impact_proxy"] == metric(1, 1)
+
+
 def test_drift_comparison_uses_exact_fixed_formulas(tmp_path):
     fixtures = tmp_path / "fixtures"
     drift = drift_fixture("drift-labeled")

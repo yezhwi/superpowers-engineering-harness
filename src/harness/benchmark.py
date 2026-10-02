@@ -357,9 +357,11 @@ def _validate_architecture_fixture(data: object, directory: str) -> dict:
             {"label", "blockers", "diagnostics", "expected_modules", "declaration_quality"},
         ):
             raise ValueError
-        if expected["label"] not in {"drift", "clean"} or expected[
-            "declaration_quality"
-        ] not in {"complete", "omits_true_owner"}:
+        if expected["label"] not in {
+            "drift", "clean", "declaration_quality"
+        } or expected["declaration_quality"] not in {
+            "complete", "omits_true_owner"
+        }:
             raise ValueError
         for key in ("blockers", "diagnostics"):
             records = _identity_records(
@@ -702,12 +704,16 @@ def _record_identities(records: list[dict]) -> set[tuple[str, str]]:
 
 def _drift_arm(fixtures: list[dict], artifacts: list[dict]) -> dict:
     drift_total = drift_correct = clean_total = clean_blocked = 0
+    declaration_not_applicable = 0
     diagnostic_correct = diagnostic_emitted = diagnostic_na = 0
     integrity_failures = 0
     for fixture, artifact in zip(fixtures, artifacts):
         observed = artifact["runs"][0]["observed"]
         expected = fixture["expected"]
         integrity_failures += sum(not run["integrity"] for run in artifact["runs"])
+        if expected["label"] == "declaration_quality":
+            declaration_not_applicable += 1
+            continue
         if expected["label"] == "drift":
             drift_total += 1
             emitted_blockers = _record_identities(observed["blockers"])
@@ -738,13 +744,13 @@ def _drift_arm(fixtures: list[dict], artifacts: list[dict]) -> dict:
     return {
         "metrics": {
             "drift_recall": _count_metric(
-                drift_correct, drift_total, int(drift_total == 0)
+                drift_correct, drift_total, declaration_not_applicable
             ),
             "diagnostic_precision": _count_metric(
                 diagnostic_correct, diagnostic_emitted, diagnostic_na
             ),
             "false_positive_rate": _count_metric(
-                clean_blocked, clean_total, int(clean_total == 0)
+                clean_blocked, clean_total, declaration_not_applicable
             ),
         },
         "integrity_failures": integrity_failures,
@@ -924,7 +930,10 @@ def _pending_arm(experiment: str, fixtures: list[dict]) -> dict:
                 "denominator": sum(
                     row["expected"]["label"] == "drift" for row in fixtures
                 ),
-                "not_applicable": 0,
+                "not_applicable": sum(
+                    row["expected"]["label"] == "declaration_quality"
+                    for row in fixtures
+                ),
                 "value": INCONCLUSIVE,
             },
             "diagnostic_precision": {
@@ -938,7 +947,10 @@ def _pending_arm(experiment: str, fixtures: list[dict]) -> dict:
                 "denominator": sum(
                     row["expected"]["label"] == "clean" for row in fixtures
                 ),
-                "not_applicable": 0,
+                "not_applicable": sum(
+                    row["expected"]["label"] == "declaration_quality"
+                    for row in fixtures
+                ),
                 "value": INCONCLUSIVE,
             },
         }

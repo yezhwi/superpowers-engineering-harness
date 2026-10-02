@@ -19,7 +19,7 @@ inputs:
     - {id: OWN-002, pattern: 'src/shared/**', kind: production, modules: [shared]}
   git: [{path: src/shared/change.py, kind: modified}]
 expected:
-  label: drift
+  label: declaration_quality
   blockers: [{code: ARCHITECTURE_SCOPE_DRIFT, source: 'path:src/shared/change.py|module:shared'}]
   diagnostics: []
   expected_modules: [shared]
