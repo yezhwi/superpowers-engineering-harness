@@ -67,6 +67,15 @@ curl -fsSL https://raw.githubusercontent.com/yezhwi/superpowers-engineering-harn
 
 ## 当前日常路径
 
+阅读下面的命令块之前，先选一条路径。
+
+```text
+问题或解释 → 直接回答，不建任务
+小改动     → Q1 / FAST：RED → GREEN → Light Gate
+普通交付   → Q2 / STANDARD：合同、相关测试、review、最终 Plan
+高风险     → Q3 / STRICT：一次只推进一个计划项
+```
+
 你描述要做的变更。Agent 负责分类风险、完成实现，并在每个阶段调用 Harness。多数日常 Harness 命令无需交互；Agent 仍可能请求需求澄清、设计批准、接受 Decision、明确跳过或取代某项、受保护操作授权，或处理升级决定。
 
 下面的命令块是 Agent 执行的步骤。`harness status` 是只读操作，不修改 Harness 状态。Gate 输出 `DECISION: CONTINUE` 并写入 blocker 后，Agent 才运行 `harness resume`；它按 blocker code 选择恢复状态，不信任持久化的 `recover_to`。

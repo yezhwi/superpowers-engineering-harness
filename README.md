@@ -67,6 +67,15 @@ Installer updates Harness-owned skills under `~/.gemini/antigravity-cli/skills/`
 
 ## Current workflow
 
+Choose one route before the command blocks below.
+
+```text
+question or explanation → answer directly, no task
+small change            → Q1 / FAST: RED → GREEN → Light Gate
+normal delivery         → Q2 / STANDARD: contract, related tests, review, final Plan
+high-risk change        → Q3 / STRICT: one plan item at a time
+```
+
 You describe the change. The Agent classifies the risk, does the work, and calls Harness at each phase. Most routine Harness commands need no interaction. The Agent may still ask for requirement clarification, design approval, an accepted Decision, an explicit skip or supersede, protected-action authorization, or an escalation decision.
 
 The blocks below are the commands the Agent runs. `harness status` is read-only and does not mutate Harness state. When Gate emits `DECISION: CONTINUE` and persists blockers, the Agent runs `harness resume`, which chooses the recovery state from the blocker code and does not trust a persisted `recover_to`.
