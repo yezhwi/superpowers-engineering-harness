@@ -429,16 +429,22 @@ def _architecture_freeze_facts(
         quality_gate.validate_schema(
             sealed, "alignment-freeze.schema.json", sealed_path
         )
-        if sealed["version"] != 2 or sealed["architecture_mode"] != "required":
+        if (
+            sealed["version"] != 2
+            or sealed["task_id"] != task.get("task", {}).get("id")
+            or sealed["architecture_mode"] != "required"
+        ):
             raise alignment.AlignmentError("CONTRACT_CHANGED")
     scope = task.get("scope") or {}
     if "modules" not in scope:
         if require_existing_v2:
             raise alignment.AlignmentError("CONTRACT_CHANGED")
         raise ArchitectureError("ARCHITECTURE_SCOPE_DECLARATION_REQUIRED")
+    declared = tuple(scope["modules"])
+    if require_existing_v2 and sorted(sealed["declared_modules"]) != sorted(declared):
+        raise alignment.AlignmentError("CONTRACT_CHANGED")
     model = architecture_store.load_architecture(harness_dir, required=True)
     assert model is not None
-    declared = tuple(scope["modules"])
     known = {module.id for module in model.modules}
     if not set(declared) <= known:
         raise ArchitectureError("ARCHITECTURE_SCOPE_INVALID")

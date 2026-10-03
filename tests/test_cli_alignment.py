@@ -281,7 +281,9 @@ def test_align_status_rejects_persisted_proposed_decision(tmp_path):
     assert "OPEN_DECISION" in result.stderr
 
 
-def _required_frozen_repo(tmp_path: Path) -> Path:
+def _required_frozen_repo(
+    tmp_path: Path, *, changed_modules: list[str] | None = None, malformed_artifact=False
+) -> Path:
     from test_alignment import complete_alignment
 
     path = repo(tmp_path)
@@ -305,8 +307,13 @@ def _required_frozen_repo(tmp_path: Path) -> Path:
     (harness / "architecture.yaml").write_text(yaml.safe_dump(architecture, sort_keys=False))
     frozen = cli(path, "align", "freeze")
     assert frozen.returncode == 0, frozen.stderr
-    task["scope"].pop("modules")
+    if changed_modules is None:
+        task["scope"].pop("modules")
+    else:
+        task["scope"]["modules"] = changed_modules
     (harness / "current-task.yaml").write_text(yaml.safe_dump(task, sort_keys=False))
+    if malformed_artifact:
+        (harness / "architecture.yaml").write_text("malformed: [")
     return path
 
 
@@ -320,6 +327,20 @@ def test_align_read_paths_halt_when_frozen_modules_are_removed(tmp_path, command
     assert "POLICY: USER_AUTHORITY_REQUIRED" in result.stderr
     assert "DIRECTIVE: HALT_AND_WAIT" in result.stderr
     assert "CONTRACT_CHANGED" in result.stderr
+
+
+def test_align_status_halts_on_changed_modules_before_malformed_architecture(tmp_path):
+    path = _required_frozen_repo(
+        tmp_path, changed_modules=[], malformed_artifact=True
+    )
+
+    result = cli(path, "align", "status")
+
+    assert result.returncode == 1
+    assert "POLICY: USER_AUTHORITY_REQUIRED" in result.stderr
+    assert "DIRECTIVE: HALT_AND_WAIT" in result.stderr
+    assert "CONTRACT_CHANGED" in result.stderr
+    assert "ARCHITECTURE_SCHEMA_INVALID" not in result.stderr
 
 
 def test_align_diff_reports_unfrozen_contract(tmp_path):

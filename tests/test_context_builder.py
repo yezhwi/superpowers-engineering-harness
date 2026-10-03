@@ -344,10 +344,11 @@ def test_required_seal_drift_precedes_malformed_architecture(harness):
     assert context["blockers"][0]["code"] == "CONTRACT_CHANGED"
 
 
-def test_off_context_skips_architecture_assessment(harness, monkeypatch):
-    from harness import architecture_gate
+def test_off_context_delegates_architecture_assessment_to_shared_gate(harness, monkeypatch):
+    from harness import quality_gate
 
-    task = yaml.safe_load((harness / "current-task.yaml").read_text())
+    task = set_profile(harness, "Q2")
+    write_yaml(harness / "current-task.yaml", task)
     alignment_document = _frozen_alignment(task["task"]["id"])
     write_yaml(harness / "alignment.yaml", alignment_document)
     write_yaml(harness / "alignment-freeze.yaml", {
@@ -362,14 +363,21 @@ def test_off_context_skips_architecture_assessment(harness, monkeypatch):
         "frozen_at": "2026-09-30T00:00:00+00:00",
     })
 
-    def forbidden(*args, **kwargs):
-        raise AssertionError("off Context assessed Architecture")
+    original = quality_gate.assess_gate
+    delegated = []
 
-    monkeypatch.setattr(architecture_gate, "assess_architecture", forbidden)
+    def shared_gate(*args, **kwargs):
+        delegated.append(kwargs.get("architecture_assessment"))
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(quality_gate, "assess_gate", shared_gate)
 
     source, context = load_and_build(harness)
 
+    assert delegated == [None]
     assert source.architecture is None
+    assert source.architecture_assessment is source.gate.architecture_assessment
+    assert any(blocker.code == "CONTRACT_CHANGED" for blocker in source.gate.blockers)
     assert "architecture" not in context
 
 

@@ -184,12 +184,11 @@ class FileContextSource:
             except architecture_gate.ArchitectureGateError as exc:
                 raise ContextBuildError("CONTEXT_SCHEMA_INVALID", str(exc)) from exc
         else:
-            architecture_assessment = architecture_gate.ArchitectureAssessment(
-                (), None, (), ()
-            )
+            architecture_assessment = None
         architecture = (
             architecture_document(architecture_assessment.model)
-            if architecture_assessment.model is not None
+            if architecture_assessment is not None
+            and architecture_assessment.model is not None
             else None
         )
         if architecture_enabled:
@@ -362,9 +361,12 @@ class FileContextSource:
                     if item["kind"] == "persistence"
                 ),
             }
-            architecture_contract_changed = any(
-                blocker.code == "CONTRACT_CHANGED"
-                for blocker in architecture_assessment.blockers
+            architecture_contract_changed = (
+                architecture_assessment is not None
+                and any(
+                    blocker.code == "CONTRACT_CHANGED"
+                    for blocker in architecture_assessment.blockers
+                )
             )
             architecture_facts = (
                 alignment.ArchitectureFreezeFacts(
@@ -446,6 +448,7 @@ class FileContextSource:
                 allow_preflight=True,
                 architecture_assessment=architecture_assessment,
             )
+            architecture_assessment = gate.architecture_assessment
         except (
             OSError,
             workspace.WorkspaceError,
