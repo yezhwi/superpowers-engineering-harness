@@ -327,9 +327,7 @@ def test_architecture_summary_projects_legal_256_module_bound_without_truncation
     assert {module["id"] for module in summary["relevant_modules"]} == {f"m{i}" for i in range(256)}
 
 
-def test_required_malformed_architecture_is_validated_before_seal_drift(harness):
-    from harness.context.model import ContextBuildError
-
+def test_required_seal_drift_precedes_malformed_architecture(harness):
     enable_required_architecture(harness)
     seal_path = harness / "alignment-freeze.yaml"
     seal = yaml.safe_load(seal_path.read_text())
@@ -337,10 +335,42 @@ def test_required_malformed_architecture_is_validated_before_seal_drift(harness)
     write_yaml(seal_path, seal)
     (harness / "architecture.yaml").write_text("modules: [")
 
-    with pytest.raises(
-        ContextBuildError, match="CONTEXT_SCHEMA_INVALID.*ARCHITECTURE"
-    ):
-        load_and_build(harness)
+    source, context = load_and_build(harness)
+
+    assert [blocker.code for blocker in source.architecture_assessment.blockers] == [
+        "CONTRACT_CHANGED"
+    ]
+    assert source.architecture is None
+    assert context["blockers"][0]["code"] == "CONTRACT_CHANGED"
+
+
+def test_off_context_skips_architecture_assessment(harness, monkeypatch):
+    from harness import architecture_gate
+
+    task = yaml.safe_load((harness / "current-task.yaml").read_text())
+    alignment_document = _frozen_alignment(task["task"]["id"])
+    write_yaml(harness / "alignment.yaml", alignment_document)
+    write_yaml(harness / "alignment-freeze.yaml", {
+        "version": 2,
+        "task_id": task["task"]["id"],
+        "contract_hash": alignment_document["freeze"]["contract_hash"],
+        "architecture_mode": "required",
+        "architecture_fingerprint": "sha256:" + "0" * 64,
+        "declared_modules": ["app"],
+        "decision_selections": {},
+        "boundary_refs": {"interface": [], "permission": [], "persistence": []},
+        "frozen_at": "2026-09-30T00:00:00+00:00",
+    })
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("off Context assessed Architecture")
+
+    monkeypatch.setattr(architecture_gate, "assess_architecture", forbidden)
+
+    source, context = load_and_build(harness)
+
+    assert source.architecture is None
+    assert "architecture" not in context
 
 
 def test_required_malformed_architecture_is_context_schema_invalid(harness):
@@ -514,13 +544,15 @@ def _frozen_alignment(task_id="TASK-028"):
 
 
 def _write_matching_seal(harness, document):
-    from harness.alignment import validate_sealed_freeze
+    from harness.alignment import ArchitectureFreezeFacts, validate_sealed_freeze
 
     validate_sealed_freeze(
         harness,
         document,
         decisions=[],
         boundary_refs={"interface": [], "permission": [], "persistence": []},
+        bootstrap_legacy_off=True,
+        architecture_facts=ArchitectureFreezeFacts("off", None, ()),
     )
 
 
@@ -610,7 +642,7 @@ def test_qualified_decision_contract_ref_resolves_to_decision_id(harness):
 
 
 def test_cross_task_sealed_decision_does_not_false_contract_change(harness):
-    from harness.alignment import contract_hash, validate_sealed_freeze
+    from harness.alignment import ArchitectureFreezeFacts, contract_hash, validate_sealed_freeze
     from harness.decision import reindex
     from test_decision import proposal
 
@@ -629,6 +661,8 @@ def test_cross_task_sealed_decision_does_not_false_contract_change(harness):
         document,
         decisions=decision.load_decisions(harness),
         boundary_refs={"interface": [], "permission": [], "persistence": []},
+        bootstrap_legacy_off=True,
+        architecture_facts=ArchitectureFreezeFacts("off", None, ()),
     )
 
     from harness.context.integrity import build_context

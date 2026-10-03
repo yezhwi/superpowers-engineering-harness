@@ -2,7 +2,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
 import yaml
+
+from harness.alignment import ArchitectureFreezeFacts
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -263,13 +266,60 @@ def test_align_status_rejects_persisted_proposed_decision(tmp_path):
     document["freeze"] = {"frozen": True, "frozen_at": "2026-09-18T00:00:00+00:00", "contract_hash": contract_hash(document)}
     harness = path / ".harness"
     (harness / "alignment.yaml").write_text(yaml.safe_dump(document))
-    validate_sealed_freeze(harness, document, decisions=decision.load_decisions(harness), boundary_refs={"interface": [], "permission": [], "persistence": []})
+    validate_sealed_freeze(
+        harness, document,
+        decisions=decision.load_decisions(harness),
+        boundary_refs={"interface": [], "permission": [], "persistence": []},
+        bootstrap_legacy_off=True,
+        architecture_facts=ArchitectureFreezeFacts("off", None, ()),
+    )
 
     result = cli(path, "align", "status")
 
     assert result.returncode == 1
     assert "Alignment: BLOCKED" in result.stdout
     assert "OPEN_DECISION" in result.stderr
+
+
+def _required_frozen_repo(tmp_path: Path) -> Path:
+    from test_alignment import complete_alignment
+
+    path = repo(tmp_path)
+    harness = path / ".harness"
+    source = path / "support.txt"
+    source.write_text("support")
+    document = complete_alignment()
+    document["task_id"] = "TASK-001"
+    (harness / "alignment.yaml").write_text(yaml.safe_dump(document))
+    gate = yaml.safe_load((harness / "gate.yaml").read_text())
+    gate["gate"]["architecture"]["mode"] = "required"
+    (harness / "gate.yaml").write_text(yaml.safe_dump(gate, sort_keys=False))
+    task = yaml.safe_load((harness / "current-task.yaml").read_text())
+    task["scope"]["modules"] = ["app"]
+    (harness / "current-task.yaml").write_text(yaml.safe_dump(task, sort_keys=False))
+    architecture = {
+        "version": 1,
+        "modules": [{"id": "app", "name": "App", "responsibility": "Run app.", "depends_on": [], "evidence": [{"type": "source", "path": "support.txt"}]}],
+        "ownership": [{"id": "OWN-001", "pattern": "support.txt", "kind": "support", "modules": []}],
+    }
+    (harness / "architecture.yaml").write_text(yaml.safe_dump(architecture, sort_keys=False))
+    frozen = cli(path, "align", "freeze")
+    assert frozen.returncode == 0, frozen.stderr
+    task["scope"].pop("modules")
+    (harness / "current-task.yaml").write_text(yaml.safe_dump(task, sort_keys=False))
+    return path
+
+
+@pytest.mark.parametrize("command", ["status", "diff"])
+def test_align_read_paths_halt_when_frozen_modules_are_removed(tmp_path, command):
+    path = _required_frozen_repo(tmp_path)
+
+    result = cli(path, "align", command)
+
+    assert result.returncode == 1
+    assert "POLICY: USER_AUTHORITY_REQUIRED" in result.stderr
+    assert "DIRECTIVE: HALT_AND_WAIT" in result.stderr
+    assert "CONTRACT_CHANGED" in result.stderr
 
 
 def test_align_diff_reports_unfrozen_contract(tmp_path):
@@ -301,6 +351,8 @@ def _freeze(path: Path, document: dict) -> None:
         document,
         decisions=load_decisions(harness),
         boundary_refs={"interface": [], "permission": [], "persistence": []},
+        bootstrap_legacy_off=True,
+        architecture_facts=ArchitectureFreezeFacts("off", None, ()),
     )
 
 
@@ -346,6 +398,8 @@ def test_align_diff_detects_accepted_option_change(tmp_path):
         document,
         decisions=load_decisions(harness),
         boundary_refs={"interface": [], "permission": [], "persistence": []},
+        bootstrap_legacy_off=True,
+        architecture_facts=ArchitectureFreezeFacts("off", None, ()),
     )
     body = yaml.safe_load((harness / "decisions" / f"{record['id']}.yaml").read_text())
     body["selected"]["option"] = "local"
@@ -379,6 +433,8 @@ def test_align_check_prints_blocked_open_loop_and_next_action(tmp_path):
         document,
         decisions=[],
         boundary_refs={"interface": [], "permission": [], "persistence": []},
+        bootstrap_legacy_off=True,
+        architecture_facts=ArchitectureFreezeFacts("off", None, ()),
     )
 
     result = cli(path, "align", "check")

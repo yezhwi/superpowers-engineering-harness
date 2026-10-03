@@ -859,6 +859,7 @@ def _experiment_status(experiment: str, baseline: dict, adaptive: dict) -> str:
     adaptive_precision_becomes_na = (
         baseline_precision != "not_applicable"
         and adaptive_precision == "not_applicable"
+        and b["diagnostic_precision"]["numerator"] > 0
     )
     if (
         adaptive_recall < baseline_recall

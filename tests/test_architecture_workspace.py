@@ -35,6 +35,26 @@ def records(*items: tuple[str, str]) -> tuple[ArchitectureChangeRecord, ...]:
     return tuple(ArchitectureChangeRecord(kind, path) for kind, path in items)
 
 
+def test_diff_layers_disable_external_diff_and_textconv(monkeypatch, tmp_path):
+    calls = []
+
+    def run(_root, *args):
+        if args[:2] == ("rev-parse", "--verify"):
+            return b"a" * 40 + b"\n"
+        if args[0] == "diff":
+            calls.append(args)
+            return b""
+        if args[:3] == ("ls-files", "--others", "--exclude-standard"):
+            return b""
+        raise AssertionError(args)
+
+    monkeypatch.setattr(workspace, "_run", run)
+
+    assert workspace.architecture_changes("base", tmp_path) == ()
+    assert len(calls) == 3
+    assert all("--no-ext-diff" in args and "--no-textconv" in args for args in calls)
+
+
 def test_adapter_collects_committed_cached_worktree_and_untracked_layers(tmp_path):
     repo, base = repository(tmp_path)
     (repo / "committed.py").write_text("committed = True\n")

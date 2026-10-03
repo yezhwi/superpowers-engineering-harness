@@ -165,20 +165,6 @@ class FileContextSource:
             )
         fast = task["risk"]["profile"] == "FAST"
         gate_document = self._document("gate.yaml", "gate.schema.json")
-        try:
-            architecture_assessment = architecture_gate.assess_architecture(
-                self.harness_dir,
-                task,
-                gate_document["gate"],
-                allow_preflight=True,
-            )
-        except architecture_gate.ArchitectureGateError as exc:
-            raise ContextBuildError("CONTEXT_SCHEMA_INVALID", str(exc)) from exc
-        architecture = (
-            architecture_document(architecture_assessment.model)
-            if architecture_assessment.model is not None
-            else None
-        )
         architecture_mode = (
             (gate_document["gate"].get("architecture") or {}).get("mode", "off")
         )
@@ -186,6 +172,25 @@ class FileContextSource:
             not fast
             and task["risk"].get("level") != "Q1"
             and architecture_mode == "required"
+        )
+        if architecture_enabled:
+            try:
+                architecture_assessment = architecture_gate.assess_architecture(
+                    self.harness_dir,
+                    task,
+                    gate_document["gate"],
+                    allow_preflight=True,
+                )
+            except architecture_gate.ArchitectureGateError as exc:
+                raise ContextBuildError("CONTEXT_SCHEMA_INVALID", str(exc)) from exc
+        else:
+            architecture_assessment = architecture_gate.ArchitectureAssessment(
+                (), None, (), ()
+            )
+        architecture = (
+            architecture_document(architecture_assessment.model)
+            if architecture_assessment.model is not None
+            else None
         )
         if architecture_enabled:
             if architecture is None:
@@ -357,6 +362,19 @@ class FileContextSource:
                     if item["kind"] == "persistence"
                 ),
             }
+            architecture_contract_changed = any(
+                blocker.code == "CONTRACT_CHANGED"
+                for blocker in architecture_assessment.blockers
+            )
+            architecture_facts = (
+                alignment.ArchitectureFreezeFacts(
+                    architecture_mode,
+                    architecture_assessment.sealed_fingerprint,
+                    architecture_assessment.declared_modules,
+                )
+                if architecture_enabled and not architecture_contract_changed
+                else None
+            )
             try:
                 drift = alignment.sealed_freeze_drift(
                     self.harness_dir,
@@ -364,11 +382,7 @@ class FileContextSource:
                     decisions=decisions,
                     boundary_refs=boundary_refs,
                     bootstrap_legacy_off=False,
-                    architecture_facts=alignment.ArchitectureFreezeFacts(
-                        architecture_mode,
-                        architecture_assessment.sealed_fingerprint,
-                        architecture_assessment.declared_modules,
-                    ),
+                    architecture_facts=architecture_facts,
                 )
             except alignment.AlignmentError as exc:
                 raise ContextBuildError("CONTEXT_SCHEMA_INVALID", str(exc)) from exc

@@ -163,13 +163,17 @@ def sealed_freeze_drift(
 ) -> list[AlignmentIssue]:
     """Compare seal by actual version; optionally publish missing legacy off seal."""
     validate_freeze(document)
-    facts = architecture_facts or ArchitectureFreezeFacts("off", None, ())
+    facts = architecture_facts
     legacy = _legacy_freeze_record(
         document, decisions=decisions, boundary_refs=boundary_refs
     )
     path = harness_dir / "alignment-freeze.yaml"
     if not source_access.exists(path):
-        if not bootstrap_legacy_off or facts.mode != "off":
+        if (
+            not bootstrap_legacy_off
+            or facts is None
+            or facts.mode != "off"
+        ):
             return [AlignmentIssue("CONTRACT_CHANGED")]
         try:
             validate(legacy, read_schema("alignment-freeze.schema.json"))
@@ -187,15 +191,16 @@ def sealed_freeze_drift(
         for key in ("task_id", "contract_hash", "decision_selections")
     ):
         return [AlignmentIssue("CONTRACT_CHANGED")]
-    if actual["version"] == 1:
-        if facts.mode != "off":
+    if facts is not None:
+        if actual["version"] == 1:
+            if facts.mode != "off":
+                return [AlignmentIssue("CONTRACT_CHANGED")]
+        elif (
+            actual["architecture_mode"] != facts.mode
+            or actual["architecture_fingerprint"] != facts.fingerprint
+            or sorted(actual["declared_modules"]) != sorted(facts.declared_modules)
+        ):
             return [AlignmentIssue("CONTRACT_CHANGED")]
-    elif (
-        actual["architecture_mode"] != facts.mode
-        or actual["architecture_fingerprint"] != facts.fingerprint
-        or sorted(actual["declared_modules"]) != sorted(facts.declared_modules)
-    ):
-        return [AlignmentIssue("CONTRACT_CHANGED")]
     codes = {
         "interface": "SCOPE_DRIFT_API",
         "permission": "SCOPE_DRIFT_PERMISSION",
@@ -216,8 +221,8 @@ def validate_sealed_freeze(
     *,
     decisions: list[dict],
     boundary_refs: dict,
-    bootstrap_legacy_off: bool = True,
-    architecture_facts: ArchitectureFreezeFacts | None = None,
+    bootstrap_legacy_off: bool,
+    architecture_facts: ArchitectureFreezeFacts | None,
 ) -> None:
     issues = sealed_freeze_drift(
         harness_dir,

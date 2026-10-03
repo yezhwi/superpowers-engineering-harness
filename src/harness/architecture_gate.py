@@ -108,20 +108,6 @@ def assess_architecture(
     git = task.get("git")
     if not isinstance(task_metadata, dict) or not isinstance(git, dict):
         raise ArchitectureGateError("ARCHITECTURE_TASK_INVALID")
-    artifact = harness_dir / "architecture.yaml"
-    if source_access.is_symlink(artifact):
-        raise ArchitectureGateError("ARCHITECTURE_SCHEMA_INVALID")
-    artifact_present = source_access.exists(artifact)
-    model = None
-    if artifact_present:
-        if not source_access.is_file(artifact):
-            raise ArchitectureGateError("ARCHITECTURE_SCHEMA_INVALID")
-        try:
-            model = load_architecture(harness_dir, required=True)
-        except ArchitectureError as exc:
-            raise ArchitectureGateError(str(exc)) from exc
-        assert model is not None
-
     if (
         seal is None
         or seal.get("version") != 2
@@ -143,6 +129,20 @@ def assess_architecture(
     declared = tuple(modules)
     if sorted(seal["declared_modules"]) != sorted(declared):
         return _contract_changed("declared Architecture modules changed")
+
+    artifact = harness_dir / "architecture.yaml"
+    if source_access.is_symlink(artifact):
+        raise ArchitectureGateError("ARCHITECTURE_SCHEMA_INVALID")
+    artifact_present = source_access.exists(artifact)
+    model = None
+    if artifact_present:
+        if not source_access.is_file(artifact):
+            raise ArchitectureGateError("ARCHITECTURE_SCHEMA_INVALID")
+        try:
+            model = load_architecture(harness_dir, required=True)
+        except ArchitectureError as exc:
+            raise ArchitectureGateError(str(exc)) from exc
+        assert model is not None
 
     if not artifact_present:
         return ArchitectureAssessment(
@@ -184,8 +184,6 @@ def assess_architecture(
         raise ArchitectureGateError("ARCHITECTURE_CHANGESET_INVALID") from exc
     current_paths = set(path_index)
     for module in model.modules:
-        if module.id not in set(seal["declared_modules"]):
-            continue
         for evidence in module.evidence:
             evidence_path = harness_dir.parent / evidence.path
             if source_access.declared_symlink_beneath(
@@ -232,7 +230,7 @@ def assess_architecture(
             blockers.append(
                 _block(
                     "ARCHITECTURE_OWNERSHIP_AMBIGUOUS",
-                    f"Architecture ownership is ambiguous: {path}",
+                    f"Architecture ownership is ambiguous ({', '.join(resolution.rule_ids)}): {path}",
                     f"path:{path}",
                 )
             )

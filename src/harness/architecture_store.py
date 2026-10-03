@@ -21,6 +21,7 @@ from harness.telemetry_lock import telemetry_lock
 
 _ARCHITECTURE_ARTIFACT = "architecture.yaml"
 _TASK_ARTIFACT = "current-task.yaml"
+_MAX_DECLARED_TASK_MODULES = 64
 
 
 def _load_yaml_bytes(content: bytes) -> object:
@@ -192,6 +193,8 @@ def mutate_architecture_scope(
         updated = current | {module_id} if action == "add" else current - {module_id}
         if updated == current:
             return False
+        if len(updated) > _MAX_DECLARED_TASK_MODULES:
+            raise ArchitectureError("ARCHITECTURE_SCOPE_INVALID")
         scope["modules"] = sorted(updated)
         content = yaml.safe_dump(task, sort_keys=False, allow_unicode=True).encode("utf-8")
         if content == original:

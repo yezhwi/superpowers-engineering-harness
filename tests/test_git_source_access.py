@@ -137,6 +137,8 @@ def test_adapter_rejects_nonquery_commands(harness, command):
     [
         (
             "diff",
+            "--no-ext-diff",
+            "--no-textconv",
             "--name-status",
             "--no-renames",
             "-z",
@@ -149,6 +151,8 @@ def test_adapter_rejects_nonquery_commands(harness, command):
         (
             "diff",
             "--cached",
+            "--no-ext-diff",
+            "--no-textconv",
             "--name-status",
             "--no-renames",
             "-z",
@@ -193,3 +197,27 @@ def test_adapter_accepts_only_fixed_architecture_queries(harness, command):
     result = run_git_query(harness.parent, command)
 
     assert result.returncode == 0
+
+
+def test_explicit_diff_safety_flags_are_not_duplicated(harness, monkeypatch):
+    from subprocess import CompletedProcess
+    from harness import git_query
+
+    captured = []
+
+    def run(command, **kwargs):
+        captured.append(command)
+        return CompletedProcess(command, 0)
+
+    monkeypatch.setattr(git_query.subprocess, "run", run)
+    git_query.run_git_query(
+        harness.parent,
+        (
+            "diff", "--no-ext-diff", "--no-textconv", "--name-status",
+            "--no-renames", "-z", "HEAD", "--", ".",
+            ":(exclude).harness", ":(exclude).harness/**",
+        ),
+    )
+
+    assert captured[0].count("--no-ext-diff") == 1
+    assert captured[0].count("--no-textconv") == 1

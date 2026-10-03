@@ -71,13 +71,19 @@ def _validate(args: tuple[str, ...]) -> None:
         ):
             return
         if (
-            len(rest) == 8
-            and rest[:3] == ("--name-status", "--no-renames", "-z")
-            and (
-                rest[3] == "HEAD"
-                or re.fullmatch(r"[0-9a-f]{40,64}\.\.HEAD", rest[3]) is not None
+            len(rest) == 10
+            and rest[:5] == (
+                "--no-ext-diff",
+                "--no-textconv",
+                "--name-status",
+                "--no-renames",
+                "-z",
             )
-            and rest[4:] == architecture_pathspec
+            and (
+                rest[5] == "HEAD"
+                or re.fullmatch(r"[0-9a-f]{40,64}\.\.HEAD", rest[5]) is not None
+            )
+            and rest[6:] == architecture_pathspec
         ):
             return
     raise GitQueryError("GIT_QUERY_INVALID")
@@ -95,7 +101,7 @@ def run_git_query(
     args = tuple(args)
     _validate(args)
     command = ["git", "-c", "core.fsmonitor=false", *args]
-    if args[0] == "diff":
+    if args[0] == "diff" and "--no-ext-diff" not in args:
         command[4:4] = ["--no-ext-diff", "--no-textconv"]
     with TemporaryFile() as stdout, TemporaryFile() as stderr:
         result = subprocess.run(

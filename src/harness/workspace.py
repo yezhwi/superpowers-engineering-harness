@@ -310,6 +310,8 @@ def architecture_changes(
                     root,
                     "diff",
                     *prefix,
+                    "--no-ext-diff",
+                    "--no-textconv",
                     "--name-status",
                     "--no-renames",
                     "-z",

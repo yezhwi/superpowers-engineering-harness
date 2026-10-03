@@ -583,12 +583,48 @@ def test_required_planned_entry_rejects_missing_seal_before_architecture_read(tm
     assert yaml.safe_load((harness / "current-task.yaml").read_text())["state"] == "PLANNED"
 
 
+def test_required_verification_entry_halts_when_frozen_modules_are_removed(tmp_path):
+    repo = standard_repo_in_state(tmp_path)
+    write_minimal_decision(repo)
+    write_documents(repo, valid=True)
+    write_alignment(repo)
+    write_plan_artifacts(repo)
+    harness = repo / ".harness"
+    gate = yaml.safe_load((harness / "gate.yaml").read_text())
+    gate["gate"]["architecture"]["mode"] = "required"
+    (harness / "gate.yaml").write_text(yaml.safe_dump(gate, sort_keys=False))
+    task_path = harness / "current-task.yaml"
+    task = yaml.safe_load(task_path.read_text())
+    task["scope"]["modules"] = ["app"]
+    task_path.write_text(yaml.safe_dump(task, sort_keys=False))
+    (repo / "support.txt").write_text("support")
+    (harness / "architecture.yaml").write_text(yaml.safe_dump({
+        "version": 1,
+        "modules": [{"id": "app", "name": "App", "responsibility": "Run app.", "depends_on": [], "evidence": [{"type": "source", "path": "support.txt"}]}],
+        "ownership": [{"id": "OWN-001", "pattern": "support.txt", "kind": "support", "modules": []}],
+    }, sort_keys=False))
+    assert cli(repo, "align", "freeze").returncode == 0
+    entered = cli(repo, "transition", "IMPLEMENTING")
+    assert entered.returncode == 0, entered.stderr
+    task = yaml.safe_load(task_path.read_text())
+    task["scope"].pop("modules")
+    task_path.write_text(yaml.safe_dump(task, sort_keys=False))
+
+    result = cli(repo, "transition", "VERIFYING")
+
+    assert result.returncode == 1
+    assert "POLICY: USER_AUTHORITY_REQUIRED" in result.stderr
+    assert "DIRECTIVE: HALT_AND_WAIT" in result.stderr
+    assert "CONTRACT_CHANGED" in result.stderr
+    assert yaml.safe_load(task_path.read_text())["state"] == "IMPLEMENTING"
+
+
 def test_standard_entry_live_contract_change_halts(tmp_path):
     repo = standard_repo_in_state(tmp_path)
     write_minimal_decision(repo)
     write_documents(repo, valid=True)
     write_alignment(repo, frozen=True)
-    from harness.alignment import contract_hash, validate_sealed_freeze
+    from harness.alignment import ArchitectureFreezeFacts, contract_hash, validate_sealed_freeze
 
     harness = repo / ".harness"
     document = yaml.safe_load((harness / "alignment.yaml").read_text())
@@ -597,6 +633,8 @@ def test_standard_entry_live_contract_change_halts(tmp_path):
         document,
         decisions=[],
         boundary_refs={"interface": [], "permission": [], "persistence": []},
+        bootstrap_legacy_off=True,
+        architecture_facts=ArchitectureFreezeFacts("off", None, ()),
     )
     document["goal"]["summary"] = "rewritten after the seal"
     document["freeze"]["contract_hash"] = contract_hash(document)

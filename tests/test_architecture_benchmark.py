@@ -780,6 +780,39 @@ def test_diagnostic_precision_becoming_not_applicable_is_regression(tmp_path):
     assert report["status"] == "FAIL"
 
 
+def test_removing_only_false_diagnostics_is_not_a_regression(tmp_path):
+    fixture = drift_fixture()
+    expected = {
+        "code": "ARCHITECTURE_OWNERSHIP_UNRESOLVED",
+        "source": "path:src/expected.py",
+    }
+    fixture["expected"]["diagnostics"] = [expected]
+    fixtures = tmp_path / "fixtures"
+    write_fixture(fixtures / "drift", fixture)
+    wrong = {
+        "code": "ARCHITECTURE_OWNERSHIP_AMBIGUOUS",
+        "source": "path:src/wrong.py",
+    }
+    blockers = fixture["expected"]["blockers"]
+    write_artifact(
+        tmp_path / "baseline", fixture, "baseline",
+        repeated({"blocked": True, "blockers": blockers, "diagnostics": [wrong]}),
+    )
+    write_artifact(
+        tmp_path / "adaptive", fixture, "adaptive",
+        repeated({"blocked": True, "blockers": blockers, "diagnostics": []}),
+    )
+
+    report = compare_architecture_experiment(
+        fixtures, tmp_path / "baseline", tmp_path / "adaptive",
+        experiment="drift_detection",
+    )
+
+    assert report["baseline"]["metrics"]["diagnostic_precision"]["numerator"] == 0
+    assert report["adaptive"]["metrics"]["diagnostic_precision"]["value"] == "not_applicable"
+    assert report["status"] == "CORRECTNESS_PRESERVED"
+
+
 def test_improved_nonperfect_diagnostic_precision_is_not_a_regression(tmp_path):
     fixture = drift_fixture()
     expected_diagnostic = {

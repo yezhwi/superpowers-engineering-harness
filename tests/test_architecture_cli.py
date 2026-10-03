@@ -509,6 +509,35 @@ def test_scope_add_on_legacy_task_without_scope_creates_schema_valid_scope(tmp_p
     validate_schema(updated, "task.schema.json", task_path)
 
 
+def test_scope_add_rejects_65th_module_without_writing_task(tmp_path):
+    repo = repository(tmp_path)
+    harness = repo / ".harness"
+    document = architecture_document()
+    document["modules"] = [
+        {
+            "id": f"m{index:03d}",
+            "name": f"Module {index}",
+            "responsibility": "Own bounded behavior.",
+            "depends_on": [],
+            "evidence": [{"type": "source", "path": "src/app.py"}],
+        }
+        for index in range(65)
+    ]
+    document["ownership"][0]["modules"] = ["m000"]
+    architecture_store.publish_architecture(harness, candidate(tmp_path, document))
+    task_path = harness / "current-task.yaml"
+    task = yaml.safe_load(task_path.read_text())
+    task["scope"]["modules"] = [f"m{index:03d}" for index in range(64)]
+    task_path.write_text(yaml.safe_dump(task, sort_keys=False))
+    before = task_path.read_bytes()
+
+    with pytest.raises(ArchitectureError) as exc:
+        architecture_store.mutate_architecture_scope(harness, "add", "m064")
+
+    assert exc.value.code == "ARCHITECTURE_SCOPE_INVALID"
+    assert task_path.read_bytes() == before
+
+
 def test_scope_mutation_in_implementing_has_zero_writes(tmp_path):
     repo = repository(tmp_path)
     harness = repo / ".harness"

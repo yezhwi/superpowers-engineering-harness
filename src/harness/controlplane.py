@@ -433,12 +433,9 @@ def _architecture_freeze_facts(
             raise alignment.AlignmentError("CONTRACT_CHANGED")
     scope = task.get("scope") or {}
     if "modules" not in scope:
-        code = (
-            "CONTRACT_CHANGED"
-            if require_existing_v2
-            else "ARCHITECTURE_SCOPE_DECLARATION_REQUIRED"
-        )
-        raise ArchitectureError(code)
+        if require_existing_v2:
+            raise alignment.AlignmentError("CONTRACT_CHANGED")
+        raise ArchitectureError("ARCHITECTURE_SCOPE_DECLARATION_REQUIRED")
     model = architecture_store.load_architecture(harness_dir, required=True)
     assert model is not None
     declared = tuple(scope["modules"])
@@ -667,7 +664,9 @@ def cmd_align(command: str) -> int:
             )
         except (alignment.AlignmentError, decision.DecisionError, ValueError) as exc:
             frozen_hash = document["freeze"].get("contract_hash")
-            if frozen_hash and frozen_hash != alignment.contract_hash(document):
+            if (
+                frozen_hash and frozen_hash != alignment.contract_hash(document)
+            ) or str(exc) == "CONTRACT_CHANGED":
                 _print_authority_halt("CONTRACT_CHANGED")
             print("Alignment: BLOCKED")
             print(str(exc), file=sys.stderr)
@@ -698,7 +697,9 @@ def cmd_align(command: str) -> int:
             )
         except alignment.AlignmentError as exc:
             stored = document["freeze"].get("contract_hash")
-            if stored and stored != alignment.contract_hash(document):
+            if (
+                stored and stored != alignment.contract_hash(document)
+            ) or str(exc) == "CONTRACT_CHANGED":
                 _print_authority_halt("CONTRACT_CHANGED")
                 return 1
             print(str(exc), file=sys.stderr)

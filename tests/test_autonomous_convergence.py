@@ -337,7 +337,7 @@ def test_schema_rejects_malformed_convergence_metadata(tmp_path, malformed_conve
 
 
 def _seal_alignment(h: Path, *, summary: str = "original goal") -> dict:
-    from harness.alignment import contract_hash, validate_sealed_freeze
+    from harness.alignment import ArchitectureFreezeFacts, contract_hash, validate_sealed_freeze
 
     document = {
         "version": 1,
@@ -369,6 +369,8 @@ def _seal_alignment(h: Path, *, summary: str = "original goal") -> dict:
         document,
         decisions=[],
         boundary_refs={"interface": [], "permission": [], "persistence": []},
+        bootstrap_legacy_off=True,
+        architecture_facts=ArchitectureFreezeFacts("off", None, ()),
     )
     return document
 
@@ -906,7 +908,7 @@ def test_real_drift_workflow_fails_and_preserves_implementing(tmp_path):
 )
 def test_scope_drift_codes_reject_and_preserve_implementing(tmp_path, boundary_key, boundary_val, expected_code):
     """Transition VERIFYING rejects and preserves IMPLEMENTING state on each SCOPE_DRIFT_* code."""
-    from harness.alignment import contract_hash, validate_sealed_freeze
+    from harness.alignment import ArchitectureFreezeFacts, contract_hash, validate_sealed_freeze
 
     h = make_repo(tmp_path, state="IMPLEMENTING")
     task = yaml.safe_load((h / "current-task.yaml").read_text())
@@ -959,6 +961,8 @@ def test_scope_drift_codes_reject_and_preserve_implementing(tmp_path, boundary_k
         alignment_doc,
         decisions=[],
         boundary_refs={"interface": [], "permission": [], "persistence": []},
+        bootstrap_legacy_off=True,
+        architecture_facts=ArchitectureFreezeFacts("off", None, ()),
     )
 
     # Induce boundary drift in impact.yaml
@@ -1109,7 +1113,7 @@ def test_align_check_on_terminal_state_never_mutates_state_or_convergence(tmp_pa
 def test_mixed_open_decision_and_contract_changed(tmp_path):
     """End-to-end integration test: mixed OPEN_DECISION + CONTRACT_CHANGED -> align check stops and is read-only."""
     from harness import decision
-    from harness.alignment import contract_hash, validate_sealed_freeze
+    from harness.alignment import ArchitectureFreezeFacts, contract_hash, validate_sealed_freeze
 
     h = make_repo(tmp_path, state="IMPLEMENTING")
 
@@ -1158,6 +1162,8 @@ def test_mixed_open_decision_and_contract_changed(tmp_path):
         alignment_doc,
         decisions=decision.load_decisions(h),
         boundary_refs={"interface": [], "permission": [], "persistence": []},
+        bootstrap_legacy_off=True,
+        architecture_facts=ArchitectureFreezeFacts("off", None, ()),
     )
 
     # Modify goal summary to also cause CONTRACT_CHANGED and update contract_hash so freeze is valid

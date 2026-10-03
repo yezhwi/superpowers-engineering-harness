@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from harness.alignment import AlignmentError, load_alignment
+from harness.alignment import ArchitectureFreezeFacts, AlignmentError, load_alignment
 
 
 def complete_alignment() -> dict:
@@ -415,6 +415,16 @@ def test_v2_drift_compares_architecture_and_existing_contract_facts(tmp_path):
     assert issues == [AlignmentIssue("SCOPE_DRIFT_PERMISSION", "DEC-001")]
 
 
+def test_validate_sealed_freeze_requires_explicit_architecture_bootstrap_policy():
+    import inspect
+    from harness.alignment import validate_sealed_freeze
+
+    parameters = inspect.signature(validate_sealed_freeze).parameters
+
+    assert parameters["bootstrap_legacy_off"].default is inspect.Parameter.empty
+    assert parameters["architecture_facts"].default is inspect.Parameter.empty
+
+
 def test_sealed_freeze_bootstraps_once_and_rejects_self_hash_rewrite(tmp_path):
     from harness.alignment import contract_hash, validate_sealed_freeze
 
@@ -425,17 +435,27 @@ def test_sealed_freeze_bootstraps_once_and_rejects_self_hash_rewrite(tmp_path):
         "frozen_at": "2026-09-18T00:00:00+00:00",
         "contract_hash": contract_hash(document),
     }
-    validate_sealed_freeze(tmp_path, document, decisions=[], boundary_refs={
-        "interface": [], "permission": [], "persistence": []
-    })
+    validate_sealed_freeze(
+        tmp_path,
+        document,
+        decisions=[],
+        boundary_refs={"interface": [], "permission": [], "persistence": []},
+        bootstrap_legacy_off=True,
+        architecture_facts=ArchitectureFreezeFacts("off", None, ()),
+    )
     assert (tmp_path / "alignment-freeze.yaml").exists()
 
     document["goal"]["summary"] = "rewritten"
     document["freeze"]["contract_hash"] = contract_hash(document)
     with pytest.raises(Exception, match="CONTRACT_CHANGED"):
-        validate_sealed_freeze(tmp_path, document, decisions=[], boundary_refs={
-            "interface": [], "permission": [], "persistence": []
-        })
+        validate_sealed_freeze(
+            tmp_path,
+            document,
+            decisions=[],
+            boundary_refs={"interface": [], "permission": [], "persistence": []},
+            bootstrap_legacy_off=True,
+            architecture_facts=ArchitectureFreezeFacts("off", None, ()),
+        )
 
 
 def test_sealed_freeze_rejects_accepted_decision_option_change(tmp_path):
@@ -447,11 +467,19 @@ def test_sealed_freeze_rejects_accepted_decision_option_change(tmp_path):
     document["freeze"] = {"frozen": True, "frozen_at": "2026-09-18T00:00:00+00:00", "contract_hash": contract_hash(document)}
     choices = [{"id": "DEC-001", "status": "ACCEPTED", "selected": {"option": "one"}}]
     refs = {"interface": [], "permission": [], "persistence": []}
-    validate_sealed_freeze(tmp_path, document, decisions=choices, boundary_refs=refs)
+    validate_sealed_freeze(
+        tmp_path, document, decisions=choices, boundary_refs=refs,
+        bootstrap_legacy_off=True,
+        architecture_facts=ArchitectureFreezeFacts("off", None, ()),
+    )
 
     choices[0]["selected"]["option"] = "two"
     with pytest.raises(AlignmentError, match="CONTRACT_CHANGED"):
-        validate_sealed_freeze(tmp_path, document, decisions=choices, boundary_refs=refs)
+        validate_sealed_freeze(
+            tmp_path, document, decisions=choices, boundary_refs=refs,
+            bootstrap_legacy_off=True,
+            architecture_facts=ArchitectureFreezeFacts("off", None, ()),
+        )
 
 
 def test_sealed_freeze_rejects_added_or_removed_typed_boundary(tmp_path):
@@ -461,12 +489,21 @@ def test_sealed_freeze_rejects_added_or_removed_typed_boundary(tmp_path):
     document["task_id"] = "TASK-001"
     document["freeze"] = {"frozen": True, "frozen_at": "2026-09-18T00:00:00+00:00", "contract_hash": contract_hash(document)}
     original = {"interface": [], "permission": ["DEC-001"], "persistence": []}
-    validate_sealed_freeze(tmp_path, document, decisions=[], boundary_refs=original)
+    validate_sealed_freeze(
+        tmp_path, document, decisions=[], boundary_refs=original,
+        bootstrap_legacy_off=True,
+        architecture_facts=ArchitectureFreezeFacts("off", None, ()),
+    )
 
     with pytest.raises(AlignmentError, match="SCOPE_DRIFT_PERMISSION"):
-        validate_sealed_freeze(tmp_path, document, decisions=[], boundary_refs={
-            "interface": [], "permission": ["DEC-002"], "persistence": []
-        })
+        validate_sealed_freeze(
+            tmp_path,
+            document,
+            decisions=[],
+            boundary_refs={"interface": [], "permission": ["DEC-002"], "persistence": []},
+            bootstrap_legacy_off=True,
+            architecture_facts=ArchitectureFreezeFacts("off", None, ()),
+        )
 
 
 def test_sealed_freeze_reports_each_changed_boundary(tmp_path):
@@ -482,7 +519,7 @@ def test_sealed_freeze_reports_each_changed_boundary(tmp_path):
         decisions=[],
         boundary_refs=initial,
         bootstrap_legacy_off=True,
-        architecture_facts=None,
+        architecture_facts=ArchitectureFreezeFacts("off", None, ()),
     ) == []
 
     assert [(issue.code, issue.subject_id) for issue in sealed_freeze_drift(

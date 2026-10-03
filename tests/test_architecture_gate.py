@@ -140,7 +140,7 @@ def test_off_downgrade_from_required_seal_is_contract_change_before_artifact(tmp
     assert assessment.blockers[0].source == "artifact:.harness/alignment-freeze.yaml"
 
 
-def test_required_mode_validates_malformed_artifact_before_off_seal_mismatch(tmp_path):
+def test_required_mode_returns_contract_change_before_malformed_artifact(tmp_path):
     from harness import architecture_gate
 
     _root, harness, task, gate = fixture(tmp_path)
@@ -152,13 +152,12 @@ def test_required_mode_validates_malformed_artifact_before_off_seal_mismatch(tmp
     seal_path.write_text(yaml.safe_dump(seal))
     (harness / "architecture.yaml").write_text("malformed: [")
 
-    with pytest.raises(
-        architecture_gate.ArchitectureGateError,
-        match="ARCHITECTURE_SCHEMA_INVALID",
-    ):
-        architecture_gate.assess_architecture(
-            harness, task, gate, allow_preflight=True
-        )
+    assessment = architecture_gate.assess_architecture(
+        harness, task, gate, allow_preflight=True
+    )
+
+    assert assessment.blockers[0].code == "CONTRACT_CHANGED"
+    assert assessment.blockers[0].source == "artifact:.harness/alignment-freeze.yaml"
 
 
 def test_scope_invalid_evidence_invalid_unresolved_and_ambiguous_blockers(tmp_path):
@@ -195,10 +194,16 @@ def test_scope_invalid_evidence_invalid_unresolved_and_ambiguous_blockers(tmp_pa
     (harness / "alignment-freeze.yaml").write_text(yaml.safe_dump(seal))
     (root / "src/app.py").write_text("changed\n")
     assessment = architecture_gate.assess_architecture(harness, task, gate, allow_preflight=True)
-    assert any(b.code == "ARCHITECTURE_OWNERSHIP_AMBIGUOUS" and b.source == "path:src/app.py" for b in assessment.blockers)
+    ambiguous = next(
+        b for b in assessment.blockers
+        if b.code == "ARCHITECTURE_OWNERSHIP_AMBIGUOUS"
+        and b.source == "path:src/app.py"
+    )
+    assert "OWN-001" in ambiguous.message
+    assert "OWN-002" in ambiguous.message
 
 
-def test_gate_validates_evidence_only_for_frozen_declared_modules(tmp_path):
+def test_gate_validates_evidence_for_every_module_in_frozen_model(tmp_path):
     from harness import architecture_gate
     from harness.architecture import architecture_fingerprint, load_architecture_document
 
@@ -216,7 +221,11 @@ def test_gate_validates_evidence_only_for_frozen_declared_modules(tmp_path):
 
     assessment = architecture_gate.assess_architecture(harness, task, gate, allow_preflight=True)
 
-    assert not any(b.code == "ARCHITECTURE_EVIDENCE_INVALID" for b in assessment.blockers)
+    assert any(
+        b.code == "ARCHITECTURE_EVIDENCE_INVALID"
+        and b.source == "path:src/missing.py"
+        for b in assessment.blockers
+    )
 
 
 def test_evidence_symlink_swap_during_metadata_check_fails_closed(tmp_path, monkeypatch):
