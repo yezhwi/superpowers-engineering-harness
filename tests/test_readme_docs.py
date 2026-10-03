@@ -64,6 +64,9 @@ def test_npm_pack_contains_core_skill_and_linked_docs():
     )
     paths = {item["path"] for item in json.loads(result.stdout)[0]["files"]}
 
+    metadata = json.loads(result.stdout)[0]
+    assert metadata["version"] == "0.3.0"
+    assert "CHANGELOG.md" in paths
     assert "skills/engineering-harness/SKILL.md" in paths
     assert "docs/architecture.md" in paths
     assert (
@@ -75,6 +78,7 @@ def test_npm_pack_contains_core_skill_and_linked_docs():
         in paths
     )
     assert "docs/superpowers/reports/v030-architecture-benchmark-template.md" in paths
+    assert not any(path.startswith("benchmarks/architecture/") for path in paths)
     assert not any("Architecture-Awareness" in path for path in paths)
 
 
