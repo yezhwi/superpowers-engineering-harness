@@ -24,7 +24,10 @@ from .plan_execution import (
 from .schema_resources import read_schema
 from .telemetry_lock import telemetry_lock
 from .transaction import atomic_write
-from .workspace import changed_paths_since, protected_paths_fingerprint
+from .workspace import (
+    changed_paths_since,
+    protected_paths_fingerprint,
+)
 from .workspace import snapshot as workspace_snapshot
 
 _OPTIONAL_ITEM_LISTS = (
@@ -448,14 +451,16 @@ def _manual_cases_are_covered(
     return True
 
 
-def _automated_cases_are_covered(
+def _missing_automated_case_nodes(
     harness_dir: Path,
     test_case_refs: list[str],
     evidence_refs: list[str],
     qualified_cases: dict[str, dict],
     head: str,
     workspace: str,
-) -> bool:
+) -> list[tuple[str, str]]:
+    records = []
+    missing = []
     records = [
         project_evidence(evidence_path(harness_dir, reference), head, workspace).record
         for reference in evidence_refs
@@ -472,8 +477,9 @@ def _automated_cases_are_covered(
                 and command_covers_test(record.get("command") or "", node_id)
                 for record in records
             ):
-                return False
-    return True
+                missing.append((reference, node_id))
+    return missing
+
 
 
 def _supersession_issue(plan: dict, items: dict) -> tuple[str, str] | None:
@@ -566,7 +572,9 @@ def _validate_p0_projection(
             task,
             plan,
             _changed_paths=changed_paths_since,
-            _protected_fingerprint=protected_paths_fingerprint,
+            _protected_fingerprint=(
+                None if user_changes.get("version") == 2 else protected_paths_fingerprint
+            ),
         )
         protected_changed = surface_facts.protected_fingerprint_changed
         changed_surfaces = set(surface_facts.usable)
@@ -670,7 +678,14 @@ def _validate_p0_projection(
                 GateBlocker(
                     "PLAN_PROOF_MISSING",
                     "verification",
-                    "current proof does not match latest accepted receipt",
+                    "current proof does not match latest accepted receipt; refresh: "
+                    + "harness plan refresh-proof "
+                    + item_id
+                    + " "
+                    + " ".join(
+                        f"--evidence {reference}"
+                        for reference in record.get("evidence_refs", [])
+                    ),
                     source=item_id,
                     recover_to="VERIFYING",
                 )
@@ -733,20 +748,17 @@ def _validate_p0_projection(
             check_proof
             and record["status"] == "COMPLETE"
             and item.get("test_case_refs", [])
-            and not _automated_cases_are_covered(
-                harness_dir,
-                item["test_case_refs"],
-                record["evidence_refs"],
-                qualified_cases,
-                head,
-                workspace,
-            )
+            and (missing_nodes := _missing_automated_case_nodes(
+                harness_dir, item["test_case_refs"], record["evidence_refs"],
+                qualified_cases, head, workspace,
+            ))
         ):
             blockers.append(
                 GateBlocker(
                     "PLAN_PROOF_MISSING",
                     "verification",
-                    "automated case lacks item-owned node coverage",
+                    "automated case lacks item-owned node coverage: "
+                    + ", ".join(f"{reference} -> {node}" for reference, node in missing_nodes),
                     source=item_id,
                     recover_to="VERIFYING",
                 )
@@ -1153,11 +1165,14 @@ def _proof_transition_payload(
         head=before.head,
         workspace=before.fingerprint,
     )
+    prior = replay.items.get(request.item_id, {})
     record = {"status": "COMPLETE"}
     if request.evidence_refs:
         record["evidence_refs"] = list(request.evidence_refs)
     if request.surface_refs:
         record["surface_refs"] = list(request.surface_refs)
+    elif action == "REFRESH_PROOF":
+        record["surface_refs"] = list(prior.get("surface_refs", []))
     blockers = _validate_p0_projection(
         harness_dir,
         task,
@@ -1178,12 +1193,12 @@ def _proof_transition_payload(
         "to": "COMPLETE",
         "action": action,
         "evidence_refs": list(request.evidence_refs),
-        "surface_refs": list(request.surface_refs),
+        "surface_refs": list(record.get("surface_refs", [])),
         "proof_receipt": {
             "head": before.head,
             "workspace": before.fingerprint,
             "evidence": evidence,
-            "surface_refs": list(request.surface_refs),
+            "surface_refs": list(record.get("surface_refs", [])),
         },
     }
 

@@ -51,23 +51,29 @@ def test_select_unique_minimum_cover_returns_sorted_multi_candidate_cover():
     assert selected == ("a-first", "m-middle", "z-last")
 
 
-def test_select_unique_minimum_cover_rejects_equal_minimum_tie():
+def test_select_unique_minimum_cover_folds_equal_masks_across_identities():
+    candidates = tuple(
+        EvidenceCandidate(f"unit-test-{index:012x}", 1) for index in range(17)
+    ) + (EvidenceCandidate("unit-test-ffffffffffff-3", 1),)
+    assert select_unique_minimum_cover(1, candidates) == ("unit-test-ffffffffffff-3",)
+    assert select_unique_minimum_cover(1, tuple(reversed(candidates))) == (
+        "unit-test-ffffffffffff-3",
+    )
+
+
+def test_select_unique_minimum_cover_folds_duplicate_coverage_tie():
+    assert select_unique_minimum_cover(
+        0b11, (candidate("a", 0), candidate("b", 0), candidate("c", 1))
+    ) == ("a", "c")
+
+
+def test_select_unique_minimum_cover_rejects_distinct_minimum_covers():
     with pytest.raises(PlanAutomationError) as error:
         select_unique_minimum_cover(
-            0b11,
-            (candidate("a", 0, 1), candidate("b", 0, 1)),
+            0b111,
+            (candidate("a", 0, 1), candidate("b", 2),
+             candidate("c", 0), candidate("d", 1, 2)),
         )
-
-    assert error.value.code == "PLAN_AUTO_PROOF_AMBIGUOUS"
-
-
-def test_select_unique_minimum_cover_rejects_duplicate_coverage_tie():
-    with pytest.raises(PlanAutomationError) as error:
-        select_unique_minimum_cover(
-            0b11,
-            (candidate("a", 0), candidate("b", 0), candidate("c", 1)),
-        )
-
     assert error.value.code == "PLAN_AUTO_PROOF_AMBIGUOUS"
 
 
@@ -90,7 +96,7 @@ def test_select_unique_minimum_cover_enforces_closed_limits():
     with pytest.raises(PlanAutomationError) as candidates_error:
         select_unique_minimum_cover(
             1,
-            tuple(candidate(f"e-{index:02d}", 0) for index in range(17)),
+            tuple(EvidenceCandidate(f"e-{index:02d}", index + 1) for index in range(17)),
         )
     with pytest.raises(PlanAutomationError) as atoms_error:
         select_unique_minimum_cover(
@@ -280,6 +286,23 @@ def test_derive_auto_proof_fails_closed_on_malformed_present_evidence(tmp_path):
         )
 
 
+def test_minimum_cover_folds_equivalent_receipts_before_candidate_limit():
+    from harness.plan_automation import EvidenceCandidate, select_unique_minimum_cover
+
+    result = select_unique_minimum_cover(
+        1,
+        tuple(
+            EvidenceCandidate(
+                "unit-test-aaaaaaaaaaaa" if index == 1 else f"unit-test-aaaaaaaaaaaa-{index}",
+                1,
+            )
+            for index in range(1, 18)
+        ),
+    )
+
+    assert result == ("unit-test-aaaaaaaaaaaa-17",)
+
+
 def test_derive_auto_proof_rejects_nonempty_refs_with_zero_atoms(tmp_path):
     harness_dir = automation_harness(tmp_path, strategy="unit", tests=[])
     item = {"id": "P-001", "test_case_refs": ["REQ-001/TC-001"]}
@@ -297,6 +320,44 @@ def test_derive_auto_proof_rejects_nonempty_refs_with_zero_atoms(tmp_path):
     assert error.value.code == "PLAN_PROOF_MISSING"
 
 
+def test_mechanical_surface_facts_v1_default_preserves_legacy_baseline(tmp_path):
+    from test_workspace import committed_repo
+    from harness.workspace import protected_paths_fingerprint
+
+    repo = committed_repo(tmp_path)
+    (repo / "tracked.py").write_text("value = 2\n")
+    task = {
+        "git": {"base_commit": "HEAD"},
+        "risk": {"user_changes": {
+            "paths": ["tracked.py"],
+            "fingerprint": protected_paths_fingerprint(("tracked.py",), repo),
+        }},
+    }
+    plan = {"items": [{"surfaces": ["tracked.py"]}]}
+
+    facts = mechanical_surface_facts(task, plan, repo_root=repo)
+
+    assert not facts.protected_fingerprint_changed
+    assert not facts.usable
+
+
+def test_mechanical_surface_facts_v1_injected_callback_receives_paths():
+    observed = []
+
+    def fingerprint(paths):
+        observed.append(paths)
+        return "baseline"
+
+    facts = mechanical_surface_facts(
+        {"risk": {"user_changes": {"paths": ["b.py", "a.py"], "fingerprint": "baseline"}}},
+        {"items": []},
+        _protected_fingerprint=fingerprint,
+    )
+
+    assert observed == [("a.py", "b.py")]
+    assert not facts.protected_fingerprint_changed
+
+
 def test_mechanical_surface_facts_filters_unchanged_protected_paths(monkeypatch):
     from harness import plan_automation
 
@@ -307,7 +368,7 @@ def test_mechanical_surface_facts_filters_unchanged_protected_paths(monkeypatch)
     )
     monkeypatch.setattr(
         plan_automation,
-        "protected_paths_fingerprint",
+        "protected_user_changes_fingerprint",
         lambda *_args, **_kwargs: "sha256:same",
     )
     task = {
@@ -341,7 +402,7 @@ def test_mechanical_surface_facts_retains_protected_paths_after_divergence(monke
     )
     monkeypatch.setattr(
         plan_automation,
-        "protected_paths_fingerprint",
+        "protected_user_changes_fingerprint",
         lambda *_args, **_kwargs: "sha256:changed",
     )
     task = {

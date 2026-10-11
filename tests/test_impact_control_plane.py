@@ -69,6 +69,57 @@ def test_impact_adopted_path_enters_scope_but_protected_path_does_not(tmp_path):
     assert "docs/user.md" not in scope["effective_scope"]
 
 
+def test_impact_adopt_protected_v2_path_updates_scope_and_snapshot(tmp_path):
+    setup(tmp_path)
+    task_path = tmp_path / ".harness/current-task.yaml"
+    task = yaml.safe_load(task_path.read_text())
+    task["scope"] = {"owned_paths": [], "protected_user_paths": ["src/x.py"]}
+    task["risk"] = {
+        "level": "Q1",
+        "profile": "FAST",
+        "dimensions": {"scope": "low", "contract": "none", "data": "none", "authorization": "none", "security": "none", "concurrency": "none", "deployment": "none"},
+        "escalation_history": [],
+        "user_changes": {"version": 2, "paths": ["src/x.py"], "path_fingerprints": {"src/x.py": "sha256:" + "a" * 64}, "fingerprint": "sha256:" + "b" * 64},
+    }
+    task_path.write_text(yaml.safe_dump(task))
+
+    assert cli(tmp_path, "impact", "adopt-path", "src/x.py").returncode == 0
+
+    adopted = yaml.safe_load(task_path.read_text())
+    assert adopted["scope"] == {"owned_paths": ["src/x.py"], "protected_user_paths": []}
+    assert adopted["risk"]["user_changes"]["paths"] == []
+    assert adopted["risk"]["user_changes"]["path_fingerprints"] == {}
+
+
+def test_impact_adopt_rejects_stale_v1_snapshot_without_writing(tmp_path):
+    setup(tmp_path)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=tmp_path, check=True)
+    user_path = tmp_path / "src" / "x.py"
+    user_path.parent.mkdir()
+    user_path.write_text("value = 1\n")
+    subprocess.run(["git", "add", "src/x.py"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-qm", "base"], cwd=tmp_path, check=True)
+    user_path.write_text("value = 2\n")
+    task_path = tmp_path / ".harness/current-task.yaml"
+    task = yaml.safe_load(task_path.read_text())
+    task["scope"] = {"owned_paths": [], "protected_user_paths": ["src/x.py"]}
+    task["risk"] = {
+        "level": "Q1", "profile": "FAST",
+        "dimensions": {"scope": "low", "contract": "none", "data": "none", "authorization": "none", "security": "none", "concurrency": "none", "deployment": "none"},
+        "escalation_history": [],
+        "user_changes": {"paths": ["src/x.py"], "fingerprint": "sha256:" + "0" * 64},
+    }
+    task_path.write_text(yaml.safe_dump(task))
+    before = task_path.read_bytes()
+
+    result = cli(tmp_path, "impact", "adopt-path", "src/x.py")
+
+    assert result.returncode == 1
+    assert result.stderr == "USER_CHANGE_BASELINE_STALE\n"
+    assert task_path.read_bytes() == before
+
+
 def test_impact_rejects_removed_full_suite_action(tmp_path):
     setup(tmp_path)
     result = cli(

@@ -50,6 +50,64 @@ def standard_repo_in_state(tmp_path: Path) -> Path:
     return tmp_path
 
 
+@pytest.mark.parametrize(
+    ("level", "expected_execution"),
+    [("Q1", None), ("Q2", 1), ("Q3", 2)],
+)
+def test_classification_initializes_plan_artifacts_by_profile(
+    tmp_path, level, expected_execution
+):
+    repo = tmp_path
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    assert cli(repo, "init").returncode == 0
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-qm", "base"], cwd=repo, check=True)
+    dimensions = SAFE if level == "Q1" else {**SAFE, "scope": "high", "contract": "high"}
+    flags = [
+        value for name, setting in dimensions.items() for value in (f"--{name}", setting)
+    ]
+
+    result = cli(repo, "task", "classify", "--level", level, *flags)
+
+    assert result.returncode == 0, result.stderr
+    plan_path = repo / ".harness/plan.yaml"
+    execution_path = repo / ".harness/plan-execution.yaml"
+    if expected_execution is None:
+        assert not plan_path.exists()
+        assert not execution_path.exists()
+    else:
+        from harness.plan_reconciliation import plan_fingerprint
+
+        plan = yaml.safe_load(plan_path.read_text())
+        execution = yaml.safe_load(execution_path.read_text())
+        assert plan == {"version": 1, "items": []}
+        assert execution["version"] == expected_execution
+        assert execution["plan"]["fingerprint"] == plan_fingerprint(plan)
+
+
+def test_classification_uses_single_protection_scan(tmp_path, monkeypatch):
+    from harness import controlplane, workspace
+
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    assert cli(tmp_path, "init").returncode == 0
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-qm", "base"], cwd=tmp_path, check=True)
+    (tmp_path / "user.md").write_text("protected baseline\n")
+    monkeypatch.chdir(tmp_path)
+    scans = []
+
+    def changing_scan(paths):
+        scans.append(paths)
+        return {"user.md": "sha256:" + str(len(scans)) * 64}
+
+    monkeypatch.setattr(workspace, "protected_path_fingerprints", changing_scan)
+    assert controlplane.cmd_task_classify("Q2", {**SAFE, "scope": "high", "contract": "high"}) == 0
+    task = yaml.safe_load((tmp_path / ".harness/current-task.yaml").read_text())
+    saved = task["risk"]["user_changes"]
+    assert saved["fingerprint"] == workspace.aggregate_protected_path_fingerprints(saved["path_fingerprints"])
+    assert scans == [("user.md",)]
+
+
 def test_q2_classification_persists_final_plan_reconciliation_enablement(tmp_path):
     repo = standard_repo_in_state(tmp_path)
 
@@ -189,6 +247,125 @@ def write_documents(repo: Path, *, valid: bool):
     )
 
 
+@pytest.mark.parametrize("level", ["Q2", "Q3"])
+def test_classification_rolls_back_when_telemetry_fails(tmp_path, monkeypatch, capsys, level):
+    from harness import controlplane
+
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    assert cli(tmp_path, "init").returncode == 0
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-qm", "base"], cwd=tmp_path, check=True)
+    harness = tmp_path / ".harness"
+    before = (harness / "current-task.yaml").read_bytes()
+    controlplane.telemetry.update_telemetry(harness, yaml.safe_load(before))
+    telemetry_before = (harness / "telemetry.json").read_bytes()
+    monkeypatch.chdir(tmp_path)
+
+    def fail_telemetry(*_args, **_kwargs):
+        assert yaml.safe_load((harness / "current-task.yaml").read_text())["state"] == "CLASSIFIED"
+        assert (harness / "plan.yaml").is_file()
+        assert (harness / "plan-execution.yaml").is_file()
+        raise OSError("telemetry failed")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(controlplane.telemetry, "update_telemetry", fail_telemetry)
+        result = controlplane.cmd_task_classify(
+            level, {**SAFE, "scope": "high", "contract": "high"}
+        )
+
+    assert result == 2
+    assert "RISK_CLASSIFICATION_INVALID" in capsys.readouterr().err
+    assert (harness / "current-task.yaml").read_bytes() == before
+    assert (harness / "telemetry.json").read_bytes() == telemetry_before
+    assert not (harness / "plan.yaml").exists()
+    assert not (harness / "plan-execution.yaml").exists()
+    assert controlplane.cmd_task_classify(
+        level, {**SAFE, "scope": "high", "contract": "high"}
+    ) == 0
+
+
+def test_q2_classification_rolls_back_when_plan_publish_fails(tmp_path, monkeypatch):
+    from harness import controlplane
+
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    assert cli(tmp_path, "init").returncode == 0
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-qm", "base"], cwd=tmp_path, check=True)
+    harness = tmp_path / ".harness"
+    before = (harness / "current-task.yaml").read_bytes()
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        controlplane.transaction,
+        "publish",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("publish failed")),
+    )
+
+    result = controlplane.cmd_task_classify(
+        "Q2", {**SAFE, "scope": "high", "contract": "high"}
+    )
+
+    assert result == 2
+    assert (harness / "current-task.yaml").read_bytes() == before
+    assert not (harness / "plan.yaml").exists()
+    assert not (harness / "plan-execution.yaml").exists()
+
+
+@pytest.mark.parametrize("level", ["Q2", "Q3"])
+def test_bootstrap_lifecycle_reaches_implementing_without_plan_bootstrap(tmp_path, level):
+    repo = tmp_path
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    (repo / "tests").mkdir()
+    (repo / "tests/acceptance.py").write_text("def test_bootstrap(): pass\n")
+    assert cli(repo, "init").returncode == 0
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-qm", "base"], cwd=repo, check=True)
+    dimensions = {**SAFE, "scope": "high", "contract": "high"}
+    flags = [value for name, setting in dimensions.items() for value in (f"--{name}", setting)]
+    assert cli(repo, "task", "classify", "--level", level, *flags).returncode == 0
+    assert cli(repo, "transition", "SPECIFYING").returncode == 0
+    task_path = repo / ".harness/current-task.yaml"
+    task = yaml.safe_load(task_path.read_text())
+    task["task"]["id"] = "TASK-004"
+    task_path.write_text(yaml.safe_dump(task, sort_keys=False))
+    write_documents(repo, valid=True)
+    requirements = yaml.safe_load((repo / ".harness/requirements.yaml").read_text())
+    invariants = yaml.safe_load((repo / ".harness/invariants.yaml").read_text())
+    requirements["requirements"][0]["test_plan"]["cases"][0]["tests"] = [
+        "tests/acceptance.py::test_bootstrap"
+    ]
+    invariants["invariants"][0]["test_plan"]["cases"][0]["tests"] = [
+        "tests/acceptance.py::test_bootstrap"
+    ]
+    (repo / ".harness/requirements.yaml").write_text(yaml.safe_dump(requirements))
+    (repo / ".harness/invariants.yaml").write_text(yaml.safe_dump(invariants))
+    write_alignment(repo)
+    assert cli(repo, "align", "freeze").returncode == 0
+    assert cli(repo, "transition", "PLANNED").returncode == 0
+    write_minimal_decision(repo)
+
+    result = cli(repo, "transition", "IMPLEMENTING")
+
+    assert result.returncode == 0, result.stderr
+    assert yaml.safe_load(task_path.read_text())["state"] == "IMPLEMENTING"
+
+
+def test_specifying_to_planned_requires_case_level_binding(tmp_path):
+    repo = standard_repo_in_state(tmp_path)
+    task_path = repo / ".harness/current-task.yaml"
+    task = yaml.safe_load(task_path.read_text())
+    task["state"] = "SPECIFYING"
+    task_path.write_text(yaml.safe_dump(task, sort_keys=False))
+    write_documents(repo, valid=True)
+    write_alignment(repo)
+
+    result = cli(repo, "transition", "PLANNED")
+
+    assert result.returncode == 1
+    assert "REQ-001/TC-001: TEST_BINDING_REQUIRED" in result.stderr
+    assert "INV-001/TC-002: TEST_BINDING_REQUIRED" in result.stderr
+    assert yaml.safe_load(task_path.read_text())["state"] == "SPECIFYING"
+
+
 def test_standard_planned_to_implementing_rejects_invalid_test_plan(tmp_path):
     """Break caught: STANDARD task starts implementation without a strategy."""
     repo = standard_repo_in_state(tmp_path)
@@ -274,6 +451,8 @@ def test_enabled_standard_entry_requires_matching_plan_artifacts(tmp_path):
     write_minimal_decision(repo)
     write_documents(repo, valid=True)
     write_alignment(repo, frozen=True)
+    (repo / ".harness/plan.yaml").unlink()
+    (repo / ".harness/plan-execution.yaml").unlink()
 
     result = cli(repo, "transition", "IMPLEMENTING")
 

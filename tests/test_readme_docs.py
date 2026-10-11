@@ -10,6 +10,48 @@ import yaml
 REPO = Path(__file__).resolve().parent.parent
 
 
+def test_task_contract_writes_alignment_before_planned_admission():
+    text = (REPO / "skills/task-contract/SKILL.md").read_text()
+    exit_steps = text.split("### 7. Exit PLANNED", 1)[1].split("## Production Diagnosability", 1)[0]
+    assert exit_steps.index("Write `.harness/alignment.yaml`") < exit_steps.index("harness align freeze")
+    assert exit_steps.index("harness align freeze") < exit_steps.index("harness align check")
+    assert exit_steps.index("harness align check") < exit_steps.index("harness transition PLANNED")
+    assert "Every automated case must have a nonempty `tests` list" in text
+
+
+def test_diagnosability_summary_matches_verifying_workflow():
+    root = (REPO / "SKILL.md").read_bytes()
+    assert root == (REPO / "skills/engineering-harness/SKILL.md").read_bytes()
+    text = root.decode()
+    for prefix in ("- Q2 / STANDARD:", "- Q3 / STRICT:"):
+        line = next(line for line in text.splitlines() if line.startswith(prefix))
+        assert "before `VERIFYING -> REVIEWING`" in line
+
+
+def test_control_plane_spec_requires_only_related_verification():
+    text = (REPO / "docs/superpowers/specs/2026-10-10-control-plane-contract-repair-design.md").read_text()
+    verification = text.split("## Verification", 1)[1].split("## Risks", 1)[0]
+    assert "regression and impact-related tests" in verification
+    assert "Full-suite execution is forbidden" in verification
+    assert "Full project suite runs after targeted tests" not in verification
+
+
+def test_unreleased_documents_control_plane_repairs_and_compatibility():
+    text = (REPO / "CHANGELOG.md").read_text()
+    unreleased = text.split("## Unreleased", 1)[1].split("## 0.3.0", 1)[0]
+    for term in (
+        "harness align revise", "SPECIFYING -> PLANNED", "telemetry",
+        "single scan", "immutable", "GREEN", "RED", "finding",
+        "v1", "v2", "phase", "not automatically rewritten",
+    ):
+        assert term in unreleased
+    assert "raw-byte fingerprint behavior remains unchanged" in unreleased
+    assert "fail-closed" in unreleased
+    assert "regression and impact-related tests" in unreleased
+    assert text.splitlines()[2] == "## Unreleased"
+    assert not re.search(r"^## [0-9]", unreleased, re.MULTILINE)
+
+
 def test_readmes_document_agy_quick_start():
     for name, heading in (
         ("README.md", "Antigravity CLI (agy)"),

@@ -59,6 +59,16 @@ def _validate(args: tuple[str, ...]) -> None:
         and all(not ref.startswith("-") for ref in args[1:])
     ):
         return
+    if (
+        args[0] == "hash-object"
+        and len(args) == 3
+        and args[1] == "--"
+        and not args[2].startswith("-")
+        and not Path(args[2]).is_absolute()
+        and ".." not in Path(args[2]).parts
+        and args[2] != "."
+    ):
+        return
     if args[0] == "diff":
         rest = args[1:]
         if rest and rest[0] == "--cached":

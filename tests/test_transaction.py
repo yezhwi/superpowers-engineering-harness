@@ -45,6 +45,48 @@ def test_replacement_workspace_restores_original_when_swap_fails(tmp_path, monke
     assert (harness / "current-task.yaml").read_text() == "old"
 
 
+def test_publish_rolls_back_all_targets_when_callback_fails(tmp_path):
+    harness = tmp_path / ".harness"
+    harness.mkdir()
+    (harness / "current-task.yaml").write_bytes(b"old task")
+    (harness / "seal.yaml").write_bytes(b"old seal")
+    staged = stage(harness, [
+        StagedArtifact("current-task.yaml", b"new task"),
+        StagedArtifact("plan.yaml", b"new plan"),
+    ])
+
+    def fail_callback():
+        assert (harness / "current-task.yaml").read_bytes() == b"new task"
+        assert (harness / "plan.yaml").read_bytes() == b"new plan"
+        assert not (harness / "seal.yaml").exists()
+        raise OSError("callback failed")
+
+    with pytest.raises(OSError, match="callback failed"):
+        publish(
+            harness, staged,
+            replace_paths=frozenset({"current-task.yaml"}),
+            delete_paths=frozenset({"seal.yaml"}),
+            after_publish=fail_callback,
+        )
+
+    assert (harness / "current-task.yaml").read_bytes() == b"old task"
+    assert not (harness / "plan.yaml").exists()
+    assert (harness / "seal.yaml").read_bytes() == b"old seal"
+    assert staged.exists()
+
+
+def test_publish_callback_success_cleans_staging(tmp_path):
+    harness = tmp_path / ".harness"
+    staged = stage(harness, [StagedArtifact("plan.yaml", b"new plan")])
+    observed = []
+    publish(
+        harness, staged,
+        after_publish=lambda: observed.append((harness / "plan.yaml").read_bytes()),
+    )
+    assert observed == [b"new plan"]
+    assert not staged.exists()
+
+
 def test_atomic_write_replaces_complete_single_artifact(tmp_path):
     """Break caught: standalone artifact writes can expose partial content."""
     from harness.transaction import atomic_write

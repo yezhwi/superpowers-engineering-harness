@@ -15,8 +15,9 @@ from .evidence_validator import (
     EvidenceValidationError,
     project_evidence,
 )
+from .paths import evidence_receipt_order
 from .schema_resources import read_schema
-from .workspace import changed_paths_since, protected_paths_fingerprint
+from .workspace import changed_paths_since, protected_user_changes_fingerprint
 
 _MAX_CANDIDATES = 16
 _MAX_ATOMS = 16
@@ -63,6 +64,17 @@ def select_unique_minimum_cover(
     """Return sole minimum-cardinality exact cover within closed P2 limits."""
     if required_mask <= 0:
         raise PlanAutomationError("PLAN_PROOF_MISSING")
+
+    folded: dict[int, EvidenceCandidate] = {}
+    for candidate in candidates:
+        order = evidence_receipt_order(candidate.ref)
+        key = candidate.coverage
+        existing = folded.get(key)
+        if existing is None or (
+            -order, candidate.ref
+        ) < (-evidence_receipt_order(existing.ref), existing.ref):
+            folded[key] = candidate
+    candidates = tuple(folded.values())
     if len(candidates) > _MAX_CANDIDATES or required_mask.bit_count() > _MAX_ATOMS:
         raise PlanAutomationError("PLAN_AUTO_LIMIT_EXCEEDED")
 
@@ -94,15 +106,20 @@ def mechanical_surface_facts(
 ) -> MechanicalSurfaceFacts:
     """Return one shared P0-filtered mechanical surface snapshot."""
     changed_paths = _changed_paths or changed_paths_since
-    protected_fingerprint = _protected_fingerprint or protected_paths_fingerprint
+    protected_fingerprint = _protected_fingerprint or protected_user_changes_fingerprint
     user_changes = (task.get("risk") or {}).get("user_changes", {})
     protected = frozenset(user_changes.get("paths", []))
     protected_digest = user_changes.get("fingerprint")
     if protected:
+        fingerprint_input = (
+            tuple(sorted(protected))
+            if _protected_fingerprint is not None and user_changes.get("version") != 2
+            else user_changes
+        )
         protected_digest = (
-            protected_fingerprint(tuple(sorted(protected)))
+            protected_fingerprint(fingerprint_input)
             if repo_root is None
-            else protected_fingerprint(tuple(sorted(protected)), repo_root=repo_root)
+            else protected_fingerprint(fingerprint_input, repo_root=repo_root)
         )
     protected_changed = bool(protected) and (
         protected_digest != user_changes.get("fingerprint")

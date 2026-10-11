@@ -145,6 +145,8 @@ def _main(argv=None) -> int:
     align_sub = p_align.add_subparsers(dest="align_command", required=True)
     for command in ("init", "freeze", "check", "status", "diff"):
         align_sub.add_parser(command)
+    p_align_revise = align_sub.add_parser("revise")
+    p_align_revise.add_argument("--reason", required=True)
     p_check = sub.add_parser("check", help="run Harness checks")
     check_sub = p_check.add_subparsers(dest="check_command")
     p_minimal = check_sub.add_parser(
@@ -474,7 +476,7 @@ def _main(argv=None) -> int:
     if args.subcommand == "transition":
         return controlplane.cmd_transition(args.target, reason=args.reason)
     if args.subcommand == "align":
-        return controlplane.cmd_align(args.align_command)
+        return controlplane.cmd_align(args.align_command, reason=getattr(args, "reason", None))
     if args.subcommand == "check" and args.check_command == "minimal":
         return controlplane.cmd_check_minimal(Path(args.source_file))
     if args.subcommand == "review" and args.review_command == "complexity":

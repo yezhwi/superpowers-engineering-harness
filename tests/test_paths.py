@@ -3,6 +3,21 @@ from pathlib import Path
 import pytest
 
 
+@pytest.mark.parametrize("reference, expected", [
+    ("build", 1), ("build-2.json", 2), ("build-10", 10),
+    ("fast-green-unit-test-3.json", 3), ("fast-red-unit-test", 1),
+    ("FND-001-green-unit-test-4", 4),
+    ("unit-test-abcdef123456", 1), ("unit-test-abcdef123456-10", 10),
+    ("unit-test-000000000002", 1), ("unit-test-000000000002-2", 2),
+    ("build-0", 1), ("build-1", 1), ("build-invalid", 1),
+    ("build-2-extra", 1), ("build--2", 1), ("build-٢", 1),
+])
+def test_evidence_receipt_order(reference, expected):
+    from harness.paths import evidence_receipt_order
+
+    assert evidence_receipt_order(reference) == expected
+
+
 def test_evidence_path_keeps_filename_inside_evidence_directory(tmp_path):
     from harness.paths import evidence_path
 

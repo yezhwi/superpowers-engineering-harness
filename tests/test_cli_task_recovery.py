@@ -109,6 +109,27 @@ def test_task_recover_archives_artifacts_and_creates_fresh_task(tmp_path):
     assert list(evidence.iterdir()) == []
 
 
+def test_task_recover_archives_and_removes_plan_artifacts(tmp_path):
+    repo = make_repo(tmp_path)
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-qm", "base"], cwd=repo, check=True)
+    set_task_state(repo, "IMPLEMENTING")
+    harness = repo / ".harness"
+    (harness / "plan.yaml").write_text("version: 1\nitems: []\n")
+    (harness / "plan-execution.yaml").write_text(
+        "version: 2\nplan:\n  path: .harness/plan.yaml\n  fingerprint: sha256:" + "0" * 64 + "\nsequence: 0\ntransitions: []\nitems: {}\n"
+    )
+
+    result = run_cli(repo, "task", "recover", "TASK-005", "--reason", "stale")
+
+    assert result.returncode == 0, result.stderr
+    archive = next((harness / "history").glob("TASK-004-*"))
+    assert (archive / "plan.yaml").is_file()
+    assert (archive / "plan-execution.yaml").is_file()
+    assert not (harness / "plan.yaml").exists()
+    assert not (harness / "plan-execution.yaml").exists()
+
+
 def test_task_recover_preserves_required_mode_and_architecture_artifact(tmp_path):
     repo = make_repo(tmp_path)
     subprocess.run(["git", "add", "-A"], cwd=repo, check=True)

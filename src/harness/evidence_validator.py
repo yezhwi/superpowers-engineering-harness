@@ -42,16 +42,17 @@ def can_reuse_evidence(
     current_workspace: str,
     current_runtime: dict[str, str],
 ) -> bool:
-    """Return true only for exact successful generic proof reuse."""
+    """Return true only for exact successful generic or task GREEN proof reuse."""
     if (
         not isinstance(record, dict)
-        or request.phase
+        or request.phase not in {None, "green"}
         or request.finding_id
         or request.test_id
     ):
         return False
     if (
         record.get("exit_code") != 0
+        or record.get("phase") != request.phase
         or record.get("subject") is not None
         or record.get("test") is not None
     ):
@@ -61,10 +62,11 @@ def can_reuse_evidence(
         or record.get("command") != request.command
     ):
         return False
-    if request.evidence_type == "unit_test" and (
+    if request.evidence_type in {"unit_test", "integration_test", "contract_test"} and (
         record.get("scope") != request.scope
-        or set(record.get("covered_tests", [])) != set(request.covered_tests)
     ):
+        return False
+    if set(record.get("covered_tests", [])) != set(request.covered_tests):
         return False
     if set(record.get("covered_test_cases", [])) != set(request.covered_test_cases):
         return False

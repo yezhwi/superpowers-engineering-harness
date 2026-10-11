@@ -56,6 +56,22 @@ def write_alignment(tmp_path: Path, document: dict) -> Path:
     return path
 
 
+def test_alignment_revision_audit_does_not_change_contract_hash():
+    from harness.alignment import contract_hash
+
+    document = complete_alignment()
+    before = contract_hash(document)
+    document["revisions"] = [
+        {
+            "reason": "contract update",
+            "timestamp": "2026-10-10T00:00:00+00:00",
+            "previous_contract_hash": before,
+        }
+    ]
+
+    assert contract_hash(document) == before
+
+
 def test_load_alignment_returns_valid_reference_only_contract(tmp_path):
     write_alignment(tmp_path, complete_alignment())
 

@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+### Fixed
+
+- Add controlled `harness align revise --reason` with revision audit and atomic seal removal; require freeze/check before re-entry.
+- Archive and clear prior-task plan artifacts during task replacement/recovery. Classification initializes no plan for Q1, empty v1 execution for Q2, and empty replayable v2 execution for Q3.
+- Reject incomplete contracts at `SPECIFYING -> PLANNED`; automated binding diagnostics identify the requirement/invariant and case. Task Contract writes alignment before freeze/check and PLANNED admission.
+- Build protected v2 path contributions and aggregate from a single scan using Context-safe Git queries. Publish classification task/plan artifacts and telemetry within one rollback boundary.
+- Preserve historical protection for unadopted user paths; reject stale v1 adoption with `USER_CHANGE_BASELINE_STALE` rather than replacing the baseline with current bytes.
+- Keep evidence receipts immutable, allocating the next unused numeric suffix on collection or reuse miss. Collector, FAST gate and automated proof share receipt ordering, including all-numeric related identity digests.
+- Fold equivalent coverage masks before automated-proof candidate limits while retaining ambiguity checks for distinct minimum covers. Missing-proof diagnostics identify case selectors and preserve surface references during proof refresh.
+- Reject invalid covered case IDs before command execution. Align required diagnosability guidance with VERIFYING before REVIEWING, while preserving CLI acceptance of both review states.
+
+### Compatibility and verification
+
+- Only exact successful generic or task GREEN receipts may be reused. RED and finding proofs always rerun. Task phase receipts include `phase` metadata; old GREEN receipts without it are not reused and receive a new immutable receipt.
+- Legacy v1 raw-byte fingerprint behavior remains unchanged. v2 path contributions now use Git binary diffs or Git content object IDs. Existing v2 baselines are not automatically rewritten or rebased; snapshots from the earlier digest format may fail protection checks, which remain fail-closed.
+- Verification runs only regression and impact-related tests; full-suite execution remains forbidden. No new release version or tag is declared by these unreleased notes.
+
 ## 0.3.0
 
 - Add Architecture Scope Gate P0: operator-authored canonical Architecture YAML, deterministic ownership resolution, bounded models, and stable fingerprints.

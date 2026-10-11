@@ -3,6 +3,8 @@
 import subprocess
 from pathlib import Path
 
+import pytest
+
 
 def git(repo: Path, *args: str) -> str:
     result = subprocess.run(
@@ -143,3 +145,69 @@ def test_review_scope_includes_committed_delta_from_merge_base(tmp_path):
     assert scope.files == ("committed.py",)
     assert scope.base_commit == git(repo, "rev-parse", "HEAD~1")
     assert scope.head_commit == git(repo, "rev-parse", "HEAD")
+
+
+def test_v2_user_change_fingerprint_preserves_unadopted_path_baseline(tmp_path):
+    from harness.workspace import (
+        aggregate_protected_path_fingerprints,
+        protected_path_fingerprints,
+        protected_user_changes_fingerprint,
+    )
+
+    repo = committed_repo(tmp_path)
+    (repo / "other.py").write_text("value = 1\n")
+    git(repo, "add", "other.py")
+    git(repo, "commit", "-qm", "add other")
+    baseline = protected_path_fingerprints(("other.py", "tracked.py"), repo)
+    (repo / "tracked.py").write_text("value = 2\n")
+    user_changes = {
+        "version": 2,
+        "paths": ["other.py"],
+        "path_fingerprints": {"other.py": baseline["other.py"]},
+        "fingerprint": aggregate_protected_path_fingerprints(
+            {"other.py": baseline["other.py"]}
+        ),
+    }
+
+    assert protected_user_changes_fingerprint(user_changes, repo_root=repo) == user_changes["fingerprint"]
+
+
+def test_v2_git_fingerprint_handles_tracked_deletion(tmp_path):
+    from harness.workspace import protected_path_fingerprints
+
+    repo = committed_repo(tmp_path)
+    baseline = protected_path_fingerprints(("tracked.py",), repo)
+    (repo / "tracked.py").unlink()
+    assert protected_path_fingerprints(("tracked.py",), repo) != baseline
+
+
+def test_v2_missing_untracked_path_fails_closed(tmp_path):
+    from harness.workspace import WorkspaceError, protected_path_fingerprints
+
+    repo = committed_repo(tmp_path)
+    path = repo / "user.md"
+    path.write_text("baseline\n")
+    protected_path_fingerprints(("user.md",), repo)
+    path.unlink()
+    with pytest.raises(WorkspaceError):
+        protected_path_fingerprints(("user.md",), repo)
+
+
+def test_v2_protected_fingerprint_detects_changed_path(tmp_path):
+    from harness.workspace import (
+        aggregate_protected_path_fingerprints,
+        protected_path_fingerprints,
+        protected_user_changes_fingerprint,
+    )
+
+    repo = committed_repo(tmp_path)
+    baseline = protected_path_fingerprints(("tracked.py",), repo)
+    user_changes = {
+        "version": 2,
+        "paths": ["tracked.py"],
+        "path_fingerprints": baseline,
+        "fingerprint": aggregate_protected_path_fingerprints(baseline),
+    }
+    (repo / "tracked.py").write_text("value = 2\n")
+
+    assert protected_user_changes_fingerprint(user_changes, repo_root=repo) != user_changes["fingerprint"]

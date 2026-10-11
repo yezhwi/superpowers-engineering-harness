@@ -581,7 +581,7 @@ def _print_alignment_blocked(issues: list[alignment.AlignmentIssue]) -> None:
         print(f"Next: {_alignment_next_action(issues)}", file=sys.stderr)
 
 
-def cmd_align(command: str) -> int:
+def cmd_align(command: str, *, reason: str | None = None) -> int:
     """Bootstrap or inspect one Alignment artifact without workflow changes."""
     harness_dir = Path(".harness")
     path = harness_dir / "alignment.yaml"
@@ -614,6 +614,49 @@ def cmd_align(command: str) -> int:
     except alignment.AlignmentError as exc:
         print(str(exc), file=sys.stderr)
         return 1
+    if command == "revise":
+        sealed_path = harness_dir / "alignment-freeze.yaml"
+        if not reason or not reason.strip():
+            print("ALIGNMENT_REVISION_REASON_REQUIRED", file=sys.stderr)
+            return 2
+        try:
+            task = load_task(harness_dir)
+            if task.get("state") in {"DONE", "CONVERGED"}:
+                print("ALIGNMENT_REVISION_NOT_ALLOWED", file=sys.stderr)
+                return 1
+            if not document["freeze"]["frozen"] or not source_access.exists(sealed_path):
+                print("ALIGNMENT_NOT_FROZEN", file=sys.stderr)
+                return 1
+            document.setdefault("revisions", []).append(
+                {
+                    "reason": reason,
+                    "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
+                    "previous_contract_hash": document["freeze"]["contract_hash"],
+                }
+            )
+            document["freeze"] = {
+                "frozen": False, "frozen_at": None, "contract_hash": None
+            }
+            quality_gate.validate_schema(document, "alignment.schema.json", path)
+            staged = transaction.stage(
+                harness_dir,
+                [
+                    transaction.StagedArtifact(
+                        "alignment.yaml", yaml.safe_dump(document, sort_keys=False).encode()
+                    )
+                ],
+            )
+            transaction.publish(
+                harness_dir,
+                staged,
+                replace_paths=frozenset({"alignment.yaml"}),
+                delete_paths=frozenset({"alignment-freeze.yaml"}),
+            )
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            print(f"ALIGNMENT_REVISION_FAILED: {exc}", file=sys.stderr)
+            return 2
+        print("ALIGNMENT_REVISED")
+        return 0
     if command == "freeze":
         sealed_path = harness_dir / "alignment-freeze.yaml"
         if document["freeze"]["frozen"] or source_access.exists(sealed_path):
@@ -933,6 +976,35 @@ def _record_contract_change(
     )
 
 
+def _specifying_contract_admission(harness_dir: Path, task: dict) -> list[str]:
+    """Return deterministic pre-PLANNED contract diagnostics."""
+    requirements_path = harness_dir / "requirements.yaml"
+    invariants_path = harness_dir / "invariants.yaml"
+    requirements = yaml.safe_load(requirements_path.read_text(encoding="utf-8"))
+    invariants = yaml.safe_load(invariants_path.read_text(encoding="utf-8"))
+    quality_gate.validate_schema(requirements, "requirement.schema.json", requirements_path)
+    quality_gate.validate_schema(invariants, "invariant.schema.json", invariants_path)
+    document = alignment.load_alignment(harness_dir)
+    requirement_ids = {record["id"] for record in requirements["requirements"]}
+    critical_ids = {
+        record["id"] for record in requirements["requirements"]
+        if record["priority"] == "must"
+    }
+    issues = alignment.check_completeness(
+        document,
+        requirement_ids=requirement_ids,
+        critical_requirement_ids=critical_ids,
+        proposed_decision_ids=set(),
+    )
+    diagnostics = [f"{issue.subject_id or 'ALIGNMENT'}: {issue.code}" for issue in issues]
+    for records, key in ((requirements["requirements"], "test_plan"), (invariants["invariants"], "test_plan")):
+        for record in records:
+            for case in record.get(key, {}).get("cases", []):
+                if case.get("strategy") != "manual" and not case.get("tests"):
+                    diagnostics.append(f"{record['id']}/{case['id']}: TEST_BINDING_REQUIRED")
+    return diagnostics
+
+
 def cmd_transition(target: str, *, reason: str | None = None) -> int:
     harness_dir = Path(".harness")
     task = load_task(harness_dir)
@@ -1138,6 +1210,17 @@ def cmd_transition(target: str, *, reason: str | None = None) -> int:
             return 2
         if status != "PASS":
             print("CURRENT_GATE_PASS_REQUIRED", file=sys.stderr)
+            return 1
+    if current == "SPECIFYING" and target == "PLANNED":
+        try:
+            diagnostics = _specifying_contract_admission(harness_dir, task)
+        except Exception as exc:
+            print(f"CONTRACT_ADMISSION_INVALID: {exc}", file=sys.stderr)
+            return 1
+        if diagnostics:
+            print("CONTRACT_ADMISSION_BLOCKED", file=sys.stderr)
+            for diagnostic in diagnostics:
+                print(f"  {diagnostic}", file=sys.stderr)
             return 1
     if current == "PLANNED" and target == "IMPLEMENTING":
         decision_path = harness_dir / "evidence" / "minimal-implementation.yaml"
@@ -2296,6 +2379,31 @@ def _plan_reconciliation_config(level: str) -> dict:
     }
 
 
+def _classification_artifacts(task: dict, level: str) -> list[transaction.StagedArtifact]:
+    """Return task plus profile-owned plan artifacts for one publish."""
+    artifacts = [transaction.StagedArtifact(
+        "current-task.yaml", yaml.safe_dump(task, sort_keys=False).encode()
+    )]
+    if level == "Q1":
+        return artifacts
+    from harness.plan_reconciliation import plan_fingerprint
+
+    plan = {"version": 1, "items": []}
+    execution = {
+        "version": 2 if level == "Q3" else 1,
+        "plan": {"path": ".harness/plan.yaml", "fingerprint": plan_fingerprint(plan)},
+        "items": {},
+    }
+    if level == "Q3":
+        execution.update({"sequence": 0, "transitions": []})
+    return artifacts + [
+        transaction.StagedArtifact("plan.yaml", yaml.safe_dump(plan, sort_keys=False).encode()),
+        transaction.StagedArtifact(
+            "plan-execution.yaml", yaml.safe_dump(execution, sort_keys=False).encode()
+        ),
+    ]
+
+
 def cmd_task_classify(level: str, dimensions: dict[str, str]) -> int:
     harness_dir = Path(".harness")
     task = load_task(harness_dir)
@@ -2343,21 +2451,39 @@ def cmd_task_classify(level: str, dimensions: dict[str, str]) -> int:
         head = workspace.git_head()
         task["git"] = workspace.git_baseline(head)
         task["plan_reconciliation"] = _plan_reconciliation_config(level)
+        contributions = workspace.protected_path_fingerprints(user_changes)
         task["risk"] = {
             "level": level,
             "profile": profile,
             "dimensions": dimensions,
             "escalation_history": [],
             "user_changes": {
+                "version": 2,
                 "paths": list(user_changes),
-                "fingerprint": workspace.protected_paths_fingerprint(user_changes),
+                "path_fingerprints": contributions,
+                "fingerprint": workspace.aggregate_protected_path_fingerprints(contributions),
             },
         }
     except Exception as exc:
         print(f"RISK_CLASSIFICATION_INVALID: {exc}", file=sys.stderr)
         return 2
     task["state"] = "CLASSIFIED"
-    save_task(harness_dir, task)
+    try:
+        from .telemetry_lock import telemetry_lock
+
+        with telemetry_lock(harness_dir):
+            staged = transaction.stage(
+                harness_dir, _classification_artifacts(task, level)
+            )
+            transaction.publish(
+                harness_dir,
+                staged,
+                replace_paths=frozenset({"current-task.yaml"}),
+                after_publish=lambda: telemetry.update_telemetry(harness_dir, task),
+            )
+    except Exception as exc:
+        print(f"RISK_CLASSIFICATION_INVALID: {exc}", file=sys.stderr)
+        return 2
     print(f"OK: classified {level}/{profile}")
     return 0
 
@@ -2538,6 +2664,8 @@ def cmd_task_new(task_id: str, title: str = "") -> int:
             "gate.yaml",
             "impact.yaml",
             "observability.yaml",
+            "plan.yaml",
+            "plan-execution.yaml",
             "alignment.yaml",
             "alignment-freeze.yaml",
             "findings",
@@ -2559,6 +2687,8 @@ def cmd_task_new(task_id: str, title: str = "") -> int:
             shutil.copy2(templates_dir() / name, staged / name)
         (staged / "alignment.yaml").unlink(missing_ok=True)
         (staged / "alignment-freeze.yaml").unlink(missing_ok=True)
+        (staged / "plan.yaml").unlink(missing_ok=True)
+        (staged / "plan-execution.yaml").unlink(missing_ok=True)
         for name in ("findings", "evidence"):
             shutil.rmtree(staged / name, ignore_errors=True)
             (staged / name).mkdir()
@@ -2617,6 +2747,8 @@ def cmd_task_recover(task_id: str, title: str, reason: str) -> int:
             "gate.yaml",
             "impact.yaml",
             "observability.yaml",
+            "plan.yaml",
+            "plan-execution.yaml",
             "alignment.yaml",
             "alignment-freeze.yaml",
             "findings",
@@ -2646,6 +2778,8 @@ def cmd_task_recover(task_id: str, title: str, reason: str) -> int:
             shutil.copy2(templates_dir() / name, staged / name)
         (staged / "alignment.yaml").unlink(missing_ok=True)
         (staged / "alignment-freeze.yaml").unlink(missing_ok=True)
+        (staged / "plan.yaml").unlink(missing_ok=True)
+        (staged / "plan-execution.yaml").unlink(missing_ok=True)
         for name in ("findings", "evidence"):
             shutil.rmtree(staged / name, ignore_errors=True)
             (staged / name).mkdir()
@@ -2773,6 +2907,26 @@ def cmd_impact(action, value=None, reason=None, args=None):
     if action in {"adopt-path", "ignore-user-path"}:
         owned, protected = scope["owned_paths"], scope["protected_user_paths"]
         if action == "adopt-path":
+            user_changes = (task.get("risk") or {}).get("user_changes", {})
+            paths = list(user_changes.get("paths", []))
+            if value in paths:
+                if (
+                    "path_fingerprints" not in user_changes
+                    and workspace.protected_user_changes_fingerprint(user_changes)
+                    != user_changes.get("fingerprint")
+                ):
+                    print("USER_CHANGE_BASELINE_STALE", file=sys.stderr)
+                    return 1
+                if "path_fingerprints" not in user_changes:
+                    user_changes["version"] = 2
+                    user_changes["path_fingerprints"] = workspace.protected_path_fingerprints(
+                        tuple(paths)
+                    )
+                user_changes["paths"] = [path for path in paths if path != value]
+                user_changes["path_fingerprints"].pop(value, None)
+                user_changes["fingerprint"] = workspace.aggregate_protected_path_fingerprints(
+                    user_changes["path_fingerprints"]
+                )
             if value not in owned:
                 owned.append(value)
             if value in protected:

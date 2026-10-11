@@ -6,7 +6,7 @@ compatibility: Requires Python 3.11+, Git, and a matching superpowers-engineerin
 
 # Diagnosability Review
 
-Run only in `REVIEWING`: `harness review diagnosability --file <file>` rejects other task states.
+Run in `VERIFYING` or `REVIEWING`: `harness review diagnosability --file <file>` rejects other task states.
 
 Read `.harness/observability.yaml`, changed files, declared direct dependencies, and existing logging, correlation, masking, exception-handler, and reason-code conventions.
 

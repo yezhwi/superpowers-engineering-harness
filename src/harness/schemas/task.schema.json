@@ -61,7 +61,9 @@
           "type": "object",
           "required": ["paths", "fingerprint"],
           "properties": {
+            "version": {"enum": [2]},
             "paths": {"type": "array", "items": {"type": "string"}},
+            "path_fingerprints": {"type": "object", "additionalProperties": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}},
             "fingerprint": {"type": "string"}
           },
           "additionalProperties": false

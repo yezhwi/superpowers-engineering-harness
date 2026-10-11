@@ -171,7 +171,8 @@ def test_collect_npm_run_vitest_stores_canonical_path(tmp_path, monkeypatch):
         create_files=("agents-frontend/src/__tests__/a.spec.ts",),
     )
     assert code == 0
-    evidence = json.loads((tmp_path / ".harness/evidence/unit-test.json").read_text())
+    [receipt] = (tmp_path / ".harness/evidence").glob("unit-test-*.json")
+    evidence = json.loads(receipt.read_text())
     assert evidence["covered_tests"] == ["agents-frontend/src/__tests__/a.spec.ts"]
 
 
@@ -239,7 +240,8 @@ def test_collect_stores_canonical_path_for_subdir_pytest(tmp_path, monkeypatch):
         create_files=("backend/tests/foo.py",),
     )
     assert code == 0
-    evidence = json.loads((tmp_path / ".harness/evidence/unit-test.json").read_text())
+    [receipt] = (tmp_path / ".harness/evidence").glob("unit-test-*.json")
+    evidence = json.loads(receipt.read_text())
     assert evidence["covered_tests"] == ["backend/tests/foo.py"]
 
 
@@ -254,7 +256,8 @@ def test_collect_subdir_and_repo_root_commands_store_the_same_canonical_path(
         command="sh -lc 'cd backend && pytest tests/foo.py'",
         create_files=("backend/tests/foo.py",),
     )
-    first = json.loads((tmp_path / ".harness/evidence/unit-test.json").read_text())
+    [first_path] = (tmp_path / ".harness/evidence").glob("unit-test-*.json")
+    first = json.loads(first_path.read_text())
     root = collect_related(
         tmp_path,
         monkeypatch,
@@ -262,7 +265,9 @@ def test_collect_subdir_and_repo_root_commands_store_the_same_canonical_path(
         command="pytest backend/tests/foo.py",
         create_files=("backend/tests/foo.py",),
     )
-    second = json.loads((tmp_path / ".harness/evidence/unit-test.json").read_text())
+    [second_path] = set((tmp_path / ".harness/evidence").glob("unit-test-*.json")) - {first_path}
+    second = json.loads(second_path.read_text())
+    assert json.loads(first_path.read_text()) == first
     assert subdir == root == 0
     assert first["covered_tests"] == second["covered_tests"] == ["backend/tests/foo.py"]
 

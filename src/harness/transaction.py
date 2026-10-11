@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
@@ -48,11 +49,19 @@ def stage(
 
 
 def publish(
-    harness_dir: Path, stage_dir: Path, *, replace_paths: frozenset[str] = frozenset()
+    harness_dir: Path,
+    stage_dir: Path,
+    *,
+    replace_paths: frozenset[str] = frozenset(),
+    delete_paths: frozenset[str] = frozenset(),
+    after_publish: Callable[[], None] | None = None,
 ) -> None:
-    """Publish staged files or restore every touched canonical target."""
+    """Publish staged files and managed deletions or restore touched targets."""
     sources = sorted(path for path in stage_dir.rglob("*") if path.is_file())
     targets = [(path, harness_dir / path.relative_to(stage_dir)) for path in sources]
+    delete_targets = [harness_dir / path for path in sorted(delete_paths)]
+    if any(path in {target for _, target in targets} for path in delete_targets):
+        raise ValueError("STAGED_DELETE_CONFLICT")
     from harness import source_access
 
     existing = {}
@@ -64,7 +73,16 @@ def publish(
             if target.exists()
             else None
         )
+    for target in delete_targets:
+        if target.is_symlink():
+            raise OSError("canonical artifact must be a regular file")
+        existing[target] = (
+            source_access.read_regular_bytes_beneath(target, harness_dir)
+            if target.exists()
+            else None
+        )
     published: list[Path] = []
+    deleted: list[Path] = []
     succeeded = False
     try:
         for source, target in targets:
@@ -81,6 +99,12 @@ def publish(
                 published.append(target)
             finally:
                 temp.unlink(missing_ok=True)
+        for target in delete_targets:
+            if target.exists():
+                target.unlink()
+                deleted.append(target)
+        if after_publish is not None:
+            after_publish()
         succeeded = True
     except Exception:
         for target in reversed(published):
@@ -89,6 +113,8 @@ def publish(
                 target.unlink(missing_ok=True)
             else:
                 target.write_bytes(previous)
+        for target in reversed(deleted):
+            target.write_bytes(existing[target])
         raise
     finally:
         if succeeded:

@@ -170,6 +170,34 @@ def make_repo(tmp_path: Path, **task_overrides) -> Path:
     return h
 
 
+def test_align_revise_command_is_available(tmp_path):
+    h = make_repo(tmp_path)
+    task = yaml.safe_load((h / "current-task.yaml").read_text())
+    task["task"]["id"] = "TASK-001"
+    task["state"] = "PLANNED"
+    (h / "current-task.yaml").write_text(yaml.safe_dump(task))
+    from test_alignment import complete_alignment
+    from harness.alignment import contract_hash
+
+    alignment = complete_alignment()
+    alignment["freeze"] = {
+        "frozen": True,
+        "frozen_at": "2026-10-10T00:00:00+00:00",
+        "contract_hash": None,
+    }
+    alignment["freeze"]["contract_hash"] = contract_hash(alignment)
+    (h / "alignment.yaml").write_text(yaml.safe_dump(alignment))
+    (h / "alignment-freeze.yaml").write_text("version: 2\n")
+
+    result = run_cli(tmp_path, "align", "revise", "--reason", "contract update")
+
+    assert result.returncode == 0, result.stderr
+    revised = yaml.safe_load((h / "alignment.yaml").read_text())
+    assert revised["freeze"] == {"frozen": False, "frozen_at": None, "contract_hash": None}
+    assert revised["revisions"][0]["reason"] == "contract update"
+    assert not (h / "alignment-freeze.yaml").exists()
+
+
 def test_implementing_task_with_changed_frozen_alignment_cannot_verify(tmp_path):
     h = make_repo(
         tmp_path,

@@ -132,13 +132,18 @@ def test_standard_profile_retains_complexity_requirement(tmp_path):
     )
     current = tmp_path / ".harness/current-task.yaml"
     task = yaml.safe_load(current.read_text())
+    task["task"]["id"] = "TASK-004"
     task["state"] = "VERIFYING"
     current.write_text(yaml.safe_dump(task))
+    from test_test_plan_transition import write_alignment
+
+    write_alignment(tmp_path)
+    assert run_cli(tmp_path, "align", "freeze").returncode == 0
 
     result = run_cli(tmp_path, "transition", "REVIEWING")
 
     assert result.returncode == 1
-    assert "COMPLEXITY_REVIEW_REQUIRED" in result.stderr
+    assert "COMPLEXITY_REVIEW_MISSING" in result.stderr
 
 
 def test_q1_classification_persists_disabled_plan_reconciliation_without_mode(tmp_path):
@@ -266,6 +271,78 @@ def test_fast_profile_uses_lightweight_state_path(tmp_path):
     assert result.returncode == 0, result.stderr
 
 
+def test_fast_frozen_alignment_drift_is_still_detected(tmp_path):
+    from harness import quality_gate
+    from test_test_plan_transition import write_alignment
+
+    harness = tmp_path / ".harness"
+    harness.mkdir()
+    write_alignment(tmp_path, frozen=True)
+    path = harness / "alignment.yaml"
+    document = yaml.safe_load(path.read_text())
+    document["goal"]["summary"] = "changed without revise"
+    path.write_text(yaml.safe_dump(document))
+    blockers = []
+    quality_gate._append_live_alignment_drift(
+        harness,
+        {"task": {"id": "TASK-004"}, "risk": {"profile": "FAST"}},
+        [],
+        lambda code, *_args, **_kwargs: blockers.append(code),
+    )
+    assert blockers == ["CONTRACT_CHANGED"]
+
+
+def test_fast_unfrozen_draft_is_optional_but_malformed_alignment_blocks(tmp_path):
+    from harness import quality_gate
+
+    harness = tmp_path / ".harness"
+    harness.mkdir()
+    path = harness / "alignment.yaml"
+    task = {"task": {"id": "TASK-004"}, "risk": {"profile": "FAST"}}
+    path.write_text("task_id: null\nfreeze: {frozen: false}\n")
+    quality_gate._append_live_alignment_drift(harness, task, [], lambda *_args: None)
+    path.write_text("[invalid")
+    with pytest.raises(quality_gate.InvalidHarnessState, match="ALIGNMENT_INVALID"):
+        quality_gate._append_live_alignment_drift(harness, task, [], lambda *_args: None)
+
+
+def test_fast_without_alignment_has_no_alignment_obligation(tmp_path):
+    from harness import quality_gate
+
+    blockers = []
+    quality_gate._append_live_alignment_drift(
+        tmp_path / ".harness",
+        {"task": {"id": "TASK-004"}, "risk": {"profile": "FAST"}},
+        [],
+        lambda code, *_args, **_kwargs: blockers.append(code),
+    )
+    assert not blockers
+
+
+def test_fast_gate_uses_latest_immutable_phase_receipt(tmp_path):
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    assert run_cli(tmp_path, "init").returncode == 0
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-qm", "base"], cwd=tmp_path, check=True)
+    flags = [item for pair in SAFE.items() for item in (f"--{pair[0]}", pair[1])]
+    assert run_cli(tmp_path, "task", "classify", "--level", "Q1", *flags).returncode == 0
+    assert run_cli(tmp_path, "transition", "IMPLEMENTING").returncode == 0
+    covered = "tests/test_risk.py::test_fast_gate_uses_latest_immutable_phase_receipt"
+    for phase, command in (("red", "false"), ("green", "true")):
+        assert run_cli(tmp_path, "evidence", "--type", "unit_test", "--phase", phase, "--covered-test", covered, "--command", command).returncode == 0
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs/change.md").write_text("new\n")
+    for phase, command in (("red", "false"), ("green", "true")):
+        assert run_cli(tmp_path, "evidence", "--type", "unit_test", "--phase", phase, "--covered-test", covered, "--command", command, "--budget-override-reason", "repeat receipt", "--budget-override-evidence", "immutable receipt regression", "--budget-override-hypothesis", "latest suffix is selected").returncode == 0
+    assert (tmp_path / ".harness/evidence/fast-red-unit-test-2.json").exists()
+    assert run_cli(tmp_path, "evidence", "--type", "build", "--command", "true").returncode == 0
+    assert run_cli(tmp_path, "transition", "VERIFYING").returncode == 0
+
+    result = run_cli(tmp_path, "transition", "GATING")
+
+    assert result.returncode == 0, result.stderr
+
+
 def test_task_classify_persists_fast_profile_and_enters_classified(tmp_path):
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
     assert run_cli(tmp_path, "init").returncode == 0
@@ -280,6 +357,8 @@ def test_task_classify_persists_fast_profile_and_enters_classified(tmp_path):
     assert task["state"] == "CLASSIFIED"
     assert task["risk"]["profile"] == "FAST"
     assert task["risk"]["user_changes"] == {
+        "version": 2,
         "paths": [],
+        "path_fingerprints": {},
         "fingerprint": task["risk"]["user_changes"]["fingerprint"],
     }

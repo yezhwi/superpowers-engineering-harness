@@ -64,6 +64,10 @@
       "pattern": "^sha256:[0-9a-f]{64}$",
       "description": "Business workspace snapshot after command; must equal workspace_fingerprint."
     },
+    "phase": {
+      "enum": ["red", "green"],
+      "description": "Optional task phase; required to reuse task GREEN proof."
+    },
     "scope": {
       "const": "related"
     },

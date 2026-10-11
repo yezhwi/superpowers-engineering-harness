@@ -27,7 +27,7 @@ from pathlib import Path
 
 import yaml
 
-from .paths import EvidenceReferenceError, evidence_output_path
+from .paths import EvidenceReferenceError, evidence_output_path, evidence_receipt_order
 from .budget import (
     BudgetOverrideRequired,
     budget_action,
@@ -206,6 +206,10 @@ def evidence_filename(
     """Return deterministic generic, finding, or related-test evidence filename."""
     stem = evidence_type.replace("_", "-")
     if finding_id is None:
+        if phase is not None:
+            if phase not in {"red", "green"}:
+                raise ValueError("task phase must be red or green")
+            return f"fast-{phase}-{stem}.json"
         if related_coverage is not None:
             identity = json.dumps(
                 {"command": command, "covered_tests": sorted(related_coverage)},
@@ -214,11 +218,7 @@ def evidence_filename(
             )
             digest = hashlib.sha256(identity.encode()).hexdigest()[:12]
             return f"{stem}-{digest}.json"
-        if phase is None:
-            return f"{stem}.json"
-        if phase not in {"red", "green"}:
-            raise ValueError("task phase must be red or green")
-        return f"fast-{phase}-{stem}.json"
+        return f"{stem}.json"
     if phase not in {"red", "green", "full"}:
         raise ValueError("finding evidence requires phase red, green, or full")
     if not FINDING_ID_PATTERN.fullmatch(finding_id):
@@ -733,12 +733,16 @@ def _collect(
             "kind": "timeout",
             "timeout_seconds": timeout_seconds,
         }
-    if finding_id is not None:
+    if finding_id is not None or (
+        evidence_type in TEST_EVIDENCE_TYPES and scope == "related"
+    ):
         evidence["scope"] = scope
     if covered_tests:
         evidence["covered_tests"] = list(covered_tests)
     if covered_test_cases:
         evidence["covered_test_cases"] = list(covered_test_cases)
+    if finding_id is None and phase is not None:
+        evidence["phase"] = phase
     if finding_id is not None:
         evidence["subject"] = {"kind": "finding", "id": finding_id}
         evidence["test"] = {"node_id": test_id}
@@ -786,6 +790,12 @@ def main(argv=None):
     if args.type == "unit_test" and args.scope == "related" and not args.covered_test:
         print("RELATED_COVERED_TEST_REQUIRED", file=sys.stderr)
         return 2
+    if any(
+        not re.fullmatch(r"TC-[0-9]+", value)
+        for value in args.covered_test_case
+    ):
+        print("COVERED_TEST_CASE_INVALID", file=sys.stderr)
+        return 2
     covered_tests = tuple(args.covered_test)
     bound = bind_covered_tests(covered_tests, args.command)
     if isinstance(bound, str):
@@ -811,7 +821,7 @@ def main(argv=None):
     except (ValueError, EvidenceReferenceError) as exc:
         print(str(exc), file=sys.stderr)
         return 2
-    if args.reuse_if_valid and not args.finding and args.phase is None:
+    if args.reuse_if_valid and not args.finding and args.phase in {None, "green"}:
         request = ReuseRequest(
             args.type,
             args.command,
@@ -822,19 +832,23 @@ def main(argv=None):
             args.test,
             tuple(args.covered_test_case),
         )
-        try:
-            candidate = json.loads(out_file.read_text())
-            if can_reuse_evidence(
-                candidate,
-                request,
-                current_head=head,
-                current_workspace=workspace_fingerprint(),
-                current_runtime=runtime_metadata(),
-            ):
-                print(f"EVIDENCE_REUSED: {out_file.name}")
-                return 0
-        except (OSError, json.JSONDecodeError):
-            pass
+        for path in sorted(
+            out_dir.glob(f"{out_file.stem}*.json"),
+            key=lambda path: (-evidence_receipt_order(path), path.name),
+        ):
+            try:
+                candidate = json.loads(path.read_text())
+                if can_reuse_evidence(
+                    candidate,
+                    request,
+                    current_head=head,
+                    current_workspace=workspace_fingerprint(),
+                    current_runtime=runtime_metadata(),
+                ):
+                    print(f"EVIDENCE_REUSED: {path.name}")
+                    return 0
+            except (OSError, json.JSONDecodeError):
+                continue
 
     override_values = (
         args.budget_override_reason,
@@ -864,6 +878,13 @@ def main(argv=None):
     except BudgetOverrideRequired as exc:
         print(str(exc), file=sys.stderr)
         return 2
+
+    if out_file.exists():
+        stem = out_file.stem
+        suffix = 2
+        while (out_dir / f"{stem}-{suffix}.json").exists():
+            suffix += 1
+        out_file = out_dir / f"{stem}-{suffix}.json"
 
     evidence = _collect(
         args.type,

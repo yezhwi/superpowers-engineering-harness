@@ -21,6 +21,7 @@
     "open_questions": {"$ref": "#/definitions/strings"},
     "open_decisions": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^DEC-[0-9]+$"}},
     "open_loops": {"$ref": "#/definitions/strings"},
+    "revisions": {"type": "array", "items": {"type": "object", "required": ["reason", "timestamp", "previous_contract_hash"], "properties": {"reason": {"type": "string", "minLength": 1}, "timestamp": {"type": "string", "minLength": 1}, "previous_contract_hash": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"}}, "additionalProperties": false}},
     "freeze": {"type": "object", "required": ["frozen", "frozen_at", "contract_hash"], "properties": {"frozen": {"type": "boolean"}, "frozen_at": {"type": ["string", "null"]}, "contract_hash": {"type": ["string", "null"], "pattern": "^sha256:[a-f0-9]{64}$"}}, "additionalProperties": false}
   },
   "definitions": {

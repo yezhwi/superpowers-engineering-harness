@@ -26,7 +26,7 @@ from .existing_verification import (
     green_unit_test_evidence,
     has_existing_verification,
 )
-from .paths import EvidenceReferenceError, evidence_path
+from .paths import EvidenceReferenceError, evidence_path, evidence_receipt_order
 from .plan_reconciliation import (
     PlanArtifactError,
     PlanAssessment,
@@ -47,7 +47,7 @@ from .workspace import (
     claimed_scope_sets,
     observability_inspected_paths,
     project_typed_scope,
-    protected_paths_fingerprint,
+    protected_user_changes_fingerprint,
     snapshot,
 )
 from .workspace import (
@@ -125,6 +125,17 @@ def _append_live_alignment_drift(harness_dir: Path, task: dict, findings: list, 
         if profile in {"STANDARD", "STRICT"}:
             raise InvalidHarnessState("ALIGNMENT_MISSING")
         return
+    if profile == "FAST":
+        try:
+            draft = yaml.safe_load(source_access.read_text(path))
+        except (OSError, yaml.YAMLError) as exc:
+            raise InvalidHarnessState("ALIGNMENT_INVALID") from exc
+        if (
+            isinstance(draft, dict)
+            and isinstance(draft.get("freeze"), dict)
+            and draft["freeze"].get("frozen") is False
+        ):
+            return
     try:
         document = alignment.load_alignment(harness_dir)
     except alignment.AlignmentError as exc:
@@ -353,7 +364,7 @@ def run_fast_gate(
         )
 
     try:
-        protected = protected_paths_fingerprint(paths)
+        protected = protected_user_changes_fingerprint(user_changes)
     except WorkspaceError as exc:
         raise InvalidHarnessState(f"cannot verify user changes: {exc}") from exc
     if protected != user_changes.get("fingerprint"):
@@ -419,7 +430,13 @@ def run_fast_gate(
                     "FAST green regression evidence invalid",
                 )
             continue
-        path = harness_dir / "evidence" / f"fast-{phase}-unit-test.json"
+        stem = f"fast-{phase}-unit-test"
+        candidates = list((harness_dir / "evidence").glob(f"{stem}*.json"))
+        path = min(
+            candidates,
+            key=lambda candidate: (-evidence_receipt_order(candidate), candidate.name),
+            default=harness_dir / "evidence" / f"{stem}.json",
+        )
         try:
             record = json.loads(source_access.read_text(path))
             validate_evidence(

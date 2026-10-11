@@ -405,6 +405,40 @@ def enable_plan_reconciliation(harness, *, level="Q2"):
     return task
 
 
+@pytest.mark.parametrize("execution_kind", ["legacy", "invalid_replay"])
+def test_context_detects_v2_protected_drift_without_source_read(harness, execution_kind):
+    from harness.plan_reconciliation import plan_fingerprint
+
+    task = enable_plan_reconciliation(harness, level="Q3")
+    name = "notes/user.md"
+    path = harness.parent / name
+    path.parent.mkdir()
+    path.write_text("user baseline\n")
+    contributions = workspace.protected_path_fingerprints((name,), harness.parent)
+    task["risk"]["user_changes"] = {
+        "version": 2, "paths": [name], "path_fingerprints": contributions,
+        "fingerprint": workspace.aggregate_protected_path_fingerprints(contributions),
+    }
+    write_yaml(harness / "current-task.yaml", task)
+    plan = {"version": 1, "items": [{"id": "P-001", "intent": "proof", "surfaces": [name]}]}
+    execution = {
+        "version": 1 if execution_kind == "legacy" else 2,
+        "plan": {"path": ".harness/plan.yaml", "fingerprint": plan_fingerprint(plan)},
+        "items": {"P-001": {"status": "COMPLETE", "surface_refs": [name]}},
+    }
+    if execution_kind == "invalid_replay":
+        execution.update({"sequence": 0, "transitions": []})
+    write_yaml(harness / "plan.yaml", plan)
+    write_yaml(harness / "plan-execution.yaml", execution)
+    path.write_text("modified without adoption\n")
+
+    source, _ = load_and_build(harness)
+
+    assert "PLAN_PROTECTED_PATHS_MODIFIED" in {
+        blocker.code for blocker in source.plan_assessment.final_blockers
+    }
+
+
 def write_plan_artifacts(harness):
     from harness.plan_reconciliation import plan_fingerprint
 

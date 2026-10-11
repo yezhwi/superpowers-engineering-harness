@@ -33,6 +33,7 @@ def __collect(
     *,
     covered_test="tests/test_x.py::test_x",
     reuse_if_valid=False,
+    phase=None,
 ):
     args = [
         sys.executable,
@@ -48,6 +49,8 @@ def __collect(
         args.extend(["--scope", "related", "--covered-test", covered_test])
     if reuse_if_valid:
         args.append("--reuse-if-valid")
+    if phase is not None:
+        args.extend(["--phase", phase])
     return subprocess.run(
         args,
         capture_output=True,
@@ -97,6 +100,81 @@ def test_related_test_evidence_is_append_only_per_coverage(tmp_path):
         "tests/test_a.py",
         "tests/test_b.py",
     }
+
+
+def test_repeated_related_evidence_identity_creates_immutable_receipts(tmp_path):
+    assert __collect(tmp_path, "unit_test", "true", covered_test="tests/test_a.py").returncode == 0
+    original = next((tmp_path / "evidence").glob("unit-test-*.json"))
+    before = original.read_bytes()
+
+    assert __collect(tmp_path, "unit_test", "true", covered_test="tests/test_a.py").returncode == 0
+
+    records = sorted((tmp_path / "evidence").glob("unit-test-*.json"))
+    assert len(records) == 2
+    assert original.read_bytes() == before
+    assert any(path.stem.endswith("-2") for path in records)
+
+
+@pytest.mark.parametrize("phase", [None, "green"])
+def test_reuse_miss_allocates_immutable_suffix(tmp_path, phase):
+    evidence_type = "build" if phase is None else "unit_test"
+    assert __collect(tmp_path, evidence_type, "true", phase=phase).returncode == 0
+    [original] = (tmp_path / "evidence").glob("*.json")
+    before = original.read_bytes()
+
+    result = __collect(
+        tmp_path, evidence_type, "echo new receipt", reuse_if_valid=True, phase=phase
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "EVIDENCE_REUSED" not in result.stdout
+    assert original.read_bytes() == before
+    newer = original.with_name(f"{original.stem}-2.json")
+    assert json.loads(newer.read_text())["command"] == "echo new receipt"
+
+
+def test_reuse_selects_latest_matching_immutable_receipt(tmp_path):
+    assert __collect(tmp_path, "unit_test", "true", covered_test="tests/test_a.py").returncode == 0
+    assert __collect(tmp_path, "unit_test", "true", covered_test="tests/test_a.py").returncode == 0
+
+    result = __collect(
+        tmp_path, "unit_test", "true", covered_test="tests/test_a.py", reuse_if_valid=True
+    )
+
+    assert result.returncode == 0
+    assert "EVIDENCE_REUSED: unit-test-9196f11cb5cc-2.json" in result.stdout
+
+
+def test_green_phase_reuses_latest_receipt(tmp_path):
+    marker = tmp_path / "ran"
+    command = f"sh -c 'echo ran >> {marker}'"
+    assert __collect(tmp_path, "unit_test", command, phase="green").returncode == 0
+    assert __collect(tmp_path, "unit_test", command, phase="green").returncode == 0
+    marker.unlink()
+    before = {p.name: p.read_bytes() for p in (tmp_path / "evidence").glob("*.json")}
+
+    result = __collect(tmp_path, "unit_test", command, phase="green", reuse_if_valid=True)
+
+    assert result.returncode == 0, result.stderr
+    assert "EVIDENCE_REUSED: fast-green-unit-test-2.json" in result.stdout
+    assert not marker.exists()
+    assert {p.name: p.read_bytes() for p in (tmp_path / "evidence").glob("*.json")} == before
+
+
+@pytest.mark.parametrize("exit_code", [0, 1])
+def test_red_phase_never_reuses(tmp_path, exit_code):
+    marker = tmp_path / "ran"
+    command = f"sh -c 'echo ran >> {marker}; exit {exit_code}'"
+    assert __collect(tmp_path, "unit_test", command, phase="red").returncode == 0
+    first = (tmp_path / "evidence/fast-red-unit-test.json").read_bytes()
+    marker.unlink()
+
+    result = __collect(tmp_path, "unit_test", command, phase="red", reuse_if_valid=True)
+
+    assert "EVIDENCE_REUSED" not in result.stdout
+    assert marker.exists()
+    assert (tmp_path / "evidence/fast-red-unit-test.json").read_bytes() == first
+    assert (tmp_path / "evidence/fast-red-unit-test-2.json").exists()
 
 
 def test_collect_success_evidence(tmp_path):
@@ -206,8 +284,26 @@ def test_collect_related_scope_records_covered_tests(tmp_path):
     assert result.returncode == 0, result.stderr
     [path] = (tmp_path / "evidence").glob("unit-test-*.json")
     evidence = json.loads(path.read_text())
-    assert "scope" not in evidence
+    assert evidence["scope"] == "related"
     assert evidence["covered_tests"] == ["tests/test_x.py::test_x"]
+
+
+def test_collect_rejects_invalid_covered_test_case_before_execution(tmp_path):
+    marker = tmp_path / "ran"
+    result = subprocess.run(
+        [
+            sys.executable, str(REPO / "scripts" / "collect_evidence.py"),
+            "--type", "unit_test", "--scope", "related",
+            "--covered-test", "tests/test_x.py::test_x",
+            "--covered-test-case", "REQ-004/TC-004",
+            "--command", f"pytest tests/test_x.py::test_x; touch {marker}", "--harness-dir", str(tmp_path),
+        ], capture_output=True, text=True, cwd=REPO,
+    )
+
+    assert result.returncode == 2
+    assert "COVERED_TEST_CASE_INVALID" in result.stderr
+    assert not marker.exists()
+    assert not (tmp_path / "evidence").exists()
 
 
 def test_collect_non_test_evidence_rejects_covered_test(tmp_path):
@@ -266,7 +362,7 @@ def test_collect_integration_evidence_records_covered_tests(tmp_path):
     [path] = (tmp_path / "evidence").glob("integration-test-*.json")
     evidence = json.loads(path.read_text())
     assert evidence["covered_tests"] == ["tests/test_api.py::test_create"]
-    assert "scope" not in evidence
+    assert evidence["scope"] == "related"
 
 
 def test_collect_integration_related_scope_records_scope(tmp_path):

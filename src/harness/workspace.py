@@ -339,21 +339,58 @@ def architecture_path_index(repo_root: Path | None = None) -> tuple[str, ...]:
     return tuple(sorted(tracked - deleted | _architecture_untracked_paths(root)))
 
 
+def _protected_path_material(name: str, root: Path) -> bytes:
+    from harness import source_access
+
+    path = root / name
+    diff = _run(root, "diff", "--binary", "HEAD", "--", name)
+    parts = [name.encode(), diff]
+    if not diff and source_access.is_file(path):
+        parts.append(hashlib.sha256(source_access.read_bytes(path)).digest())
+    return b"\0".join(parts)
+
+
+def protected_path_fingerprints(
+    paths: tuple[str, ...], repo_root: Path | None = None
+) -> dict[str, str]:
+    """Return Context-safe v2 per-path contributions from Git-only inputs."""
+    root = _root(repo_root)
+    def material(name: str) -> bytes:
+        diff = _run(root, "diff", "--binary", "HEAD", "--", name)
+        object_id = _run(root, "hash-object", "--", name) if not diff else b""
+        return b"\0".join((name.encode(), diff, object_id))
+    return {
+        name: "sha256:" + hashlib.sha256(material(name)).hexdigest()
+        for name in sorted(paths)
+    }
+
+
+def aggregate_protected_path_fingerprints(path_fingerprints: dict[str, str]) -> str:
+    """Aggregate persisted v2 path contributions."""
+    parts = [f"{name}\0{path_fingerprints[name]}".encode() for name in sorted(path_fingerprints)]
+    return "sha256:" + hashlib.sha256(b"\0".join(parts)).hexdigest()
+
+
 def protected_paths_fingerprint(
     paths: tuple[str, ...], repo_root: Path | None = None
 ) -> str:
-    """Fingerprint only declared pre-existing user changes."""
-    from harness import source_access
-
+    """Fingerprint legacy v1 declared pre-existing user changes."""
     root = _root(repo_root)
-    parts: list[bytes] = []
-    for name in sorted(paths):
-        path = root / name
-        diff = _run(root, "diff", "--binary", "HEAD", "--", name)
-        parts.extend([name.encode(), diff])
-        if not diff and source_access.is_file(path):
-            parts.append(hashlib.sha256(source_access.read_bytes(path)).digest())
-    return "sha256:" + hashlib.sha256(b"\0".join(parts)).hexdigest()
+    return "sha256:" + hashlib.sha256(
+        b"\0".join(_protected_path_material(name, root) for name in sorted(paths))
+    ).hexdigest()
+
+
+def protected_user_changes_fingerprint(
+    user_changes: dict, *, repo_root: Path | None = None
+) -> str:
+    """Return current protection fingerprint; v2 uses Context-safe Git queries."""
+    paths = tuple(user_changes.get("paths") or ())
+    if user_changes.get("version") == 2:
+        return aggregate_protected_path_fingerprints(
+            protected_path_fingerprints(paths, repo_root)
+        )
+    return protected_paths_fingerprint(paths, repo_root)
 
 
 def snapshot(repo_root: Path | None = None) -> WorkspaceSnapshot:

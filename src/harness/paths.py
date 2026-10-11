@@ -4,6 +4,21 @@ from pathlib import Path
 import re
 
 
+def evidence_receipt_order(reference: str | Path) -> int:
+    """Order canonical generic, phase and related receipts; base has order 1.
+
+    Optional 12-hex identity is consumed before numeric receipt suffix, so
+    an all-numeric identity is never mistaken for a collection sequence.
+    """
+    stem = Path(reference).name.removesuffix(".json")
+    match = re.fullmatch(
+        r"(?:FND-[0-9]+-(?:red|green|full)-)?"
+        r"[a-z]+(?:-[a-z]+)*(?:-[0-9a-f]{12})?(?:-([0-9]+))?",
+        stem,
+    )
+    return max(1, int(match[1])) if match and match[1] else 1
+
+
 class EvidenceReferenceError(ValueError):
     """An artifact reference does not name a canonical evidence file."""
 

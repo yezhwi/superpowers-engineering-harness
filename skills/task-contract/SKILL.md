@@ -123,7 +123,7 @@ back to the user — do not silently guess.
 
 For each Requirement/Invariant, name how it will be verified later:
 unit test, integration test, deterministic command, review finding check.
-This feeds `collect-evidence` and `quality-gate` skills downstream.
+Every automated case must have a nonempty `tests` list of executable selectors; manual cases may omit selectors. This feeds `collect-evidence` and `quality-gate` skills downstream.
 
 ### 7. Exit PLANNED
 
@@ -133,8 +133,10 @@ After both YAML files exist and validate against their schemas:
    - `requirements.total`
    - `invariants.total`
    - `timestamps.updated_at`
-2. Transition state `SPECIFYING -> PLANNED` via the state machine.
-3. Run `harness status` to confirm persistence (raw `python scripts/harness_status.py` only works inside the harness repo root).
+2. Write `.harness/alignment.yaml`: complete schema-valid unfrozen v1 envelope for current task. Include goal, scope, non-goals, boundaries, constraints, assumptions, acceptance criteria mapped to `REQ-*`, implementation surfaces for must requirements, verification, and empty optional decision/interface/open lists. Set `freeze: {frozen: false, frozen_at: null, contract_hash: null}`. `harness align init` cannot update an existing alignment.
+3. Run `harness align freeze`, then `harness align check` (check validates the frozen seal).
+4. Transition state `SPECIFYING -> PLANNED` via `harness transition PLANNED` after alignment exists and automated test bindings are nonempty.
+5. Run `harness status` to confirm persistence (raw `python scripts/harness_status.py` only works inside the harness repo root).
 
 ## Production Diagnosability
 
@@ -152,6 +154,7 @@ For Q2/Q3, inspect changed paths and direct dependencies for external calls, sta
 | `.harness/requirements.yaml` | created/updated |
 | `.harness/invariants.yaml` | created/updated |
 | `.harness/current-task.yaml` | counters + state updated |
+| `.harness/alignment.yaml` | complete unfrozen contract, then frozen/sealed |
 | business code | **NEVER touched** |
 
 ## Self-check before finishing
@@ -159,5 +162,6 @@ For Q2/Q3, inspect changed paths and direct dependencies for external calls, sta
 - [ ] Every `priority=must` requirement verifiable by an executable check?
 - [ ] At least one invariant covering failure/retry/idempotency paths?
 - [ ] Both YAML files pass schema validation?
+- [ ] Complete alignment written, then `align freeze` and `align check` pass?
 - [ ] State transition validated through the state machine?
 - [ ] No business code modified?
