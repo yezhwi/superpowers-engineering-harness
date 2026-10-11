@@ -36,20 +36,20 @@ def test_control_plane_spec_requires_only_related_verification():
     assert "Full project suite runs after targeted tests" not in verification
 
 
-def test_unreleased_documents_control_plane_repairs_and_compatibility():
+def test_v031_documents_control_plane_repairs_and_compatibility():
     text = (REPO / "CHANGELOG.md").read_text()
-    unreleased = text.split("## Unreleased", 1)[1].split("## 0.3.0", 1)[0]
+    unreleased, published = text.split("## 0.3.1", 1)
+    release = published.split("## 0.3.0", 1)[0]
     for term in (
         "harness align revise", "SPECIFYING -> PLANNED", "telemetry",
         "single scan", "immutable", "GREEN", "RED", "finding",
         "v1", "v2", "phase", "not automatically rewritten",
     ):
-        assert term in unreleased
-    assert "raw-byte fingerprint behavior remains unchanged" in unreleased
-    assert "fail-closed" in unreleased
-    assert "regression and impact-related tests" in unreleased
-    assert text.splitlines()[2] == "## Unreleased"
-    assert not re.search(r"^## [0-9]", unreleased, re.MULTILINE)
+        assert term in release
+    assert "raw-byte fingerprint behavior remains unchanged" in release
+    assert "fail-closed" in release
+    assert "regression and impact-related tests" in release
+    assert unreleased.strip() == "# Changelog\n\n## Unreleased"
 
 
 def test_readmes_document_agy_quick_start():
@@ -60,7 +60,7 @@ def test_readmes_document_agy_quick_start():
         text = (REPO / name).read_text(encoding="utf-8")
         assert heading in text
         assert "scripts/install-agy.sh" in text
-        assert "bash -s -- v0.3.0" in text
+        assert "bash -s -- v0.3.1" in text
         assert "agy" in text
 
 
@@ -107,7 +107,7 @@ def test_npm_pack_contains_core_skill_and_linked_docs():
     paths = {item["path"] for item in json.loads(result.stdout)[0]["files"]}
 
     metadata = json.loads(result.stdout)[0]
-    assert metadata["version"] == "0.3.0"
+    assert metadata["version"] == "0.3.1"
     assert "CHANGELOG.md" in paths
     assert "skills/engineering-harness/SKILL.md" in paths
     assert "docs/architecture.md" in paths
@@ -150,7 +150,7 @@ def test_readmes_document_matching_skills_and_cli_install_without_full_suite():
         assert f"curl -fsSL {base}/main/scripts/install-pi.sh | bash" in text
         assert (
             f"curl -fsSL {base}/main/scripts/install-pi.sh "
-            "| bash -s -- v0.3.0"
+            "| bash -s -- v0.3.1"
         ) in text
         assert "Superpowers" in text
         assert "isolated" in text.lower() or "隔离" in text
@@ -239,8 +239,8 @@ def test_readmes_document_risk_profiles_and_independent_authorization():
 def test_docs_identify_current_adaptive_release():
     for path in (REPO / "README.md", REPO / "README.zh-CN.md"):
         text = path.read_text()
-        assert text.startswith("# Superpowers Engineering Harness v0.3.0\n")
-        assert "v0.3.0 current release" in text
+        assert text.startswith("# Superpowers Engineering Harness v0.3.1\n")
+        assert "v0.3.1 current release" in text
         assert "v0.3.0 architecture design" in text or "v0.3.0 架构设计" in text
         assert "Architecture Scope Gate P0" in text
         assert "Architecture Context Projection P1" in text

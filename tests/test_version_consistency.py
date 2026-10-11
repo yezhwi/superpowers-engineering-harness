@@ -9,7 +9,7 @@ REPO = Path(__file__).resolve().parent.parent
 
 
 def test_current_release_metadata_is_publishable():
-    expected = "0.3.0"
+    expected = "0.3.1"
     assert (
         tomllib.loads((REPO / "pyproject.toml").read_text())["project"]["version"]
         == expected
@@ -25,7 +25,8 @@ def test_v030_release_notes_cover_architecture_p0_p1_p2_without_claims():
     unreleased, remainder = changelog.split("## 0.3.0", 1)
     release = remainder.split("## 0.2.10", 1)[0]
 
-    assert unreleased.strip() == "# Changelog\n\n## Unreleased"
+    assert unreleased.split("## 0.3.1", 1)[0].strip() == "# Changelog\n\n## Unreleased"
+    assert "## 0.3.1" in unreleased
     for phrase in (
         "Architecture Scope Gate P0",
         "four-layer Git attribution",

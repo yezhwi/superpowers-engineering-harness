@@ -1,4 +1,4 @@
-# Superpowers Engineering Harness v0.3.0
+# Superpowers Engineering Harness v0.3.1
 
 [简体中文](README.zh-CN.md)
 
@@ -27,7 +27,7 @@ curl -fsSL https://raw.githubusercontent.com/yezhwi/superpowers-engineering-harn
 Pin a release when needed:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/yezhwi/superpowers-engineering-harness/main/scripts/install-pi.sh | bash -s -- v0.3.0
+curl -fsSL https://raw.githubusercontent.com/yezhwi/superpowers-engineering-harness/main/scripts/install-pi.sh | bash -s -- v0.3.1
 ```
 
 Installer checks whether Superpowers is configured and installs it only when missing. It reconciles pinned Harness Pi skills, installs matching Python CLI into isolated user environment, and exposes `~/.local/bin/harness`. Add `~/.local/bin` to `PATH` if installer reports it missing. Re-running same version is idempotent. Review downloaded script before execution when required by local security policy.
@@ -60,7 +60,7 @@ curl -fsSL https://raw.githubusercontent.com/yezhwi/superpowers-engineering-harn
 Pin a release when needed:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/yezhwi/superpowers-engineering-harness/main/scripts/install-agy.sh | bash -s -- v0.3.0
+curl -fsSL https://raw.githubusercontent.com/yezhwi/superpowers-engineering-harness/main/scripts/install-agy.sh | bash -s -- v0.3.1
 ```
 
 Installer updates Harness-owned skills under `~/.gemini/antigravity-cli/skills/` and preserves unrelated global skills. It does not initialize a project. In each Git project, run `harness init` once, then start AGY with `agy`; use `/engineering-harness` to invoke Harness explicitly in first session.
@@ -224,9 +224,11 @@ v0.2.10 Canonical Plan execution reconciliation
 v0.3.0  Architecture Scope Gate P0
         + Architecture Context Projection P1
         + Architecture Evaluation P2
+  ↓
+v0.3.1  Task bootstrap + protected snapshots + immutable evidence fixes
 ```
 
-`v0.3.0 current release`; earlier risk-adaptive, Context, Alignment, and Plan Reconciliation safeguards remain available. v0.3.0 adds operator-authored Architecture models, deterministic ownership and Git attribution, Alignment seal v2, required-mode scope checks, bounded declared-plus-one-hop Context projection, and separate Drift Detection and Context Recovery experiments. Benchmark results remain `PENDING` until accepted external run artifacts provide at least three runs per fixture and arm. No measured benchmark improvement is claimed. See [v0.3.0 architecture design](docs/Superpowers-Engineering-Harness-v0.3.0-Architecture-Scope-and-Drift-Design.md).
+`v0.3.1 current release` adds task-bootstrap, protected-snapshot, and immutable-evidence fixes; earlier risk-adaptive, Context, Alignment, and Plan Reconciliation safeguards remain available. v0.3.0 adds operator-authored Architecture models, deterministic ownership and Git attribution, Alignment seal v2, required-mode scope checks, bounded declared-plus-one-hop Context projection, and separate Drift Detection and Context Recovery experiments. Benchmark results remain `PENDING` until accepted external run artifacts provide at least three runs per fixture and arm. No measured benchmark improvement is claimed. See [v0.3.0 architecture design](docs/Superpowers-Engineering-Harness-v0.3.0-Architecture-Scope-and-Drift-Design.md).
 
 **Routing:** Q0 answers without task; Q1 / FAST uses RED/fix/GREEN/Light Gate; Q2 / STANDARD and Q3 / STRICT use full contract/review/Gate workflow.
 

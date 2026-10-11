@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.3.1
+
 ### Fixed
 
 - Add controlled `harness align revise --reason` with revision audit and atomic seal removal; require freeze/check before re-entry.
@@ -17,7 +19,7 @@
 
 - Only exact successful generic or task GREEN receipts may be reused. RED and finding proofs always rerun. Task phase receipts include `phase` metadata; old GREEN receipts without it are not reused and receive a new immutable receipt.
 - Legacy v1 raw-byte fingerprint behavior remains unchanged. v2 path contributions now use Git binary diffs or Git content object IDs. Existing v2 baselines are not automatically rewritten or rebased; snapshots from the earlier digest format may fail protection checks, which remain fail-closed.
-- Verification runs only regression and impact-related tests; full-suite execution remains forbidden. No new release version or tag is declared by these unreleased notes.
+- Verification runs only regression and impact-related tests; full-suite execution remains forbidden. Release notes do not publish packages or create Git tags.
 
 ## 0.3.0
 

@@ -1,6 +1,6 @@
 {
 	"name": "superpowers-engineering-harness",
-	"version": "0.3.0",
+	"version": "0.3.1",
 	"description": "Pi skills for deterministic, evidence-backed engineering workflows; requires the separately installed Harness CLI.",
 	"license": "Apache-2.0",
 	"author": {
