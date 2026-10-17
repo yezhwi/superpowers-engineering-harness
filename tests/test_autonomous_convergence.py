@@ -238,7 +238,9 @@ def test_second_consecutive_identical_blocker_escalates_no_progress(tmp_path):
 
 
 def test_repeated_gate_from_blocked_fails_and_never_increments_count(tmp_path):
-    h = make_repo(tmp_path, state="GATING", iteration=0, max_iterations=5)
+    h = make_repo(
+        tmp_path, state="GATING", iteration=0, max_iterations=5, trusted_scope=True
+    )
     (h / "evidence" / "unit-test.json").unlink()
 
     run_cli(tmp_path, "gate")
