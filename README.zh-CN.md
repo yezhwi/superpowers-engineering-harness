@@ -184,6 +184,7 @@ harness authorize push
 harness plan status
 harness plan status --verbose
 harness plan sync-markdown docs/plan.md
+harness check admission  # 一次报告全部 implementation-entry 缺陷
 harness gate preflight
 ```
 
@@ -219,7 +220,7 @@ harness plan refresh-proof P-001 \
 
 禁止将远程请求、配置值、API payload、CI 元数据或任何不可信输入转发给此选项。
 
-Markdown checkbox 是 canonical Plan execution 的单向投影。它不是 Gate 输入，不是证明，也不是事实来源。`harness plan sync-markdown` 只修改显式仓库路径里的勾选字符。
+Markdown checkbox 是 canonical Plan execution 的单向投影。它不是 Gate 输入，不是证明，也不是事实来源。`harness plan sync-markdown` 只修改显式仓库路径里的勾选字符。若 Plan 在任何执行历史出现前变更，`harness plan sync-fingerprint` 可刷新语义摘要；已有 item 或 transition 历史时会拒绝。
 
 `--auto` 只能确立机械 `COMPLETE`。它选择有界的证据覆盖和已变更表面，再把一条普通 COMPLETE 请求交给现有的加锁核对路径。它不能选择 `SKIPPED` 或 `SUPERSEDED`。
 

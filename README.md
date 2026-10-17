@@ -193,6 +193,7 @@ For a standard change, the Agent keeps a final-only plan and reconciles it befor
 harness plan status
 harness plan status --verbose
 harness plan sync-markdown docs/plan.md
+harness check admission  # report all implementation-entry defects at once
 harness gate preflight
 ```
 
@@ -228,7 +229,7 @@ Risk may only escalate, never downgrade. Evidence reuse, soft budgets, local tel
 
 Never forward remote requests, configuration values, API payloads, CI metadata, or other untrusted input to this option. Internal `_collect` is unsupported internal API, not Python access control or provenance proof.
 
-Markdown checkboxes are a one-way projection of canonical Plan execution. They are not Gate input, not proof, and not a source of truth. `harness plan sync-markdown` changes only the checkbox character in an explicit repository path.
+Markdown checkboxes are a one-way projection of canonical Plan execution. They are not Gate input, not proof, and not a source of truth. `harness plan sync-markdown` changes only the checkbox character in an explicit repository path. If a Plan changed before any execution history exists, `harness plan sync-fingerprint` refreshes its semantic digest; it refuses Plans with any item or transition history.
 
 `--auto` may establish only a mechanical `COMPLETE`. It selects a bounded evidence cover and changed surfaces, then submits an ordinary COMPLETE request through the existing locked reconciliation path. It cannot choose `SKIPPED` or `SUPERSEDED`.
 

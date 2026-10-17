@@ -311,6 +311,38 @@ def test_plan_reconcile_auto_cli_publishes_ordinary_complete_transition(tmp_path
     assert "auto" not in execution["transitions"][-1]
 
 
+def test_plan_sync_fingerprint_cli_updates_empty_stale_execution(tmp_path):
+    harness_dir = mutation_repo(tmp_path, stale=True)
+
+    result = cli(tmp_path, "plan", "sync-fingerprint")
+
+    assert (result.returncode, result.stdout, result.stderr) == (
+        0,
+        "PLAN_FINGERPRINT_UPDATED\n",
+        "",
+    )
+    from harness.plan_reconciliation import plan_fingerprint
+
+    plan = yaml.safe_load((harness_dir / "plan.yaml").read_text())
+    execution = yaml.safe_load((harness_dir / "plan-execution.yaml").read_text())
+    assert execution["plan"]["fingerprint"] == plan_fingerprint(plan)
+
+
+def test_plan_sync_fingerprint_cli_refuses_execution_history(tmp_path):
+    harness_dir = mutation_repo(tmp_path, stale=True)
+    execution = yaml.safe_load((harness_dir / "plan-execution.yaml").read_text())
+    execution["items"] = {"P-001": {"status": "COMPLETE"}}
+    (harness_dir / "plan-execution.yaml").write_text(yaml.safe_dump(execution))
+
+    result = cli(tmp_path, "plan", "sync-fingerprint")
+
+    assert (result.returncode, result.stdout, result.stderr) == (
+        1,
+        "",
+        "PLAN_EXECUTION_NOT_EMPTY\n",
+    )
+
+
 def test_plan_sync_markdown_updates_then_reports_exact_noop(tmp_path):
     mutation_repo(tmp_path)
     target = markdown_target(tmp_path)
