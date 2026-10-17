@@ -164,6 +164,9 @@ def _main(argv=None) -> int:
     p_align_revise.add_argument("--reason", required=True)
     p_check = sub.add_parser("check", help="run Harness checks")
     check_sub = p_check.add_subparsers(dest="check_command")
+    check_sub.add_parser(
+        "admission", help="report all implementation-entry admission defects"
+    )
     p_minimal = check_sub.add_parser(
         "minimal", help="persist Minimal Implementation Decision"
     )
@@ -506,6 +509,8 @@ def _main(argv=None) -> int:
         return controlplane.cmd_align(args.align_command, reason=getattr(args, "reason", None))
     if args.subcommand == "check" and args.check_command == "minimal":
         return controlplane.cmd_check_minimal(Path(args.source_file))
+    if args.subcommand == "check" and args.check_command == "admission":
+        return controlplane.cmd_check_admission()
     if args.subcommand == "review" and args.review_command == "complexity":
         return controlplane.cmd_review_complexity(Path(args.source_file), args.base)
     if args.subcommand == "review" and args.review_command == "diagnosability":

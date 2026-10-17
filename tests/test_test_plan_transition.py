@@ -368,6 +368,25 @@ def test_specifying_to_planned_requires_case_level_binding(tmp_path):
     assert yaml.safe_load(task_path.read_text())["state"] == "SPECIFYING"
 
 
+def test_admission_check_reports_all_test_plan_defects(tmp_path):
+    """Break caught: operator fixes one entry defect per expensive retry."""
+    repo = standard_repo_in_state(tmp_path)
+    write_minimal_decision(repo)
+    write_documents(repo, valid=True)
+    requirements_path = repo / ".harness/requirements.yaml"
+    requirements = yaml.safe_load(requirements_path.read_text())
+    requirements["requirements"][0]["test_plan"]["cases"][0]["tests"] = [
+        "tests/missing.py::test_case"
+    ]
+    requirements_path.write_text(yaml.safe_dump(requirements))
+
+    result = cli(repo, "check", "admission")
+
+    assert result.returncode == 1
+    assert "TEST_PLAN_TARGET_MISSING" in result.stdout
+    assert "ALIGNMENT_INVALID" in result.stdout
+
+
 def test_standard_planned_to_implementing_rejects_invalid_test_plan(tmp_path):
     """Break caught: STANDARD task starts implementation without a strategy."""
     repo = standard_repo_in_state(tmp_path)

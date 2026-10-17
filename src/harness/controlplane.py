@@ -1577,6 +1577,77 @@ def cmd_resume() -> int:
 
 
 @_publication_entry
+def cmd_check_admission() -> int:
+    """Report independent IMPLEMENTING-entry defects without state mutation."""
+    harness_dir = Path(".harness")
+    diagnostics: list[str] = []
+    try:
+        task = load_task(harness_dir)
+        quality_gate.validate_schema(
+            task, "task.schema.json", harness_dir / "current-task.yaml"
+        )
+    except (HarnessStateError, OSError, yaml.YAMLError, quality_gate.InvalidHarnessState) as exc:
+        print(f"INVALID_HARNESS_STATE: {exc}", file=sys.stderr)
+        return 2
+    if (task.get("risk") or {}).get("profile") not in {"STANDARD", "STRICT"}:
+        print("ADMISSION_NOT_REQUIRED")
+        return 0
+    requirements = invariants = None
+    for name, schema_name, key in (
+        ("requirements.yaml", "requirement.schema.json", "requirements"),
+        ("invariants.yaml", "invariant.schema.json", "invariants"),
+    ):
+        path = harness_dir / name
+        try:
+            document = yaml.safe_load(path.read_text(encoding="utf-8"))
+            quality_gate.validate_schema(document, schema_name, path)
+            if key == "requirements":
+                requirements = document
+            else:
+                invariants = document
+        except (OSError, yaml.YAMLError, quality_gate.InvalidHarnessState) as exc:
+            diagnostics.append(f"TEST_PLAN_SCHEMA_INVALID: {name}: {exc}")
+    if requirements is not None and invariants is not None:
+        for issue in test_plan.validate_test_plan(requirements, invariants):
+            subject = issue.requirement_id or issue.invariant_id or "TEST_PLAN"
+            diagnostics.append(f"{subject}: {issue.code}")
+    try:
+        document = alignment.load_alignment(harness_dir)
+        requirement_ids = {record["id"] for record in (requirements or {}).get("requirements", [])}
+        critical_ids = {
+            record["id"] for record in (requirements or {}).get("requirements", [])
+            if record.get("priority") == "must"
+        }
+        proposed = {
+            record["id"] for record in decision.load_decisions(harness_dir)
+            if record["task_id"] == task["task"]["id"] and record["status"] == "PROPOSED"
+        }
+        for issue in alignment.check_completeness(
+            document,
+            requirement_ids=requirement_ids,
+            critical_requirement_ids=critical_ids,
+            proposed_decision_ids=proposed,
+        ):
+            diagnostics.append(
+                f"ALIGNMENT_INVALID: {issue.subject_id or 'ALIGNMENT'}: {issue.code}"
+            )
+        alignment.validate_freeze(document)
+    except (alignment.AlignmentError, decision.DecisionError, OSError, yaml.YAMLError, ValueError) as exc:
+        diagnostics.append(f"ALIGNMENT_INVALID: {exc}")
+    try:
+        for issue in plan_reconciliation.validate_plan_initialization(harness_dir, task):
+            diagnostics.append(f"{issue.code}: {issue.message}")
+    except plan_reconciliation.PlanArtifactError as exc:
+        diagnostics.append(f"PLAN_INVALID: {exc}")
+    if diagnostics:
+        print("ADMISSION_BLOCKED")
+        for diagnostic in diagnostics:
+            print(f"  {diagnostic}")
+        return 1
+    print("ADMISSION_READY")
+    return 0
+
+
 def cmd_check_minimal(source: Path) -> int:
     import yaml
 
