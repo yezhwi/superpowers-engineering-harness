@@ -97,6 +97,13 @@ def test_plan_mutation_parser_rejects_invalid_arguments(tmp_path, arguments):
     assert "usage:" in result.stderr
 
 
+def test_plan_parser_suggests_nearest_unknown_subcommand(tmp_path):
+    result = cli(tmp_path, "plan", "sync-fingerprints")
+
+    assert result.returncode == 2
+    assert "Did you mean: sync-fingerprint?" in result.stderr
+
+
 @pytest.mark.parametrize(
     "arguments",
     [

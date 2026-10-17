@@ -8,7 +8,9 @@ Exit codes:
 """
 
 import argparse
+import difflib
 import os
+import re
 import sys
 
 from pathlib import Path
@@ -16,6 +18,19 @@ from harness import controlplane
 from harness.collect_evidence import VALID_TYPES
 from harness.init import InitResult, init_current_repository
 from harness.repository import RepositoryNotFoundError, find_git_root
+
+
+class _HarnessArgumentParser(argparse.ArgumentParser):
+    """Add one deterministic near-match hint for unknown subcommands."""
+
+    def error(self, message: str) -> None:
+        match = re.fullmatch(r"argument [^:]+: invalid choice: '([^']+)' \(choose from (.+)\)", message)
+        if match:
+            unknown, raw_choices = match.groups()
+            choices = re.findall(r"'([^']+)'", raw_choices)
+            if suggestion := difflib.get_close_matches(unknown, choices, n=1, cutoff=0.6):
+                message += f"\nDid you mean: {suggestion[0]}?"
+        super().error(message)
 
 
 def _render(result: InitResult) -> str:
@@ -50,7 +65,7 @@ def _main(argv=None) -> int:
         mode = argv.pop(1)
         if mode == "attach":
             argv.insert(1, "--attach")
-    parser = argparse.ArgumentParser(
+    parser = _HarnessArgumentParser(
         prog="harness",
         description="Engineering Harness deterministic control plane",
     )
