@@ -120,6 +120,20 @@ def save_task(
         print("TELEMETRY_UPDATE_FAILED: task committed", file=sys.stderr)
 
 
+def cmd_explain(code: str) -> int:
+    """Render read-only remediation for one stable diagnostic code."""
+    from .remediation import explain
+
+    remediation = explain(code)
+    if remediation is None:
+        print(f"UNKNOWN_REMEDIATION_CODE: {code}", file=sys.stderr)
+        return 2
+    print(f"Code: {remediation.code}")
+    print(f"Why: {remediation.reason}")
+    print(remediation.next_step)
+    return 0
+
+
 def cmd_status(harness_dir: Path = Path(".harness")) -> int:
     return harness_status.main(["--harness-dir", str(harness_dir)])
 

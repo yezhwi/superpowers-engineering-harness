@@ -56,6 +56,8 @@ def _main(argv=None) -> int:
     )
     sub = parser.add_subparsers(dest="subcommand")
     sub.add_parser("init", help="initialize .harness/ at the git repo root")
+    p_explain = sub.add_parser("explain", help="explain a diagnostic code and safe next step")
+    p_explain.add_argument("code")
     p_status = sub.add_parser("status", help="render unified persisted-state view")
     p_status.add_argument("--harness-dir", default=".harness")
     p_plan = sub.add_parser("plan", help="inspect canonical implementation plan")
@@ -470,13 +472,15 @@ def _main(argv=None) -> int:
         value = getattr(args, attribute, None)
         if value is not None:
             setattr(args, attribute, str((invocation_dir / value).resolve()))
-    if args.subcommand not in {"init", "benchmark"}:
+    if args.subcommand not in {"init", "benchmark", "explain"}:
         try:
             os.chdir(find_git_root(invocation_dir))
         except RepositoryNotFoundError as exc:
             print(f"ERROR: {exc}", file=sys.stderr)
             return 1
 
+    if args.subcommand == "explain":
+        return controlplane.cmd_explain(args.code)
     if args.subcommand == "init":
         try:
             result = init_current_repository()
