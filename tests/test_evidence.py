@@ -338,6 +338,7 @@ def test_collect_related_scope_requires_covered_test(tmp_path):
     )
     assert result.returncode == 2
     assert "RELATED_COVERED_TEST_REQUIRED" in result.stderr
+    assert "--covered-test path/to/test.py::test_name" in result.stderr
 
 
 def test_collect_integration_evidence_records_covered_tests(tmp_path):

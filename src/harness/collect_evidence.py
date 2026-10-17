@@ -851,7 +851,10 @@ def _preflight(args, root: Path) -> _Collection | int:
         print("COVERED_TEST_TYPE_INVALID", file=sys.stderr)
         return 2
     if args.type == "unit_test" and args.scope == "related" and not args.covered_test:
-        print("RELATED_COVERED_TEST_REQUIRED", file=sys.stderr)
+        print(
+            "RELATED_COVERED_TEST_REQUIRED: add --covered-test path/to/test.py::test_name",
+            file=sys.stderr,
+        )
         return 2
     if any(
         not re.fullmatch(r"TC-[0-9]+", value)
