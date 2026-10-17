@@ -173,7 +173,9 @@ def test_fingerprint_normalization_and_sorting():
 
 
 def test_legacy_task_initializes_fingerprint_and_count_on_blocked(tmp_path):
-    h = make_repo(tmp_path, state="GATING", iteration=0, max_iterations=5)
+    h = make_repo(
+        tmp_path, state="GATING", iteration=0, max_iterations=5, trusted_scope=True
+    )
     # Remove an evidence file so gate is BLOCKED
     (h / "evidence" / "unit-test.json").unlink()
 
