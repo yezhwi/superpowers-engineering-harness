@@ -106,6 +106,9 @@ def _main(argv=None) -> int:
     plan_sub.add_parser(
         "upgrade-execution", help="upgrade all-pending Q3 execution to v2"
     )
+    plan_sub.add_parser(
+        "sync-fingerprint", help="refresh empty Plan execution fingerprint"
+    )
     p_architecture = sub.add_parser(
         "architecture", help="publish and inspect canonical Architecture"
     )
@@ -485,6 +488,8 @@ def _main(argv=None) -> int:
         return controlplane.cmd_plan_status(args.plan_json, args.plan_verbose)
     if args.subcommand == "plan" and args.plan_command == "sync-markdown":
         return controlplane.cmd_plan_sync_markdown(args.target)
+    if args.subcommand == "plan" and args.plan_command == "sync-fingerprint":
+        return controlplane.cmd_plan_sync_fingerprint()
     if args.subcommand == "plan":
         return controlplane.cmd_plan_mutation(args)
     if args.subcommand == "architecture":

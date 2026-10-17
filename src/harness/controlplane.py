@@ -283,6 +283,24 @@ def cmd_plan_sync_markdown(target: str) -> int:
 
 
 @_publication_entry
+def cmd_plan_sync_fingerprint() -> int:
+    try:
+        changed = plan_reconciliation.sync_plan_fingerprint(Path(".harness"))
+    except plan_reconciliation.PlanMutationError as exc:
+        print(exc.code, file=sys.stderr)
+        return 1
+    except (
+        OSError,
+        yaml.YAMLError,
+        plan_reconciliation.PlanArtifactError,
+    ) as exc:
+        print(f"INVALID_HARNESS_STATE: {exc}", file=sys.stderr)
+        return 2
+    print("PLAN_FINGERPRINT_UPDATED" if changed else "PLAN_FINGERPRINT_UNCHANGED")
+    return 0
+
+
+@_publication_entry
 def cmd_plan_mutation(args) -> int:
     harness_dir = Path(".harness")
     disposition = getattr(args, "plan_disposition", None)

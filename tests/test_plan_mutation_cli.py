@@ -147,6 +147,7 @@ def test_plan_mutation_parser_rejects_invalid_arguments(tmp_path, arguments):
             "src/x.py",
         ),
         ("plan", "upgrade-execution"),
+        ("plan", "sync-fingerprint"),
     ],
 )
 def test_plan_mutation_parser_accepts_valid_argument_shapes(tmp_path, arguments):

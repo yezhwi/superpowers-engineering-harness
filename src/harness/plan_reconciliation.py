@@ -1413,6 +1413,40 @@ def _resolve_auto_request(
     )
 
 
+def sync_plan_fingerprint(harness_dir: Path) -> bool:
+    """Refresh stale Plan digest before any execution history exists.
+
+    A Plan's semantic content may be corrected before execution begins. Once
+    an item or journal transition exists, changing its digest would detach
+    that history from its declared Plan and is refused.
+    """
+    with publication_admission(harness_dir):
+        plan, execution = load_plan_artifacts(harness_dir, optional=False)
+        assert plan is not None and execution is not None
+        is_empty_v1 = execution["version"] == 1 and not execution["items"]
+        is_empty_v2 = (
+            execution["version"] == 2
+            and execution["sequence"] == 0
+            and not execution["transitions"]
+            and not execution["items"]
+        )
+        if not (is_empty_v1 or is_empty_v2):
+            raise PlanMutationError("PLAN_EXECUTION_NOT_EMPTY")
+        fingerprint = plan_fingerprint(plan)
+        if execution["plan"]["fingerprint"] == fingerprint:
+            return False
+        execution["plan"]["fingerprint"] = fingerprint
+        try:
+            validate(execution, read_schema("plan-execution.schema.json"))
+        except ValidationError as exc:
+            raise PlanMutationError("PLAN_DISPOSITION_INVALID") from exc
+        atomic_write(
+            harness_dir / "plan-execution.yaml",
+            yaml.safe_dump(execution, sort_keys=False).encode(),
+        )
+        return True
+
+
 def mutate_plan_execution(
     harness_dir: Path,
     task: dict,

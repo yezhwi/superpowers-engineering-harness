@@ -53,6 +53,33 @@ def write_v2(harness_dir: Path, *, stale: bool = False) -> tuple[dict, dict]:
     return document, execution
 
 
+def test_sync_plan_fingerprint_updates_empty_execution_only(tmp_path):
+    """Break caught: edited plan stays blocked despite no execution history."""
+    from harness.plan_reconciliation import plan_fingerprint, sync_plan_fingerprint
+
+    harness_dir = tmp_path / ".harness"
+    document, execution = write_v2(harness_dir, stale=True)
+
+    assert sync_plan_fingerprint(harness_dir) is True
+
+    updated = yaml.safe_load((harness_dir / "plan-execution.yaml").read_text())
+    assert updated["plan"]["fingerprint"] == plan_fingerprint(document)
+    assert updated["transitions"] == execution["transitions"] == []
+
+
+def test_sync_plan_fingerprint_refuses_execution_history(tmp_path):
+    """Break caught: fingerprint refresh rewrites provenance after execution starts."""
+    from harness.plan_reconciliation import PlanMutationError, sync_plan_fingerprint
+
+    harness_dir = tmp_path / ".harness"
+    _, execution = write_v2(harness_dir, stale=True)
+    execution["items"] = {"P-001": {"status": "COMPLETE"}}
+    (harness_dir / "plan-execution.yaml").write_text(yaml.safe_dump(execution))
+
+    with pytest.raises(PlanMutationError, match="PLAN_EXECUTION_NOT_EMPTY"):
+        sync_plan_fingerprint(harness_dir)
+
+
 def tree_bytes(root: Path) -> dict[str, bytes]:
     return {
         path.relative_to(root).as_posix(): path.read_bytes()
