@@ -454,7 +454,7 @@ def test_user_authority_codes_immediately_escalate_without_repair(tmp_path, code
 
 
 def test_injected_alignment_finding_without_live_drift_converges(tmp_path):
-    h = make_repo(tmp_path, state="GATING")
+    h = make_repo(tmp_path, state="GATING", trusted_scope=True)
     _seal_alignment(h)
     finding_dir = h / "findings"
     finding_dir.mkdir(parents=True, exist_ok=True)
