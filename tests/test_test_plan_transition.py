@@ -397,6 +397,7 @@ def test_standard_planned_to_implementing_rejects_invalid_test_plan(tmp_path):
 
     assert result.returncode == 1
     assert "TEST_PLAN_BLOCKED" in result.stderr
+    assert "Next: harness check admission" in result.stderr
     assert (
         yaml.safe_load((repo / ".harness/current-task.yaml").read_text())["state"]
         == "PLANNED"

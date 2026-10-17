@@ -1411,12 +1411,14 @@ def cmd_transition(target: str, *, reason: str | None = None) -> int:
             except Exception as exc:
                 print("TEST_PLAN_BLOCKED", file=sys.stderr)
                 print(f"  TEST_PLAN_SCHEMA_INVALID: {exc}", file=sys.stderr)
+                print("Next: harness check admission", file=sys.stderr)
                 return 1
             if issues:
                 print("TEST_PLAN_BLOCKED", file=sys.stderr)
                 for issue in issues:
                     subject = issue.requirement_id or issue.invariant_id or "TEST_PLAN"
                     print(f"  {subject}: {issue.code}", file=sys.stderr)
+                print("Next: harness check admission", file=sys.stderr)
                 return 1
             try:
                 alignment_document = alignment.load_alignment(harness_dir)
@@ -1443,6 +1445,7 @@ def cmd_transition(target: str, *, reason: str | None = None) -> int:
             except (alignment.AlignmentError, decision.DecisionError) as exc:
                 print("ALIGNMENT_BLOCKED", file=sys.stderr)
                 print(f"  ALIGNMENT_INVALID: {exc}", file=sys.stderr)
+                print("Next: harness check admission", file=sys.stderr)
                 return 1
             if alignment_issues:
                 authority = next(
@@ -1459,6 +1462,7 @@ def cmd_transition(target: str, *, reason: str | None = None) -> int:
                 for issue in alignment_issues:
                     subject = issue.subject_id or "ALIGNMENT"
                     print(f"  {subject}: {issue.code}", file=sys.stderr)
+                print("Next: harness check admission", file=sys.stderr)
                 return 1
             try:
                 alignment.validate_freeze(alignment_document)
@@ -1486,6 +1490,7 @@ def cmd_transition(target: str, *, reason: str | None = None) -> int:
                     return 1
                 print("ALIGNMENT_BLOCKED", file=sys.stderr)
                 print(f"  ALIGNMENT_FREEZE_INVALID: {exc}", file=sys.stderr)
+                print("Next: harness check admission", file=sys.stderr)
                 return 1
             if plan_reconciliation.effective_plan_reconciliation(task)["enabled"]:
                 try:
