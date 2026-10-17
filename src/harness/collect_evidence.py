@@ -855,6 +855,7 @@ def _preflight(args, root: Path) -> _Collection | int:
             "RELATED_COVERED_TEST_REQUIRED: add --covered-test path/to/test.py::test_name",
             file=sys.stderr,
         )
+        print("Next: harness evidence run --help", file=sys.stderr)
         return 2
     if any(
         not re.fullmatch(r"TC-[0-9]+", value)
