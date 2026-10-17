@@ -263,7 +263,9 @@ def test_repeated_gate_from_blocked_fails_and_never_increments_count(tmp_path):
 
 
 def test_changed_blocker_replaces_fingerprint_resets_count_and_continues(tmp_path):
-    h = make_repo(tmp_path, state="GATING", iteration=0, max_iterations=5)
+    h = make_repo(
+        tmp_path, state="GATING", iteration=0, max_iterations=5, trusted_scope=True
+    )
     (h / "evidence" / "unit-test.json").unlink()
 
     run_cli(tmp_path, "gate")
@@ -298,7 +300,9 @@ def test_changed_blocker_replaces_fingerprint_resets_count_and_continues(tmp_pat
 
 
 def test_pass_deletes_fingerprint_and_count(tmp_path):
-    h = make_repo(tmp_path, state="GATING", iteration=1, max_iterations=5)
+    h = make_repo(
+        tmp_path, state="GATING", iteration=1, max_iterations=5, trusted_scope=True
+    )
     task = yaml.safe_load((h / "current-task.yaml").read_text())
     task["convergence"] = {"fingerprint": "sha256:" + "a" * 64, "count": 1}
     (h / "current-task.yaml").write_text(yaml.safe_dump(task))
@@ -330,7 +334,7 @@ def test_pass_deletes_fingerprint_and_count(tmp_path):
     ],
 )
 def test_schema_rejects_malformed_convergence_metadata(tmp_path, malformed_convergence):
-    h = make_repo(tmp_path, state="GATING")
+    h = make_repo(tmp_path, state="GATING", trusted_scope=True)
     task = yaml.safe_load((h / "current-task.yaml").read_text())
     task["convergence"] = malformed_convergence
     (h / "current-task.yaml").write_text(yaml.safe_dump(task))
