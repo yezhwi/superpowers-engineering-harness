@@ -401,7 +401,7 @@ def _seal_alignment(h: Path, *, summary: str = "original goal") -> dict:
 def test_user_authority_codes_immediately_escalate_without_repair(tmp_path, code):
     from harness.alignment import contract_hash
 
-    h = make_repo(tmp_path, state="GATING")
+    h = make_repo(tmp_path, state="GATING", trusted_scope=True)
     # Also unlink an evidence file to create a simultaneous evidence blocker
     (h / "evidence" / "unit-test.json").unlink()
 
