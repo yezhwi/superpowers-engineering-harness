@@ -201,7 +201,9 @@ def test_legacy_task_initializes_fingerprint_and_count_on_blocked(tmp_path):
 
 
 def test_second_consecutive_identical_blocker_escalates_no_progress(tmp_path):
-    h = make_repo(tmp_path, state="GATING", iteration=0, max_iterations=5)
+    h = make_repo(
+        tmp_path, state="GATING", iteration=0, max_iterations=5, trusted_scope=True
+    )
     (h / "evidence" / "unit-test.json").unlink()
 
     # First blocked assessment
