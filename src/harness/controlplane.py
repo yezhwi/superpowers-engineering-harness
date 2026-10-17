@@ -120,6 +120,14 @@ def save_task(
         print("TELEMETRY_UPDATE_FAILED: task committed", file=sys.stderr)
 
 
+def _print_next_step(code: str, *, stream) -> None:
+    """Print one non-executing remediation hint when code is known."""
+    from .remediation import explain
+
+    if remediation := explain(code):
+        print(f"Next: {remediation.next_step}", file=stream)
+
+
 def cmd_explain(code: str) -> int:
     """Render read-only remediation for one stable diagnostic code."""
     from .remediation import explain
@@ -302,6 +310,7 @@ def cmd_plan_sync_fingerprint() -> int:
         changed = plan_reconciliation.sync_plan_fingerprint(Path(".harness"))
     except plan_reconciliation.PlanMutationError as exc:
         print(exc.code, file=sys.stderr)
+        _print_next_step(exc.code, stream=sys.stderr)
         return 1
     except (
         OSError,

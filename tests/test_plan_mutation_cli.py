@@ -339,7 +339,7 @@ def test_plan_sync_fingerprint_cli_refuses_execution_history(tmp_path):
     assert (result.returncode, result.stdout, result.stderr) == (
         1,
         "",
-        "PLAN_EXECUTION_NOT_EMPTY\n",
+        "PLAN_EXECUTION_NOT_EMPTY\nNext: Run: harness check admission; then revise through normal implementation recovery.\n",
     )
 
 
