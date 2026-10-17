@@ -129,8 +129,9 @@ def freeze_record(
     architecture_mode: str,
     architecture_fingerprint: str | None,
     declared_modules: tuple[str, ...],
+    test_scope: dict | None = None,
 ) -> dict:
-    """Project explicit v2 Alignment and Architecture facts into one seal."""
+    """Project Architecture and optional immutable v3 scope facts into one seal."""
     if architecture_mode not in {"off", "required"}:
         raise AlignmentError("ALIGNMENT_FREEZE_INVALID")
     if architecture_mode == "off" and (
@@ -140,7 +141,8 @@ def freeze_record(
     if architecture_mode == "required" and architecture_fingerprint is None:
         raise AlignmentError("ALIGNMENT_FREEZE_INVALID")
     return {
-        "version": 2,
+        "version": 3 if test_scope is not None else 2,
+        **({"test_scope": test_scope} if test_scope is not None else {}),
         "task_id": document["task_id"],
         "contract_hash": contract_hash(document),
         "architecture_mode": architecture_mode,
@@ -175,11 +177,18 @@ def sealed_freeze_drift(
             or facts.mode != "off"
         ):
             return [AlignmentIssue("CONTRACT_CHANGED")]
+        from ._scope_replay import freeze_scope_facts
+
         try:
-            validate(legacy, read_schema("alignment-freeze.schema.json"))
-        except ValidationError as exc:
+            scope = freeze_scope_facts(harness_dir)
+            bootstrap = legacy if scope is None else freeze_record(
+                document, decisions=decisions, boundary_refs=boundary_refs,
+                architecture_mode='off', architecture_fingerprint=None, declared_modules=(), test_scope=scope,
+            )
+            validate(bootstrap, read_schema("alignment-freeze.schema.json"))
+        except (ValidationError, ValueError) as exc:
             raise AlignmentError("ALIGNMENT_FREEZE_INVALID") from exc
-        transaction.atomic_write(path, yaml.safe_dump(legacy, sort_keys=False).encode())
+        transaction.atomic_write(path, yaml.safe_dump(bootstrap, sort_keys=False).encode())
         return []
     try:
         actual = yaml.safe_load(source_access.read_text(path))
@@ -201,6 +210,14 @@ def sealed_freeze_drift(
             or sorted(actual["declared_modules"]) != sorted(facts.declared_modules)
         ):
             return [AlignmentIssue("CONTRACT_CHANGED")]
+    if actual['version'] == 3:
+        from ._scope_replay import freeze_scope_facts
+
+        try:
+            if actual['test_scope'] != freeze_scope_facts(harness_dir):
+                return [AlignmentIssue('CONTRACT_CHANGED')]
+        except ValueError:
+            return [AlignmentIssue('CONTRACT_CHANGED')]
     codes = {
         "interface": "SCOPE_DRIFT_API",
         "permission": "SCOPE_DRIFT_PERMISSION",

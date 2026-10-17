@@ -27,6 +27,7 @@ from harness.plan_reconciliation import (
 from harness.repository import RepositoryNotFoundError, find_git_root
 
 from .model import AuthoritativeContext, ContextBuildError
+from .telemetry import active, instrument
 
 def _decision_ref_id(ref: str) -> str | None:
     """Reduce DEC-001 and DEC-001:orders to the decision file id."""
@@ -147,6 +148,7 @@ class FileContextSource:
                 "CONTEXT_SCHEMA_INVALID", f"duplicate ids in {source}"
             )
 
+    @instrument('source_load', 'source_loads')
     def load(self) -> AuthoritativeContext:
         try:
             root = find_git_root(Path.cwd())
@@ -158,6 +160,9 @@ class FileContextSource:
             )
         self.references = {}
         task = self._document("current-task.yaml", "task.schema.json")
+        timer = active()
+        if timer is not None:
+            timer.task_id = task['task']['id']
         if not task["task"].get("id") or not isinstance(task.get("risk"), dict):
             raise ContextBuildError(
                 "INVALID_HARNESS_STATE",

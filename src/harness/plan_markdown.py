@@ -5,8 +5,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from .telemetry_lock import telemetry_lock
 from .transaction import atomic_write
+from .transaction_recovery import publication_admission
 
 _MAPPING_LINE = re.compile(r"^[ \t]*- \[( |x|X)\] (P-[0-9]+)(?:[ \t]+.*)?$")
 _RESERVED_PREFIX = re.compile(r"^[ \t]*- \[")
@@ -123,7 +123,7 @@ def sync_plan_markdown(
     if configuration.get("enabled") is not True:
         raise PlanMarkdownError("PLAN_MARKDOWN_TARGET_INVALID")
 
-    with telemetry_lock(harness_dir):
+    with publication_admission(harness_dir):
         path = _markdown_target(repo_root, task, target)
         plan, execution = plan_reconciliation.load_plan_artifacts(
             harness_dir, optional=True

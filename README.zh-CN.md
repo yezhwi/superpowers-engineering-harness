@@ -1,10 +1,47 @@
-# Superpowers Engineering Harness v0.3.1
+# Superpowers Engineering Harness v0.3.2
 
 [English](README.md)
 
 Engineering Harness 是 [Superpowers](https://github.com/obra/superpowers) 开发工作流外层的确定性控制平面。它不替代 Agent 或 worker Skill；它持久化任务状态、要求可验证证据，并阻止 Agent 未经 Gate 批准就宣称任务完成。
 
 [架构全景图](docs/architecture.md)
+
+## v0.3.2 兼容性与测量状态
+
+`v0.3.2 development candidate`：版本元数据已准备，不代表发布或正式 Gate 验收。单独授权发布前，下方固定版本安装示例继续使用 v0.3.1 current release；不能假定 v0.3.2 tag 已存在。
+
+Context 自动扩展采用批处理：候选资格消失时提交合法 prefix 后停止；真正的发布前错误不写新事件。`harness evidence plan --json`、`harness impact reconcile --file proposal.yaml --dry-run` 是只读诊断，不授予执行权限。共享资源测试保持串行；沿用精确 `--reuse-if-valid`，不跨 HEAD 继承证据，也不跳过 RED/finding 执行。
+
+Profiling 默认关闭，通过 `harness context --compact --profile-json /tmp/context-profile.json` 启用。发布前失败 exit 2；Context 发布后 profile 写入 OSError 为 exit 3，输出 `PROFILE_WRITE_FAILED_CONTEXT_PUBLISHED context_published=true`。此时 Context 已发布，应检查并独立校验，不盲目重试；stdout 错误不归类为该 exit 3。
+
+旧任务缺可信范围来源时以 `TEST_SCOPE_AUDIT_INVALID` 阻断。可信 origin、事务化 add 与 Gate replay 联动保护 required tests；apply 还需精确选定的 RETIRE/REBIND 用户授权。MIGRATE 仅重建来源。不得自动重建范围、freeze/resume、降风险或标记 verified/COMPLETE。激活后的元数据要求 v0.3.2 reader，旧 reader 拒绝 minimum-reader 标记。见[显式范围迁移](docs/test-scope-migration.md)及[已批准效率规范](docs/2026-10-14-context-evidence-collection-efficiency-spec.md)。
+
+[Context 实测报告](docs/superpowers/reports/v032-context-efficiency.md)：按用户新指示仅使用 N=0/1/10/50 共80个样本，剩余 N=100 取消。大量扩展的 cold 场景改善；N=0 与 steady 中位数变慢。不宣称普遍提速或完整矩阵验收。尚无 evidence 专属缓存收益证据，缓存延期；独立审查、agent 行为验证及正式 Gate 验收仍待完成。
+
+## 平台与可恢复发布（macOS-only）
+
+v0.3.2 candidate 仅支持 macOS，以及通过原生 exchange/no-replace/no-follow/同步检查的本地文件系统。
+Linux、Windows 及其他系统的发布后端在打开发布目录或创建 capability probe 前返回 `PUBLICATION_UNSUPPORTED`。
+不隐含支持网络、FUSE、远程或特殊文件系统；libc 符号存在或 probe 成功，不等于全部文件系统或断电保证。
+不回退到会覆盖目标的普通 rename。
+
+保证是保留被移走的 inode/字节，**不是 content CAS**，也不保证 canonical 路径永远保留最新用户版本。
+发生冲突时，用户对象可能被**迁移**到保留位置；外部编辑器仍可通过已打开的 FD 改写同一 inode。
+共享 advisory lock 只约束配合的 Harness 操作，不约束外部编辑器。
+批量发布及其受保护 finalizer 不隐含升级独立 atomic write、任务目录替换或外部读写器的保证。
+
+- `.harness/.staging/`：准备输入，不是恢复权威；stage 保留。
+- `.harness/.transactions/`：活动恢复描述符；未解决或未知条目使受准入保护的 Gate/transition
+  在读取 canonical 事实前拒绝，不自动修复。
+- `.harness/.publication-retained/`：被移走对象、capability probe、journal frame 和终态恢复数据。
+  仅有终态保留数据不代表 pending。task new/recover 将真实的旧 Harness 目录保留在其中的
+  `task-replacement-*/previous`，保留原 inode 与已打开 FD 的后续写入，不在准备新任务时复制旧保留树。
+  任务替换报错后，先核对当前任务再决定重试：旧目录可能位于同级 `..harness.backup` 或保留 slot。
+  不自动重试或删除；此处仅保证对象寿命，不认证任务目录原子性或硬件断电行为。
+- 存储包含实际元数据字节，不是证据缓存或执行授权。新私有目录请求 `0700`、新文件 `0600`；
+  被移走对象保留原 inode/mode，不自动加固已有存储。应按敏感数据管理。
+  数据无限期增长，可能导致 `ENOSPC`；不提供 pruning 命令或按年龄清理。
+  清理需单独设计并明确授权，删除恢复数据不是受支持的修复方式。
 
 ## 为什么用 Harness
 
@@ -33,6 +70,8 @@ curl -fsSL https://raw.githubusercontent.com/yezhwi/superpowers-engineering-harn
 安装器检查是否已配置 Superpowers，仅在缺失时安装；同时协调固定版本的 Harness Pi skills，把匹配 Python CLI 安装到隔离用户环境，并暴露 `~/.local/bin/harness`。如果 `~/.local/bin` 不在 `PATH`，安装器会给出提示。重复安装相同版本保持幂等。若本地安全策略要求，请先审查下载脚本再执行。
 
 源码开发时，另行使用 `python -m pip install -e /path/to/superpowers-engineering-harness` 安装可编辑环境。
+
+从源码构建 v0.3.2 候选版本需 `setuptools>=77.0.3`，以支持 SPDX 许可证元数据（PEP 639）。默认 PEP 517 构建隔离会安装该构建依赖；使用 `--no-build-isolation` 时需自行提供。Python 运行时要求仍为 `>=3.11`；setuptools 68 不再声明为受支持构建后端。
 
 仓库只需初始化一次。之后的日常工作是向 Agent 说明要做什么。Engineering Harness skill 读取持久化状态，并自己调用 `harness`。你不需要输入这些命令。
 
@@ -356,6 +395,10 @@ harness evidence run --type build --command "python -m pip wheel . --no-deps" --
 ```
 
 `EVIDENCE_REUSED` 表示未运行命令。复用要求之前成功、命令/证明身份完全一致、HEAD 与 product workspace fingerprint 未变、运行时完全一致。任一不匹配都会正常执行命令。
+
+收集器只在前置检查与落盘时短暂持锁；外部命令执行期间**不持根锁**，允许子命令再次调用 Harness。落盘时核对根目录/任务身份，向最新任务合并预算增量，并将不可覆盖的 receipt 与任务/telemetry 作为有界 native bundle 发布。预算仍是前置软限制，不承诺并发执行的硬额度预占。
+
+命令执行后准入或发布失败，收集器返回 `2`，不自动重跑或恢复。`EVIDENCE_RESULT_RETAINED: <path>` 指向系统临时目录 `harness-evidence-attempt-*` 下权限受限的非 canonical `result.json`；测量结果**不是已接受、可复用的证明**。若发布已完成但输出/解锁失败，报告 `EVIDENCE_PERSISTENCE_UNCERTAIN`，重试前先核对 canonical 状态。取消仍返回 `130`；普通命令失败/超时记录在 receipt 的 `exit_code`，不等于收集失败。保留失败会明确报告。保留对象可能包含命令/输出数据、持续占用磁盘且无自动清理；临时目录保留不保证断电或 OS 清理后仍存在。
 
 ### 产品 evidence freshness 与 covered-test 路径
 

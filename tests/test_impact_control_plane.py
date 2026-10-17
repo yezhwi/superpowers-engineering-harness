@@ -2,9 +2,168 @@
 
 import subprocess, sys
 from pathlib import Path
+
+import pytest
+import test_context_builder
 import yaml
 
 REPO = Path(__file__).resolve().parent.parent
+harness = test_context_builder.harness
+
+
+@pytest.mark.parametrize('protocol', ['v1', 'v2'])
+@pytest.mark.parametrize('action,value', [
+    ('add-risk', 'anonymous risk note'),
+    ('add-contract', 'anonymous generic contract'),
+    ('add-dependent', 'src/client.py'),
+    ('add-change', 'src/owned.py'),
+])
+def test_ordinary_impact_refuses_pending_partial_publication(harness, protocol, action, value):
+    """Break caught: supported impact writes strand a partial publication's recovery."""
+    from harness import publication_journal, transaction_recovery
+    from harness.telemetry_lock import telemetry_lock
+
+    task_path, impact_path = harness / 'current-task.yaml', harness / 'impact.yaml'
+    original, impact = task_path.read_bytes(), impact_path.read_bytes()
+    task = yaml.safe_load(original)
+    task['budget']['context_expansions'] = task['budget'].get('context_expansions', 0) + 1
+    partial = yaml.safe_dump(task, sort_keys=False).encode()
+    with telemetry_lock(harness):
+        if protocol == 'v1':
+            transaction_recovery.begin(harness, [(task_path, original, partial),
+                                                 (impact_path, impact, impact + b'\n')])
+            task_path.write_bytes(partial)
+        else:
+            with publication_journal.prepare(harness, (
+                publication_journal.Member('current-task.yaml', original, partial),
+                publication_journal.Member('impact.yaml', impact, impact + b'\n'),
+            )) as operation:
+                operation._save(state='APPLYING')
+                operation._step(0, 'forward')
+    before = {str(p.relative_to(harness)): p.read_bytes() for p in harness.rglob('*') if p.is_file()}
+    result = cli(harness.parent, 'impact', action, value)
+    after = {str(p.relative_to(harness)): p.read_bytes() for p in harness.rglob('*') if p.is_file()}
+    recovery_error = None
+    with telemetry_lock(harness):
+        try:
+            transaction_recovery.recover_pending_publications(harness)
+        except OSError as error:
+            recovery_error = str(error)
+    changed = [name for name in before.keys() | after.keys() if before.get(name) != after.get(name)]
+    assert result.returncode == 2, f'pending impact exit={result.returncode}; changed={changed}; recovery={recovery_error}'
+    assert 'TRANSACTION_RECOVERY_REQUIRED' in result.stderr and result.stdout == ''
+    assert after == before
+    assert recovery_error is None
+    assert task_path.read_bytes() == original and impact_path.read_bytes() == impact
+
+
+@pytest.mark.parametrize('action', ['show', 'scope', 'add-risk', 'add-contract', 'add-dependent',
+                                  'add-change', 'add-interface', 'adopt-path', 'ignore-user-path'])
+def test_ordinary_impact_pending_refuses_before_first_fact(harness, monkeypatch, capsys, action):
+    from harness import controlplane, publication_fs, transaction_recovery
+
+    pending = harness / '.transactions'
+    pending.mkdir(exist_ok=True)
+    (pending / 'pending.json').write_text('{"version":999,"state":"unknown"}')
+    before = {str(p.relative_to(harness)): p.read_bytes() for p in harness.rglob('*') if p.is_file()}
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError('impact canonical fact/recovery/probe before pending refusal')
+
+    monkeypatch.setattr(controlplane, '_impact', forbidden)
+    monkeypatch.setattr(controlplane, 'load_task', forbidden)
+    monkeypatch.setattr(transaction_recovery, 'recover_pending_publications', forbidden)
+    monkeypatch.setattr(publication_fs, 'check_capabilities', forbidden)
+    assert controlplane.cmd_impact(action, 'anonymous') == 2
+    output = capsys.readouterr()
+    assert output.out == '' and 'TRANSACTION_RECOVERY_REQUIRED' in output.err
+    assert {str(p.relative_to(harness)): p.read_bytes() for p in harness.rglob('*') if p.is_file()} == before
+
+
+@pytest.mark.parametrize('protocol', ['v1', 'v2'])
+def test_impact_add_test_still_recovers_before_scope_reads(harness, protocol):
+    from harness import publication_journal, transaction_recovery
+    from harness.telemetry_lock import telemetry_lock
+
+    target = harness.parent / 'tests/test_local.py'
+    target.parent.mkdir(exist_ok=True)
+    target.write_text('def test_local():\n    pass\n')
+    task_path, impact_path = harness / 'current-task.yaml', harness / 'impact.yaml'
+    original, impact = task_path.read_bytes(), impact_path.read_bytes()
+    changed = yaml.safe_load(original)
+    changed['budget']['context_expansions'] = 1
+    partial = yaml.safe_dump(changed, sort_keys=False).encode()
+    with telemetry_lock(harness):
+        if protocol == 'v1':
+            transaction_recovery.begin(harness, [(task_path, original, partial), (impact_path, impact, impact + b'\n')])
+            task_path.write_bytes(partial)
+        else:
+            with publication_journal.prepare(harness, (
+                publication_journal.Member('current-task.yaml', original, partial),
+                publication_journal.Member('impact.yaml', impact, impact + b'\n'),
+            )) as operation:
+                operation._save(state='APPLYING')
+                operation._step(0, 'forward')
+    result = cli(harness.parent, 'impact', 'add-test', 'tests/test_local.py::test_local')
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert task_path.read_bytes() == original
+    assert yaml.safe_load(impact_path.read_text())['impact']['required_tests'] == ['tests/test_local.py::test_local']
+    assert not list((harness / '.transactions').iterdir())
+
+
+def test_ordinary_impact_teardown_failure_remains_bounded(harness, monkeypatch, capsys):
+    import fcntl
+
+    from harness import controlplane, transaction
+
+    real_write, real_flock = transaction.atomic_write, fcntl.flock
+    persisted = False
+    released = []
+
+    def wrote(path, content):
+        nonlocal persisted
+        real_write(path, content)
+        if path.name == 'impact.yaml':
+            persisted = True
+
+    def failed_release(fd, operation):
+        if operation == fcntl.LOCK_UN and persisted:
+            released.append(True)
+            raise OSError('private-impact-cleanup-data')
+        return real_flock(fd, operation)
+
+    monkeypatch.setattr(transaction, 'atomic_write', wrote)
+    monkeypatch.setattr(fcntl, 'flock', failed_release)
+    assert controlplane.cmd_impact('add-risk', 'persisted risk') == 2
+    output = capsys.readouterr()
+    assert released == [True] and 'PUBLICATION_LOCK_TEARDOWN_FAILED' in output.err
+    assert 'private-impact-cleanup-data' not in output.err
+    assert 'persisted risk' in yaml.safe_load((harness / 'impact.yaml').read_text())['impact']['risks']
+
+
+@pytest.mark.parametrize('primary', [OSError('impact-body-io'), KeyboardInterrupt('impact-cancel')])
+def test_ordinary_impact_preserves_primary_over_cleanup(harness, monkeypatch, primary):
+    import fcntl
+
+    from harness import controlplane
+
+    real_flock = fcntl.flock
+    released = []
+
+    def failed_body():
+        raise primary
+
+    def failed_release(fd, operation):
+        if operation == fcntl.LOCK_UN:
+            released.append(True)
+            raise OSError('private-impact-cleanup-data')
+        return real_flock(fd, operation)
+
+    monkeypatch.setattr(controlplane, '_impact', failed_body)
+    monkeypatch.setattr(fcntl, 'flock', failed_release)
+    with pytest.raises(type(primary)) as error:
+        controlplane.cmd_impact('add-risk', 'unused')
+    assert error.value is primary and released == [True]
 
 
 def cli(cwd, *a):
@@ -33,6 +192,15 @@ def test_impact_requires_action_and_does_not_write(tmp_path):
 
 def test_impact_add_change_and_test(tmp_path):
     setup(tmp_path)
+    assert cli(tmp_path, 'task', 'migrate-id', 'TASK-010').returncode == 0
+    target = tmp_path / 'tests/test_x.py'
+    target.parent.mkdir()
+    target.write_text('def test_x():\n    pass\n')
+    subprocess.run(['git', 'add', '-A'], cwd=tmp_path, check=True)
+    subprocess.run(['git', 'commit', '-qm', 'fixture baseline'], cwd=tmp_path, check=True)
+    classified = cli(tmp_path, 'task', 'classify', '--level', 'Q1', '--scope', 'low', '--contract', 'none',
+                     '--data', 'none', '--authorization', 'none', '--security', 'none', '--concurrency', 'none', '--deployment', 'none')
+    assert classified.returncode == 0, classified.stderr
     assert cli(tmp_path, "impact", "add-change", "src/x.py").returncode == 0
     assert (
         cli(tmp_path, "impact", "add-test", "tests/test_x.py::test_x").returncode == 0

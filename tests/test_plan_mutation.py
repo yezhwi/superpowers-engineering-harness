@@ -61,6 +61,28 @@ def tree_bytes(root: Path) -> dict[str, bytes]:
     }
 
 
+@pytest.mark.parametrize('action', ['BEGIN', 'BLOCK', 'RESUME', 'RECONCILE', 'REFRESH_PROOF', 'UPGRADE_EXECUTION'])
+def test_plan_mutation_pending_refuses_before_artifact_reads(tmp_path, monkeypatch, action):
+    from harness import plan_reconciliation, publication_fs, transaction_recovery
+
+    root = tmp_path / '.harness'
+    write_v2(root)
+    pending = root / '.transactions'
+    pending.mkdir()
+    (pending / 'pending.json').write_text('{"version":999}')
+    before = tree_bytes(root)
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError('Plan artifact/recovery/probe reached before pending refusal')
+
+    monkeypatch.setattr(plan_reconciliation, 'load_plan_artifacts', forbidden)
+    monkeypatch.setattr(transaction_recovery, 'recover_pending_publications', forbidden)
+    monkeypatch.setattr(publication_fs, 'check_capabilities', forbidden)
+    with pytest.raises(transaction_recovery.PublicationAdmissionError, match='TRANSACTION_RECOVERY_REQUIRED'):
+        plan_reconciliation.mutate_plan_execution(root, task(), plan_reconciliation.PlanMutationRequest(action=action))
+    assert tree_bytes(root) == before
+
+
 @pytest.mark.parametrize(
     "configured",
     [

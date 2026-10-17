@@ -1,0 +1,14 @@
+{
+ "$schema": "http://json-schema.org/draft-07/schema#",
+ "type": "object", "additionalProperties": false,
+ "required": ["version", "task_id", "expected_impact_hash", "decision_ref", "original_source"],
+ "properties": {
+  "version": {"const": 1},
+  "task_id": {"type": "string", "pattern": "^TASK-[0-9]+$"},
+  "expected_impact_hash": {"$ref": "#/definitions/hash"},
+  "decision_ref": {"type": "string", "pattern": "^DEC-[0-9]+$"},
+  "historical_sources": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["path", "hash", "tests_hash"], "properties": {"path": {"type": "string", "minLength": 1}, "hash": {"$ref": "#/definitions/hash"}, "tests_hash": {"$ref": "#/definitions/hash"}}}},
+  "original_source": {"type": "object", "additionalProperties": false, "required": ["path", "hash", "tests_hash"], "properties": {"path": {"type": "string", "minLength": 1}, "hash": {"$ref": "#/definitions/hash"}, "tests_hash": {"$ref": "#/definitions/hash"}}}
+ },
+ "definitions": {"hash": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"}}
+}

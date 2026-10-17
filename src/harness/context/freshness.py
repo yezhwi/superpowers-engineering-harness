@@ -14,13 +14,17 @@ from harness.workspace import WorkspaceError, snapshot
 
 from .model import ContextBuildError
 from .source import ARTIFACT_PATTERNS
+from .telemetry import instrument
 
-PROJECTION_VERSION = 4
+PROJECTION_VERSION = 5
 ROOT_FILES = (
     "current-task.yaml",
     "requirements.yaml",
     "invariants.yaml",
     "impact.yaml",
+    "test-scope-baseline.yaml",
+    "test-scope-audit.yaml",
+    "test-scope-seal.yaml",
     "gate.yaml",
     "risk-boundaries.yaml",
     "observability.yaml",
@@ -171,6 +175,14 @@ def _current_task_decision_scope_paths(harness_dir: Path) -> set[str]:
         scope = record.get("scope", [])
         if isinstance(scope, list):
             declared.update(name for name in scope if isinstance(name, str))
+        if (record['task_id'] == task_id and record['status'] == 'ACCEPTED'
+                and record['superseded_by'] is None):
+            selected = record.get('selected') or {}
+            option = next((item for item in record['options'] if item['id'] == selected.get('option')), {})
+            if option.get('test_scope_authorization', {}).get('operation') in {'RETIRE', 'REBIND'}:
+                # Scope replay checks all Plan links, even when Plan execution is disabled.
+                # Enroll before first reconciliation too, so publication keeps one source set.
+                declared.add(f'{harness_dir.name}/plan.yaml')
     return declared
 
 
@@ -276,6 +288,7 @@ def version_scope(
         yield observed
 
 
+@instrument('capture')
 def capture(harness_dir: Path) -> dict:
     """No derived outputs, staging, history or telemetry enter control hash.
 

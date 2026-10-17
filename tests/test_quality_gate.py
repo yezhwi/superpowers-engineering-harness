@@ -61,6 +61,7 @@ def make_harness(tmp_path: Path) -> Path:
         .joinpath("templates", "current-task.yaml")
         .read_text()
     )
+    task['task']['id'] = 'TASK-001'
     task["state"] = "GATING"
     h.mkdir(parents=True)
     (h / "current-task.yaml").write_text(yaml.safe_dump(task))
@@ -140,6 +141,9 @@ def make_harness(tmp_path: Path) -> Path:
     findings_dir = h / "findings"
     findings_dir.mkdir()
 
+    from test_test_scope import initialize_test_origin
+
+    initialize_test_origin(h, [])
     return h
 
 

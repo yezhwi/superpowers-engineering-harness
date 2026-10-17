@@ -22,8 +22,8 @@ from .plan_execution import (
     replay_plan_execution,
 )
 from .schema_resources import read_schema
-from .telemetry_lock import telemetry_lock
 from .transaction import atomic_write
+from .transaction_recovery import publication_admission
 from .workspace import (
     changed_paths_since,
     protected_paths_fingerprint,
@@ -1429,7 +1429,7 @@ def mutate_plan_execution(
     if not _mutation_state_allowed(task, request.action):
         raise PlanMutationError("PLAN_MUTATION_NOT_ALLOWED")
 
-    with telemetry_lock(harness_dir):
+    with publication_admission(harness_dir):
         plan, execution = load_plan_artifacts(harness_dir, optional=True)
         _raise_artifact_issue(plan, execution)
         assert plan is not None and execution is not None

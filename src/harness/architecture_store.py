@@ -17,7 +17,7 @@ from harness.architecture import (
     ownership_match_score,
     resolve_ownership,
 )
-from harness.telemetry_lock import telemetry_lock
+from harness.transaction_recovery import publication_admission
 
 _ARCHITECTURE_ARTIFACT = "architecture.yaml"
 _TASK_ARTIFACT = "current-task.yaml"
@@ -135,11 +135,11 @@ def _validate_publication(
 
 def publish_architecture(harness_dir: Path, candidate: Path) -> bool:
     """Validate and atomically publish operator-authored canonical YAML."""
-    content = source_access.read_bytes(candidate)
-    model = load_architecture_document(
-        _load_yaml_bytes(content), source_size_bytes=len(content)
-    )
-    with telemetry_lock(harness_dir):
+    with publication_admission(harness_dir):
+        content = source_access.read_bytes(candidate)
+        model = load_architecture_document(
+            _load_yaml_bytes(content), source_size_bytes=len(content)
+        )
         task, _ = _load_task(harness_dir)
         _require_specifying(task)
         _validate_publication(model, harness_dir.parent, task)
@@ -178,7 +178,7 @@ def mutate_architecture_scope(
     """Add or remove one explicitly declared module under mutation authority."""
     if action not in {"add", "remove"}:
         raise ArchitectureError("ARCHITECTURE_SCOPE_MUTATION_INVALID")
-    with telemetry_lock(harness_dir):
+    with publication_admission(harness_dir):
         task, original = _load_task(harness_dir)
         _require_specifying(task)
         model = load_architecture(harness_dir, required=True)
@@ -212,23 +212,25 @@ def mutate_architecture_scope(
 
 def validate_architecture(harness_dir: Path) -> dict:
     """Validate canonical model and repository-backed references without writes."""
-    model = load_architecture(harness_dir, required=True)
-    assert model is not None
-    task, _ = _load_task(harness_dir)
-    _validate_publication(model, harness_dir.parent, task)
-    return {
-        "status": "valid",
-        "fingerprint": architecture_fingerprint(model),
-        "modules": sorted(module.id for module in model.modules),
-        "ownership_rules": len(model.ownership),
-    }
+    with publication_admission(harness_dir):
+        model = load_architecture(harness_dir, required=True)
+        assert model is not None
+        task, _ = _load_task(harness_dir)
+        _validate_publication(model, harness_dir.parent, task)
+        return {
+            "status": "valid",
+            "fingerprint": architecture_fingerprint(model),
+            "modules": sorted(module.id for module in model.modules),
+            "ownership_rules": len(model.ownership),
+        }
 
 
 def resolve_architecture_path(harness_dir: Path, path: str) -> dict:
     """Resolve one explicit path against canonical Architecture without writes."""
-    model = load_architecture(harness_dir, required=True)
-    assert model is not None
-    return asdict(resolve_ownership(model, path))
+    with publication_admission(harness_dir):
+        model = load_architecture(harness_dir, required=True)
+        assert model is not None
+        return asdict(resolve_ownership(model, path))
 
 
 def _architecture_assessment(harness_dir: Path):
@@ -258,28 +260,30 @@ def _architecture_assessment(harness_dir: Path):
 
 def summary_architecture(harness_dir: Path) -> dict:
     """Return same bounded Architecture projection consumed by Context."""
-    assessment = _architecture_assessment(harness_dir)
-    return architecture_context_summary(assessment.model, assessment)
+    with publication_admission(harness_dir):
+        assessment = _architecture_assessment(harness_dir)
+        return architecture_context_summary(assessment.model, assessment)
 
 
 def check_architecture(harness_dir: Path) -> dict:
     """Run the same read-only Architecture assessment consumed by Gate."""
-    assessment = _architecture_assessment(harness_dir)
-    return {
-        "status": "valid" if not assessment.blockers else "blocked",
-        "declared_modules": list(assessment.declared_modules),
-        "actual_modules": list(assessment.relevant_modules),
-        "unexpected_modules": sorted(
-            {
-                (blocker.source or "").rsplit("module:", 1)[1]
+    with publication_admission(harness_dir):
+        assessment = _architecture_assessment(harness_dir)
+        return {
+            "status": "valid" if not assessment.blockers else "blocked",
+            "declared_modules": list(assessment.declared_modules),
+            "actual_modules": list(assessment.relevant_modules),
+            "unexpected_modules": sorted(
+                {
+                    (blocker.source or "").rsplit("module:", 1)[1]
+                    for blocker in assessment.blockers
+                    if blocker.code == "ARCHITECTURE_SCOPE_DRIFT"
+                }
+            ),
+            "diagnostics": [
+                {"code": blocker.code, "source": blocker.source}
                 for blocker in assessment.blockers
-                if blocker.code == "ARCHITECTURE_SCOPE_DRIFT"
-            }
-        ),
-        "diagnostics": [
-            {"code": blocker.code, "source": blocker.source}
-            for blocker in assessment.blockers
-        ],
-        "blockers": [asdict(blocker) for blocker in assessment.blockers],
-        "changes": [asdict(record) for record in assessment.attributable_changes],
-    }
+            ],
+            "blockers": [asdict(blocker) for blocker in assessment.blockers],
+            "changes": [asdict(record) for record in assessment.attributable_changes],
+        }

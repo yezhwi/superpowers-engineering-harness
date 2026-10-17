@@ -1,0 +1,43 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "impact-reconcile.schema.json",
+  "type": "object",
+  "required": ["version", "task_id", "expected_impact_hash", "retirements", "bindings"],
+  "properties": {
+    "version": {"const": 1},
+    "task_id": {"type": "string", "pattern": "^TASK-[0-9]+$"},
+    "expected_impact_hash": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "retirements": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["test", "reason_code", "decision_ref", "replacement_tests"],
+        "properties": {
+          "test": {"$ref": "#/definitions/test"},
+          "reason_code": {"type": "string", "minLength": 1},
+          "decision_ref": {"type": "string", "pattern": "^DEC-[0-9]+$"},
+          "replacement_tests": {"$ref": "#/definitions/tests"}
+        },
+        "additionalProperties": false
+      }
+    },
+    "bindings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["owner", "case", "tests"],
+        "properties": {
+          "owner": {"type": "string", "pattern": "^(REQ|INV)-[0-9]+$"},
+          "case": {"type": "string", "pattern": "^TC-[0-9]+$"},
+          "tests": {"$ref": "#/definitions/tests"}
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "definitions": {
+    "test": {"type": "string", "minLength": 1},
+    "tests": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/definitions/test"}}
+  },
+  "additionalProperties": false
+}

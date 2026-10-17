@@ -75,6 +75,20 @@
         "green_evidence": {
           "type": "string",
           "description": "reference proving the same test ran GREEN at FIXED"
+        },
+        "green_evidence_history": {
+          "type": "array",
+          "description": "Append-only proof refresh references; no lifecycle advancement.",
+          "items": {
+            "type": "object",
+            "required": ["previous", "current", "refreshed_at"],
+            "properties": {
+              "previous": {"type": "string", "minLength": 1},
+              "current": {"type": "string", "minLength": 1},
+              "refreshed_at": {"type": "string", "minLength": 1, "format": "date-time"}
+            },
+            "additionalProperties": false
+          }
         }
       },
       "additionalProperties": true

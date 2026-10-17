@@ -12,6 +12,15 @@ def test_package_contains_runtime_resources_and_state_machine():
         "task.schema.json",
         "evidence.schema.json",
         "observability.schema.json",
+        "context-profile.schema.json",
+        "context.schema.json",
+        "alignment-freeze.schema.json",
+        "test-scope-baseline.schema.json",
+        "test-scope-audit.schema.json",
+        "test-scope-seal.schema.json",
+        "test-scope-migration.schema.json",
+        "impact-reconcile.schema.json",
+        "decision.schema.json",
     ):
         assert root.joinpath("schemas", name).is_file()
     for name in ("current-task.yaml", "gate.yaml", "observability.yaml"):

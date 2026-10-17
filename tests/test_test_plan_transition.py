@@ -33,6 +33,7 @@ def cli(cwd: Path, *args: str):
 def standard_repo_in_state(tmp_path: Path) -> Path:
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
     assert cli(tmp_path, "init").returncode == 0
+    assert cli(tmp_path, 'task', 'migrate-id', 'TASK-004').returncode == 0
     subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
     subprocess.run(["git", "commit", "-qm", "base"], cwd=tmp_path, check=True)
     dimensions = {**SAFE, "scope": "high", "contract": "high"}
@@ -317,6 +318,7 @@ def test_bootstrap_lifecycle_reaches_implementing_without_plan_bootstrap(tmp_pat
     (repo / "tests").mkdir()
     (repo / "tests/acceptance.py").write_text("def test_bootstrap(): pass\n")
     assert cli(repo, "init").returncode == 0
+    assert cli(repo, 'task', 'migrate-id', 'TASK-004').returncode == 0
     subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
     subprocess.run(["git", "commit", "-qm", "base"], cwd=repo, check=True)
     dimensions = {**SAFE, "scope": "high", "contract": "high"}
@@ -629,8 +631,9 @@ def q3_implementing_repo(tmp_path: Path, *, terminal: bool) -> Path:
     task_path.write_text(yaml.safe_dump(task, sort_keys=False))
     impact_path = repo / ".harness/impact.yaml"
     impact = yaml.safe_load(impact_path.read_text())
-    impact["impact"]["required_tests"] = ["tests/test_test_plan_transition.py"]
-    impact_path.write_text(yaml.safe_dump(impact, sort_keys=False))
+    from test_test_scope import initialize_test_origin
+
+    initialize_test_origin(repo / '.harness', ['tests/test_test_plan_transition.py'])
     begin = {
         "sequence": 1,
         "item": "P-001",
@@ -710,9 +713,13 @@ def test_standard_entry_seals_typed_boundary_and_removal_drifts(
     impact_path = repo / ".harness/impact.yaml"
     impact_path.write_text(yaml.safe_dump({"impact": {"contracts": [{"ref": ref, "kind": kind}], "required_tests": ["tests/test_test_plan_transition.py"]}}))
 
+    from test_test_scope import initialize_test_origin
+
+    initialize_test_origin(repo / '.harness', ['tests/test_test_plan_transition.py'],
+                           impact_document=yaml.safe_load(impact_path.read_text()))
     assert cli(repo, "transition", "IMPLEMENTING").returncode == 0
     sealed = yaml.safe_load((repo / ".harness/alignment-freeze.yaml").read_text())
-    assert sealed["version"] == 1
+    assert sealed["version"] == 3
     assert sealed["boundary_refs"][kind] == [ref]
 
     impact_path.write_text(yaml.safe_dump({"impact": {"contracts": [], "required_tests": ["tests/test_test_plan_transition.py"]}}))

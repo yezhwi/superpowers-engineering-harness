@@ -13,6 +13,7 @@ from .builder import cross_task_decision_ids
 from .escalation import effective_policy
 from .model import AuthoritativeContext, ContextBuildError
 from .policy import next_action
+from .telemetry import instrument
 
 
 @dataclass(frozen=True)
@@ -71,6 +72,7 @@ def _strings(document: dict, key: str) -> list[str]:
 
 
 class DeterministicSelector:
+    @instrument('selection')
     def select(
         self, source: AuthoritativeContext, policy: str, *, mode: str = "compact"
     ) -> ContextSelection:

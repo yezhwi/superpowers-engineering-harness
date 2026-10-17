@@ -14,6 +14,7 @@ from harness.schema_resources import read_schema
 
 from .paths import IdentifierError, identifier_path
 from .transaction import StagedArtifact, publish, stage
+from .transaction_recovery import publication_admission
 
 
 class DecisionError(ValueError):
@@ -116,9 +117,10 @@ def _next_id(harness_dir: Path) -> str:
 
 
 def reindex(harness_dir: Path) -> list[dict]:
-    records = load_decisions(harness_dir)
-    _publish_records(harness_dir, records)
-    return load_decision_index(harness_dir)
+    with publication_admission(harness_dir):
+        records = load_decisions(harness_dir)
+        _publish_records(harness_dir, records)
+        return load_decision_index(harness_dir)
 
 
 def ensure_decision_index(harness_dir: Path) -> None:
@@ -211,12 +213,18 @@ def _proposal_record(harness_dir: Path, document: dict) -> dict:
 
 
 def propose(harness_dir: Path, document: dict) -> dict:
-    record = _proposal_record(harness_dir, document)
-    _publish_records(harness_dir, [record])
-    return record
+    with publication_admission(harness_dir):
+        record = _proposal_record(harness_dir, document)
+        _publish_records(harness_dir, [record])
+        return record
 
 
 def accept(harness_dir: Path, decision_id: str, option: str, source: str) -> dict:
+    with publication_admission(harness_dir):
+        return _accept_locked(harness_dir, decision_id, option, source)
+
+
+def _accept_locked(harness_dir: Path, decision_id: str, option: str, source: str) -> dict:
     record = load_decision(harness_dir, decision_id)
     if record["status"] != "PROPOSED" or option not in {
         item["id"] for item in record["options"]
@@ -250,6 +258,11 @@ def accept(harness_dir: Path, decision_id: str, option: str, source: str) -> dic
 
 
 def reject(harness_dir: Path, decision_id: str, reason: str) -> dict:
+    with publication_admission(harness_dir):
+        return _reject_locked(harness_dir, decision_id, reason)
+
+
+def _reject_locked(harness_dir: Path, decision_id: str, reason: str) -> dict:
     record = load_decision(harness_dir, decision_id)
     if record["status"] != "PROPOSED" or not reason.strip():
         raise DecisionError("DECISION_REJECT_INVALID")
@@ -262,6 +275,11 @@ def reject(harness_dir: Path, decision_id: str, reason: str) -> dict:
 
 
 def supersede(harness_dir: Path, decision_id: str, document: dict) -> tuple[dict, dict]:
+    with publication_admission(harness_dir):
+        return _supersede_locked(harness_dir, decision_id, document)
+
+
+def _supersede_locked(harness_dir: Path, decision_id: str, document: dict) -> tuple[dict, dict]:
     original = load_decision(harness_dir, decision_id)
     if original["status"] != "ACCEPTED" or original["superseded_by"] is not None:
         raise DecisionError("DECISION_SUPERSEDE_INVALID")

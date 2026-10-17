@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 import tempfile
 from pathlib import Path
 from typing import Literal
+from uuid import uuid4
 
 import yaml
 
@@ -36,7 +38,7 @@ def trusted_architecture_mode(
     validate_schema(seal, "alignment-freeze.schema.json", seal_path)
     if seal["task_id"] != old_task.get("task", {}).get("id"):
         raise ValueError("ALIGNMENT_FREEZE_TASK_MISMATCH")
-    return seal["architecture_mode"] if seal["version"] == 2 else mode
+    return seal["architecture_mode"] if seal["version"] in {2, 3} else mode
 
 
 def restore_architecture_mode(
@@ -62,11 +64,29 @@ def replacement_workspace(harness_dir: Path) -> Path:
     )
     try:
         shutil.rmtree(staged)
-        shutil.copytree(harness_dir, staged, ignore=shutil.ignore_patterns(".staging"))
+        shutil.copytree(harness_dir, staged, ignore=shutil.ignore_patterns(".staging", ".publication-retained"))
     except Exception:
         shutil.rmtree(staged, ignore_errors=True)
         raise
     return staged
+
+
+def install_replacement_scope(staged: Path, archive: Path) -> None:
+    """Archive old origin and seal actual template set before directory swap."""
+    from ._scope_replay import SCOPE_FILES, new_scope_artifacts
+    from .telemetry_lock import telemetry_lock
+
+    for name in SCOPE_FILES:
+        source = staged / name
+        if source.is_symlink():
+            raise OSError('TEST_SCOPE_AUDIT_INVALID')
+        if source.exists():
+            shutil.copy2(source, archive / name)
+            source.unlink()
+    artifacts = new_scope_artifacts(staged)
+    with telemetry_lock(staged):
+        transaction.publish(staged, transaction.stage(staged, artifacts),
+                            replace_paths=frozenset(item.relative_path for item in artifacts), durable=True)
 
 
 def publish_replacement(harness_dir: Path, staged: Path) -> None:
@@ -79,19 +99,54 @@ def publish_replacement(harness_dir: Path, staged: Path) -> None:
         _publish_replacement(harness_dir, staged)
 
 
+def _retain_replaced_harness(harness_dir: Path, backup: Path) -> None:
+    """Move old tree intact into private retention; never copy/unlink originals."""
+    from . import publication_fs as fs
+    from .publication_journal import _open_child
+
+    fds = []
+    failed = False
+    try:
+        parent = fs.open_directory(harness_dir.parent)
+        fds.append(parent)
+        root = _open_child(parent, harness_dir.name)
+        fds.append(root)
+        retained = _open_child(root, '.publication-retained', create=True)
+        fds.append(retained)
+        identifier = f'task-replacement-{uuid4().hex}'
+        os.mkdir(identifier, mode=0o700, dir_fd=retained)
+        fs.sync_directory(retained)
+        slot = _open_child(retained, identifier)
+        fds.append(slot)
+        fs.move_noreplace(parent, backup.name, slot, 'previous')
+        fs.sync_directory(slot)
+        fs.sync_directory(parent)
+    except BaseException:
+        failed = True
+        raise
+    finally:
+        cleanup_error = None
+        for fd in reversed(fds):
+            try:
+                os.close(fd)
+            except OSError as exc:
+                if cleanup_error is None:
+                    cleanup_error = exc
+        if cleanup_error is not None and not failed:
+            raise cleanup_error
+
+
 def _publish_replacement(harness_dir: Path, staged: Path) -> None:
     backup = harness_dir.with_name(f".{harness_dir.name}.backup")
-    if backup.exists():
+    if backup.exists() or backup.is_symlink():
         raise FileExistsError(f"replacement backup exists: {backup}")
+    harness_dir.replace(backup)
     try:
-        harness_dir.replace(backup)
+        staged.replace(harness_dir)
+    except BaseException:
         try:
-            staged.replace(harness_dir)
-        except Exception:
             backup.replace(harness_dir)
-            raise
-    finally:
-        if harness_dir.exists() and backup.exists():
-            shutil.rmtree(backup)
-        elif staged.exists():
-            shutil.rmtree(staged, ignore_errors=True)
+        except OSError:
+            pass  # Original remains at backup; preserve primary swap failure.
+        raise
+    _retain_replaced_harness(harness_dir, backup)

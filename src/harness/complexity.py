@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 from .transaction import StagedArtifact, publish, stage
+from .transaction_recovery import publication_admission
 from .workspace import git_head, snapshot
 
 import yaml
@@ -99,6 +100,11 @@ def validate_complexity_checks(review: dict) -> None:
 
 def write_complexity_review(harness_dir: Path, review: dict, scope=None) -> list[Path]:
     """Persist validated CPLX records plus Harness-calculated scope metadata."""
+    with publication_admission(harness_dir):
+        return _write_complexity_review_locked(harness_dir, review, scope)
+
+
+def _write_complexity_review_locked(harness_dir: Path, review: dict, scope) -> list[Path]:
     required = {"task", "findings"}
     if (
         not isinstance(review, dict)
@@ -166,10 +172,11 @@ def write_complexity_review(harness_dir: Path, review: dict, scope=None) -> list
 
 def write_minimal_decision(harness_dir: Path, document: dict) -> Path:
     """Validate and atomically write canonical Minimal Decision evidence."""
-    validate_minimal_decision(document)
-    path = harness_dir / "evidence" / "minimal-implementation.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(".yaml.tmp")
-    temporary.write_text(yaml.safe_dump(document, sort_keys=False, allow_unicode=True))
-    temporary.replace(path)
-    return path
+    with publication_admission(harness_dir):
+        validate_minimal_decision(document)
+        path = harness_dir / "evidence" / "minimal-implementation.yaml"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_suffix(".yaml.tmp")
+        temporary.write_text(yaml.safe_dump(document, sort_keys=False, allow_unicode=True))
+        temporary.replace(path)
+        return path

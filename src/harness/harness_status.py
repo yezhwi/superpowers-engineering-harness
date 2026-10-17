@@ -19,6 +19,7 @@ import yaml
 
 from .evidence_validator import EvidenceStatus, project_evidence
 from .state_machine import STATES, is_legal
+from .transaction_recovery import PublicationAdmissionError, publication_admission
 from .workspace import WorkspaceError, snapshot
 
 TEMPLATE_DEFAULTS = {
@@ -297,12 +298,26 @@ def main(argv=None):
     )
     args = parser.parse_args(argv)
 
-    data = _load(Path(args.harness_dir))
-    if data is None:
+    root = Path(args.harness_dir)
+    report = None
+    completed = False
+    try:
+        with publication_admission(root):
+            data = _load(root)
+            if data is not None and _validate(data, root):
+                report = _render(data, root)
+            completed = True
+    except PublicationAdmissionError as exc:
+        print(str(exc), file=sys.stderr)
         return 2
-    if not _validate(data, Path(args.harness_dir)):
+    except OSError:
+        if not completed:
+            raise  # Preserve existing body I/O semantics and original primary.
+        print('PUBLICATION_LOCK_TEARDOWN_FAILED: status not emitted', file=sys.stderr)
         return 2
-    print(_render(data, Path(args.harness_dir)))
+    if report is None:
+        return 2
+    print(report)
     return 0
 
 

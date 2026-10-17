@@ -101,7 +101,7 @@ def assess_architecture(
 
     seal = _load_seal(harness_dir)
     if mode == "off":
-        if seal is not None and seal.get("version") == 2 and seal.get("architecture_mode") != "off":
+        if seal is not None and seal.get("version") in {2, 3} and seal.get("architecture_mode") != "off":
             return _contract_changed("Architecture mode changed after freeze")
         return ArchitectureAssessment((), None, (), ())
     task_metadata = task.get("task")
@@ -110,7 +110,7 @@ def assess_architecture(
         raise ArchitectureGateError("ARCHITECTURE_TASK_INVALID")
     if (
         seal is None
-        or seal.get("version") != 2
+        or seal.get("version") not in {2, 3}
         or seal.get("task_id") != task_metadata.get("id")
         or seal.get("architecture_mode") != "required"
     ):

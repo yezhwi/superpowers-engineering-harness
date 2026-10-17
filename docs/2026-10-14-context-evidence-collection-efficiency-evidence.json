@@ -1,0 +1,343 @@
+{
+  "version": 1,
+  "status": "OBSERVED_INPUTS_NOT_OPTIMIZATION_PROOF",
+  "captured_at": "2026-10-14T01:38:12.614Z",
+  "harness_checkout": {
+    "root": "/Users/Yezhiwei/Documents/py_workspace/superpowers-engineering-harness",
+    "commit": "c74ac4d4477469fdbeda80a2b470094d3134375f",
+    "tracked_diff_present": false
+  },
+  "scope": "Knowledge_base TASK-1038001 2026-10-13 Context closeout and selected historical pytest summaries; not whole-session attribution",
+  "privacy": "Selected scalar fields, paths, command refusal codes and source excerpts only. No raw test stdout, credentials, private env files or service logs copied.",
+  "records": [
+    {
+      "id": "E01",
+      "original_path": "/tmp/mysql-harness-context-attempt1-finished.json",
+      "original_sha256": "sha256:1eb1fe3c5f3ff5192ae9ccc747f43ad21eea028a35861888484f3ee2b6060dab",
+      "selected_fields": {
+        "exit_code": null,
+        "signal": "SIGTERM",
+        "elapsed_ms": 240021,
+        "finished_at": "2026-10-13T09:48:56.272Z"
+      }
+    },
+    {
+      "id": "E02",
+      "original_path": "/tmp/mysql-harness-context-current-finished.json",
+      "original_sha256": "sha256:07802c48747f7666698dc0e359fcc54802304380119c495b2af709c18b3682a4",
+      "selected_fields": {
+        "exit_code": 0,
+        "signal": null,
+        "elapsed_ms": 211660,
+        "finished_at": "2026-10-13T09:54:51.029Z"
+      }
+    },
+    {
+      "id": "E03",
+      "original_path": "/tmp/mysql-harness-impact-target-audit.json",
+      "original_sha256": "sha256:e9f602ee98cee889e6c8716b1cf056ebf9cb20aca7303e474f14d3cd7feb1baa",
+      "selected_fields": {
+        "required_test_count": 64,
+        "missing_required_tests": [
+          "backend/tests/test_mysql_poc_manifest.py",
+          "backend/tests/test_mysql_poc_probe.py",
+          "backend/tests/test_mysql_lock_probe.py",
+          "backend/tests/test_mysql_path_identity_probe.py",
+          "backend/tests/test_mysql_path_poc_runner.py",
+          "backend/tests/test_mysql_path_indexes.py",
+          "backend/tests/test_mysql_path_equality.py",
+          "backend/tests/test_mysql_field_index_sql.py",
+          "backend/tests/test_mysql_field_index_probe.py",
+          "backend/tests/test_field_index_cleanup_scope.py",
+          "backend/tests/test_mysql_schema_inventory.py",
+          "backend/tests/test_mysql_column_contracts.py",
+          "backend/tests/test_mysql_key_contracts.py",
+          "backend/tests/test_mysql_index_contracts.py",
+          "backend/tests/test_mysql_check_contracts.py",
+          "backend/tests/test_mysql_paths_product_adapter.py",
+          "backend/tests/test_mysql_migration_activation_gate.py",
+          "backend/tests/test_mysql_installation_plan.py"
+        ]
+      }
+    },
+    {
+      "id": "E04",
+      "original_path": "/Users/Yezhiwei/Documents/py_workspace/knowledge_base/.harness/mysql-controlplane-closeout-audit.json",
+      "original_sha256": "sha256:69416fd3b3a87d26e44e75bc15d62256bab0702a0b2b08a4ec476bb9c55d8bbe",
+      "selected_fields": {
+        "date": "2026-10-13",
+        "state": "IMPLEMENTING",
+        "status": "CONTROLPLANE_PREREQUISITES_BLOCKED",
+        "validation_before_impact_update": {
+          "command": "harness context validate",
+          "exit_code": 0,
+          "stdout": "context_hash: sha256:6c022f6444c1e2999ae74477fb2e0c723496e4ea4a797a9c8e51aee0f5c10ae1\nintegrity:\n  completeness: true\n  accuracy: true\n  freshness: true\n  traceability: true\n",
+          "stderr": ""
+        },
+        "scope_metadata_changed_after_validation": true,
+        "requires_context_regeneration_before_authoritative_reuse": true,
+        "snapshot_blocker_counts": {
+          "DIAGNOSABILITY_REVIEW_MISSING": 1,
+          "REQUIREMENT_UNVERIFIED": 6,
+          "INVARIANT_UNVERIFIED": 4,
+          "EVIDENCE_MISSING": 1,
+          "EVIDENCE_WORKSPACE_STALE": 1,
+          "TEST_BINDING_MISSING": 9,
+          "TEST_EVIDENCE_MISSING": 1,
+          "COMPLEXITY_REVIEW_MISSING": 1,
+          "PLAN_ITEM_UNRECONCILED": 5
+        },
+        "transition": {
+          "command": "harness transition VERIFYING",
+          "exit_code": 1,
+          "stdout": "",
+          "stderr": "PLAN_RECONCILIATION_BLOCKED\n  P-001: PLAN_ITEM_UNRECONCILED\n  P-002: PLAN_ITEM_UNRECONCILED\n  P-003: PLAN_ITEM_UNRECONCILED\n  P-004: PLAN_ITEM_UNRECONCILED\n  P-005: PLAN_ITEM_UNRECONCILED\n"
+        },
+        "plan_auto": {
+          "command": "harness plan reconcile P-001 --auto",
+          "exit_code": 1,
+          "stdout": "",
+          "stderr": "PLAN_PROOF_MISSING\n"
+        },
+        "business_tests_rerun": false,
+        "final_gate_executed": false
+      }
+    },
+    {
+      "id": "E05",
+      "original_path": "/Users/Yezhiwei/Documents/py_workspace/knowledge_base/.harness/evidence/unit-test-ae4b683e5833.json",
+      "original_sha256": "sha256:7dde106bca22389299e49faede46f21be423f3d9609a7978fe89c232a4c87d04",
+      "selected_fields": {
+        "type": "unit_test",
+        "exit_code": 0,
+        "commit": "f26069eabedf4d7ce8739fdb90b3a4cc34a62845",
+        "covered_tests": [
+          "backend/tests/test_release_split_database.py",
+          "backend/tests/test_database_profile.py",
+          "backend/tests/test_run_migrations_entrypoint.py",
+          "backend/tests/test_mineru_parse_worker_contract.py"
+        ],
+        "pytest_report_line": "93 passed, 5 warnings in 4.66s ========================"
+      }
+    },
+    {
+      "id": "E06",
+      "original_path": "/Users/Yezhiwei/Documents/py_workspace/knowledge_base/.harness/evidence/unit-test-8589bacdb6e6.json",
+      "original_sha256": "sha256:996cf5deefcce4e823bacb0a6f183285e0f9740cb626bc242e6cbe21cc294a4d",
+      "selected_fields": {
+        "type": "unit_test",
+        "exit_code": 0,
+        "commit": "f26069eabedf4d7ce8739fdb90b3a4cc34a62845",
+        "covered_tests": [
+          "backend/tests/test_mysql_json_index_contract.py",
+          "backend/tests/test_mysql_index_manifest_contract.py",
+          "backend/tests/test_database_profile.py",
+          "backend/tests/test_release_split_database.py",
+          "backend/tests/test_run_migrations_entrypoint.py",
+          "backend/tests/test_mineru_parse_worker_contract.py",
+          "backend/tests/test_table_command_orchestrator.py",
+          "backend/tests/unit/test_perf_test_field_indexes.py",
+          "backend/tests/test_mysql_field_index_scalar_contract.py"
+        ],
+        "pytest_report_line": "181 passed, 7 warnings in 8.77s ========================"
+      }
+    },
+    {
+      "id": "E07",
+      "original_path": "/Users/Yezhiwei/Documents/py_workspace/knowledge_base/.harness/evidence/integration-test-4be6d22bf924.json",
+      "original_sha256": "sha256:acbd786238c75d431c01acd0a1c7ecc9f26cfa775f03c9724beeca1ee5ec289e",
+      "selected_fields": {
+        "type": "integration_test",
+        "exit_code": 0,
+        "commit": "f26069eabedf4d7ce8739fdb90b3a4cc34a62845",
+        "covered_tests": [
+          "backend/tests/mysql_native/test_ilike_producers.py"
+        ],
+        "pytest_report_line": "80 passed, 199 warnings in 13.04s"
+      }
+    },
+    {
+      "id": "E08",
+      "original_path": "/Users/Yezhiwei/Documents/py_workspace/knowledge_base/.harness/evidence/unit-test-e2f74057cd9e.json",
+      "original_sha256": "sha256:ee29519c593d0ddd3744011dc78cf5992b4e8a6124dcfc38bba2f8c959798e8e",
+      "selected_fields": {
+        "type": "unit_test",
+        "exit_code": 0,
+        "commit": "f26069eabedf4d7ce8739fdb90b3a4cc34a62845",
+        "covered_tests": [
+          "backend/tests/test_record_get_keyword_seam.py",
+          "backend/tests/test_record_query_service.py",
+          "backend/tests/test_table_schema_service.py",
+          "backend/tests/knowledge/test_document_library_list_query.py"
+        ],
+        "pytest_report_line": "73 passed, 51 warnings in 43.53s ======================="
+      }
+    },
+    {
+      "id": "E09",
+      "original_path": "/Users/Yezhiwei/Documents/py_workspace/knowledge_base/.harness/evidence/unit-test-c788f21be22e.json",
+      "original_sha256": "sha256:28d2c925eb38dc63857b8f8324fb3ccdce0d9eb74deaf1e93e3b154a0c8da64a",
+      "selected_fields": {
+        "type": "unit_test",
+        "exit_code": 0,
+        "commit": "f26069eabedf4d7ce8739fdb90b3a4cc34a62845",
+        "covered_tests": [
+          "backend/tests/knowledge/test_projection_claim_ownership.py",
+          "backend/tests/knowledge/test_document_index_projection_consumer.py",
+          "backend/tests/knowledge/test_document_index_projection_task.py",
+          "backend/tests/knowledge/test_document_index_projection_request.py",
+          "backend/tests/knowledge/test_projection_producer_lifecycle_concurrency.py",
+          "backend/tests/knowledge/test_elasticsearch9_adapter_indexing.py"
+        ],
+        "pytest_report_line": "148 passed, 14 warnings in 14.08s ======================="
+      }
+    },
+    {
+      "id": "E10",
+      "original_path": "/Users/Yezhiwei/Documents/py_workspace/knowledge_base/.harness/evidence/integration-test-2f0e53c5570f.json",
+      "original_sha256": "sha256:d7578416e062a03c0820a4cdfa9266fc7ec6e908434e32706a8d4e921640ba8b",
+      "selected_fields": {
+        "type": "integration_test",
+        "exit_code": 0,
+        "commit": "f26069eabedf4d7ce8739fdb90b3a4cc34a62845",
+        "covered_tests": [
+          "backend/tests/mysql_native/test_projection_outbox.py"
+        ],
+        "pytest_report_line": "10 passed, 13 warnings in 109.31s (0:01:49)"
+      }
+    },
+    {
+      "id": "E11",
+      "original_path": "/Users/Yezhiwei/Documents/py_workspace/knowledge_base/.harness/evidence/integration-test-58dc85b01bae.json",
+      "original_sha256": "sha256:5755d06c14f15e6405c5b410d9b2b69ef975efa6a0efd9e69add60dc894c5ad9",
+      "selected_fields": {
+        "type": "integration_test",
+        "exit_code": 0,
+        "commit": "f26069eabedf4d7ce8739fdb90b3a4cc34a62845",
+        "covered_tests": [
+          "backend/tests/mysql_native/test_es_pipeline.py"
+        ],
+        "pytest_report_line": "11 passed, 87 warnings in 165.04s (0:02:45)"
+      }
+    }
+  ],
+  "sources": [
+    {
+      "id": "S01",
+      "repo_path": "src/harness/context/escalation.py",
+      "start_line": 131,
+      "end_line": 151,
+      "source_sha256": "sha256:2904c81877e5c66ec9088d72962257b760d54a384307a832064a2250178ecce8",
+      "installed_path": "/Users/Yezhiwei/.local/share/superpowers-engineering-harness/venv/lib/python3.11/site-packages/harness/context/escalation.py",
+      "installed_sha256": "sha256:2904c81877e5c66ec9088d72962257b760d54a384307a832064a2250178ecce8",
+      "installed_file_matches_checkout": true,
+      "source_excerpt": "def apply_automatic_expansions(harness_dir: Path, context: dict) -> dict:\n    \"\"\"Write each new event before rebuilding; no repeated upgrade from same basis.\"\"\"\n    from .integrity import build_context\n\n    for candidate in automatic_candidates(context):\n        key = lambda event: tuple(\n            event.get(field) for field in (\"trigger\", \"object_id\", \"source_hash\")\n        )\n        if any(key(event) == key(candidate) for event in context[\"expansions\"]):\n            continue\n        _record_expansion(\n            harness_dir,\n            candidate[\"trigger\"],\n            candidate[\"reason\"],\n            automatic=candidate,\n            mode=context[\"mode\"],\n        )\n        context = build_context(harness_dir, mode=context[\"mode\"])\n    return context\n\n"
+    },
+    {
+      "id": "S02",
+      "repo_path": "src/harness/context/escalation.py",
+      "start_line": 244,
+      "end_line": 275,
+      "source_sha256": "sha256:2904c81877e5c66ec9088d72962257b760d54a384307a832064a2250178ecce8",
+      "installed_path": "/Users/Yezhiwei/.local/share/superpowers-engineering-harness/venv/lib/python3.11/site-packages/harness/context/escalation.py",
+      "installed_sha256": "sha256:2904c81877e5c66ec9088d72962257b760d54a384307a832064a2250178ecce8",
+      "installed_file_matches_checkout": true,
+      "source_excerpt": "def _record_expansion(\n    harness_dir: Path,\n    trigger: str,\n    reason: str,\n    *,\n    automatic: dict | None = None,\n    mode: str = \"full\",\n) -> dict:\n    from .integrity import build_context\n    from .store import _paths, _restore\n\n    harness_dir = harness_dir.absolute()\n    with telemetry_lock(harness_dir):\n        _paths(harness_dir)\n        task_path = harness_dir / \"current-task.yaml\"\n        log_path = harness_dir / \"context/expansions.yaml\"\n        staging_root = harness_dir / \".staging\"\n        if any(path.is_symlink() for path in (task_path, log_path, staging_root)):\n            raise ContextBuildError(\n                \"CONTEXT_REFERENCE_BROKEN\", \"expansion storage cannot be a symlink\"\n            )\n        context = build_context(harness_dir, mode=mode)\n        if automatic is not None:\n            if automatic not in automatic_candidates(context):\n                raise ContextBuildError(\n                    \"CONTEXT_STALE\", \"automatic trigger basis changed\"\n                )\n            for existing in context[\"expansions\"]:\n                if all(\n                    existing.get(key) == automatic[key]\n                    for key in (\"trigger\", \"object_id\", \"source_hash\")\n                ):"
+    },
+    {
+      "id": "S03",
+      "repo_path": "src/harness/context/source.py",
+      "start_line": 400,
+      "end_line": 452,
+      "source_sha256": "sha256:06be41a0675b0c500a455f92fc0057133a58a6ef588a6b3ed79501cce60980cf",
+      "installed_path": "/Users/Yezhiwei/.local/share/superpowers-engineering-harness/venv/lib/python3.11/site-packages/harness/context/source.py",
+      "installed_sha256": "sha256:06be41a0675b0c500a455f92fc0057133a58a6ef588a6b3ed79501cce60980cf",
+      "installed_file_matches_checkout": true,
+      "source_excerpt": "                    observability, task_type=task[\"task\"].get(\"type\")\n                )\n            except ValueError as exc:\n                raise ContextBuildError(\"CONTEXT_SCHEMA_INVALID\", str(exc)) from exc\n        try:\n            current = workspace.snapshot(self.repo_root)\n            evidence = []\n            for path in self._artifact_paths(\"evidence\", ARTIFACT_PATTERNS[\"evidence\"]):\n                reference = self._reference(f\"evidence/{path.name}\")\n                projection = project_evidence(path, current.head, current.fingerprint)\n                if projection.status in {\n                    EvidenceStatus.INVALID,\n                    EvidenceStatus.MISSING,\n                }:\n                    raise ContextBuildError(\n                        \"CONTEXT_SCHEMA_INVALID\", f\"{path.name}: {projection.code}\"\n                    )\n                record = projection.record\n                evidence.append(\n                    {\n                        **reference,\n                        \"type\": record[\"type\"],\n                        \"exit_code\": record[\"exit_code\"],\n                        \"covered_tests\": record.get(\"covered_tests\", []),\n                        \"status\": projection.status.value,\n                        \"code\": projection.code,\n                        \"expected_fingerprint\": projection.expected_fingerprint,\n                        \"current_fingerprint\": projection.current_fingerprint,\n                    }\n                )\n            plan_assessment = None\n            if plan_configuration[\"enabled\"]:\n                try:\n                    plan_assessment = assess_plan_reconciliation_documents(\n                        self.harness_dir,\n                        task,\n                        plan,\n                        plan_execution,\n                        head=current.head,\n                        workspace=current.fingerprint,\n                    )\n                except (PlanArtifactError, decision.DecisionError) as exc:\n                    raise ContextBuildError(\n                        \"CONTEXT_SCHEMA_INVALID\", str(exc)\n                    ) from exc\n            gate = quality_gate.assess_gate(\n                self.harness_dir,\n                head=current.head,\n                allow_preflight=True,\n                architecture_assessment=architecture_assessment,\n            )\n            architecture_assessment = gate.architecture_assessment\n        except ("
+    },
+    {
+      "id": "S04",
+      "repo_path": "src/harness/context/store.py",
+      "start_line": 82,
+      "end_line": 145,
+      "source_sha256": "sha256:5e16a2a3b713887a561f759cda72a70558716660a9ad6c510ad92a37a65106d2",
+      "installed_path": "/Users/Yezhiwei/.local/share/superpowers-engineering-harness/venv/lib/python3.11/site-packages/harness/context/store.py",
+      "installed_sha256": "sha256:5e16a2a3b713887a561f759cda72a70558716660a9ad6c510ad92a37a65106d2",
+      "installed_file_matches_checkout": true,
+      "source_excerpt": "def generate_context(harness_dir: Path, *, mode: str = \"compact\") -> dict:\n    \"\"\"Validate before stdout; restore prior bytes on any publication failure.\n\n    Shared task-publication lock also serializes Context readers/writers and\n    task replacement. Unmanaged product/control edits are detected by hashes.\n    \"\"\"\n    harness_dir = harness_dir.absolute()\n    with telemetry_lock(harness_dir):\n        _require_task(harness_dir)\n        paths = _paths(harness_dir)\n        staging_root = harness_dir / \".staging\"\n        if staging_root.is_symlink():\n            raise ContextBuildError(\n                \"CONTEXT_REFERENCE_BROKEN\", \"Context staging cannot be a symlink\"\n            )\n        from .escalation import apply_automatic_expansions\n\n        document = build_context(harness_dir, mode=mode)\n        document = apply_automatic_expansions(harness_dir, document)\n        integrity = validate_context(harness_dir, document)\n        evidence = context_evidence(document, integrity, datetime.now(UTC).isoformat())\n        bundle = {\n            \"current.yaml\": document,\n            \"manifest.yaml\": _manifest(document),\n            \"evidence.yaml\": evidence,\n        }\n        before = {\n            name: path.read_bytes() if path.exists() else None\n            for name, path in paths.items()\n        }\n        operation = f\"context-{uuid4().hex}\"\n        staged = staging_root / operation\n        try:\n            transaction.stage(\n                harness_dir,\n                [\n                    transaction.StagedArtifact(\n                        f\"context/{name}\",\n                        yaml.safe_dump(\n                            value, sort_keys=False, allow_unicode=True\n                        ).encode(),\n                    )\n                    for name, value in bundle.items()\n                ],\n                operation_id=operation,\n            )\n            require_fresh(document[\"generated_from\"], capture(harness_dir))\n            _paths(harness_dir)\n            transaction.publish(\n                harness_dir,\n                staged,\n                replace_paths=frozenset(f\"context/{name}\" for name in MEMBERS),\n            )\n            for name, path in paths.items():\n                _equal(_read(path), bundle[name], name)\n            require_fresh(document[\"generated_from\"], capture(harness_dir))\n        except BaseException:\n            _paths(harness_dir)  # do not follow a concurrently substituted symlink\n            _restore(paths, before)\n            raise\n        finally:\n            shutil.rmtree(staged, ignore_errors=True)\n        return document\n"
+    },
+    {
+      "id": "S05",
+      "repo_path": "src/harness/context/integrity.py",
+      "start_line": 266,
+      "end_line": 323,
+      "source_sha256": "sha256:9c0e50aa8de7b24d307d2366066a4f9cb3a72292531ad30da87fdd283cdb0abd",
+      "installed_path": "/Users/Yezhiwei/.local/share/superpowers-engineering-harness/venv/lib/python3.11/site-packages/harness/context/integrity.py",
+      "installed_sha256": "sha256:9c0e50aa8de7b24d307d2366066a4f9cb3a72292531ad30da87fdd283cdb0abd",
+      "installed_file_matches_checkout": true,
+      "source_excerpt": "def _load_stable(harness_dir: Path, before: dict) -> AuthoritativeContext:\n    from .read_scope import context_read_scope\n\n    with context_read_scope(harness_dir, before):\n        source = FileContextSource(harness_dir).load()\n    require_fresh(before, capture(harness_dir))\n    return source\n\n\ndef build_context(\n    harness_dir: Path, *, mode: str = \"full\", selector: ContextSelector | None = None\n) -> dict:\n    from harness.decision import ensure_decision_index\n\n    ensure_decision_index(harness_dir)\n    before = capture(harness_dir)\n    source = _load_stable(harness_dir, before)\n    policy = effective_policy(source.task, source.expansions)\n    from .read_scope import context_read_scope\n\n    with context_read_scope(harness_dir, before):\n        selected = (selector or DeterministicSelector()).select(\n            deepcopy(source), policy, mode=mode\n        )\n    document = deepcopy(\n        {\n            \"version\": 1,\n            \"mode\": mode,\n            \"base_policy\": policy_for_risk(source.task[\"risk\"]),\n            \"policy\": policy,\n            \"expansions\": source.expansions,\n            \"control\": build_control_core(source),\n            \"working\": selected.working,\n            \"references\": source.references,\n            \"omitted\": _omitted(source) + selected.omitted,\n            \"manifest\": _manifest(source, before, selected.working),\n            \"generated_from\": before,\n        }\n    )\n    document[\"context_hash\"] = digest(document)\n    _schema(document)\n    _check(source, document, harness_dir.absolute().parent)\n    require_fresh(before, capture(harness_dir))\n    return document\n\n\ndef validate_context(harness_dir: Path, document: dict) -> dict[str, bool]:\n    \"\"\"Read-only: validate the supplied old view, never regenerate over it.\"\"\"\n    _schema(document)\n    before = capture(harness_dir)\n    require_fresh(document[\"generated_from\"], before)\n    source = _load_stable(harness_dir, before)\n    result = _check(source, document, harness_dir.absolute().parent)\n    require_fresh(before, capture(harness_dir))\n    return result\n"
+    },
+    {
+      "id": "S06",
+      "repo_path": "src/harness/workspace.py",
+      "start_line": 101,
+      "end_line": 160,
+      "source_sha256": "sha256:26fa718480195cae5653ed6fc5ce7951a2723646fafff54f1819a8738445e4c0",
+      "installed_path": "/Users/Yezhiwei/.local/share/superpowers-engineering-harness/venv/lib/python3.11/site-packages/harness/workspace.py",
+      "installed_sha256": "sha256:fdfd97891de598276a63aa083fb579fd4b3289c0a0f37f779972ed73749a0aab",
+      "installed_file_matches_checkout": false,
+      "source_excerpt": "_PRODUCT_EXCLUDE = (\":(exclude).harness\", \":(exclude).harness/**\")\n\n\ndef _untracked_paths(repo_root: Path) -> set[str]:\n    paths = set()\n    for name in (\n        _run(repo_root, \"ls-files\", \"--others\", \"--exclude-standard\")\n        .decode()\n        .splitlines()\n    ):\n        candidate = Path(name)\n        # Git owns discovery. Avoid a pre-scope Path.is_file metadata probe;\n        # later scoped reads bind actual file content and fail closed on races.\n        if (\n            name\n            and not candidate.is_absolute()\n            and \"..\" not in candidate.parts\n            and not (name == \".harness\" or name.startswith(\".harness/\"))\n        ):\n            paths.add(name)\n    return paths\n\n\ndef _working_paths(repo_root: Path) -> set[str]:\n    paths = set()\n    for args in (\n        (\"diff\", \"--name-only\", \"HEAD\", \"--\", \".\", *_PRODUCT_EXCLUDE),\n        (\"diff\", \"--cached\", \"--name-only\", \"HEAD\", \"--\", \".\", *_PRODUCT_EXCLUDE),\n    ):\n        paths.update(\n            name for name in _run(repo_root, *args).decode().splitlines() if name\n        )\n    return paths | _untracked_paths(repo_root)\n\n\ndef _fingerprint(repo_root: Path) -> str:\n    \"\"\"Product workspace fingerprint; control-plane files are excluded.\"\"\"\n    parts = [\n        _run(repo_root, \"rev-parse\", \"HEAD\"),\n        _run(repo_root, \"diff\", \"--binary\", \"HEAD\", \"--\", \".\", *_PRODUCT_EXCLUDE),\n        _run(\n            repo_root,\n            \"diff\",\n            \"--cached\",\n            \"--binary\",\n            \"HEAD\",\n            \"--\",\n            \".\",\n            *_PRODUCT_EXCLUDE,\n        ),\n    ]\n    from harness.source_access import _package_open\n\n    for name in sorted(_untracked_paths(repo_root)):\n        path = repo_root / name\n        with _package_open(path):\n            parts.extend([name.encode(), hashlib.sha256(path.read_bytes()).digest()])\n    return \"sha256:\" + hashlib.sha256(b\"\\0\".join(parts)).hexdigest()\n\n"
+    },
+    {
+      "id": "S07",
+      "repo_path": "src/harness/evidence_validator.py",
+      "start_line": 100,
+      "end_line": 135,
+      "source_sha256": "sha256:a94d62594d38b2c94079563fbb702b07ef9f16ae4fc5b2eb4059f208b3c36ef7",
+      "installed_path": "/Users/Yezhiwei/.local/share/superpowers-engineering-harness/venv/lib/python3.11/site-packages/harness/evidence_validator.py",
+      "installed_sha256": "sha256:d3d71713b856bc5d86ac2f072b9a53264854b960f838943bc88f54021030a713",
+      "installed_file_matches_checkout": false,
+      "source_excerpt": "def _projection(\n    record,\n    *,\n    current_head,\n    current_workspace,\n    expected_success,\n    require_current_workspace=True,\n) -> EvidenceProjection:\n    try:\n        validate(record, read_schema(\"evidence.schema.json\"))\n    except (OSError, json.JSONDecodeError, ValidationError):\n        return EvidenceProjection(\n            EvidenceStatus.INVALID,\n            \"EVIDENCE_SCHEMA_INVALID\",\n            record if isinstance(record, dict) else None,\n            None,\n            current_workspace,\n        )\n    if record.get(\"commit\") != current_head:\n        return EvidenceProjection(\n            EvidenceStatus.STALE,\n            \"EVIDENCE_HEAD_MISMATCH\",\n            record,\n            record.get(\"workspace_fingerprint\"),\n            current_workspace,\n        )\n    before = record.get(\"workspace_fingerprint\")\n    after = record.get(\"workspace_fingerprint_after\")\n    if before != after or (\n        require_current_workspace\n        and (before != current_workspace or after != current_workspace)\n    ):\n        return EvidenceProjection(\n            EvidenceStatus.STALE,\n            \"EVIDENCE_WORKSPACE_STALE\",\n            record,"
+    },
+    {
+      "id": "S08",
+      "repo_path": "src/harness/controlplane.py",
+      "start_line": 2873,
+      "end_line": 2989,
+      "source_sha256": "sha256:9a517a04f214a2f6a3937703b8461af3c872446796d39f24eb4d6af93d760ceb",
+      "installed_path": "/Users/Yezhiwei/.local/share/superpowers-engineering-harness/venv/lib/python3.11/site-packages/harness/controlplane.py",
+      "installed_sha256": "sha256:dfcddcef39eac0893175475dd1efc0f88d88fa2d9368d627107a033f074f8710",
+      "installed_file_matches_checkout": false,
+      "source_excerpt": "def cmd_impact(action, value=None, reason=None, args=None):\n    import yaml\n\n    path, document = _impact()\n    impact = document[\"impact\"]\n    if action == \"show\":\n        print(yaml.safe_dump(document, sort_keys=False))\n        return 0\n    harness_dir = Path(\".harness\")\n    task = load_task(harness_dir)\n    if \"scope\" not in task:\n        task[\"scope\"] = {\n            \"owned_paths\": list(impact.get(\"changed\", [])),\n            \"protected_user_paths\": [],\n        }\n        save_task(harness_dir, task)\n    scope = task[\"scope\"]\n    if action == \"scope\":\n        effective = workspace.project_task_scope(\n            task,\n            impact,\n            inspected_paths=workspace.observability_inspected_paths(harness_dir),\n        )\n        print(\n            yaml.safe_dump(\n                {\n                    \"owned_paths\": scope.get(\"owned_paths\", []),\n                    \"protected_user_paths\": scope.get(\"protected_user_paths\", []),\n                    \"effective_scope\": list(effective),\n                },\n                sort_keys=False,\n            )\n        )\n        return 0\n    if action in {\"adopt-path\", \"ignore-user-path\"}:\n        owned, protected = scope[\"owned_paths\"], scope[\"protected_user_paths\"]\n        if action == \"adopt-path\":\n            user_changes = (task.get(\"risk\") or {}).get(\"user_changes\", {})\n            paths = list(user_changes.get(\"paths\", []))\n            if value in paths:\n                if (\n                    \"path_fingerprints\" not in user_changes\n                    and workspace.protected_user_changes_fingerprint(user_changes)\n                    != user_changes.get(\"fingerprint\")\n                ):\n                    print(\"USER_CHANGE_BASELINE_STALE\", file=sys.stderr)\n                    return 1\n                if \"path_fingerprints\" not in user_changes:\n                    user_changes[\"version\"] = 2\n                    user_changes[\"path_fingerprints\"] = workspace.protected_path_fingerprints(\n                        tuple(paths)\n                    )\n                user_changes[\"paths\"] = [path for path in paths if path != value]\n                user_changes[\"path_fingerprints\"].pop(value, None)\n                user_changes[\"fingerprint\"] = workspace.aggregate_protected_path_fingerprints(\n                    user_changes[\"path_fingerprints\"]\n                )\n            if value not in owned:\n                owned.append(value)\n            if value in protected:\n                protected.remove(value)\n        elif value in owned or value in {item[\"ref\"] for item in typed_contracts(impact)}:\n            print(\"PROTECTED_PATH_OWNED\", file=sys.stderr)\n            return 1\n        elif value not in protected:\n            protected.append(value)\n        save_task(harness_dir, task)\n        return 0\n    if action == \"add-interface\":\n        if (\n            task.get(\"risk\", {}).get(\"profile\") == \"FAST\"\n            and args.visibility == \"external\"\n        ):\n            print(\"PUBLIC_INTERFACE_RISK_ESCALATION_REQUIRED\", file=sys.stderr)\n            return 1\n        impact.setdefault(\"interfaces\", []).append(\n            {\n                \"id\": value,\n                \"kind\": args.kind,\n                \"visibility\": args.visibility,\n                \"consumers\": args.consumer,\n                \"compatibility\": args.compatibility,\n                \"affected_contracts\": [],\n                \"contract_id\": args.contract_id,\n            }\n        )\n        transaction.atomic_write(\n            path, yaml.safe_dump(document, sort_keys=False).encode()\n        )\n        return 0\n    key = {\n        \"add-change\": \"changed\",\n        \"add-test\": \"required_tests\",\n        \"add-dependent\": \"direct_dependents\",\n        \"add-contract\": \"contracts\",\n        \"add-risk\": \"risks\",\n    }.get(action)\n    if key:\n        if action == \"add-contract\":\n            if value not in {item[\"ref\"] for item in typed_contracts(impact)}:\n                impact[key].append({\"ref\": value, \"kind\": args.kind})\n        elif value not in impact[key]:\n            impact[key].append(value)\n        if action == \"add-change\":\n            if value not in scope[\"owned_paths\"]:\n                scope[\"owned_paths\"].append(value)\n            if value in scope[\"protected_user_paths\"]:\n                scope[\"protected_user_paths\"].remove(value)\n            save_task(harness_dir, task)\n    transaction.atomic_write(path, yaml.safe_dump(document, sort_keys=False).encode())\n    return 0\n"
+    },
+    {
+      "id": "S09",
+      "repo_path": "src/harness/cli.py",
+      "start_line": 185,
+      "end_line": 213,
+      "source_sha256": "sha256:09b8b1186105e0b677253b0f6304f0967f98ac42e22921019ecd1ca20b8870d7",
+      "installed_path": "/Users/Yezhiwei/.local/share/superpowers-engineering-harness/venv/lib/python3.11/site-packages/harness/cli.py",
+      "installed_sha256": "sha256:7471dcf0987eff93d13d3848378d6153ccf9150e58acd0eac0bf029263df15e6",
+      "installed_file_matches_checkout": false,
+      "source_excerpt": "    p_ev.add_argument(\"--phase\", choices=[\"red\", \"green\", \"full\"])\n    p_ev.add_argument(\"--reuse-if-valid\", action=\"store_true\")\n    p_ev.add_argument(\"--attach\", action=\"store_true\")\n    p_ev.add_argument(\"--result-file\")\n    p_ev.add_argument(\"--budget-override-reason\")\n    p_ev.add_argument(\"--budget-override-evidence\")\n    p_ev.add_argument(\"--budget-override-hypothesis\")\n    p_imp = sub.add_parser(\"impact\")\n    ims = p_imp.add_subparsers(dest=\"impact_action\")\n    ims.add_parser(\"show\")\n    scope = ims.add_parser(\"scope\")\n    scope.add_argument(\"--format\", choices=[\"yaml\"], default=\"yaml\")\n    adopt = ims.add_parser(\"adopt-path\")\n    adopt.add_argument(\"value\")\n    ignore = ims.add_parser(\"ignore-user-path\")\n    ignore.add_argument(\"value\")\n    ic = ims.add_parser(\"add-change\")\n    ic.add_argument(\"value\")\n    it = ims.add_parser(\"add-test\")\n    it.add_argument(\"value\")\n    idp = ims.add_parser(\"add-dependent\")\n    idp.add_argument(\"value\")\n    ict = ims.add_parser(\"add-contract\")\n    ict.add_argument(\"value\")\n    ict.add_argument(\n        \"--kind\", choices=[\"generic\", \"permission\", \"persistence\"], default=\"generic\"\n    )\n    irk = ims.add_parser(\"add-risk\")\n    irk.add_argument(\"value\")"
+    },
+    {
+      "id": "S10",
+      "repo_path": "src/harness/collect_evidence.py",
+      "start_line": 824,
+      "end_line": 853,
+      "source_sha256": "sha256:fb3ddc2c761029aa88991808cdee0e231574645977fba58ea4e658015eb45183",
+      "installed_path": "/Users/Yezhiwei/.local/share/superpowers-engineering-harness/venv/lib/python3.11/site-packages/harness/collect_evidence.py",
+      "installed_sha256": "sha256:e4302c6eb5b9d9793b37effeafa1d16e63ac5e096242cae931719a3536fdd538",
+      "installed_file_matches_checkout": false,
+      "source_excerpt": "    if args.reuse_if_valid and not args.finding and args.phase in {None, \"green\"}:\n        request = ReuseRequest(\n            args.type,\n            args.command,\n            args.scope,\n            covered_tests,\n            args.phase,\n            args.finding,\n            args.test,\n            tuple(args.covered_test_case),\n        )\n        for path in sorted(\n            out_dir.glob(f\"{out_file.stem}*.json\"),\n            key=lambda path: (-evidence_receipt_order(path), path.name),\n        ):\n            try:\n                candidate = json.loads(path.read_text())\n                if can_reuse_evidence(\n                    candidate,\n                    request,\n                    current_head=head,\n                    current_workspace=workspace_fingerprint(),\n                    current_runtime=runtime_metadata(),\n                ):\n                    print(f\"EVIDENCE_REUSED: {path.name}\")\n                    return 0\n            except (OSError, json.JSONDecodeError):\n                continue\n\n    override_values = ("
+    }
+  ],
+  "limitations": [
+    "No new benchmark or test execution performed.",
+    "Pytest times are not full orchestration wall-clock.",
+    "Context phase/Gate/schema call timings were not captured; bottleneck shares are unknown.",
+    "Installed distribution has no verified Git commit identity; source hash comparisons apply per file only.",
+    "Evidence excerpts are historical; current HEAD/freshness success is not claimed."
+  ]
+}

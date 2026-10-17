@@ -13,6 +13,7 @@ SCHEMA_NAMES = (
     "architecture.schema.json",
     "complexity-finding.schema.json",
     "context.schema.json",
+    "context-profile.schema.json",
     "decision.schema.json",
     "diagnosability-finding.schema.json",
     "diagnosability-proposal.schema.json",
@@ -20,6 +21,7 @@ SCHEMA_NAMES = (
     "diagnosability-review.schema.json",
     "evidence.schema.json",
     "gate.schema.json",
+    "impact-reconcile.schema.json",
     "interface-contract.schema.json",
     "interface-finding.schema.json",
     "invariant.schema.json",
@@ -29,6 +31,10 @@ SCHEMA_NAMES = (
     "plan.schema.json",
     "requirement.schema.json",
     "task.schema.json",
+    "test-scope-audit.schema.json",
+    "test-scope-baseline.schema.json",
+    "test-scope-migration.schema.json",
+    "test-scope-seal.schema.json",
 )
 
 

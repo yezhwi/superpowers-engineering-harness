@@ -138,6 +138,14 @@ After both YAML files exist and validate against their schemas:
 4. Transition state `SPECIFYING -> PLANNED` via `harness transition PLANNED` after alignment exists and automated test bindings are nonempty.
 5. Run `harness status` to confirm persistence (raw `python scripts/harness_status.py` only works inside the harness repo root).
 
+## Preserve Verification Bindings and Plan Proof
+
+Declare real executable selectors before implementation; inspect them and case/Plan/evidence links with `harness evidence plan --json`. Diagnosis is read-only advice, not permission to execute tests, mutate scope, or mark verification complete. Keep original authorized required tests and must/critical/major obligations intact when bindings evolve. RETIRE or REBIND needs the exact selected user grant and audited reconciliation; replacement-file existence, MIGRATE authority, and dry-run success are insufficient.
+
+When a canonical implementation Plan Item has actual qualifying proof, persist its disposition promptly through `harness plan reconcile P-001 --auto` (replace the example ID with the actual item). Do not postpone recording real proof until after context loss. This command resolves existing evidence/surface bindings; it does not create test evidence. `PLAN_PROOF_MISSING` requires actual missing proof, not a hand-written completion record. Do not mark COMPLETE or verified from chat, presumed success, or a diagnostic result. For stale COMPLETE proof use the existing explicit proof-refresh route only with actual fresh proof; never discard historical RED.
+
+Batch legitimate metadata updates, then generate a fresh final Context once stable; stale Context cannot authorize later operations. This scheduling guidance does not authorize contract freeze/re-freeze, Decision acceptance, or resume to bypass an authority blocker.
+
 ## Production Diagnosability
 
 For Q2/Q3, inspect changed paths and direct dependencies for external calls, state transitions, caller rejection, async/retry/fallback, compensation, consistency, permission, and critical business objects. Persist `.harness/observability.yaml`.

@@ -1,0 +1,12 @@
+version: 1
+task_id: TASK-092
+expected_impact_hash: sha256:b2639457b89fe5b7faafdb18a0b8ab57647f8d3ac5e580d6d183e262588369ec
+decision_ref: DEC-002
+original_source:
+  path: docs/superpowers/authorizations/TASK-092-scope/original-impact.yaml
+  hash: sha256:ce4672fd8e6a8bc7da97ceb870cb91d0a224adbfa994b27b3c3f03b77301fd1c
+  tests_hash: sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945
+historical_sources:
+  - path: docs/superpowers/authorizations/TASK-092-scope/historical-impact.yaml
+    hash: sha256:b2639457b89fe5b7faafdb18a0b8ab57647f8d3ac5e580d6d183e262588369ec
+    tests_hash: sha256:5a8da2b4918c8dbb72b55b2c0ba5a02e45e079b0ef95cc2e2fb9387a605aec0f

@@ -45,7 +45,7 @@ def run_cli(cwd: Path, *args: str):
     )
 
 
-def make_repo(tmp_path: Path, state="GATING", iteration=0, max_iterations=5) -> Path:
+def make_repo(tmp_path: Path, state="GATING", iteration=0, max_iterations=5, *, trusted_scope=False) -> Path:
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True, capture_output=True)
     run_cli(tmp_path, "init")
     subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True, capture_output=True)
@@ -53,6 +53,9 @@ def make_repo(tmp_path: Path, state="GATING", iteration=0, max_iterations=5) -> 
         ["git", "commit", "-qm", "init"], cwd=tmp_path, check=True, capture_output=True
     )
     h = tmp_path / ".harness"
+    if trusted_scope:
+        bound = run_cli(tmp_path, 'task', 'migrate-id', 'TASK-001')
+        assert bound.returncode == 0, bound.stdout + bound.stderr
     task = yaml.safe_load((h / "current-task.yaml").read_text())
     task.setdefault("task", {})["id"] = "TASK-001"
     task.update(

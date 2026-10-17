@@ -22,12 +22,13 @@ import re
 import shlex
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
 
-from .paths import EvidenceReferenceError, evidence_output_path, evidence_receipt_order
+from . import publication_fs, telemetry
 from .budget import (
     BudgetOverrideRequired,
     budget_action,
@@ -37,8 +38,10 @@ from .budget import (
     record_failure,
 )
 from .evidence_validator import ReuseRequest, can_reuse_evidence
-from .telemetry import update_telemetry
-from .workspace import git_head as workspace_head, snapshot
+from .paths import EvidenceReferenceError, evidence_output_path, evidence_receipt_order
+from .transaction_recovery import publication_admission
+from .workspace import git_head as workspace_head
+from .workspace import snapshot
 
 TEST_EVIDENCE_TYPES = {"unit_test", "integration_test", "contract_test"}
 
@@ -710,6 +713,9 @@ def _collect(
         stdout = exc.stdout
         stderr = exc.stderr
         error = "EVIDENCE_COMMAND_TIMEOUT"
+    except KeyboardInterrupt:
+        exit_code, stdout, stderr = 130, '', ''
+        error = "EVIDENCE_COMMAND_CANCELLED"
     after = workspace_fingerprint()
     evidence = {
         "type": evidence_type,
@@ -730,9 +736,10 @@ def _collect(
         evidence["error"] = error
         evidence["error_detail"] = {
             "code": error,
-            "kind": "timeout",
-            "timeout_seconds": timeout_seconds,
+            "kind": "timeout" if exit_code == 124 else "cancelled",
         }
+        if exit_code == 124:
+            evidence["error_detail"]["timeout_seconds"] = timeout_seconds
     if finding_id is not None or (
         evidence_type in TEST_EVIDENCE_TYPES and scope == "related"
     ):
@@ -749,7 +756,55 @@ def _collect(
     return evidence
 
 
-def main(argv=None):
+@dataclass(frozen=True)
+class _Collection:
+    head: str
+    filename: str
+    covered_tests: tuple[str, ...]
+    identity: tuple
+    action: str | None
+    retry: bool
+    override: dict | None
+
+
+def _root_identity(root: Path) -> tuple[int, int]:
+    fd = publication_fs.open_directory(root)
+    try:
+        info = os.fstat(fd)
+        return info.st_dev, info.st_ino
+    finally:
+        os.close(fd)
+
+
+def _optional_bytes(root: Path, name: str) -> bytes | None:
+    from . import source_access
+
+    path = root / name
+    if not path.exists() and not path.is_symlink():
+        return None
+    return source_access.read_regular_bytes_beneath(path, root)
+
+
+def _current_task(root: Path) -> tuple[dict | None, bytes | None]:
+    content = _optional_bytes(root, 'current-task.yaml')
+    if content is None:
+        return None, None
+    try:
+        task = yaml.safe_load(content)
+        if not isinstance(task, dict):
+            raise TypeError()
+        if not isinstance(task.get('task', {}), dict):
+            raise TypeError()
+        return task, content
+    except (yaml.YAMLError, ValueError, TypeError) as exc:
+        raise ValueError('EVIDENCE_TASK_INVALID') from exc
+
+
+def _task_identity(task: dict | None) -> tuple:
+    return task is not None, ((task.get('task') or {}).get('id') if task is not None else None)
+
+
+def _parse_arguments(argv):
     parser = argparse.ArgumentParser(description="Collect harness evidence")
     parser.add_argument("--type", required=True, choices=sorted(VALID_TYPES))
     parser.add_argument("--command", required=True)
@@ -764,8 +819,16 @@ def main(argv=None):
     parser.add_argument("--budget-override-reason")
     parser.add_argument("--budget-override-evidence")
     parser.add_argument("--budget-override-hypothesis")
-    args = parser.parse_args(argv)
+    return parser.parse_args(argv)
 
+
+def _preflight(args, root: Path) -> _Collection | int:
+    from . import source_access
+
+    identity = _root_identity(root)
+    evidence_directory = root / 'evidence'
+    if evidence_directory.exists() or evidence_directory.is_symlink():
+        _root_identity(evidence_directory)  # Reject symlink directory before execution.
     try:
         head = git_head()
     except RuntimeError as exc:
@@ -802,10 +865,10 @@ def main(argv=None):
         print(bound, file=sys.stderr)
         return 2
     covered_tests = bound
-    out_dir = Path(args.harness_dir) / "evidence"
+    out_dir = root / "evidence"
     try:
         out_file = evidence_output_path(
-            Path(args.harness_dir),
+            root,
             evidence_filename(
                 args.type,
                 finding_id=args.finding,
@@ -837,7 +900,7 @@ def main(argv=None):
             key=lambda path: (-evidence_receipt_order(path), path.name),
         ):
             try:
-                candidate = json.loads(path.read_text())
+                candidate = json.loads(source_access.read_regular_bytes_beneath(path, root))
                 if can_reuse_evidence(
                     candidate,
                     request,
@@ -858,8 +921,7 @@ def main(argv=None):
     if any(override_values) and not all(override_values):
         print("BUDGET_OVERRIDE_REQUIRED", file=sys.stderr)
         return 2
-    task_path = Path(args.harness_dir) / "current-task.yaml"
-    task = yaml.safe_load(task_path.read_text()) if task_path.exists() else None
+    task, _ = _current_task(root)
     action = budget_action(args.type, 0, args.command)
     override = (
         {
@@ -879,43 +941,142 @@ def main(argv=None):
         print(str(exc), file=sys.stderr)
         return 2
 
-    if out_file.exists():
-        stem = out_file.stem
-        suffix = 2
-        while (out_dir / f"{stem}-{suffix}.json").exists():
-            suffix += 1
-        out_file = out_dir / f"{stem}-{suffix}.json"
+    return _Collection(head, out_file.name, covered_tests,
+                       (*identity, *_task_identity(task)), action,
+                       bool(task and is_retry(task, args.command)), override)
 
-    evidence = _collect(
-        args.type,
-        _TrustedLocalCommand(args.command),
-        args.finding,
-        args.test,
-        args.scope,
-        covered_tests,
-        tuple(args.covered_test_case),
-        args.phase,
-    )
-    evidence["commit"] = head
 
-    out_dir.mkdir(parents=True, exist_ok=True)
-    out_file.write_text(json.dumps(evidence, indent=2))
-    if task and action:
-        record_budget(task, action, override)
-        if is_retry(task, args.command):
-            record_budget(task, "retry", override)
-        if evidence["exit_code"]:
+def _persist(root: Path, args, prepared: _Collection, evidence: dict) -> Path:
+    from . import transaction
+
+    # Check named root before reading task facts from a possible replacement.
+    if _root_identity(root) != prepared.identity[:2]:
+        raise ValueError('EVIDENCE_TASK_CHANGED: Harness root replaced')
+    task, task_bytes = _current_task(root)
+    if _task_identity(task) != prepared.identity[2:]:
+        raise ValueError('EVIDENCE_TASK_CHANGED: task identity changed')
+    directory = root / 'evidence'
+    if directory.exists() or directory.is_symlink():
+        _root_identity(directory)
+    output = directory / prepared.filename
+    stem, suffix = output.stem, 2
+    while output.exists() or output.is_symlink():
+        output = output.with_name(f'{stem}-{suffix}.json')
+        suffix += 1
+    receipt_name = output.relative_to(root).as_posix()
+    artifacts = [transaction.StagedArtifact(receipt_name, json.dumps(evidence, indent=2).encode())]
+    expected = {receipt_name: None}
+    if task and prepared.action:
+        # Merge deltas into CURRENT task; never restore pre-execution snapshot.
+        record_budget(task, prepared.action, prepared.override)
+        if prepared.retry:
+            record_budget(task, 'retry', prepared.override)
+        if evidence['exit_code']:
             record_failure(task, args.command)
-        task_path.write_text(yaml.safe_dump(task, sort_keys=False))
-        update_telemetry(Path(args.harness_dir), task)
+        artifacts.append(transaction.StagedArtifact('current-task.yaml', yaml.safe_dump(task, sort_keys=False).encode(), replace=True))
+        expected['current-task.yaml'] = task_bytes
+        previous_bytes = _optional_bytes(root, 'telemetry.json')
+        try:
+            previous = json.loads(previous_bytes) if previous_bytes is not None else {}
+        except (ValueError, UnicodeError):
+            previous = {}
+        if not isinstance(previous, dict) or previous.get('task_id') != (task.get('task') or {}).get('id'):
+            previous = {}
+        data = telemetry._local_facts(task, previous, None)
+        artifacts.append(transaction.StagedArtifact('telemetry.json', json.dumps(data, indent=2).encode(), replace=True))
+        expected['telemetry.json'] = previous_bytes
+    exact = tuple(artifacts)
+    staged = transaction.stage(root, artifacts)
+    try:
+        transaction.publish(root, staged,
+                            replace_paths=frozenset(a.relative_path for a in artifacts if a.replace),
+                            durable=True, expected_sources=expected, expected_artifacts=exact)
+    except OSError as exc:
+        # Commit may precede failing stage archival; never imply retry is safe.
+        raise OSError(
+            f'EVIDENCE_PERSISTENCE_UNCERTAIN: publication attempted; inspect canonical state: {exc}'
+        ) from exc
+    return output
 
-    print(
-        f"evidence written: {out_file} "
-        f"(exit_code={evidence['exit_code']}, commit={head[:12]})"
-    )
-    # Evidence collection itself succeeds even when the command fails;
-    # the gate decides based on exit_code in the evidence.
-    return 0
+
+def _retain_result(evidence: dict, reason: str, root: Path) -> Path:
+    # TMPDIR may itself be inside task root. Check candidates BEFORE writing.
+    root = root.resolve()
+    directory = None
+    for base in dict.fromkeys((Path(tempfile.gettempdir()).resolve(), Path('/tmp').resolve())):
+        if base.is_relative_to(root):
+            continue
+        try:
+            directory = Path(tempfile.mkdtemp(prefix='harness-evidence-attempt-', dir=base)).resolve()
+        except OSError:
+            continue
+        if directory.is_relative_to(root):
+            raise OSError('EVIDENCE_RESULT_RETENTION_FAILED: temporary directory moved inside task')
+        break
+    if directory is None:
+        raise OSError('EVIDENCE_RESULT_RETENTION_FAILED: no external temporary directory')
+    path = directory / 'result.json'
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(descriptor, 'w') as stream:
+        json.dump({'accepted': False, 'reason': reason, 'evidence': evidence}, stream, indent=2)
+        stream.flush()
+        os.fsync(stream.fileno())
+    descriptor = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+    return path
+
+
+def _report_failure(exc: BaseException, root: Path, evidence: dict | None = None) -> int:
+    cancelled = isinstance(exc, KeyboardInterrupt) or bool(evidence and evidence.get('error') == 'EVIDENCE_COMMAND_CANCELLED')
+    message = str(exc) if not isinstance(exc, KeyboardInterrupt) else 'EVIDENCE_COMMAND_CANCELLED'
+    retained = None
+    if evidence is not None:
+        try:
+            retained = _retain_result(evidence, message, root)
+        except OSError:
+            message += '\nEVIDENCE_RESULT_RETENTION_FAILED: measured result could not be retained'
+    try:
+        print(message, file=sys.stderr)
+        if retained is not None:
+            print(f'EVIDENCE_RESULT_RETAINED: {retained}', file=sys.stderr)
+    except (OSError, ValueError):
+        pass  # Broken/closed warning stream must not replace refusal/cancellation.
+    return 130 if cancelled else 2
+
+
+def main(argv=None):
+    args = _parse_arguments(argv)
+    root = Path(args.harness_dir).absolute()
+    try:
+        with publication_admission(root):
+            root.mkdir(parents=True, exist_ok=True)
+            prepared = _preflight(args, root)
+        if isinstance(prepared, int):
+            return prepared
+    except (OSError, ValueError, RuntimeError, KeyboardInterrupt) as exc:
+        return _report_failure(exc, root)
+
+    # Never retain root owner during child lifetime: child may call Harness.
+    evidence = _collect(args.type, _TrustedLocalCommand(args.command), args.finding,
+                        args.test, args.scope, prepared.covered_tests,
+                        tuple(args.covered_test_case), args.phase)
+    evidence['commit'] = prepared.head
+    published = False
+    try:
+        with publication_admission(root):
+            output = _persist(root, args, prepared, evidence)
+            published = True
+            print(f"evidence written: {output} "
+                  f"(exit_code={evidence['exit_code']}, commit={prepared.head[:12]})")
+    except (OSError, ValueError, RuntimeError, KeyboardInterrupt) as exc:
+        if published and not isinstance(exc, KeyboardInterrupt):
+            exc = OSError(f'EVIDENCE_PERSISTENCE_UNCERTAIN: publication completed; inspect canonical state: {exc}')
+        return _report_failure(exc, root, evidence)
+    # Command failure is measured in receipt, not collection status; cancel stays130.
+    return 130 if evidence.get('error') == 'EVIDENCE_COMMAND_CANCELLED' else 0
 
 
 if __name__ == "__main__":

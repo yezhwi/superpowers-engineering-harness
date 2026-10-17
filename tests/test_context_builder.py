@@ -50,8 +50,10 @@ def harness(tmp_path, monkeypatch):
     )
     init_harness(tmp_path)
     root = tmp_path / ".harness"
+    from harness.test_scope import bind_scope_identity
+
+    bind_scope_identity(root, 'TASK-028')
     task = yaml.safe_load((root / "current-task.yaml").read_text())
-    task["task"]["id"] = "TASK-028"
     task["state"] = "CLASSIFIED"
     task["risk"] = {
         "level": "Q1",

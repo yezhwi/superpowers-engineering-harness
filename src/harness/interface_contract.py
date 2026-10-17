@@ -17,6 +17,7 @@ from .paths import (
     evidence_path,
     identifier_path,
 )
+from .transaction_recovery import publication_admission
 
 
 class InterfaceContractError(ValueError):
@@ -109,6 +110,11 @@ def _next_id(harness_dir: Path) -> str:
 
 
 def declare(harness_dir: Path, document: dict) -> dict:
+    with publication_admission(harness_dir):
+        return _declare_locked(harness_dir, document)
+
+
+def _declare_locked(harness_dir: Path, document: dict) -> dict:
     record = {
         **document,
         "id": _next_id(harness_dir),
@@ -125,6 +131,11 @@ def declare(harness_dir: Path, document: dict) -> dict:
 
 
 def verify(harness_dir: Path, contract_id: str, evidence: str) -> dict:
+    with publication_admission(harness_dir):
+        return _verify_locked(harness_dir, contract_id, evidence)
+
+
+def _verify_locked(harness_dir: Path, contract_id: str, evidence: str) -> dict:
     record = load_interface_contract(harness_dir, contract_id)
     try:
         resolved = evidence_path(harness_dir, evidence)
@@ -139,6 +150,11 @@ def verify(harness_dir: Path, contract_id: str, evidence: str) -> dict:
 
 
 def approve_breaking(harness_dir: Path, contract_id: str, reason: str) -> dict:
+    with publication_admission(harness_dir):
+        return _approve_breaking_locked(harness_dir, contract_id, reason)
+
+
+def _approve_breaking_locked(harness_dir: Path, contract_id: str, reason: str) -> dict:
     record = load_interface_contract(harness_dir, contract_id)
     if record["compatibility"]["classification"] != "breaking" or not reason.strip():
         raise InterfaceContractError("INTERFACE_BREAKING_APPROVAL_INVALID")

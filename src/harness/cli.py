@@ -31,6 +31,16 @@ def _render(result: InitResult) -> str:
 
 def _main(argv=None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
+    if argv[:2] == ["evidence", "plan"]:
+        diagnostic = argparse.ArgumentParser(prog="harness evidence plan")
+        diagnostic.add_argument("--json", dest="json_output", action="store_true")
+        options = diagnostic.parse_args(argv[2:])
+        try:
+            os.chdir(find_git_root(Path.cwd()))
+        except RepositoryNotFoundError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 1
+        return controlplane.cmd_evidence_plan(options.json_output)
     legacy_evidence = bool(
         argv
         and argv[0] == "evidence"
@@ -126,6 +136,8 @@ def _main(argv=None) -> int:
     context_mode.add_argument("--compact", dest="context_mode", action="store_const", const="compact")
     context_mode.add_argument("--full", dest="context_mode", action="store_const", const="full")
     p_context.add_argument("--json", dest="context_json", action="store_true")
+    p_context.add_argument("--profile-json", type=Path)
+    p_context.add_argument("--progress", action="store_true")
     context_sub = p_context.add_subparsers(dest="context_command")
     for command, help_text in (("validate", "validate saved Context without rewriting it"),
                                ("explain", "explain the validated saved selection")):
@@ -174,7 +186,7 @@ def _main(argv=None) -> int:
     p_outcome.add_argument("outcome", choices=["PASS", "VERIFICATION_GAP", "DEFECT"])
     p_outcome.add_argument("--reason-code", required=True)
     p_outcome.add_argument("--finding", action="append", default=[])
-    p_ev = sub.add_parser("evidence", help="run a command and save HEAD-bound evidence")
+    p_ev = sub.add_parser("evidence", help="run/attach HEAD-bound evidence, or inspect with evidence plan --json")
     p_ev.add_argument("--type", required=True, choices=sorted(VALID_TYPES))
     p_ev.add_argument("--scope", default="related")
     p_ev.add_argument("--command", required=True, dest="evidence_command")
@@ -192,6 +204,11 @@ def _main(argv=None) -> int:
     p_imp = sub.add_parser("impact")
     ims = p_imp.add_subparsers(dest="impact_action")
     ims.add_parser("show")
+    reconcile = ims.add_parser("reconcile", help="validate an impact proposal without execution")
+    reconcile.add_argument("--file", required=True, dest="source_file", type=Path)
+    reconcile.add_argument("--dry-run", action="store_true")
+    migration = ims.add_parser('migrate-scope', help='reconstruct scope from explicitly selected source authority')
+    migration.add_argument('--file', required=True, dest='source_file', type=Path)
     scope = ims.add_parser("scope")
     scope.add_argument("--format", choices=["yaml"], default="yaml")
     adopt = ims.add_parser("adopt-path")
@@ -286,12 +303,13 @@ def _main(argv=None) -> int:
     p_decision = sub.add_parser("decision", help="manage persisted user decisions")
     decision_sub = p_decision.add_subparsers(dest="decision_command")
     dp = decision_sub.add_parser("propose")
-    dp.add_argument("--topic", required=True)
-    dp.add_argument("--question", required=True)
-    dp.add_argument("--context", action="append", required=True)
-    dp.add_argument("--option", action="append", required=True)
-    dp.add_argument("--recommend", required=True)
-    dp.add_argument("--reason", action="append", required=True)
+    dp.add_argument('--file', dest='source_file', type=Path)
+    dp.add_argument("--topic")
+    dp.add_argument("--question")
+    dp.add_argument("--context", action="append")
+    dp.add_argument("--option", action="append")
+    dp.add_argument("--recommend")
+    dp.add_argument("--reason", action="append")
     dp.add_argument("--tradeoff", action="append", default=[])
     dp.add_argument("--scope", action="append", default=[])
     dp.add_argument("--constraint", action="append", default=[])
@@ -360,6 +378,9 @@ def _main(argv=None) -> int:
     p_ft.add_argument("--attempt")
     p_ft.add_argument("--reason")
     p_ft.add_argument("--critical-related-approved", action="store_true")
+    p_refresh = f_sub.add_parser("refresh-proof", help="refresh FIXED proof without advancing lifecycle")
+    p_refresh.add_argument("id")
+    p_refresh.add_argument("--evidence", required=True)
     p_fr = f_sub.add_parser("resume-review")
     p_fr.add_argument("id")
     p_req = sub.add_parser("requirement")
@@ -472,6 +493,7 @@ def _main(argv=None) -> int:
         return controlplane.cmd_context(
             args.context_command, args.context_mode or "compact", args.context_json,
             trigger=getattr(args, "trigger", None), reason=getattr(args, "reason", None),
+            profile_json=args.profile_json, progress=args.progress,
         )
     if args.subcommand == "transition":
         return controlplane.cmd_transition(args.target, reason=args.reason)
@@ -599,6 +621,8 @@ def _main(argv=None) -> int:
                 args.reason,
                 args.critical_related_approved,
             )
+        if args.finding_command == "refresh-proof":
+            return controlplane.cmd_finding_refresh_proof(args.id, args.evidence)
         if args.finding_command == "resume-review":
             return controlplane.cmd_finding_resume_review(args.id)
         parser.print_usage(sys.stderr)

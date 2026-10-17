@@ -1,16 +1,50 @@
 """Counterexamples for Guard/Gate separation and convergence write safety."""
 
 import ast
-import importlib
 import inspect
-from contextlib import contextmanager
+from functools import partial
 
 import pytest
 import yaml
-from test_autonomous_convergence import _seal_alignment, make_repo, run_cli
+from test_autonomous_convergence import _seal_alignment, run_cli
+from test_autonomous_convergence import make_repo as _make_repo
 
 from harness import alignment, controlplane
 from harness.blockers import GateBlocker, select_recovery
+
+make_repo = partial(_make_repo, trusted_scope=True)
+
+
+@pytest.mark.parametrize('filename,code', [('impact.yaml', 'IMPACT_CONTRACT_INVALID'),
+                                          ('alignment-freeze.yaml', 'ALIGNMENT_FREEZE_INVALID')])
+def test_secondary_live_yaml_error_is_bounded_at_source(tmp_path, monkeypatch, filename, code):
+    from pathlib import Path
+
+    from harness import quality_gate
+    from harness.telemetry_lock import telemetry_lock
+
+    root = make_repo(tmp_path, state='GATING')
+    _seal_alignment(root)
+    monkeypatch.chdir(tmp_path)
+    task_path = root / 'current-task.yaml'
+    before = task_path.read_bytes()
+    task = yaml.safe_load(before)
+    real = controlplane.source_access.read_text
+    injected = False
+
+    def malformed(path):
+        nonlocal injected
+        if Path(path).name == filename:
+            injected = True
+            return 'secret_payload_not_for_stderr: [invalid'
+        return real(path)
+
+    monkeypatch.setattr(controlplane.source_access, 'read_text', malformed)
+    with telemetry_lock(root), pytest.raises(quality_gate.InvalidHarnessState, match=code) as error:
+        quality_gate._append_live_alignment_drift(root, task, [], lambda *args, **kwargs: None)
+    assert injected, 'counterexample must reach actual malformed secondary read'
+    assert 'secret_payload_not_for_stderr' not in str(error.value)
+    assert task_path.read_bytes() == before
 
 
 def test_only_gate_emits_convergence_decision():
@@ -154,13 +188,20 @@ def test_lock_release_failure_after_commit_keeps_gate_decision(tmp_path, monkeyp
     harness_dir = make_repo(tmp_path, state="GATING")
     monkeypatch.chdir(tmp_path)
 
-    @contextmanager
-    def failed_lock(_harness_dir):
-        yield
-        raise OSError("unlock failed")
+    import fcntl
 
-    monkeypatch.setattr(importlib.import_module("harness.telemetry_lock"), "telemetry_lock", failed_lock)
+    real = fcntl.flock
+    releases = []
+
+    def failed_release(fd, operation):
+        if operation == fcntl.LOCK_UN:
+            releases.append(fd)
+            raise OSError("unlock failed")
+        return real(fd, operation)
+
+    monkeypatch.setattr(fcntl, "flock", failed_release)
     assert controlplane.cmd_gate() == 0
+    assert len(releases) == 1
     captured = capsys.readouterr()
     assert "DECISION: CONVERGED" in captured.out
     assert "TELEMETRY_UPDATE_FAILED" in captured.err
@@ -275,11 +316,12 @@ def test_invalid_seal_rejects_verify_without_authority_or_audit_finding(tmp_path
     harness_dir = make_repo(tmp_path, state="IMPLEMENTING")
     task_path = _standard_task(harness_dir)
     _seal_alignment(harness_dir)
+    declared_path = tmp_path / 'tests/test_agent_guidance_contract.py'
+    declared_path.parent.mkdir(exist_ok=True)
+    declared_path.write_text('def test_fixture_declaration():\n    pass\n')
+    declared = run_cli(tmp_path, 'impact', 'add-test', 'tests/test_agent_guidance_contract.py')
+    assert declared.returncode == 0, declared.stdout + declared.stderr
     (harness_dir / "alignment-freeze.yaml").write_text("broken: yes\n")
-    impact_path = harness_dir / "impact.yaml"
-    impact = yaml.safe_load(impact_path.read_text())
-    impact["impact"]["required_tests"] = ["tests/test_agent_guidance_contract.py"]
-    impact_path.write_text(yaml.safe_dump(impact))
     before = task_path.read_bytes()
 
     result = run_cli(tmp_path, "transition", "VERIFYING")

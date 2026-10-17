@@ -21,6 +21,7 @@ import yaml
 from jsonschema import ValidationError, validate
 
 from .blockers import RECOVERY_POLICY, GateBlocker, blocker_document
+from .context.telemetry import instrument
 from .evidence_validator import EvidenceValidationError, validate_evidence
 from .existing_verification import (
     green_unit_test_evidence,
@@ -41,6 +42,7 @@ from .risk_boundaries import (
 )
 from .state_machine import STATES
 from .test_plan import validate_test_coverage, validate_test_plan
+from .transaction_recovery import PublicationAdmissionError, publication_admission
 from .workspace import (
     WorkspaceError,
     changed_paths_since,
@@ -160,7 +162,10 @@ def _append_live_alignment_drift(harness_dir: Path, task: dict, findings: list, 
         impact_document = {}
         impact_path = harness_dir / "impact.yaml"
         if source_access.exists(impact_path):
-            loaded = yaml.safe_load(source_access.read_text(impact_path)) or {}
+            try:
+                loaded = yaml.safe_load(source_access.read_text(impact_path)) or {}
+            except yaml.YAMLError as exc:
+                raise InvalidHarnessState("IMPACT_CONTRACT_INVALID") from exc
             if not isinstance(loaded, dict):
                 raise InvalidHarnessState("IMPACT_CONTRACT_INVALID")
             impact_document = loaded.get("impact") or {}
@@ -169,18 +174,21 @@ def _append_live_alignment_drift(harness_dir: Path, task: dict, findings: list, 
         except DecisionError as exc:
             raise InvalidHarnessState(f"DECISION_REFERENCE_INVALID: {exc}") from exc
         seal_path = harness_dir / "alignment-freeze.yaml"
-        seal = (
-            yaml.safe_load(source_access.read_text(seal_path))
-            if source_access.is_file(seal_path)
-            else None
-        )
+        try:
+            seal = (
+                yaml.safe_load(source_access.read_text(seal_path))
+                if source_access.is_file(seal_path)
+                else None
+            )
+        except yaml.YAMLError as exc:
+            raise InvalidHarnessState("ALIGNMENT_FREEZE_INVALID") from exc
         architecture_facts = (
             alignment.ArchitectureFreezeFacts(
                 seal["architecture_mode"],
                 seal["architecture_fingerprint"],
                 tuple(seal["declared_modules"]),
             )
-            if isinstance(seal, dict) and seal.get("version") == 2
+            if isinstance(seal, dict) and seal.get("version") in {2, 3}
             else alignment.ArchitectureFreezeFacts("off", None, ())
         )
         issues = alignment.sealed_freeze_drift(
@@ -229,7 +237,7 @@ SCHEMAS_DIR = resources.files("harness").joinpath("schemas")
 def gate_command_errors() -> tuple[type[BaseException], ...]:
     from harness.context.model import ContextBuildError
 
-    return (InvalidHarnessState, ContextBuildError)
+    return (InvalidHarnessState, ContextBuildError, PublicationAdmissionError)
 
 
 def validate_schema(document: object, schema_name: str, source: Path) -> None:
@@ -431,7 +439,7 @@ def run_fast_gate(
                 )
             continue
         stem = f"fast-{phase}-unit-test"
-        candidates = list((harness_dir / "evidence").glob(f"{stem}*.json"))
+        candidates = list(source_access.members(harness_dir / 'evidence', f'{stem}*.json'))
         path = min(
             candidates,
             key=lambda candidate: (-evidence_receipt_order(candidate), candidate.name),
@@ -1281,6 +1289,7 @@ class GateAssessment:
     architecture_assessment: object | None = None
 
 
+@instrument('gate_assess', 'gate_assessments')
 def assess_gate(
     harness_dir: Path,
     head: str | None = None,
@@ -1288,7 +1297,22 @@ def assess_gate(
     allow_preflight: bool = False,
     architecture_assessment=None,
 ) -> GateAssessment:
-    """Evaluate current Harness state without persisting a Gate result."""
+    """Admit before first canonical fact; hold lock through pure assessment."""
+    with publication_admission(harness_dir):
+        return _assess_gate_locked(
+            harness_dir, head=head, allow_converged=allow_converged,
+            allow_preflight=allow_preflight, architecture_assessment=architecture_assessment,
+        )
+
+
+def _assess_gate_locked(
+    harness_dir: Path,
+    head: str | None = None,
+    allow_converged: bool = False,
+    allow_preflight: bool = False,
+    architecture_assessment=None,
+) -> GateAssessment:
+    """Internal evaluation; public caller owns admission and continuous lock."""
     status, blockers, plan_assessment, architecture_assessment = _evaluate_gate(
         harness_dir,
         head=head,
@@ -1296,6 +1320,12 @@ def assess_gate(
         allow_preflight=allow_preflight,
         architecture_assessment=architecture_assessment,
     )
+    from ._scope_replay import assess_test_scope_retirements
+
+    scope_blockers = assess_test_scope_retirements(harness_dir)
+    if scope_blockers:
+        blockers = [*blockers, *scope_blockers]
+        status = 'BLOCKED'
     readiness = (
         {"status": "NOT_READY", "reasons": ["quality_gate_blocked"]}
         if status != "PASS"
@@ -1327,7 +1357,12 @@ def run_gate(
 
 
 def write_back(harness_dir: Path, assessment: GateAssessment):
-    """Persist already-computed assessment; never evaluate Gate a second time."""
+    """Admit before persisting compatibility result; never evaluate twice."""
+    with publication_admission(harness_dir):
+        _write_back_locked(harness_dir, assessment)
+
+
+def _write_back_locked(harness_dir: Path, assessment: GateAssessment):
     path = harness_dir / "current-task.yaml"
     from harness import source_access
 

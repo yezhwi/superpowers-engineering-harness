@@ -21,8 +21,8 @@ def setup(p):
     subprocess.run(["git", "init", "-q"], cwd=p, check=True)
     cli(p, "init")
     h = p / ".harness"
+    assert cli(p, 'task', 'migrate-id', 'TASK-010').returncode == 0
     t = yaml.safe_load((h / "current-task.yaml").read_text())
-    t["task"]["id"] = "TASK-010"
     t["state"] = "IMPLEMENTING"
     (h / "current-task.yaml").write_text(yaml.safe_dump(t))
     return h

@@ -143,23 +143,31 @@ def test_stale_before_publish_does_not_revert_concurrent_task_edit(
 def test_expansion_publication_failure_restores_event_and_budget(
     harness, monkeypatch, failure
 ):
-    from pathlib import Path
+    import os
 
+    from harness import publication_fs
     from harness.context.escalation import expand_context
 
     before = (harness / "current-task.yaml").read_bytes()
-    original = Path.replace
+    original = publication_fs.exchange
+    injected = False
 
-    def fail_task(self, target):
-        if Path(target) == harness / "current-task.yaml":
-            raise failure("injected task publication failure")
-        return original(self, target)
+    def fail_task(*args):
+        nonlocal injected
+        if args[1] == 'current-task.yaml' and not injected:
+            held, named = os.fstat(args[0]), harness.stat()
+            if (held.st_dev, held.st_ino) == (named.st_dev, named.st_ino):
+                injected = True
+                raise failure('injected native task publication failure')
+        return original(*args)
 
-    monkeypatch.setattr(Path, "replace", fail_task)
+    monkeypatch.setattr(publication_fs, 'exchange', fail_task)
     with pytest.raises(failure):
         expand_context(harness, "INSUFFICIENT_CONTEXT", "Need context")
+    assert injected, 'actual native canonical mutation boundary must execute'
     assert (harness / "current-task.yaml").read_bytes() == before
     assert not (harness / "context/expansions.yaml").exists()
+    assert not list((harness / '.transactions').glob('*.json'))
 
 
 @pytest.mark.parametrize("change", ["delete_log", "decrease", "unknown", "counter"])
@@ -221,6 +229,10 @@ def test_higher_risk_remains_policy_floor_after_expansion(harness):
     task = yaml.safe_load(task_path.read_text())
     task["risk"]["level"], task["risk"]["profile"] = "Q3", "STRICT"
     write_yaml(task_path, task)
+    # STRICT requires a valid Alignment; don't bypass that production Guard.
+    alignment = test_context_builder._frozen_alignment(task['task']['id'])
+    write_yaml(harness / 'alignment.yaml', alignment)
+    test_context_builder._write_matching_seal(harness, alignment)
     document = build_context(harness)
     assert document["base_policy"] == document["policy"] == "EXPANDED"
     assert len(document["expansions"]) == 1

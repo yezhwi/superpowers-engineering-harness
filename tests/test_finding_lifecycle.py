@@ -17,27 +17,73 @@ from pathlib import Path
 
 import pytest
 import yaml
+from fixtures.harness import populate_complete_harness
+from test_alignment import complete_alignment
 
-from fixtures.harness import make_complete_harness
+from harness.init import init_harness
+from harness.test_scope import add_required_test, bind_scope_identity
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
-from collect_evidence import workspace_fingerprint  # noqa: E402
-from quality_gate import run_gate  # noqa: E402
-from state_machine import is_legal  # noqa: E402
+from collect_evidence import workspace_fingerprint
+from quality_gate import run_gate
+from state_machine import is_legal
 
 REPO = Path(__file__).resolve().parent.parent
 
-HEAD = subprocess.run(
-    ["git", "rev-parse", "HEAD"], capture_output=True, text=True, cwd=REPO
-).stdout.strip()
+@pytest.fixture(autouse=True)
+def fixture_workspace(tmp_path, monkeypatch):
+    """Gate and scope must consume facts from the same actual fixture repo."""
+    monkeypatch.chdir(tmp_path)
 
 
 def make_harness(tmp_path: Path) -> Path:
-    return make_complete_harness(REPO, tmp_path)
+    """Native trusted genesis, then complete Q2/STANDARD lifecycle preconditions."""
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "-c", "user.name=Fixture", "-c", "user.email=fixture@example.com",
+         "commit", "--allow-empty", "-qm", "fixture genesis"], check=True, capture_output=True,
+    )
+    h = init_harness(tmp_path).harness_dir
+    bind_scope_identity(h, "TASK-001")
+    task = yaml.safe_load((h / "current-task.yaml").read_text())
+    task["state"] = "GATING"
+    task["task"]["type"] = "feature"
+    task["risk"] = {
+        "level": "Q2", "profile": "STANDARD",
+        "dimensions": {"scope": "low", "contract": "low", "data": "none",
+                       "authorization": "none", "security": "none", "concurrency": "none", "deployment": "none"},
+        "escalation_history": [],
+        "user_changes": {"paths": [], "fingerprint": "sha256:" + "0" * 64},
+    }
+    (h / "current-task.yaml").write_text(yaml.safe_dump(task))
+    (h / "observability.yaml").write_text(yaml.safe_dump({
+        "version": 1,
+        "required": False,
+        "applicability": {"reasons": ["not_assessed"], "inspected_paths": ["src/example.py"]},
+    }))
+    for filename in ("test_regress.py", "test_regress_fnd_001.py", "test_x.py"):
+        path = tmp_path / "tests" / filename
+        path.parent.mkdir(exist_ok=True)
+        path.write_text("def test_bug():\n    pass\n")
+    populate_complete_harness(tmp_path, h)
+    document = complete_alignment()
+    document["decision_ids"] = []
+    document["interface_contract_ids"] = []
+    (h / "alignment.yaml").write_text(yaml.safe_dump(document))
+    frozen = subprocess.run(
+        [sys.executable, "-m", "harness.cli", "align", "freeze"],
+        cwd=tmp_path, capture_output=True, text=True, check=False,
+        env={"PYTHONPATH": str(REPO / "src"), "PATH": "/usr/bin:/bin"}, timeout=40,
+    )
+    assert frozen.returncode == 0, frozen.stdout + frozen.stderr
+    return h
 
 
 def write_finding(h: Path, **overrides):
+    head = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=h.parent, capture_output=True, text=True, check=True,
+    ).stdout.strip()
     finding = {
         "id": "FND-001",
         "category": "adversarial",
@@ -67,7 +113,7 @@ def write_finding(h: Path, **overrides):
                     "timestamp": "t",
                     "command": "false",
                     "exit_code": 1,
-                    "commit": HEAD,
+                    "commit": head,
                     "workspace_fingerprint": fingerprint,
                     "workspace_fingerprint_after": fingerprint,
                     "subject": {"kind": "finding", "id": finding["id"]},
@@ -87,7 +133,7 @@ def write_finding(h: Path, **overrides):
                     "timestamp": "t",
                     "command": "true",
                     "exit_code": 0,
-                    "commit": HEAD,
+                    "commit": head,
                     "workspace_fingerprint": fingerprint,
                     "workspace_fingerprint_after": fingerprint,
                     "subject": {"kind": "finding", "id": finding["id"]},
@@ -106,7 +152,7 @@ def write_finding(h: Path, **overrides):
                     "timestamp": "t",
                     "command": "true",
                     "exit_code": 0,
-                    "commit": HEAD,
+                    "commit": head,
                     "workspace_fingerprint": fingerprint,
                     "workspace_fingerprint_after": fingerprint,
                     "scope": "related",
@@ -115,17 +161,55 @@ def write_finding(h: Path, **overrides):
             )
         )
     if status in {"VERIFIED", "CLOSED"}:
-        impact_path = h / "impact.yaml"
-        impact = (
-            yaml.safe_load(impact_path.read_text())
-            if impact_path.exists()
-            else {"impact": {}}
-        )
-        impact["impact"]["required_tests"] = [finding["regression_test"]["path"]]
-        impact_path.write_text(yaml.safe_dump(impact))
-    (h / "findings" / f"{finding['id'].lower()}.yaml").write_text(
+        selector = finding["regression_test"]["path"]
+        assert (h.parent / selector.split("::", 1)[0]).is_file()
+        add_required_test(h, selector)
+    (h / "findings" / f"{finding['id']}.yaml").write_text(
         yaml.safe_dump(finding)
     )
+
+
+@pytest.mark.parametrize("damage", ["alignment", "scope_origin", "unaudited_shrink"])
+def test_lifecycle_fixture_prerequisites_remain_fail_closed(tmp_path, damage):
+    h = make_harness(tmp_path)
+    write_finding(h, status="REJECTED")
+    add_required_test(h, "tests/test_regress.py::test_bug")
+    assert run_gate(h) == ("PASS", [])
+    if damage == "alignment":
+        (h / "alignment.yaml").unlink()
+        from harness.quality_gate import InvalidHarnessState
+        with pytest.raises(InvalidHarnessState, match="ALIGNMENT_MISSING"):
+            run_gate(h)
+    else:
+        if damage == "scope_origin":
+            (h / "test-scope-baseline.yaml").unlink()
+            expected = "TEST_SCOPE_AUDIT_INVALID"
+        else:
+            impact = yaml.safe_load((h / "impact.yaml").read_text())
+            impact["impact"]["required_tests"] = []
+            (h / "impact.yaml").write_text(yaml.safe_dump(impact))
+            expected = "TEST_SCOPE_RETIREMENT_UNAUDITED"
+        status, blockers = run_gate(h)
+        assert status == "BLOCKED"
+        assert expected in {blocker.code for blocker in blockers}
+
+
+def test_lifecycle_fixture_add_preserves_native_origin_and_alignment_seal(tmp_path):
+    h = make_harness(tmp_path)
+    preserved = {name: (h / name).read_bytes()
+                 for name in ("test-scope-baseline.yaml", "alignment.yaml", "alignment-freeze.yaml")}
+    baseline = yaml.safe_load(preserved["test-scope-baseline.yaml"])
+    assert baseline["origin"]["kind"] == "new_task" and baseline["required_tests"] == []
+    assert baseline["task_id"] == "TASK-001"
+    assert yaml.safe_load(preserved["alignment-freeze.yaml"])["version"] == 3
+    write_finding(h, status="VERIFIED")
+    assert all((h / name).read_bytes() == data for name, data in preserved.items())
+    audit = yaml.safe_load((h / "test-scope-audit.yaml").read_text())
+    assert len(audit["entries"]) == 1
+    assert audit["entries"][0]["operation"] == "ADD"
+    assert audit["entries"][0]["before_tests"] == []
+    assert audit["entries"][0]["after_tests"] == ["tests/test_regress.py::test_bug"]
+    assert run_gate(h) == ("PASS", [])
 
 
 # 1. Lifecycle transitions ---------------------------------------------------
@@ -173,7 +257,6 @@ def test_confirmed_diagnosability_finding_blocks_without_regression_test(tmp_pat
     h = make_harness(tmp_path)
     finding = {
         "id": "FND-001",
-        "category": "adversarial",
         "kind": "requirement_violation",
         "target": "REQ-001",
         "scenario": "missing diagnostic context",
@@ -188,7 +271,7 @@ def test_confirmed_diagnosability_finding_blocks_without_regression_test(tmp_pat
         },
         "confirmed_at": "2026-01-01T00:00:00+00:00",
     }
-    (h / "findings" / "fnd-001.yaml").write_text(yaml.safe_dump(finding))
+    (h / "findings" / "FND-001.yaml").write_text(yaml.safe_dump(finding))
 
     status, blockers = run_gate(h)
 

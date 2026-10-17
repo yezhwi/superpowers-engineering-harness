@@ -5,6 +5,7 @@ import re
 import subprocess
 from pathlib import Path
 
+import pytest
 import yaml
 
 REPO = Path(__file__).resolve().parent.parent
@@ -49,7 +50,7 @@ def test_v031_documents_control_plane_repairs_and_compatibility():
     assert "raw-byte fingerprint behavior remains unchanged" in release
     assert "fail-closed" in release
     assert "regression and impact-related tests" in release
-    assert unreleased.strip() == "# Changelog\n\n## Unreleased"
+    assert unreleased.split("## 0.3.2", 1)[0].strip() == "# Changelog\n\n## Unreleased"
 
 
 def test_readmes_document_agy_quick_start():
@@ -107,7 +108,7 @@ def test_npm_pack_contains_core_skill_and_linked_docs():
     paths = {item["path"] for item in json.loads(result.stdout)[0]["files"]}
 
     metadata = json.loads(result.stdout)[0]
-    assert metadata["version"] == "0.3.1"
+    assert metadata["version"] == "0.3.2"
     assert "CHANGELOG.md" in paths
     assert "skills/engineering-harness/SKILL.md" in paths
     assert "docs/architecture.md" in paths
@@ -239,7 +240,8 @@ def test_readmes_document_risk_profiles_and_independent_authorization():
 def test_docs_identify_current_adaptive_release():
     for path in (REPO / "README.md", REPO / "README.zh-CN.md"):
         text = path.read_text()
-        assert text.startswith("# Superpowers Engineering Harness v0.3.1\n")
+        assert text.startswith("# Superpowers Engineering Harness v0.3.2\n")
+        assert "v0.3.2 development candidate" in text
         assert "v0.3.1 current release" in text
         assert "v0.3.0 architecture design" in text or "v0.3.0 架构设计" in text
         assert "Architecture Scope Gate P0" in text
@@ -438,6 +440,27 @@ def test_v022_docs_explain_baseline_and_controlled_reason_codes():
         text = path.read_text()
         assert "baseline" in text.lower()
         assert "TEST_COVERAGE_INSUFFICIENT" in text
+
+
+@pytest.mark.parametrize('name', ['README.md', 'README.zh-CN.md', 'CHANGELOG.md', 'docs/test-scope-migration.md'])
+def test_publication_operator_docs_declare_macos_only_support(name):
+    """Public contract must not imply Linux/Windows or arbitrary filesystem support."""
+    text = (REPO / name).read_text()
+    for term in ('macOS-only', 'Linux', 'Windows', 'FUSE', 'PUBLICATION_UNSUPPORTED'):
+        assert term in text, (name, term)
+
+
+@pytest.mark.parametrize('name, qualifications', [
+    ('README.md', ('not content CAS', 'relocated', 'no pruning command', 'standalone')),
+    ('README.zh-CN.md', ('不是 content CAS', '迁移', '不提供 pruning 命令', '独立')),
+    ('docs/test-scope-migration.md', ('not content CAS', 'relocated', 'no pruning command', 'standalone')),
+])
+def test_publication_operator_docs_explain_retention_cost_and_limits(name, qualifications):
+    """Public contract must disclose retained metadata, privacy, disk cost and limits."""
+    text = (REPO / name).read_text()
+    for term in ('.harness/.transactions/', '.harness/.publication-retained/',
+                 '.harness/.staging/', '0700', '0600', 'ENOSPC', *qualifications):
+        assert term in text, (name, term)
 
 
 def test_workflow_forbids_full_suite_even_when_requested():

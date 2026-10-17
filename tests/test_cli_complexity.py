@@ -87,12 +87,17 @@ def test_planned_to_implementing_requires_minimal_evidence(tmp_path):
 
 def test_verifying_to_reviewing_requires_complexity_review(tmp_path):
     repo = make_repo(tmp_path)
+    assert run_cli(repo, 'task', 'migrate-id', 'TASK-004').returncode == 0
+    subprocess.run(
+        ['git', '-c', 'user.name=Test', '-c', 'user.email=test@example.com',
+         'commit', '--allow-empty', '-qm', 'baseline'], cwd=repo, check=True,
+    )
     set_task_state(repo, "VERIFYING")
 
     result = run_cli(repo, "transition", "REVIEWING")
 
     assert result.returncode == 1
-    assert "COMPLEXITY_REVIEW_REQUIRED" in result.stderr
+    assert "COMPLEXITY_REVIEW_MISSING" in result.stderr
 
 
 def test_review_complexity_writes_findings_and_metadata(tmp_path):

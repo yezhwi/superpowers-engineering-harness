@@ -109,14 +109,17 @@ def test_publish_rolls_back_when_later_target_cannot_publish(tmp_path, monkeypat
         ],
         operation_id="test",
     )
-    original_replace = Path.replace
+    from harness import publication_fs
 
-    def fail_evidence(self, target):
-        if str(target).endswith("evidence/review.json"):
+    original_move = publication_fs.move_noreplace
+
+    def fail_later_target(*args):
+        if args[3] == 'FND-001.yaml':
+            assert (harness / 'evidence/review.json').read_bytes() == b'evidence'
             raise OSError("injected publish failure")
-        return original_replace(self, target)
+        return original_move(*args)
 
-    monkeypatch.setattr(Path, "replace", fail_evidence)
+    monkeypatch.setattr(publication_fs, 'move_noreplace', fail_later_target)
 
     with pytest.raises(OSError, match="injected publish failure"):
         publish(harness, staged)

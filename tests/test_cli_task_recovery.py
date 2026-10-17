@@ -284,6 +284,8 @@ def test_resume_ignores_tampered_persisted_recovery_target(tmp_path):
 )
 def test_transition_cannot_bypass_resume_for_blocked_recovery(tmp_path, target):
     repo = make_repo(tmp_path)
+    bound = run_cli(repo, "task", "migrate-id", "TASK-004")
+    assert bound.returncode == 0, bound.stdout + bound.stderr
     set_task_state(repo, "BLOCKED")
 
     result = run_cli(repo, "transition", target)

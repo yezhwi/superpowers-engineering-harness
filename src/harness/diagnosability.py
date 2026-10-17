@@ -9,6 +9,7 @@ from harness import source_access
 from harness.schema_resources import read_schema
 
 from .transaction import StagedArtifact, publish, stage
+from .transaction_recovery import publication_admission
 from .workspace import (
     claimed_scope_sets,
     git_head,
@@ -338,6 +339,18 @@ def write_review(
     *,
     base_ref: str,
     task_type: str | None = None,
+) -> Path:
+    """Own canonical facts from admission through review publication."""
+    with publication_admission(harness_dir):
+        return _write_review_locked(harness_dir, review, base_ref=base_ref, task_type=task_type)
+
+
+def _write_review_locked(
+    harness_dir: Path,
+    review: DiagnosabilityReview,
+    *,
+    base_ref: str,
+    task_type: str | None,
 ) -> Path:
     contract = load_contract(harness_dir, task_type=task_type)
     scope = review_scope(base_ref)

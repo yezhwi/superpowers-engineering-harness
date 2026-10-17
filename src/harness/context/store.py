@@ -1,19 +1,19 @@
 """Publish and read the latest complete, validated Context bundle."""
 
-import shutil
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
 import yaml
 
-from harness import transaction
+from harness import source_access, transaction
 from harness.telemetry_lock import telemetry_lock
 
 from .evidence import context_evidence
 from .freshness import capture, digest, require_fresh
 from .integrity import build_context, validate_context
 from .model import ContextBuildError
+from .telemetry import active
 
 MEMBERS = ("current.yaml", "manifest.yaml", "evidence.yaml")
 
@@ -70,25 +70,22 @@ def _equal(actual: dict, expected: dict, member: str) -> None:
         )
 
 
-def _restore(paths: dict[str, Path], before: dict[str, bytes | None]) -> None:
-    for name, path in paths.items():
-        previous = before[name]
-        if previous is None:
-            path.unlink(missing_ok=True)
-        elif not path.exists() or path.read_bytes() != previous:
-            transaction.atomic_write(path, previous)
-
-
 def generate_context(harness_dir: Path, *, mode: str = "compact") -> dict:
-    """Validate before stdout; restore prior bytes on any publication failure.
+    """Validate before durable commit; journal owns any publication abort.
 
     Shared task-publication lock also serializes Context readers/writers and
     task replacement. Unmanaged product/control edits are detected by hashes.
     """
     harness_dir = harness_dir.absolute()
     with telemetry_lock(harness_dir):
+        transaction.recover_pending_publications(harness_dir)
         _require_task(harness_dir)
         paths = _paths(harness_dir)
+        before = {
+            f"context/{name}": source_access.read_regular_bytes_beneath(path, harness_dir)
+            if source_access.exists(path) else None
+            for name, path in paths.items()
+        }
         staging_root = harness_dir / ".staging"
         if staging_root.is_symlink():
             raise ContextBuildError(
@@ -96,8 +93,9 @@ def generate_context(harness_dir: Path, *, mode: str = "compact") -> dict:
             )
         from .escalation import apply_automatic_expansions
 
-        document = build_context(harness_dir, mode=mode)
-        document = apply_automatic_expansions(harness_dir, document)
+        sources = []
+        document = build_context(harness_dir, mode=mode, _retain_source=sources.append)
+        document = apply_automatic_expansions(harness_dir, document, source=sources[0])
         integrity = validate_context(harness_dir, document)
         evidence = context_evidence(document, integrity, datetime.now(UTC).isoformat())
         bundle = {
@@ -105,42 +103,41 @@ def generate_context(harness_dir: Path, *, mode: str = "compact") -> dict:
             "manifest.yaml": _manifest(document),
             "evidence.yaml": evidence,
         }
-        before = {
-            name: path.read_bytes() if path.exists() else None
-            for name, path in paths.items()
+        payloads = {
+            name: yaml.safe_dump(value, sort_keys=False, allow_unicode=True).encode()
+            for name, value in bundle.items()
         }
-        operation = f"context-{uuid4().hex}"
-        staged = staging_root / operation
-        try:
-            transaction.stage(
-                harness_dir,
-                [
-                    transaction.StagedArtifact(
-                        f"context/{name}",
-                        yaml.safe_dump(
-                            value, sort_keys=False, allow_unicode=True
-                        ).encode(),
-                    )
-                    for name, value in bundle.items()
-                ],
-                operation_id=operation,
-            )
-            require_fresh(document["generated_from"], capture(harness_dir))
+        def validate_published():
             _paths(harness_dir)
-            transaction.publish(
-                harness_dir,
-                staged,
-                replace_paths=frozenset(f"context/{name}" for name in MEMBERS),
-            )
             for name, path in paths.items():
                 _equal(_read(path), bundle[name], name)
             require_fresh(document["generated_from"], capture(harness_dir))
-        except BaseException:
-            _paths(harness_dir)  # do not follow a concurrently substituted symlink
-            _restore(paths, before)
-            raise
+
+        def finalize():
+            validate_published()
+            validate_published()
+
+        artifacts = tuple(transaction.StagedArtifact(f"context/{name}", value)
+                          for name, value in payloads.items())
+        staged = transaction.stage(harness_dir, artifacts, operation_id=f"context-{uuid4().hex}")
+        require_fresh(document["generated_from"], capture(harness_dir))
+        _paths(harness_dir)
+        outcome = transaction.PublicationOutcome()
+        try:
+            transaction.publish(
+                harness_dir,
+                staged,
+                replace_paths=frozenset(before),
+                expected_sources=before,
+                expected_artifacts=artifacts,
+                after_publish=finalize,
+                durable=True,
+                outcome=outcome,
+            )
         finally:
-            shutil.rmtree(staged, ignore_errors=True)
+            timer = active()
+            if timer is not None and outcome.committed:
+                timer.context_published = True
         return document
 
 
@@ -148,6 +145,7 @@ def load_context(harness_dir: Path) -> tuple[dict, dict]:
     """Read-only validation of current + its companions; never regenerate."""
     harness_dir = harness_dir.absolute()
     with telemetry_lock(harness_dir):
+        transaction.recover_pending_publications(harness_dir)
         _require_task(harness_dir)
         paths = _paths(harness_dir)
         document = _read(paths["current.yaml"])

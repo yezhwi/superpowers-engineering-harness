@@ -25,8 +25,9 @@ def repo(tmp_path: Path) -> Path:
     assert cli(tmp_path, "init").returncode == 0
     subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
     subprocess.run(["git", "commit", "-qm", "base"], cwd=tmp_path, check=True)
+    bound = cli(tmp_path, 'task', 'migrate-id', 'TASK-001')
+    assert bound.returncode == 0, bound.stderr
     task = yaml.safe_load((tmp_path / ".harness/current-task.yaml").read_text())
-    task["task"]["id"] = "TASK-001"
     task["task"]["description"] = "alignment CLI task"
     (tmp_path / ".harness/current-task.yaml").write_text(yaml.safe_dump(task))
     return tmp_path
@@ -62,7 +63,7 @@ def test_align_freeze_seals_complete_draft_without_task_transition(tmp_path):
     sealed = yaml.safe_load((harness / "alignment.yaml").read_text())
     assert sealed["freeze"]["frozen"] is True
     freeze = yaml.safe_load((harness / "alignment-freeze.yaml").read_text())
-    assert freeze["version"] == 2
+    assert freeze["version"] == 3
     assert freeze["architecture_mode"] == "off"
     assert freeze["architecture_fingerprint"] is None
     assert freeze["declared_modules"] == []
@@ -96,11 +97,18 @@ def test_required_align_freeze_rejects_missing_scope_before_architecture_read(tm
     assert {name: (harness / name).read_bytes() for name in before} == before
 
 
-def test_required_align_freeze_accepts_explicit_empty_support_scope(tmp_path):
+@pytest.mark.parametrize("consumer", ["architecture", "live_alignment"])
+def test_required_align_freeze_accepts_explicit_empty_support_scope(tmp_path, consumer):
     from test_alignment import complete_alignment
 
     path = repo(tmp_path)
     harness = path / ".harness"
+    classified = cli(
+        path, "task", "classify", "--level", "Q2", "--scope", "low",
+        "--contract", "low", "--data", "none", "--authorization", "none",
+        "--security", "none", "--concurrency", "none", "--deployment", "none",
+    )
+    assert classified.returncode == 0, classified.stderr
     source = path / "support.txt"
     source.write_text("support")
     document = complete_alignment()
@@ -123,10 +131,25 @@ def test_required_align_freeze_accepts_explicit_empty_support_scope(tmp_path):
 
     assert result.returncode == 0, result.stderr
     freeze = yaml.safe_load((harness / "alignment-freeze.yaml").read_text())
-    assert freeze["version"] == 2
+    assert freeze["version"] == 3
     assert freeze["architecture_mode"] == "required"
     assert freeze["architecture_fingerprint"].startswith("sha256:")
     assert freeze["declared_modules"] == []
+
+    # FND-001: real CLI-created v3 seals must remain valid Architecture inputs.
+    from harness.architecture_gate import assess_architecture
+    from harness.quality_gate import _append_live_alignment_drift
+
+    task = yaml.safe_load((harness / "current-task.yaml").read_text())
+    assert task["risk"]["profile"] == "STANDARD"
+    if consumer == "architecture":
+        assessment = assess_architecture(harness, task, gate["gate"], allow_preflight=True)
+        assert assessment.blockers == ()
+    else:
+        findings, blockers = [], []
+        _append_live_alignment_drift(harness, task, findings, lambda *args, **kwargs: blockers.append(args))
+        assert findings == []
+        assert blockers == []
 
 
 def test_align_freeze_rejects_proposed_decision_without_directive(tmp_path):
@@ -184,10 +207,17 @@ def test_align_freeze_rejects_incomplete_draft_without_changing_artifacts(tmp_pa
     assert (harness / "current-task.yaml").read_bytes() == before_task
 
 
-def test_align_freeze_rolls_back_first_artifact_when_second_publish_fails(tmp_path, monkeypatch, capsys):
+@pytest.mark.parametrize('fault_window', ['before_exchange', 'after_exchange'])
+def test_align_freeze_rolls_back_first_artifact_when_second_publish_fails(tmp_path, monkeypatch, capsys, fault_window):
     from test_alignment import complete_alignment
+    from test_test_scope import (
+        assert_restored_with_retention,
+        canonical_exchange_member,
+        file_identities,
+        tree_bytes,
+    )
 
-    from harness import controlplane
+    from harness import controlplane, publication_fs
 
     path = repo(tmp_path)
     harness = path / ".harness"
@@ -195,24 +225,61 @@ def test_align_freeze_rolls_back_first_artifact_when_second_publish_fails(tmp_pa
     document["task_id"] = "TASK-001"
     alignment_path = harness / "alignment.yaml"
     alignment_path.write_text(yaml.safe_dump(document))
-    before_alignment = alignment_path.read_bytes()
-    before_task = (harness / "current-task.yaml").read_bytes()
-    original_replace = Path.replace
+    before, identities = tree_bytes(harness), file_identities(harness)
+    original_exchange, original_move = publication_fs.exchange, publication_fs.move_noreplace
+    partial, steps = [], []
 
-    def fail_second_publish(source, target):
-        if target.name == "alignment-freeze.yaml":
-            raise OSError("injected second publish failure")
-        return original_replace(source, target)
+    def capture_fault():
+        partial.append({name: (harness / name).read_bytes()
+                        for name in ('alignment.yaml', 'alignment-freeze.yaml')})
+        raise OSError('injected second publish failure')
+
+    def exchange(*args):
+        name = canonical_exchange_member(harness, args)
+        inject = name == 'alignment.yaml' and not partial
+        if inject and fault_window == 'before_exchange':
+            capture_fault()
+        result = original_exchange(*args)
+        if name is not None:
+            steps.append(('exchange', name))
+        if inject:
+            capture_fault()
+        return result
+
+    def move(*args):
+        name = canonical_exchange_member(harness, args)
+        result = original_move(*args)
+        if name is not None:
+            steps.append(('move', name))
+        return result
 
     monkeypatch.chdir(path)
-    monkeypatch.setattr(Path, "replace", fail_second_publish)
+    monkeypatch.setattr(publication_fs, 'exchange', exchange)
+    monkeypatch.setattr(publication_fs, 'move_noreplace', move)
 
-    assert controlplane.cmd_align("freeze") == 2
-
-    assert "ALIGNMENT_FREEZE_FAILED" in capsys.readouterr().err
-    assert alignment_path.read_bytes() == before_alignment
-    assert not (harness / "alignment-freeze.yaml").exists()
-    assert (harness / "current-task.yaml").read_bytes() == before_task
+    assert controlplane.cmd_align('freeze') == 2
+    assert 'ALIGNMENT_FREEZE_FAILED: injected second publish failure' in capsys.readouterr().err
+    assert len(partial) == 1
+    seal = yaml.safe_load(partial[0]['alignment-freeze.yaml'])
+    assert seal['version'] == 3 and seal['task_id'] == 'TASK-001'
+    if fault_window == 'before_exchange':
+        assert partial[0]['alignment.yaml'] == before['alignment.yaml']
+        assert steps == [('move', 'alignment-freeze.yaml'), ('move', 'alignment-freeze.yaml')]
+    else:
+        frozen = yaml.safe_load(partial[0]['alignment.yaml'])
+        assert frozen['freeze']['frozen'] is True
+        assert frozen['freeze']['contract_hash'] == seal['contract_hash']
+        assert steps == [('move', 'alignment-freeze.yaml'), ('exchange', 'alignment.yaml'),
+                         ('exchange', 'alignment.yaml'), ('move', 'alignment-freeze.yaml')]
+    assert_restored_with_retention(harness, before, identities)
+    assert not (harness / 'alignment-freeze.yaml').exists()
+    retained_candidates = {'alignment-freeze.yaml': partial[0]['alignment-freeze.yaml']}
+    if fault_window == 'after_exchange':
+        retained_candidates['alignment.yaml'] = partial[0]['alignment.yaml']
+    for name, payload in retained_candidates.items():
+        assert any(member.read_bytes() == payload
+                   for directory in (harness / '.staging', harness / '.publication-retained')
+                   for member in directory.rglob(name)), 'candidate/displaced bytes must remain private'
 
 
 def test_align_check_rejects_unfrozen_draft(tmp_path):

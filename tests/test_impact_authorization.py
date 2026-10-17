@@ -24,11 +24,20 @@ def setup(path):
     subprocess.run(["git", "init", "-q"], cwd=path, check=True)
     cli(path, "init")
     harness_dir = path / ".harness"
+    assert cli(path, 'task', 'migrate-id', 'TASK-010').returncode == 0
+    target = path / 'tests/test_x.py'
+    target.parent.mkdir()
+    target.write_text('def test_x():\n    pass\n')
+    subprocess.run(['git', 'add', '-A'], cwd=path, check=True)
+    subprocess.run(['git', 'commit', '-qm', 'fixture baseline'], cwd=path, check=True)
+    classified = cli(path, 'task', 'classify', '--level', 'Q1', '--scope', 'low', '--contract', 'none',
+                     '--data', 'none', '--authorization', 'none', '--security', 'none', '--concurrency', 'none', '--deployment', 'none')
+    assert classified.returncode == 0, classified.stderr
     task = yaml.safe_load((harness_dir / "current-task.yaml").read_text())
-    task["task"]["id"] = "TASK-010"
     task["state"] = "IMPLEMENTING"
     (harness_dir / "current-task.yaml").write_text(yaml.safe_dump(task))
-    cli(path, "impact", "add-test", "tests/test_x.py::test_x")
+    result = cli(path, "impact", "add-test", "tests/test_x.py::test_x")
+    assert result.returncode == 0, result.stderr
 
 
 def test_related_required_tests_do_not_block_verifying(tmp_path):

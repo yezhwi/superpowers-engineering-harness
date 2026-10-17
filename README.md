@@ -1,10 +1,56 @@
-# Superpowers Engineering Harness v0.3.1
+# Superpowers Engineering Harness v0.3.2
 
 [简体中文](README.zh-CN.md)
 
 Engineering Harness is a deterministic control plane around [Superpowers](https://github.com/obra/superpowers) development workflows. It does not replace agent or worker skills. It persists task state, requires proof, and prevents an agent from declaring work done without gate approval.
 
 [Architecture: big picture](docs/architecture.md)
+
+## v0.3.2 compatibility and measurement status
+
+`v0.3.2 development candidate`: version metadata is prepared, not a published release or formal Gate acceptance. Pinned installer examples below remain on v0.3.1 current release until separate release authorization; do not assume a v0.3.2 tag exists.
+
+Context now batches automatic expansion; eligibility loss commits its legal prefix and stops, while genuine prepublication errors write no new events. `harness evidence plan --json` and `harness impact reconcile --file proposal.yaml --dry-run` are read-only diagnostics, not execution authority. Keep shared-resource tests serial; use existing exact `--reuse-if-valid` without cross-HEAD inheritance or skipping RED/finding execution.
+
+Profiling is opt-in via `harness context --compact --profile-json /tmp/context-profile.json`. A prepublication failure is exit 2. A postpublication profile-write OSError is exit 3, `PROFILE_WRITE_FAILED_CONTEXT_PUBLISHED context_published=true`: Context already exists; inspect and independently validate it instead of retrying blindly. Stdout errors are not this exit-3 classification.
+
+Missing legacy scope origin fails closed with `TEST_SCOPE_AUDIT_INVALID`. Trusted origin plus transactional additions and Gate replay protect required tests; apply additionally requires exact selected RETIRE/REBIND authority. MIGRATE reconstructs provenance only. No automatic scope reconstruction, freeze/resume, risk downgrade or verified/COMPLETE status. Activated metadata requires a v0.3.2 reader; old readers reject the minimum-reader marker. See [explicit scope migration](docs/test-scope-migration.md) and [approved efficiency specification](docs/2026-10-14-context-evidence-collection-efficiency-spec.md).
+
+[Actual Context measurements](docs/superpowers/reports/v032-context-efficiency.md): user-reduced80-sample dataset for N=0/1/10/50; remaining N=100 cancelled. Batch-heavy cold cases improve; N=0 and steady medians regress. No universal speedup or full-matrix acceptance. Evidence-specific cache payoff unproven; cache deferred. Independent review/agent behavior validation and formal Gate acceptance remain pending.
+
+## Platform and recoverable publication (macOS-only)
+
+The v0.3.2 candidate supports macOS-only operation on local filesystems that pass
+native exchange/no-replace/no-follow/synchronization checks. Linux, Windows and
+other OS publication backends return `PUBLICATION_UNSUPPORTED` before opening
+publication directories or creating capability probes. Network, FUSE, remote and special filesystems are not
+supported by implication; a libc symbol or successful probe is not certification
+of every filesystem or power-loss behavior. No unsafe replacing-rename fallback.
+
+Publication preserves displaced inodes/bytes, **not content CAS** or permanently
+fresh canonical names. An unmanaged object may be **relocated** into retained
+storage during conflict; an external writer can still modify its open inode.
+Shared advisory locks constrain cooperating Harness operations, not editors.
+The protected batch/finalizer protocol does not upgrade standalone atomic writes,
+task-directory replacement or arbitrary external readers/writers.
+
+- `.harness/.staging/`: prepared input, not recovery authority; stages are retained.
+- `.harness/.transactions/`: active recovery descriptors; unresolved/unknown entries
+  block admitted Gate/transitions before canonical facts, without implicit repair.
+- `.harness/.publication-retained/`: displaced objects, capability probes, journal
+  frames and terminal recovery data. Terminal retention alone is not pending work.
+  Task new/recover keeps the actual previous Harness tree at
+  `task-replacement-*/previous` beneath this directory, preserving original inodes
+  and held-FD writes rather than cloning old retention into each prepared task.
+  On turnover error, inspect the current task before retry: the old tree may remain
+  in sibling `..harness.backup` or its retained slot. No automatic retry or deletion;
+  this is object-lifetime preservation, not task-directory atomicity or power-loss certification.
+- Storage contains actual metadata bytes, not evidence-cache or execution authority.
+  New private directories request `0700`, new files `0600`; displaced objects keep
+  their inode/mode. Existing storage is not retroactively hardened. Treat it as
+  sensitive. Retention grows indefinitely and can cause `ENOSPC`; no pruning command
+  or age-based cleanup exists. Cleanup needs separate design and explicit authority;
+  deleting recovery data is not a supported repair.
 
 ## Why Harness
 
@@ -33,6 +79,8 @@ curl -fsSL https://raw.githubusercontent.com/yezhwi/superpowers-engineering-harn
 Installer checks whether Superpowers is configured and installs it only when missing. It reconciles pinned Harness Pi skills, installs matching Python CLI into isolated user environment, and exposes `~/.local/bin/harness`. Add `~/.local/bin` to `PATH` if installer reports it missing. Re-running same version is idempotent. Review downloaded script before execution when required by local security policy.
 
 For source development, install repository editable environment separately with `python -m pip install -e /path/to/superpowers-engineering-harness`.
+
+Building the v0.3.2 candidate from source requires `setuptools>=77.0.3` for its SPDX license metadata (PEP 639). Default PEP 517 build isolation installs this build dependency; `--no-build-isolation` users must provide it. Python runtime requirement remains `>=3.11`; setuptools 68 is not a supported build backend.
 
 Initialize a repository once. After that, daily work is a request to the Agent. The Engineering Harness skill reads persisted state and runs `harness` itself. You do not type those commands.
 
@@ -357,6 +405,10 @@ harness evidence run --type build --command "python -m pip wheel . --no-deps" --
 ```
 
 `EVIDENCE_REUSED` means no command ran. Reuse needs prior success plus exact command/proof identity, unchanged HEAD and product workspace fingerprint, and exact runtime. Any mismatch runs command normally.
+
+Collection uses short owned preflight and persistence phases; the external command runs **without** the root lock so nested Harness commands can complete. Persistence checks root/task identity, merges budget increments into the latest task, and publishes immutable receipts with task/telemetry as a bounded native bundle. Preflight budgets remain soft: overlapping runs are not hard-cap reservations.
+
+If post-command admission or publication fails, collection returns `2` without rerunning or implicitly recovering. `EVIDENCE_RESULT_RETAINED: <path>` identifies a noncanonical, permission-restricted `result.json` under the system temporary directory (`harness-evidence-attempt-*`); this measured result is **not accepted/reusable proof**. A completed publication followed by output/lock teardown failure reports `EVIDENCE_PERSISTENCE_UNCERTAIN`: inspect canonical state before retrying. Cancellation remains `130`; ordinary command failure/timeout is recorded in `exit_code`, not collection success. Retention failure is explicitly reported. Retained attempts may contain command/output data, consume disk indefinitely, and have no automatic pruning; temporary-directory retention is not a power-loss or OS-cleanup survival guarantee.
 
 ### Product evidence freshness and covered-test paths
 

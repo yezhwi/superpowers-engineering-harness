@@ -22,6 +22,22 @@ Map each required verification in `.harness/requirements.yaml` /
 `current-task.yaml` to an evidence type. If a required verification lacks a
 matching type, that is a spec problem — surface it, do not silently skip.
 
+## Plan and Reuse Before Execution
+
+Run `harness evidence plan --json` before scheduling proof. It inspects declared targets, case/Plan links, and evidence gaps without running tests or collecting pytest. It is advice, not execution authority or a valid Context. Missing selectors or binding conflicts need explicit repair; never guess repository-wide coverage or widen to a full suite.
+
+For eligible generic GREEN proof, use the shipped reuse flag rather than a new skip predicate:
+
+```bash
+harness evidence run --type unit_test --scope related \
+  --covered-test tests/example.py --reuse-if-valid \
+  --command "pytest tests/example.py"
+```
+
+Replace the example selector with an existing declared target. Collector delegates to `can_reuse_evidence`: command/type/scope, both coverage sets, HEAD, before/after workspace, runtime, schema, and subject/test constraints must match. RED and finding requests execute the original command again, even with the flag. No cross-HEAD inheritance or reuse from another task's evidence directory. Preserve immutable historical failure proof; distinguish reused proof from actual execution.
+
+Run commands sharing databases, ports, workspaces, or other mutually exclusive resources serial. Reuse fresh related coverage; collect only missing/stale obligations, not a full-suite fallback. Persist actual Plan proof promptly, then regenerate final Context after legitimate metadata changes are stable. Neither reuse nor an exit-zero command declares requirements verified or task complete.
+
 ## Execute
 
 For each required type:

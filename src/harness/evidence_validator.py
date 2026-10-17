@@ -9,6 +9,8 @@ from jsonschema import ValidationError, validate
 
 from harness.schema_resources import read_schema
 
+from .context.telemetry import instrument
+
 
 class EvidenceValidationError(Exception):
     pass
@@ -151,6 +153,7 @@ def _projection(
     )
 
 
+@instrument('evidence_validate', 'evidence_records')
 def project_evidence(
     path: Path,
     current_head: str,

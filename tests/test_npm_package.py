@@ -1,9 +1,8 @@
 """npm package must include declared release assets and exclude local runtime state."""
 
 import json
-from pathlib import Path
 import subprocess
-
+from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 NPM_ALWAYS_INCLUDED = {"package.json", "README.md", "README.zh-CN.md", "LICENSE"}
@@ -31,5 +30,8 @@ def test_npm_tarball_matches_explicit_release_manifest():
         "skills/engineering-harness/SKILL.md",
         "docs/Superpowers-Engineering-Harness-v0.3.0-Architecture-Scope-and-Drift-Design.md",
         "docs/superpowers/reports/v030-architecture-benchmark-template.md",
+        "docs/test-scope-migration.md",
+        "docs/2026-10-14-context-evidence-collection-efficiency-spec.md",
+        "docs/superpowers/reports/v032-context-efficiency.md",
     } <= files
     assert not any(path.startswith(FORBIDDEN_PREFIXES) for path in files)

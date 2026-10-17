@@ -2,7 +2,7 @@
 
 from copy import deepcopy
 from pathlib import Path
-from typing import Protocol
+from typing import Callable, Protocol
 
 import yaml
 from jsonschema import ValidationError, validate
@@ -19,6 +19,7 @@ from .model import AuthoritativeContext, ContextBuildError
 from .policy import policy_for_risk
 from .selector import ContextSelector, DeterministicSelector
 from .source import FileContextSource
+from .telemetry import instrument
 
 
 class ContextIntegrityChecker(Protocol):
@@ -272,14 +273,30 @@ def _load_stable(harness_dir: Path, before: dict) -> AuthoritativeContext:
     return source
 
 
+@instrument('overhead', 'full_context_builds')
 def build_context(
-    harness_dir: Path, *, mode: str = "full", selector: ContextSelector | None = None
+    harness_dir: Path, *, mode: str = "full", selector: ContextSelector | None = None,
+    _retain_source: Callable[[AuthoritativeContext], None] | None = None,
 ) -> dict:
     from harness.decision import ensure_decision_index
 
     ensure_decision_index(harness_dir)
     before = capture(harness_dir)
     source = _load_stable(harness_dir, before)
+    document = _project_context(harness_dir, source, before, mode=mode, selector=selector)
+    _schema(document)
+    _check(source, document, harness_dir.absolute().parent)
+    require_fresh(before, capture(harness_dir))
+    if _retain_source is not None:
+        _retain_source(source)
+    return document
+
+
+def _project_context(
+    harness_dir: Path, source: AuthoritativeContext, before: dict, *, mode: str,
+    selector: ContextSelector | None = None,
+) -> dict:
+    """In-memory projection, not standalone Integrity or freshness proof."""
     policy = effective_policy(source.task, source.expansions)
     from .read_scope import context_read_scope
 
@@ -303,12 +320,10 @@ def build_context(
         }
     )
     document["context_hash"] = digest(document)
-    _schema(document)
-    _check(source, document, harness_dir.absolute().parent)
-    require_fresh(before, capture(harness_dir))
     return document
 
 
+@instrument('integrity_validate')
 def validate_context(harness_dir: Path, document: dict) -> dict[str, bool]:
     """Read-only: validate the supplied old view, never regenerate over it."""
     _schema(document)

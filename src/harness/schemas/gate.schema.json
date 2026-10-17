@@ -8,6 +8,7 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "test_scope": {"type": "object", "required": ["minimum_reader"], "additionalProperties": false, "properties": {"minimum_reader": {"const": "0.3.2"}}},
         "requirements": {"$ref": "#/definitions/requirementPolicy"},
         "architecture": {
           "type": "object",

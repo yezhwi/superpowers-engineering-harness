@@ -70,7 +70,14 @@ def test_files_match_templates(repo):
     for name in REQUIRED_FILES:
         produced = (repo / ".harness" / name).read_text(encoding="utf-8")
         source = (templates_dir() / name).read_text(encoding="utf-8")
-        assert produced == source, name
+        if name == 'gate.yaml':
+            import yaml
+
+            expected = yaml.safe_load(source)
+            expected['gate']['test_scope'] = {'minimum_reader': '0.3.2'}
+            assert yaml.safe_load(produced) == expected
+        else:
+            assert produced == source, name
 
 
 def test_init_rebuilds_index_from_existing_decision_members(repo):
@@ -124,7 +131,7 @@ def test_is_idempotent(repo):
     second = init_harness(repo)
     assert first.created and not second.created
     assert sorted(p.name for p in second.skipped) == sorted(
-        (*REQUIRED_FILES, "index.yaml")
+        (*REQUIRED_FILES, "index.yaml", "test-scope-baseline.yaml", "test-scope-audit.yaml", "test-scope-seal.yaml")
     )
 
 
@@ -178,7 +185,7 @@ def test_fails_if_template_missing(repo, monkeypatch):
 
 def test_result_reports_created_and_skipped(repo):
     result = init_harness(repo)
-    assert len(result.created) == len(REQUIRED_FILES) + 1
+    assert len(result.created) == len(REQUIRED_FILES) + 1 + 3
     assert result.skipped == []
 
 

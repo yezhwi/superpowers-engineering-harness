@@ -131,6 +131,48 @@ def test_reuse_rejects_nonidentical_or_non_generic_proof(changes):
     )
 
 
+@pytest.mark.parametrize('attack', ['head', 'before_workspace', 'after_workspace', 'command', 'scope', 'tests',
+                                  'cases', 'runtime', 'schema', 'subject', 'test', 'request_finding', 'request_test'])
+def test_exact_reuse_predicate_rejects_each_identity_mismatch(attack):
+    from dataclasses import replace
+
+    evidence = generic_record(phase='green', covered_test_cases=['TC-001'])
+    request = ReuseRequest('unit_test', f'pytest {TEST}', 'related', (TEST,), 'green', None, None, ('TC-001',))
+    if attack == 'head':
+        evidence['commit'] = 'c' * 40
+    elif attack == 'before_workspace':
+        evidence['workspace_fingerprint'] = 'sha256:' + '0' * 64
+    elif attack == 'after_workspace':
+        evidence['workspace_fingerprint_after'] = 'sha256:' + '0' * 64
+    elif attack == 'command':
+        evidence['command'] = 'pytest other.py'
+    elif attack == 'scope':
+        evidence['scope'] = 'full'
+    elif attack == 'tests':
+        evidence['covered_tests'] = []
+    elif attack == 'cases':
+        evidence['covered_test_cases'] = []
+    elif attack == 'runtime':
+        evidence['runtime'] = {**RUNTIME, 'version': 'different'}
+    elif attack == 'schema':
+        evidence.pop('timestamp')
+    elif attack == 'subject':
+        evidence['subject'] = {'kind': 'finding', 'id': 'FND-001'}
+    elif attack == 'test':
+        evidence['test'] = {'node_id': TEST}
+    elif attack == 'request_finding':
+        request = replace(request, finding_id='FND-001')
+    else:
+        request = replace(request, test_id=TEST)
+    assert not can_reuse_evidence(evidence, request, current_head=HEAD, current_workspace=FP, current_runtime=RUNTIME)
+
+
+def test_exact_reuse_accepts_set_equal_coverages_not_subset():
+    evidence = generic_record(phase='green', covered_tests=[TEST, 'tests/other.py'], covered_test_cases=['TC-001', 'TC-002'])
+    request = ReuseRequest('unit_test', f'pytest {TEST}', 'related', ('tests/other.py', TEST), 'green', None, None, ('TC-002', 'TC-001'))
+    assert can_reuse_evidence(evidence, request, current_head=HEAD, current_workspace=FP, current_runtime=RUNTIME)
+
+
 def test_rejects_workspace_stale_evidence():
     with pytest.raises(EvidenceValidationError, match="EVIDENCE_WORKSPACE_STALE"):
         validate_evidence(

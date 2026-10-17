@@ -1,0 +1,24 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object", "additionalProperties": false,
+  "required": ["version", "task_id", "required_tests", "origin", "source_hashes"],
+  "properties": {
+    "version": {"const": 1},
+    "task_id": {"type": ["string", "null"], "pattern": "^TASK-[0-9]+$"},
+    "required_tests": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "origin": {
+      "type": "object", "additionalProperties": false,
+      "required": ["kind", "timestamp", "task_created_at", "decision_ref", "source_path", "original_tests_hash"],
+      "properties": {
+        "kind": {"enum": ["new_task", "authorized_reconstruction"]},
+        "timestamp": {"type": "string", "minLength": 1},
+        "task_created_at": {"type": ["string", "null"]},
+        "decision_ref": {"type": ["string", "null"], "pattern": "^DEC-[0-9]+$"},
+        "source_path": {"type": ["string", "null"], "minLength": 1},
+        "original_tests_hash": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+        "historical_sources": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["path", "hash", "tests_hash"], "properties": {"path": {"type": "string", "minLength": 1}, "hash": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"}, "tests_hash": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"}}}}
+      }
+    },
+    "source_hashes": {"type": "object", "required": ["impact.yaml", "current-task.yaml"], "additionalProperties": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"}}
+  }
+}

@@ -34,11 +34,16 @@ def telemetry_lock(harness_dir: Path):
             if os.fstat(fd).st_size == 0:
                 os.write(fd, b"\0")
             os.lseek(fd, 0, os.SEEK_SET)
-            msvcrt.locking(fd, msvcrt.LK_LOCK, 1)
+            from .context.telemetry import phase
+
+            with phase('lock_wait'):
+                msvcrt.locking(fd, msvcrt.LK_LOCK, 1)
         else:
             import fcntl
+            from .context.telemetry import phase
 
-            fcntl.flock(fd, fcntl.LOCK_EX)
+            with phase('lock_wait'):
+                fcntl.flock(fd, fcntl.LOCK_EX)
         held.add(key)
         try:
             yield

@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+## 0.3.2
+
+Development candidate; metadata and implementation only. Formal review/Gate acceptance, tag, publication, and deployment remain pending and separately authorized.
+
+### Added
+
+- Opt-in Context timing/profile output and ordered batch expansion with bounded full builds/source loads/Gate assessments. A candidate losing eligibility commits its legal prefix and stops; genuine prepublication errors publish no new events. Empty expansion still independently validates.
+- Read-only `harness evidence plan --json` and `harness impact reconcile --file proposal.yaml --dry-run`; neither executes tests, initializes missing provenance, nor grants execution authority.
+- Task-bound initial test-scope baseline, append-only audit and seal, transactional additions, explicit selected-authority reconstruction, and atomic authorized reconciliation. Gate enforcement and transactional add activate together; apply requires both mechanisms and operation-specific authority. Alignment v3 binds immutable origin; Context projection v5 includes scope sources.
+- Inode-preserving v2 publication/recovery outside staging; final independent validation runs before durable commit, not in an unjournaled outer rollback. Admitted Gate/transitions hold shared lock before reading canonical facts and refuse pending recovery without implicit repair.
+
+### Compatibility and boundaries
+
+- Source builds require `setuptools>=77.0.3` for PEP 639 SPDX license metadata, correcting the incompatible `>=68` declaration. Apache-2.0 SPDX metadata and Python `>=3.11` runtime requirement remain unchanged; this is a build-time floor, not release approval.
+- User-narrowed macOS-only support: native `renameatx_np` exchange/no-replace plus destination capability validation. Linux, Windows and other OS publication backends fail closed with `PUBLICATION_UNSUPPORTED`; no Linux support/matrix or implicit network/FUSE/remote-filesystem guarantee. Symbol presence/probe success is not universal filesystem or power-loss certification.
+- Qualified preservation, not content CAS or permanent canonical freshness: unmanaged inodes may relocate to retained recovery storage. All stages, displaced objects, probes and terminal data remain indefinitely; disk growth/`ENOSPC` is accepted. New private directories/files request `0700`/`0600`; displaced objects keep inode/mode. No pruning command, automatic cleanup, standalone-write or task-directory-swap safety upgrade.
+
+- Missing/untrusted legacy scope fails closed with `TEST_SCOPE_AUDIT_INVALID`; current required tests never self-certify historical scope. Explicit MIGRATE reconstructs provenance only, never RETIRE or REBIND. Retire/rebind require exact selected user authority, frozen contract and preserved obligations. Old readers reject `gate.test_scope.minimum_reader: 0.3.2`; do not roll back by deleting legal audit/events/proof.
+- Profile writes occur once outside lock. Prepublication failure remains exit 2; postpublication profile-write OSError is exit 3 with `PROFILE_WRITE_FAILED_CONTEXT_PUBLISHED context_published=true`. Context is already published: inspect/validate it instead of retrying blindly. Stdout failure is not classified as profile exit 3.
+- Existing `can_reuse_evidence` is unchanged; no cross-HEAD inheritance, persistent parse cache, automatic freeze/resume, risk downgrade, or verified/COMPLETE status from diagnostics. RED/finding commands execute again.
+- User-reduced anonymous benchmark: 80 completed samples for N=0/1/10/50, five cold and five steady samples per arm/count. N=100 remaining measurements cancelled by user; no full-matrix acceptance claim. Batch-heavy cold samples improve, but N=0 and steady medians regress. See [actual report](docs/superpowers/reports/v032-context-efficiency.md); no p95 or universal speedup claim. Cache deferred: aggregate parse timings do not establish evidence-specific payoff.
+- Skills now diagnose first, preserve exact grants and reuse boundaries, serialize shared resources, persist actual Plan proof promptly and refresh final Context after stable metadata. Independent agent behavioral validation remains pending.
+
+Migration details: [test-scope migration](docs/test-scope-migration.md). Historical release entries below are unchanged.
+
 ## 0.3.1
 
 ### Fixed

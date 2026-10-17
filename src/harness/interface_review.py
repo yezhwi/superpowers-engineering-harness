@@ -10,6 +10,7 @@ import yaml
 
 from .interface_contract import load_interface_contract
 from .transaction import StagedArtifact, publish, stage
+from .transaction_recovery import publication_admission
 from .workspace import (
     git_head,
     observability_inspected_paths,
@@ -42,6 +43,14 @@ def _equivalent(finding: dict, proposal: dict) -> bool:
 
 def write_review(
     harness_dir: Path, source: Path, *, task_id: str, base_ref: str | None = None
+) -> Path:
+    """Own input reads, canonical facts and complete review publication."""
+    with publication_admission(harness_dir):
+        return _write_review_locked(harness_dir, source, task_id=task_id, base_ref=base_ref)
+
+
+def _write_review_locked(
+    harness_dir: Path, source: Path, *, task_id: str, base_ref: str | None
 ) -> Path:
     try:
         review = yaml.safe_load(source.read_text())

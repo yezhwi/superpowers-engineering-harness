@@ -1,0 +1,51 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "context-profile.schema.json",
+  "type": "object",
+  "required": ["version", "operation", "task_id", "outcome", "context_published", "timing_scope", "phase_semantics", "total_ms", "phases_ms", "counters"],
+  "properties": {
+    "version": {"const": 1},
+    "operation": {"const": "context.generate"},
+    "task_id": {"type": ["string", "null"], "pattern": "^TASK-[0-9]+$"},
+    "outcome": {"enum": ["SUCCESS", "FAILED", "CANCELLED"]},
+    "context_published": {"type": "boolean"},
+    "timing_scope": {"const": "context_operation_excludes_profile_output"},
+    "phase_semantics": {"const": "exclusive"},
+    "total_ms": {"type": "number", "minimum": 0},
+    "phases_ms": {
+      "type": "object",
+      "required": ["lock_wait", "capture", "source_load", "evidence_validate", "gate_assess", "selection", "expansion_plan", "publish", "integrity_validate", "overhead"],
+      "properties": {
+        "lock_wait": {"$ref": "#/definitions/duration"},
+        "capture": {"$ref": "#/definitions/duration"},
+        "source_load": {"$ref": "#/definitions/duration"},
+        "evidence_validate": {"$ref": "#/definitions/duration"},
+        "gate_assess": {"$ref": "#/definitions/duration"},
+        "selection": {"$ref": "#/definitions/duration"},
+        "expansion_plan": {"$ref": "#/definitions/duration"},
+        "publish": {"$ref": "#/definitions/duration"},
+        "integrity_validate": {"$ref": "#/definitions/duration"},
+        "overhead": {"$ref": "#/definitions/duration"}
+      },
+      "additionalProperties": false
+    },
+    "counters": {
+      "type": "object",
+      "required": ["source_loads", "gate_assessments", "full_context_builds", "expansion_candidates", "expansion_events_written", "evidence_records"],
+      "properties": {
+        "source_loads": {"$ref": "#/definitions/count"},
+        "gate_assessments": {"$ref": "#/definitions/count"},
+        "full_context_builds": {"$ref": "#/definitions/count"},
+        "expansion_candidates": {"$ref": "#/definitions/count"},
+        "expansion_events_written": {"$ref": "#/definitions/count"},
+        "evidence_records": {"$ref": "#/definitions/count"}
+      },
+      "additionalProperties": false
+    }
+  },
+  "definitions": {
+    "duration": {"type": "number", "minimum": 0},
+    "count": {"type": "integer", "minimum": 0}
+  },
+  "additionalProperties": false
+}

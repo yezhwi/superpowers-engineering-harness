@@ -611,6 +611,160 @@ def test_plan_mutation_cli_malformed_plan_is_invalid_state_without_write(tmp_pat
     assert execution_bytes(tmp_path) == before
 
 
+@pytest.mark.parametrize('protocol', ['v1', 'v2'])
+@pytest.mark.parametrize('entry', ['cli', 'domain'])
+def test_plan_upgrade_refuses_pending_partial_publication(tmp_path, protocol, entry):
+    """Break caught: upgrade writes an active recovery member and strands recovery."""
+    from test_plan_mutation import tree_bytes
+
+    from harness import plan_reconciliation, publication_journal, transaction_recovery
+    from harness.telemetry_lock import telemetry_lock
+
+    root = mutation_repo(tmp_path)
+    task_path, execution_path = root / 'current-task.yaml', root / 'plan-execution.yaml'
+    task_bytes = task_path.read_bytes()
+    task = yaml.safe_load(task_bytes)
+    execution = yaml.safe_load(execution_path.read_text())
+    legacy = {'version': 1, 'plan': execution['plan'], 'items': {'P-001': {'status': 'PENDING'}}}
+    execution_path.write_text(yaml.safe_dump(legacy, sort_keys=False))
+    original = execution_path.read_bytes()
+    changed = yaml.safe_load(task_bytes)
+    changed['budget']['context_expansions'] = changed['budget'].get('context_expansions', 0) + 1
+    partial = yaml.safe_dump(changed, sort_keys=False).encode()
+    with telemetry_lock(root):
+        if protocol == 'v1':
+            transaction_recovery.begin(root, [(task_path, task_bytes, partial),
+                                              (execution_path, original, original + b'\n')])
+            task_path.write_bytes(partial)
+        else:
+            with publication_journal.prepare(root, (
+                publication_journal.Member('current-task.yaml', task_bytes, partial),
+                publication_journal.Member('plan-execution.yaml', original, original + b'\n'),
+            )) as operation:
+                operation._save(state='APPLYING')
+                operation._step(0, 'forward')
+    before = tree_bytes(root)
+    if entry == 'cli':
+        result = cli(tmp_path, 'plan', 'upgrade-execution')
+        code, stdout, stderr = result.returncode, result.stdout, result.stderr
+    else:
+        try:
+            plan_reconciliation.mutate_plan_execution(root, task, plan_reconciliation.PlanMutationRequest(action='UPGRADE_EXECUTION'))
+            code, stdout, stderr = 0, '', ''
+        except transaction_recovery.PublicationAdmissionError as error:
+            code, stdout, stderr = 2, '', str(error)
+    after = tree_bytes(root)
+    recovery_error = None
+    with telemetry_lock(root):
+        try:
+            transaction_recovery.recover_pending_publications(root)
+        except OSError as error:
+            recovery_error = str(error)
+    changed_paths = [name for name in before.keys() | after.keys() if before.get(name) != after.get(name)]
+    assert code == 2, f'pending plan exit={code}; changed={changed_paths}; recovery={recovery_error}'
+    assert stdout == '' and 'TRANSACTION_RECOVERY_REQUIRED' in stderr
+    assert after == before and recovery_error is None
+    assert task_path.read_bytes() == task_bytes and execution_path.read_bytes() == original
+
+
+@pytest.mark.parametrize('action', ['begin', 'block', 'resume', 'reconcile', 'refresh-proof', 'upgrade-execution'])
+def test_plan_command_pending_refuses_before_task_read(tmp_path, monkeypatch, capsys, action):
+    from types import SimpleNamespace
+
+    from test_plan_mutation import tree_bytes
+
+    from harness import controlplane, publication_fs, transaction_recovery
+
+    root = mutation_repo(tmp_path)
+    pending = root / '.transactions'
+    pending.mkdir(exist_ok=True)
+    (pending / 'pending.json').write_text('{"version":999}')
+    before = tree_bytes(root)
+    monkeypatch.chdir(tmp_path)
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError('Plan task fact/recovery/probe reached before pending refusal')
+
+    monkeypatch.setattr(controlplane, 'load_task', forbidden)
+    monkeypatch.setattr(transaction_recovery, 'recover_pending_publications', forbidden)
+    monkeypatch.setattr(publication_fs, 'check_capabilities', forbidden)
+    assert controlplane.cmd_plan_mutation(SimpleNamespace(plan_command=action)) == 2
+    output = capsys.readouterr()
+    assert output.out == '' and 'TRANSACTION_RECOVERY_REQUIRED' in output.err
+    assert tree_bytes(root) == before
+
+
+def test_plan_command_owner_teardown_failure_is_bounded(tmp_path, monkeypatch, capsys):
+    import fcntl
+    from types import SimpleNamespace
+
+    from harness import controlplane, plan_reconciliation
+
+    root = mutation_repo(tmp_path)
+    path = root / 'plan-execution.yaml'
+    execution = yaml.safe_load(path.read_text())
+    path.write_text(yaml.safe_dump({'version': 1, 'plan': execution['plan'], 'items': {}}))
+    monkeypatch.chdir(tmp_path)
+    real_write, real_flock = plan_reconciliation.atomic_write, fcntl.flock
+    persisted, released = [], []
+
+    def wrote(*args, **kwargs):
+        real_write(*args, **kwargs)
+        persisted.append(True)
+
+    def failed_release(fd, operation):
+        if operation == fcntl.LOCK_UN and persisted:
+            released.append(True)
+            raise OSError('private-plan-cleanup-data')
+        return real_flock(fd, operation)
+
+    monkeypatch.setattr(plan_reconciliation, 'atomic_write', wrote)
+    monkeypatch.setattr(fcntl, 'flock', failed_release)
+    assert controlplane.cmd_plan_mutation(SimpleNamespace(plan_command='upgrade-execution')) == 2
+    output = capsys.readouterr()
+    assert persisted == [True] and released == [True]
+    assert 'PUBLICATION_LOCK_TEARDOWN_FAILED' in output.err and 'private-plan-cleanup-data' not in output.err
+    assert yaml.safe_load(path.read_text())['version'] == 2
+
+
+@pytest.mark.parametrize('entry', ['cli', 'domain'])
+@pytest.mark.parametrize('primary', [OSError('plan-body-io'), KeyboardInterrupt('plan-cancel')])
+def test_plan_mutation_primary_survives_owner_cleanup(tmp_path, monkeypatch, entry, primary):
+    import fcntl
+    from types import SimpleNamespace
+
+    from harness import controlplane, plan_reconciliation
+
+    root = mutation_repo(tmp_path)
+    task = yaml.safe_load((root / 'current-task.yaml').read_text())
+    monkeypatch.chdir(tmp_path)
+    real_flock = fcntl.flock
+    released = []
+
+    def failed_body(*args, **kwargs):
+        raise primary
+
+    def failed_release(fd, operation):
+        if operation == fcntl.LOCK_UN:
+            released.append(True)
+            raise OSError('private-plan-cleanup-data')
+        return real_flock(fd, operation)
+
+    monkeypatch.setattr(plan_reconciliation, 'load_plan_artifacts', failed_body)
+    monkeypatch.setattr(fcntl, 'flock', failed_release)
+    if entry == 'cli' and isinstance(primary, OSError):
+        # Existing command policy normalizes body I/O, unlike raw domain API.
+        assert controlplane.cmd_plan_mutation(SimpleNamespace(plan_command='upgrade-execution')) == 2
+    else:
+        with pytest.raises(type(primary)) as error:
+            if entry == 'cli':
+                controlplane.cmd_plan_mutation(SimpleNamespace(plan_command='upgrade-execution'))
+            else:
+                plan_reconciliation.mutate_plan_execution(root, task, plan_reconciliation.PlanMutationRequest(action='UPGRADE_EXECUTION'))
+        assert error.value is primary
+    assert released == [True]
+
+
 def test_plan_mutation_cli_upgrades_all_pending_v1_and_retries_exactly(tmp_path):
     harness_dir = mutation_repo(tmp_path)
     plan = yaml.safe_load((harness_dir / "plan.yaml").read_text())

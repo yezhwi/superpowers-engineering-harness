@@ -67,6 +67,16 @@ Only enter after the Q0 Decision Table confirms mutating work.
 > `pip install -e <harness-repo>`). Raw `python scripts/*.py` paths are
 > ONLY valid with CWD = the harness repo root — never use them elsewhere.
 
+## Efficient Evidence Scheduling
+
+After validated startup, use `harness evidence plan --json` to inspect declared selectors, contract/Plan links, and evidence gaps before scheduling tests. For a proposed binding/scope repair, inspect `harness impact reconcile --file proposal.yaml --dry-run` first. Both diagnostics are read-only advice, not execution authority, valid Context, or Gate acceptance; malformed inputs fail closed. Pending transaction recovery must follow its explicit route, not an implicit diagnostic repair.
+
+Apply requires a trusted scope origin and the exact selected user grant for the proposed change. MIGRATE does not authorize RETIRE or REBIND. Missing origin/authority requires the user-authority route; do not remove required tests, freeze, accept a Decision, or resume to bypass blockers.
+
+Persist legitimate metadata changes and actual Plan proof promptly. Once metadata is stable, generate the final view with `harness context --compact`; use `harness context validate` for independent saved-snapshot validation. Do not regenerate after every intermediate metadata edit, but never rely on a snapshot made stale by those edits. Keep startup integrity checks unchanged.
+
+Collect only related missing/stale proof. Use the existing exact evidence reuse option described in collect-evidence; preserve historical RED. Tests sharing databases, ports, workspaces, or other mutually exclusive resources must run serial, not in parallel for speed. A successful diagnostic, benchmark, or test command never completes the task by itself.
+
 ## Inputs
 
 Validated Context is a derived view, not a new authoritative source. Its Control Core retains global constraints; Layer 2 references allow reading a specific source file on demand. The following are canonical sources, not an eager startup reading checklist:

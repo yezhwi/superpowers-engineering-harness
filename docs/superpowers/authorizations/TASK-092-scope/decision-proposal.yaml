@@ -1,0 +1,50 @@
+topic: TASK-092 trusted scope reconstruction only
+question: Approve original empty scope and explicit cumulative preactivation additions for TASK-092?
+context:
+  - Historical TASK-092 Context checkpoint records original impact hash ce4672fd8e6a8bc7da97ceb870cb91d0a224adbfa994b27b3c3f03b77301fd1c; copied template bytes match exactly.
+  - Two historical Context copies have identical bytes and are one corroborating observation, not independent proofs.
+  - Current ten paths were declared before Gate/add joint activation; ledger records additions, but original per-add impact snapshots are unavailable.
+  - Proposed historical source is a newly captured cumulative snapshot, not an original historical file; approving it requires explicit user attestation of all ten preactivation additions.
+  - Migration authorizes provenance reconstruction only; no retirement, rebind, verification marking, execution or release.
+options:
+  - id: approve_reconstruction
+    description: Approve exact original source and cumulative snapshot; preserve all ten paths as obligations.
+    test_scope_authorization:
+      version: 1
+      task_id: TASK-092
+      operation: MIGRATE
+      expected_impact_hash: sha256:b2639457b89fe5b7faafdb18a0b8ab57647f8d3ac5e580d6d183e262588369ec
+      contract_hash: sha256:7cd0e78823cd3cad8befe5c71b3a47f6a27fe63652d096a758c0a643696ef518
+      original_source:
+        path: docs/superpowers/authorizations/TASK-092-scope/original-impact.yaml
+        hash: sha256:ce4672fd8e6a8bc7da97ceb870cb91d0a224adbfa994b27b3c3f03b77301fd1c
+        tests_hash: sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945
+      historical_sources:
+        - path: docs/superpowers/authorizations/TASK-092-scope/historical-impact.yaml
+          hash: sha256:b2639457b89fe5b7faafdb18a0b8ab57647f8d3ac5e580d6d183e262588369ec
+          tests_hash: sha256:5a8da2b4918c8dbb72b55b2c0ba5a02e45e079b0ef95cc2e2fb9387a605aec0f
+      retirements: []
+      bindings: []
+      plan_refs: []
+  - id: request_original_records
+    description: Do not approve cumulative attestation; obtain original creation/addition records. Keep missing-origin blocker.
+recommendation:
+  option: approve_reconstruction
+  reasons:
+    - Original empty-set bytes match recorded TASK-092 checkpoint hash; all current paths are preserved with no scope shrink.
+    - Explicit attestation makes source limitations visible rather than implicitly trusting current scope.
+  tradeoffs:
+    - Cumulative source cannot independently establish chronology or recover missing per-add snapshots; user must attest chronology and completeness.
+scope:
+  - .harness/test-scope-baseline.yaml
+  - .harness/test-scope-audit.yaml
+  - .harness/test-scope-seal.yaml
+  - .harness/gate.yaml
+  - .harness/impact.yaml
+  - docs/superpowers/authorizations/TASK-092-scope/original-impact.yaml
+  - docs/superpowers/authorizations/TASK-092-scope/historical-impact.yaml
+constraints:
+  - PRESERVE_OBLIGATIONS
+  - PRESERVE_RISK
+  - NO_EXECUTION
+  - NO_RELEASE

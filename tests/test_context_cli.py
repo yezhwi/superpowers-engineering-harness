@@ -255,60 +255,89 @@ def test_context_evidence_cannot_forge_included_facts(harness):
 def test_publication_failure_restores_last_complete_bundle(
     harness, monkeypatch, failure
 ):
+    from harness import publication_fs
     from harness.context.store import generate_context
 
     generate_context(harness)
     before = bundle_bytes(harness)
-    original = Path.replace
+    original = publication_fs.exchange
+    injected = False
 
-    def fail_manifest(self, target):
-        if Path(target) == harness / "context/manifest.yaml":
-            raise failure("injected manifest publication failure")
-        return original(self, target)
+    def fail_manifest(*args):
+        nonlocal injected
+        for fd, name in ((args[0], args[1]), (args[2], args[3])):
+            if name == 'manifest.yaml' and not injected:
+                held, named = os.fstat(fd), (harness / 'context').stat()
+                if (held.st_dev, held.st_ino) == (named.st_dev, named.st_ino):
+                    injected = True
+                    raise failure('injected native manifest publication failure')
+        return original(*args)
 
-    monkeypatch.setattr(Path, "replace", fail_manifest)
+    monkeypatch.setattr(publication_fs, 'exchange', fail_manifest)
     with pytest.raises((ContextBuildError, failure)):
         generate_context(harness, mode="full")
+    assert injected, 'actual native canonical mutation boundary must execute'
     assert bundle_bytes(harness) == before
     assert not list((harness / "context").glob("*.tmp"))
-    assert not list((harness / ".staging").glob("context-*"))
+    assert not list((harness / '.transactions').glob('*.json'))
+    # Private stage/retained payloads survive; no caller cleanup authority.
+
+
+def change_source_after_first_final_check(root, monkeypatch, source):
+    from harness import transaction
+    from harness.context import store
+
+    real_publish, real_fresh = transaction.publish, store.require_fresh
+    publishing = False
+    checks = []
+
+    def publish(*args, **kwargs):
+        nonlocal publishing
+        publishing = True
+        try:
+            return real_publish(*args, **kwargs)
+        finally:
+            publishing = False
+
+    def fresh(*args, **kwargs):
+        if publishing:
+            checks.append(bool(list((root / '.transactions').glob('*.json'))))
+        result = real_fresh(*args, **kwargs)
+        if publishing and len(checks) == 1:
+            with source.open('a') as stream:
+                stream.write('\n# concurrent change\n')
+        return result
+
+    monkeypatch.setattr(transaction, 'publish', publish)
+    monkeypatch.setattr(store, 'require_fresh', fresh)
+    return checks
 
 
 def test_plan_change_during_publication_leaves_no_partial_bundle(harness, monkeypatch):
-    from harness import transaction
     from harness.context.store import generate_context
 
     enable_plan_reconciliation(harness)
     write_plan_artifacts(harness)
-    original = transaction.publish
-
-    def mutate_plan(*args, **kwargs):
-        original(*args, **kwargs)
-        with (harness / "plan-execution.yaml").open("a") as stream:
-            stream.write("\n# concurrent change\n")
-
-    monkeypatch.setattr(transaction, "publish", mutate_plan)
+    source = harness / 'plan-execution.yaml'
+    checks = change_source_after_first_final_check(harness, monkeypatch, source)
     with pytest.raises(ContextBuildError, match="CONTEXT_STALE"):
         generate_context(harness, mode="full")
+    assert checks == [True, True]
+    assert '# concurrent change' in source.read_text()
     assert bundle_bytes(harness) == {}
 
 
 def test_source_change_during_publication_rolls_back_new_bundle(harness, monkeypatch):
-    from harness import transaction
     from harness.context.store import generate_context
 
     generate_context(harness)
     before = bundle_bytes(harness)
-    original = transaction.publish
-
-    def mutate_source(*args, **kwargs):
-        original(*args, **kwargs)
-        with (harness / "requirements.yaml").open("a") as stream:
-            stream.write("\n# concurrent change\n")
-
-    monkeypatch.setattr(transaction, "publish", mutate_source)
+    source = harness / 'requirements.yaml'
+    checks = change_source_after_first_final_check(harness, monkeypatch, source)
     with pytest.raises(ContextBuildError, match="CONTEXT_STALE"):
         generate_context(harness, mode="full")
+    assert checks == [True, True]
+    assert '# concurrent change' in source.read_text()
     assert bundle_bytes(harness) == before
 
 
@@ -348,6 +377,9 @@ def test_output_member_and_staging_symlinks_cannot_escape(
     path = harness / member
     path.parent.mkdir(exist_ok=True)
     target = outside if member == ".staging" else outside / "output.yaml"
+    if member == ".staging":
+        # Scope initialization leaves an empty staging directory. Never remove data.
+        path.rmdir()
     path.symlink_to(target, target_is_directory=member == ".staging")
     result = run_cli(harness.parent)
     assert result.returncode == 2
@@ -360,24 +392,27 @@ def test_context_reads_wait_for_complete_bundle_publication(harness, monkeypatch
     from concurrent.futures import ThreadPoolExecutor, TimeoutError
     from threading import Event
 
+    from harness import publication_fs
     from harness.context.store import generate_context, load_context
 
     generate_context(harness)
     entered, release, reader_started = Event(), Event(), Event()
-    original = Path.replace
+    original = publication_fs.exchange
 
-    def pause_after_current(self, target):
-        result = original(self, target)
-        if Path(target) == harness / "context/current.yaml":
-            entered.set()
-            assert release.wait(10)
+    def pause_after_current(*args):
+        result = original(*args)
+        if args[1] == 'current.yaml':
+            held, named = os.fstat(args[0]), (harness / 'context').stat()
+            if (held.st_dev, held.st_ino) == (named.st_dev, named.st_ino):
+                entered.set()
+                assert release.wait(10)
         return result
 
     def read():
         reader_started.set()
         return load_context(harness)
 
-    monkeypatch.setattr(Path, "replace", pause_after_current)
+    monkeypatch.setattr(publication_fs, 'exchange', pause_after_current)
     with ThreadPoolExecutor(max_workers=2) as pool:
         writer = pool.submit(generate_context, harness, mode="full")
         try:

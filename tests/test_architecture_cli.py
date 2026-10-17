@@ -6,7 +6,6 @@ import json
 import os
 import subprocess
 import sys
-from contextlib import contextmanager
 from copy import deepcopy
 from pathlib import Path
 
@@ -442,38 +441,47 @@ def test_publish_uses_lock_and_transaction_rollback(tmp_path, monkeypatch):
     harness = repo / ".harness"
     assert architecture_store.publish_architecture(harness, candidate(tmp_path))
     canonical = harness / "architecture.yaml"
-    before = canonical.read_bytes()
-    entered = []
+    from test_test_scope import (
+        assert_restored_with_retention,
+        canonical_exchange_member,
+        file_identities,
+        tree_bytes,
+    )
 
-    @contextmanager
-    def lock(_harness):
-        entered.append(True)
-        yield
+    from harness import publication_fs
+    from harness.telemetry_lock import _HELD
 
+    before, identities = tree_bytes(harness), file_identities(harness)
     changed = architecture_document()
     changed["modules"][0]["responsibility"] = "Changed responsibility."
     replacement = candidate(tmp_path, changed)
-    original_replace = Path.replace
+    original = publication_fs.exchange
+    observed = []
 
-    def fail_canonical(source, target):
-        if target == canonical:
-            raise OSError("injected publish failure")
-        return original_replace(source, target)
+    def fail_canonical(*args):
+        name = canonical_exchange_member(harness, args)
+        result = original(*args)
+        if name == 'architecture.yaml' and not observed:
+            assert str(harness.resolve()) in _HELD.paths
+            observed.append(canonical.read_bytes())
+            raise OSError('injected publish failure')
+        return result
 
-    monkeypatch.setattr(architecture_store, "telemetry_lock", lock)
-    monkeypatch.setattr(Path, "replace", fail_canonical)
-    with pytest.raises(OSError, match="injected publish failure"):
+    monkeypatch.setattr(publication_fs, 'exchange', fail_canonical)
+    with pytest.raises(OSError, match='injected publish failure'):
         architecture_store.publish_architecture(harness, replacement)
 
-    assert entered == [True]
-    assert canonical.read_bytes() == before
+    assert observed == [replacement.read_bytes()]
+    assert_restored_with_retention(harness, before, identities)
 
 
 def test_scope_add_remove_is_specifying_only_and_creates_no_authority_artifacts(tmp_path):
     repo = repository(tmp_path)
     harness = repo / ".harness"
     architecture_store.publish_architecture(harness, candidate(tmp_path))
-    before_names = set(harness_bytes(repo))
+    before = harness_bytes(repo)
+    private = {'.staging', '.transactions', '.publication-retained'}
+    before_names = {name for name in before if Path(name).parts[0] not in private}
 
     assert architecture_store.mutate_architecture_scope(harness, "add", "app")
     task_path = harness / "current-task.yaml"
@@ -483,7 +491,13 @@ def test_scope_add_remove_is_specifying_only_and_creates_no_authority_artifacts(
     assert architecture_store.mutate_architecture_scope(harness, "remove", "app")
     task = yaml.safe_load(task_path.read_text())
     assert task["scope"]["modules"] == []
-    assert set(harness_bytes(repo)) == before_names
+    after = harness_bytes(repo)
+    assert {name for name in after if Path(name).parts[0] not in private} == before_names
+    assert all(after[name] == data for name, data in before.items() if name != 'current-task.yaml')
+    original_task = yaml.safe_load(before['current-task.yaml'])
+    assert task == original_task
+    assert after.keys() - before.keys(), 'native publications retain recovery objects'
+    assert not list((harness / '.transactions').glob('*.json'))
     assert not (harness / "alignment-freeze.yaml").exists()
 
 

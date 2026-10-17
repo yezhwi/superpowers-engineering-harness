@@ -9,6 +9,7 @@ import yaml
 
 from .telemetry_lock import telemetry_lock
 from .transaction import atomic_write
+from .transaction_recovery import publication_admission
 
 
 class AgentUsage(TypedDict):
@@ -95,7 +96,7 @@ def _previous(harness_dir: Path, task: dict) -> dict:
 def report_usage(harness_dir: Path, report: dict) -> dict:
     """Replace host measurements with one task-bound cumulative snapshot."""
     usage = _normalize_usage(report)
-    with telemetry_lock(harness_dir):
+    with publication_admission(harness_dir):
         task = _current_task(harness_dir)
         if task["task"]["id"] is None:
             raise TelemetryError("INVALID_HARNESS_STATE")

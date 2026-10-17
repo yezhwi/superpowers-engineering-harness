@@ -28,6 +28,9 @@ def test_old_proposed_decision_does_not_block_new_task(tmp_path: Path):
     )
     task["task"]["id"] = "TASK-002"
     task_path.write_text(yaml.safe_dump(task))
+    from test_test_scope import initialize_test_origin
+
+    initialize_test_origin(harness_dir, [])
 
     status, blockers = run_gate(harness_dir, allow_preflight=True)
 

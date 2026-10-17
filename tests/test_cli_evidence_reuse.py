@@ -3,6 +3,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
 import yaml
 
 REPO = Path(__file__).resolve().parent.parent
@@ -180,3 +181,40 @@ def test_cli_passes_reuse_flag_to_collector(tmp_path):
     )
     assert first.returncode == second.returncode == 0
     assert "EVIDENCE_REUSED: build.json" in second.stdout
+
+
+@pytest.mark.parametrize('finding', [False, True])
+def test_red_reuse_request_executes_original_command_again(tmp_path, finding):
+    import shlex
+
+    setup(tmp_path)
+    assert cli(tmp_path, 'task', 'migrate-id', 'TASK-001').returncode == 0
+    counter = tmp_path.parent / f'{tmp_path.name}-executions.txt'
+    program = f"from pathlib import Path; p=Path({str(counter)!r}); p.write_text(p.read_text()+'x' if p.exists() else 'x')"
+    command = f'{shlex.quote(sys.executable)} -c {shlex.quote(program)}'
+    args = ('evidence', 'run', '--type', 'build', '--command', command, '--phase', 'red')
+    if finding:
+        args += ('--finding', 'FND-001', '--test', 'tests/test_fixture.py::test_example')
+    first = cli(tmp_path, *args)
+    second = cli(tmp_path, *args, '--reuse-if-valid')
+    assert first.returncode == second.returncode == 0, first.stderr + second.stderr
+    assert counter.read_text() == 'xx'
+    assert 'EVIDENCE_REUSED:' not in second.stdout
+
+
+def test_collector_does_not_reuse_another_repository_task_directory(tmp_path):
+    import shlex
+
+    one, two = tmp_path / 'one', tmp_path / 'two'
+    one.mkdir()
+    two.mkdir()
+    setup(one)
+    setup(two)
+    counter = tmp_path.parent / f'{tmp_path.name}-task-executions.txt'
+    program = f"from pathlib import Path; p=Path({str(counter)!r}); p.write_text(p.read_text()+'x' if p.exists() else 'x')"
+    command = f'{shlex.quote(sys.executable)} -c {shlex.quote(program)}'
+    args = ('evidence', 'run', '--type', 'build', '--command', command, '--reuse-if-valid')
+    first, second = cli(one, *args), cli(two, *args)
+    assert first.returncode == second.returncode == 0, first.stderr + second.stderr
+    assert counter.read_text() == 'xx'
+    assert 'EVIDENCE_REUSED:' not in second.stdout

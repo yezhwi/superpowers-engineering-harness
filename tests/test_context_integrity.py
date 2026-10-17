@@ -449,7 +449,7 @@ def test_required_architecture_context_uses_projection_v4_and_rejects_v3(harness
     test_context_builder.enable_required_architecture(harness)
     document = build(harness)
 
-    assert document["generated_from"]["projection_version"] == 4
+    assert document["generated_from"]["projection_version"] == 5
     old = copy.deepcopy(document)
     old["generated_from"]["projection_version"] = 3
     old["context_hash"] = "sha256:" + "0" * 64

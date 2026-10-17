@@ -21,9 +21,12 @@ def cli(cwd, *args):
     )
 
 
-def setup(tmp_path):
+def setup(tmp_path, *, trusted_scope=False):
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
     cli(tmp_path, "init")
+    if trusted_scope:
+        bound = cli(tmp_path, "task", "migrate-id", "TASK-001")
+        assert bound.returncode == 0, bound.stderr
     subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
     subprocess.run(["git", "commit", "-qm", "init"], cwd=tmp_path, check=True)
     head = subprocess.run(
@@ -63,9 +66,10 @@ def setup(tmp_path):
                 {"scope": "related", "covered_tests": ["tests/test_x.py::test_x"]}
             )
         (h / "evidence" / name).write_text(json.dumps(evidence))
-    (h / "impact.yaml").write_text(
-        yaml.safe_dump({"impact": {"required_tests": ["tests/test_x.py::test_x"]}})
-    )
+    if not trusted_scope:
+        (h / "impact.yaml").write_text(
+            yaml.safe_dump({"impact": {"required_tests": ["tests/test_x.py::test_x"]}})
+        )
     return h
 
 
@@ -214,7 +218,7 @@ def test_resume_review_routes_fixed_finding_to_reviewing(tmp_path):
 
 
 def test_generic_transition_requires_finding_resume_review(tmp_path):
-    h = setup(tmp_path)
+    h = setup(tmp_path, trusted_scope=True)
     finding = yaml.safe_load((h / "findings" / "fnd-001.yaml").read_text())
     finding.update(
         {

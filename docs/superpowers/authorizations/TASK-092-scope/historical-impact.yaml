@@ -1,0 +1,17 @@
+impact:
+  changed: []
+  direct_dependents: []
+  contracts: []
+  interfaces: []
+  risks: []
+  required_tests:
+  - tests/test_evidence_plan.py
+  - tests/test_impact_reconcile.py
+  - tests/test_test_scope.py
+  - tests/test_scope_migration.py
+  - tests/test_scope_creation.py
+  - tests/test_scope_init.py
+  - tests/test_scope_seal.py
+  - tests/test_scope_authority.py
+  - tests/test_scope_migration_cli.py
+  - tests/test_scope_joint.py

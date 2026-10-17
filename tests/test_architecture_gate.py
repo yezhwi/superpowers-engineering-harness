@@ -43,7 +43,7 @@ def document(*, shared: bool = False) -> dict:
     }
 
 
-def fixture(tmp_path: Path, *, declared=("app",), shared=False):
+def fixture(tmp_path: Path, *, declared=("app",), shared=False, seal_version=2):
     from harness.architecture import architecture_fingerprint, load_architecture_document
 
     root = tmp_path / "repo"
@@ -69,7 +69,7 @@ def fixture(tmp_path: Path, *, declared=("app",), shared=False):
         "git": {"base_commit": base},
     }
     seal = {
-        "version": 2,
+        "version": seal_version,
         "task_id": "TASK-001",
         "contract_hash": "sha256:" + "0" * 64,
         "architecture_mode": "required",
@@ -79,6 +79,8 @@ def fixture(tmp_path: Path, *, declared=("app",), shared=False):
         "boundary_refs": {"interface": [], "permission": [], "persistence": []},
         "frozen_at": "now",
     }
+    if seal_version == 3:
+        seal["test_scope"] = {"baseline_hash": "sha256:" + "0" * 64, "origin_decisions": {}}
     (harness / "alignment-freeze.yaml").write_text(yaml.safe_dump(seal, sort_keys=False))
     return root, harness, task, {"architecture": {"mode": "required"}}
 
@@ -122,10 +124,11 @@ def test_required_missing_artifact_is_repairable_blocker(tmp_path):
     ]
 
 
-def test_off_downgrade_from_required_seal_is_contract_change_before_artifact(tmp_path, monkeypatch):
+@pytest.mark.parametrize("seal_version", [2, 3])
+def test_off_downgrade_from_required_seal_is_contract_change_before_artifact(tmp_path, monkeypatch, seal_version):
     from harness import architecture_gate
 
-    _root, harness, task, _gate = fixture(tmp_path)
+    _root, harness, task, _gate = fixture(tmp_path, seal_version=seal_version)
     (harness / "architecture.yaml").write_text("malformed: [")
 
     def forbidden(*args, **kwargs):

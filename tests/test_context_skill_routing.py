@@ -47,5 +47,52 @@ def test_integrity_failure_does_not_fallback_or_change_authority(path):
     assert "not a new authoritative source" in inputs
 
 
+@pytest.mark.parametrize("path", SKILLS)
+def test_efficiency_routing_preserves_authority_and_final_freshness(path):
+    text = (ROOT / path).read_text()
+    section = text.split("## Efficient Evidence Scheduling", 1)[1].split("\n## ", 1)[0]
+    for required in (
+        "harness evidence plan --json",
+        "harness impact reconcile --file proposal.yaml --dry-run",
+        "not execution authority",
+        "MIGRATE does not authorize RETIRE or REBIND",
+        "Once metadata is stable",
+        "harness context --compact",
+        "harness context validate",
+        "serial",
+    ):
+        assert required in section
+
+
+def test_collection_guidance_uses_exact_reuse_and_preserves_red():
+    text = (ROOT / "skills/collect-evidence/SKILL.md").read_text()
+    section = text.split("## Plan and Reuse Before Execution", 1)[1].split("\n## ", 1)[0]
+    for required in (
+        "harness evidence plan --json",
+        "--reuse-if-valid",
+        "can_reuse_evidence",
+        "RED and finding",
+        "cross-HEAD",
+        "serial",
+        "not execution authority",
+    ):
+        assert required in section
+    assert '--scope related' in section and '--covered-test tests/example.py' in section
+
+
+def test_contract_guidance_persists_actual_plan_proof_without_scope_shortcut():
+    text = (ROOT / "skills/task-contract/SKILL.md").read_text()
+    section = text.split("## Preserve Verification Bindings and Plan Proof", 1)[1].split("\n## ", 1)[0]
+    for required in (
+        "harness evidence plan --json",
+        "harness plan reconcile P-001 --auto",
+        "PLAN_PROOF_MISSING",
+        "promptly",
+        "RETIRE or REBIND",
+        "not mark COMPLETE",
+    ):
+        assert required in section
+
+
 def test_installed_skill_matches_root_skill():
     assert (ROOT / SKILLS[0]).read_bytes() == (ROOT / SKILLS[1]).read_bytes()

@@ -11,7 +11,7 @@
     "topic": {"type": "string", "minLength": 1},
     "question": {"type": "string", "minLength": 1},
     "context": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
-    "options": {"type": "array", "minItems": 1, "items": {"type": "object", "required": ["id", "description"], "properties": {"id": {"type": "string", "minLength": 1}, "description": {"type": "string", "minLength": 1}}, "additionalProperties": false}},
+    "options": {"type": "array", "minItems": 1, "items": {"type": "object", "required": ["id", "description"], "properties": {"id": {"type": "string", "minLength": 1}, "description": {"type": "string", "minLength": 1}, "test_scope_authorization": {"$ref": "#/definitions/testScopeAuthorization"}}, "additionalProperties": false}},
     "recommendation": {"type": "object", "required": ["option", "reasons", "tradeoffs"], "properties": {"option": {"type": "string", "minLength": 1}, "reasons": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}, "tradeoffs": {"type": "array", "items": {"type": "string", "minLength": 1}}}, "additionalProperties": false},
     "selected": {"type": ["null", "object"], "properties": {"option": {"type": "string", "minLength": 1}, "source": {"enum": ["accepted_recommendation", "user_override"]}, "decided_by": {"const": "user"}}, "required": ["option", "source", "decided_by"], "additionalProperties": false},
     "decision_reason": {"type": "array", "items": {"type": "string", "minLength": 1}},
@@ -24,5 +24,24 @@
     "supersedes": {"type": ["string", "null"], "pattern": "^DEC-[0-9]+$"},
     "superseded_by": {"type": ["string", "null"], "pattern": "^DEC-[0-9]+$"}
   },
-  "additionalProperties": false
+  "additionalProperties": false,
+  "definitions": {
+    "hash": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "testScopeAuthorization": {
+      "type": "object", "additionalProperties": false,
+      "required": ["version", "task_id", "operation", "expected_impact_hash", "contract_hash", "original_source", "retirements", "bindings", "plan_refs"],
+      "properties": {
+        "version": {"const": 1},
+        "task_id": {"type": "string", "pattern": "^TASK-[0-9]+$"},
+        "operation": {"enum": ["MIGRATE", "RETIRE", "REBIND"]},
+        "expected_impact_hash": {"$ref": "#/definitions/hash"},
+        "contract_hash": {"$ref": "#/definitions/hash"},
+        "original_source": {"type": ["object", "null"], "additionalProperties": false, "required": ["path", "hash", "tests_hash"], "properties": {"path": {"type": "string", "minLength": 1}, "hash": {"$ref": "#/definitions/hash"}, "tests_hash": {"$ref": "#/definitions/hash"}}},
+        "historical_sources": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["path", "hash", "tests_hash"], "properties": {"path": {"type": "string", "minLength": 1}, "hash": {"$ref": "#/definitions/hash"}, "tests_hash": {"$ref": "#/definitions/hash"}}}},
+        "retirements": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["test", "reason_code", "replacement_tests"], "properties": {"test": {"type": "string", "minLength": 1}, "reason_code": {"type": "string", "minLength": 1}, "replacement_tests": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}}}},
+        "bindings": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["owner", "case", "before", "after"], "properties": {"owner": {"type": "string", "pattern": "^(REQ|INV)-[0-9]+$"}, "case": {"type": "string", "pattern": "^TC-[0-9]+$"}, "before": {"type": "array", "uniqueItems": true, "items": {"type": "string"}}, "after": {"type": "array", "uniqueItems": true, "items": {"type": "string"}}}}},
+        "plan_refs": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^P-[0-9]+$"}}
+      }
+    }
+  }
 }

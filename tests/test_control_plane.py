@@ -28,6 +28,12 @@ def run_cli(cwd: Path, *args: str):
     )
 
 
+@pytest.fixture(autouse=True)
+def fixture_workspace(tmp_path, monkeypatch):
+    """Direct calls and subprocesses consume same actual fixture repository."""
+    monkeypatch.chdir(tmp_path)
+
+
 def test_alignment_completeness_helper_uses_current_task_proposed_decisions(tmp_path):
     from test_alignment import complete_alignment
 
@@ -155,19 +161,48 @@ def test_gate_preflight_appends_plan_preview_without_duplicate_plan_blocker(
     assert seen == [(carried.plan, carried)]
 
 
-def make_repo(tmp_path: Path, **task_overrides) -> Path:
+def make_repo(tmp_path: Path, *, declared_test: bool = False, profile: str = "FAST", **task_overrides) -> Path:
+    from harness import workspace
+
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True, capture_output=True)
-    run_cli(tmp_path, "init")
-    # gate/evidence need a resolvable HEAD
-    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True, capture_output=True)
     subprocess.run(
-        ["git", "commit", "-qm", "init"], cwd=tmp_path, check=True, capture_output=True
+        ["git", "-c", "user.name=Fixture", "-c", "user.email=fixture@example.com",
+         "commit", "--allow-empty", "-qm", "fixture genesis"],
+        cwd=tmp_path, check=True, capture_output=True,
     )
+    initialized = run_cli(tmp_path, "init")
+    assert initialized.returncode == 0, initialized.stdout + initialized.stderr
+    bound = run_cli(tmp_path, "task", "migrate-id", "TASK-001")
+    assert bound.returncode == 0, bound.stdout + bound.stderr
     h = tmp_path / ".harness"
     task = yaml.safe_load((h / "current-task.yaml").read_text())
+    unclassified_risk = task["risk"]
+    task["state"] = "CLASSIFIED"
+    task["risk"] = {
+        "level": "Q2" if profile == "STANDARD" else "Q1", "profile": profile,
+        "dimensions": {"scope": "low", "contract": "none", "data": "none", "authorization": "none",
+                       "security": "none", "concurrency": "none", "deployment": "none"},
+        "escalation_history": [], "user_changes": {"paths": [], "fingerprint": workspace.protected_paths_fingerprint((), tmp_path)},
+    }
+    task["git"] = workspace.git_baseline(workspace.git_head(tmp_path))
+    (h / "current-task.yaml").write_text(yaml.safe_dump(task))
+    if declared_test:
+        declare_fixture_test(h)  # Declare before higher-risk Alignment fault setup.
     task.update(task_overrides)
+    if task_overrides.get("state") == "CREATED":
+        task["risk"] = unclassified_risk
+    elif not task["risk"]["user_changes"]["paths"]:
+        task["risk"]["user_changes"]["fingerprint"] = workspace.protected_paths_fingerprint((), tmp_path)
     (h / "current-task.yaml").write_text(yaml.safe_dump(task))
     return h
+
+
+def declare_fixture_test(h: Path) -> None:
+    source = h.parent / "tests/test_control_plane.py"
+    source.parent.mkdir(exist_ok=True)
+    source.write_text("def test_fixture():\n    assert True\n")
+    added = run_cli(h.parent, "impact", "add-test", "tests/test_control_plane.py")
+    assert added.returncode == 0, added.stdout + added.stderr
 
 
 def test_align_revise_command_is_available(tmp_path):
@@ -201,6 +236,7 @@ def test_align_revise_command_is_available(tmp_path):
 def test_implementing_task_with_changed_frozen_alignment_cannot_verify(tmp_path):
     h = make_repo(
         tmp_path,
+        declared_test=True,
         state="IMPLEMENTING",
         risk={
             "level": "Q2",
@@ -227,9 +263,6 @@ def test_implementing_task_with_changed_frozen_alignment_cannot_verify(tmp_path)
     alignment["freeze"]["contract_hash"] = contract_hash(alignment)
     alignment["goal"]["summary"] = "changed"
     (h / "alignment.yaml").write_text(yaml.safe_dump(alignment))
-    impact = yaml.safe_load((h / "impact.yaml").read_text())
-    impact["impact"]["required_tests"] = ["tests/test_control_plane.py"]
-    (h / "impact.yaml").write_text(yaml.safe_dump(impact))
 
     result = run_cli(tmp_path, "transition", "VERIFYING")
 
@@ -306,6 +339,7 @@ def test_typed_contracts_normalizes_legacy_and_validates_kinds():
 def test_implementing_task_with_declared_api_drift_cannot_verify(tmp_path):
     h = make_repo(
         tmp_path,
+        declared_test=True,
         state="IMPLEMENTING",
         risk={
             "level": "Q3", "profile": "STRICT",
@@ -326,7 +360,6 @@ def test_implementing_task_with_declared_api_drift_cannot_verify(tmp_path):
     # Declared boundary fact must block independently of private implementation paths.
     impact = yaml.safe_load((h / "impact.yaml").read_text())
     impact["impact"]["interfaces"] = [{"id": "API-001", "visibility": "external", "contract_id": "INT-001"}]
-    impact["impact"]["required_tests"] = ["tests/test_control_plane.py"]
     (h / "impact.yaml").write_text(yaml.safe_dump(impact))
 
     result = run_cli(tmp_path, "transition", "VERIFYING")
@@ -351,14 +384,13 @@ def test_implementing_task_with_declared_api_drift_cannot_verify(tmp_path):
 def test_implementing_task_with_typed_boundary_drift_cannot_verify(
     tmp_path, kind, ref, reason_code
 ):
-    h = make_repo(tmp_path, state="IMPLEMENTING", risk={"level": "Q3", "profile": "STRICT", "dimensions": {"scope": "high", "contract": "high", "data": "high", "authorization": "high", "security": "high", "concurrency": "none", "deployment": "none"}, "escalation_history": [], "user_changes": {"paths": [], "fingerprint": "sha256:test"}})
+    h = make_repo(tmp_path, declared_test=True, state="IMPLEMENTING", risk={"level": "Q3", "profile": "STRICT", "dimensions": {"scope": "high", "contract": "high", "data": "high", "authorization": "high", "security": "high", "concurrency": "none", "deployment": "none"}, "escalation_history": [], "user_changes": {"paths": [], "fingerprint": "sha256:test"}})
     from harness.alignment import contract_hash
     document = {"version": 1, "task_id": "TASK-001", "goal": {"summary": "x"}, "scope": {"in": ["x"], "out": ["y"]}, "non_goals": ["z"], "boundaries": [], "constraints": [], "assumptions": [], "acceptance_criteria": [], "implementation_surfaces": [], "verification": [], "decision_ids": [], "interface_contract_ids": [], "open_questions": [], "open_decisions": [], "open_loops": [], "freeze": {"frozen": True, "frozen_at": "2026-09-18T00:00:00+00:00", "contract_hash": None}}
     document["freeze"]["contract_hash"] = contract_hash(document)
     (h / "alignment.yaml").write_text(yaml.safe_dump(document))
     impact = yaml.safe_load((h / "impact.yaml").read_text())
     impact["impact"]["contracts"] = [{"ref": ref, "kind": kind}]
-    impact["impact"]["required_tests"] = ["tests/test_control_plane.py"]
     (h / "impact.yaml").write_text(yaml.safe_dump(impact))
 
     result = run_cli(tmp_path, "transition", "VERIFYING")
@@ -370,7 +402,7 @@ def test_implementing_task_with_typed_boundary_drift_cannot_verify(
 
 
 def test_realign_clears_internal_and_sealed_freeze(tmp_path):
-    h = make_repo(tmp_path, state="IMPLEMENTING")
+    h = make_repo(tmp_path, profile="STANDARD", state="IMPLEMENTING")
     alignment = {"version": 1, "task_id": "TASK-001", "goal": {"summary": "x"}, "scope": {"in": ["x"], "out": ["y"]}, "non_goals": ["z"], "boundaries": [], "constraints": [], "assumptions": [], "acceptance_criteria": [], "implementation_surfaces": [], "verification": [], "decision_ids": [], "interface_contract_ids": [], "open_questions": [], "open_decisions": [], "open_loops": [], "freeze": {"frozen": True, "frozen_at": "2026-09-18T00:00:00+00:00", "contract_hash": None}}
     from harness.alignment import contract_hash
     alignment["freeze"]["contract_hash"] = contract_hash(alignment)
@@ -525,7 +557,7 @@ def test_transition_legal_persists_new_state(tmp_path):
 
 
 def test_verifying_to_reviewing_rejects_stale_required_evidence(tmp_path, monkeypatch, capsys):
-    make_repo(tmp_path, state="VERIFYING")
+    make_repo(tmp_path, profile="STANDARD", state="VERIFYING")
     monkeypatch.chdir(tmp_path)
     blocker = quality_gate.GateBlocker(
         "EVIDENCE_WORKSPACE_STALE", "verification", "unit evidence invalid"
@@ -550,10 +582,7 @@ def test_transition_illegal_rejected_and_unchanged(tmp_path):
 
 
 def test_related_required_tests_do_not_block_verifying(tmp_path):
-    h = make_repo(tmp_path, state="IMPLEMENTING")
-    impact = yaml.safe_load((h / "impact.yaml").read_text())
-    impact["impact"]["required_tests"] = ["tests/test_control_plane.py"]
-    (h / "impact.yaml").write_text(yaml.safe_dump(impact))
+    make_repo(tmp_path, declared_test=True, state="IMPLEMENTING")
 
     result = run_cli(tmp_path, "transition", "VERIFYING")
 
@@ -616,7 +645,7 @@ def test_evidence_invalid_type_exit_2(tmp_path):
 
 
 def _passing_harness(tmp_path):
-    h = make_repo(tmp_path, state="GATING")
+    h = make_repo(tmp_path, profile="STANDARD", state="GATING")
     reqs = {
         "requirements": [
             {
@@ -673,7 +702,56 @@ def _passing_harness(tmp_path):
     build = json.loads((edir / "build.json").read_text())
     build["covered_test_cases"] = ["TC-800", "TC-801"]
     (edir / "build.json").write_text(json.dumps(build))
+    from test_alignment import complete_alignment
+
+    document = complete_alignment()
+    document["decision_ids"] = []
+    document["interface_contract_ids"] = []
+    (h / "alignment.yaml").write_text(yaml.safe_dump(document))
+    frozen = run_cli(tmp_path, "align", "freeze")
+    assert frozen.returncode == 0, frozen.stdout + frozen.stderr
     return h
+
+
+def test_fixture_audited_add_preserves_bound_origin(tmp_path):
+    """Break caught: fixture forges origin or directly rewrites required tests."""
+    from harness._scope_replay import load_scope
+
+    h = make_repo(tmp_path)
+    origin = (h / "test-scope-baseline.yaml").read_bytes()
+    declare_fixture_test(h)
+    task, impact, baseline, audit, _ = load_scope(h)
+    assert (h / "test-scope-baseline.yaml").read_bytes() == origin
+    assert task["task"]["id"] == baseline["task_id"] == "TASK-001"
+    assert baseline["origin"]["kind"] == "new_task"
+    assert baseline["required_tests"] == []
+    assert impact["impact"]["required_tests"] == ["tests/test_control_plane.py"]
+    assert [event["operation"] for event in audit["entries"]] == ["ADD"]
+
+
+@pytest.mark.parametrize("fault", ["missing_origin", "unaudited_add", "identity_mismatch"])
+def test_fixture_scope_guard_still_blocks_invalid_prerequisites(tmp_path, fault):
+    """Break caught: fixture maintenance makes Gate ignore scope origin drift."""
+    h = _passing_harness(tmp_path)
+    origin = (h / "test-scope-baseline.yaml").read_bytes()
+    if fault == "missing_origin":
+        (h / "test-scope-baseline.yaml").unlink()
+    elif fault == "unaudited_add":
+        source = tmp_path / "tests/test_control_plane.py"
+        source.parent.mkdir()
+        source.write_text("def test_fixture():\n    assert True\n")
+        impact = yaml.safe_load((h / "impact.yaml").read_text())
+        impact["impact"]["required_tests"] = ["tests/test_control_plane.py"]
+        (h / "impact.yaml").write_text(yaml.safe_dump(impact))
+    else:
+        task = yaml.safe_load((h / "current-task.yaml").read_text())
+        task["task"]["id"] = "TASK-999"
+        (h / "current-task.yaml").write_text(yaml.safe_dump(task))
+    result = run_cli(tmp_path, "gate")
+    assert "TEST_SCOPE_AUDIT_INVALID" in result.stdout + result.stderr
+    assert yaml.safe_load((h / "current-task.yaml").read_text())["gate"]["quality"]["status"] == "BLOCKED"
+    if fault != "missing_origin":
+        assert (h / "test-scope-baseline.yaml").read_bytes() == origin
 
 
 def test_gate_pass_maps_to_zero_and_writes_back(tmp_path):

@@ -1,8 +1,8 @@
 """Task-bound expansion authority; breadth is independent of execution authority."""
 
 import re
-import shutil
 from copy import deepcopy
+from dataclasses import dataclass, replace
 from pathlib import Path
 from uuid import uuid4
 
@@ -12,8 +12,9 @@ from harness import transaction
 from harness.telemetry_lock import telemetry_lock
 
 from .freshness import capture, digest, require_fresh
-from .model import ContextBuildError
+from .model import AuthoritativeContext, ContextBuildError
 from .policy import policy_for_risk
+from .telemetry import increment, instrument
 
 REPORTED_TRIGGERS = (
     "SYMBOL_UNRESOLVED",
@@ -128,25 +129,69 @@ def automatic_candidates(context: dict) -> list[dict]:
     return candidates
 
 
-def apply_automatic_expansions(harness_dir: Path, context: dict) -> dict:
-    """Write each new event before rebuilding; no repeated upgrade from same basis."""
+@dataclass(frozen=True)
+class ExpansionBatch:
+    task_id: str
+    original_versions: dict
+    original_tail_digest: str | None
+    events: tuple[dict, ...]
+    budget_delta: int
+    final_policy: str
+
+
+@instrument('expansion_plan')
+def plan_automatic_expansions(
+    validated_source: AuthoritativeContext, current_context: dict,
+) -> ExpansionBatch:
+    from .integrity import _project_context
+
+    source = deepcopy(validated_source)
+    context = current_context
+    candidates = automatic_candidates(context)  # one initial ordered boundary
+    increment('expansion_candidates', len(candidates))
+    planned = []
+    task_id = source.task['task']['id']
+    if task_id != context['control']['task']['id']:
+        raise ContextBuildError('CONTEXT_POLICY_MISMATCH', 'batch task mismatch')
+    harness_dir = Path.cwd() / Path(source.references['current-task.yaml']['ref']).parent
+    for candidate in candidates:
+        if any(all(event.get(field) == candidate[field] for field in
+                   ('trigger', 'object_id', 'source_hash')) for event in context['expansions']):
+            continue
+        if candidate not in automatic_candidates(context):
+            break  # legal prefix commits; do not visit any later initial candidate
+        event = _make_expansion_event(source.task, context, candidate['trigger'], candidate['reason'], candidate)
+        planned.append(event)
+        source.task['budget']['context_expansions'] = source.task['budget'].get('context_expansions', 0) + 1
+        events = source.expansions + [event]
+        active_expansions(source.task, {'expansions': events})
+        source = replace(source, expansions=events)
+        context = _project_context(harness_dir, source, current_context['generated_from'], mode=context['mode'])
+    versions = current_context['generated_from']
+    return ExpansionBatch(task_id, deepcopy(versions), versions['files'].get('context/expansions.yaml'),
+                          tuple(planned), len(planned), context['policy'])
+
+
+def publish_expansion_batch(harness_dir: Path, batch: ExpansionBatch, expected_sources: dict) -> dict:
+    if batch.original_versions != expected_sources or batch.budget_delta != len(batch.events):
+        raise ContextBuildError('CONTEXT_POLICY_MISMATCH', 'invalid expansion batch')
+    if any(event['task_id'] != batch.task_id for event in batch.events):
+        raise ContextBuildError('CONTEXT_POLICY_MISMATCH', 'batch event task mismatch')
+    if batch.original_tail_digest != expected_sources['files'].get('context/expansions.yaml'):
+        raise ContextBuildError('CONTEXT_STALE', 'expansion log basis changed')
+    if batch.events:
+        _publish_expansion_events(harness_dir, expected_sources, list(batch.events), final_policy=batch.final_policy)
+    return {'events': list(batch.events), 'policy': batch.final_policy}
+
+
+def apply_automatic_expansions(harness_dir: Path, context: dict, *, source: AuthoritativeContext) -> dict:
     from .integrity import build_context
 
-    for candidate in automatic_candidates(context):
-        key = lambda event: tuple(
-            event.get(field) for field in ("trigger", "object_id", "source_hash")
-        )
-        if any(key(event) == key(candidate) for event in context["expansions"]):
-            continue
-        _record_expansion(
-            harness_dir,
-            candidate["trigger"],
-            candidate["reason"],
-            automatic=candidate,
-            mode=context["mode"],
-        )
-        context = build_context(harness_dir, mode=context["mode"])
-    return context
+    batch = plan_automatic_expansions(source, context)
+    if not batch.events:
+        return context
+    publish_expansion_batch(harness_dir, batch, context['generated_from'])
+    return build_context(harness_dir, mode=context['mode'])
 
 
 def active_expansions(task: dict, document: dict | None) -> list[dict]:
@@ -241,121 +286,102 @@ def expand_context(harness_dir: Path, trigger: str, reason: str) -> dict:
     return _record_expansion(harness_dir, trigger, reason)
 
 
-def _record_expansion(
-    harness_dir: Path,
-    trigger: str,
-    reason: str,
-    *,
-    automatic: dict | None = None,
-    mode: str = "full",
-) -> dict:
-    from .integrity import build_context
-    from .store import _paths, _restore
+def _make_expansion_event(task: dict, context: dict, trigger: str, reason: str, automatic: dict | None) -> dict:
+    policy = context['policy']
+    event = {
+        'task_id': task['task']['id'], 'source_hash': digest(context['generated_from']),
+        'from': policy, 'to': ORDER[min(ORDER.index(policy) + 1, 2)],
+        'trigger': trigger, 'reason': reason.strip(),
+    }
+    if automatic is not None:
+        event.update(automatic)  # candidate source_hash overrides generated_from
+        if trigger == 'RISK_ESCALATED':
+            index = int(automatic['object_id'].split(':')[1])
+            history = task['risk']['escalation_history'][index]
+            start = max([int(history['from'][1]) - 1,
+                         *(ORDER.index(item['to']) for item in context['expansions'])])
+            event['from'] = ORDER[start]
+            event['to'] = ORDER[max(start, ORDER.index(policy))]
+    return event
+
+
+def _publish_expansion_events(harness_dir: Path, versions: dict, events: list[dict], *, final_policy: str | None = None):
+    import hashlib
+
+    from harness import source_access
+
+    from .store import _paths
 
     harness_dir = harness_dir.absolute()
     with telemetry_lock(harness_dir):
+        transaction.recover_pending_publications(harness_dir)
         _paths(harness_dir)
-        task_path = harness_dir / "current-task.yaml"
-        log_path = harness_dir / "context/expansions.yaml"
-        staging_root = harness_dir / ".staging"
+        task_path = harness_dir / 'current-task.yaml'
+        log_path = harness_dir / 'context/expansions.yaml'
+        staging_root = harness_dir / '.staging'
         if any(path.is_symlink() for path in (task_path, log_path, staging_root)):
-            raise ContextBuildError(
-                "CONTEXT_REFERENCE_BROKEN", "expansion storage cannot be a symlink"
-            )
+            raise ContextBuildError('CONTEXT_REFERENCE_BROKEN', 'expansion storage cannot be a symlink')
+        require_fresh(versions, capture(harness_dir))
+        task_bytes = source_access.read_regular_bytes_beneath(task_path, harness_dir)
+        old_log = source_access.read_regular_bytes_beneath(log_path, harness_dir) if log_path.exists() else None
+        for name, content in (('current-task.yaml', task_bytes), ('context/expansions.yaml', old_log)):
+            observed = None if content is None else 'sha256:' + hashlib.sha256(content).hexdigest()
+            if observed != versions['files'].get(name):
+                raise ContextBuildError('CONTEXT_STALE', 'expansion input bytes changed')
+        task = yaml.safe_load(task_bytes)
+        historical = [] if old_log is None else yaml.safe_load(old_log)['expansions']
+        if any(event['task_id'] != task['task']['id'] for event in events):
+            raise ContextBuildError('CONTEXT_POLICY_MISMATCH', 'event task mismatch')
+        task['budget']['context_expansions'] = task['budget'].get('context_expansions', 0) + len(events)
+        log = {'expansions': historical + events}
+        active = active_expansions(task, log)
+        if final_policy is not None and effective_policy(task, active) != final_policy:
+            raise ContextBuildError('CONTEXT_POLICY_MISMATCH', 'batch policy mismatch')
+        payloads = {
+            'current-task.yaml': yaml.safe_dump(task, sort_keys=False).encode(),
+            'context/expansions.yaml': yaml.safe_dump(log, sort_keys=False).encode(),
+        }
+        before = {'current-task.yaml': task_bytes, 'context/expansions.yaml': old_log}
+        expected = deepcopy(versions)
+        for name, value in payloads.items():
+            version = 'sha256:' + hashlib.sha256(value).hexdigest()
+            expected['files'][name] = version
+            declared = f'{harness_dir.name}/{name}'
+            if declared in expected['declared_files']:
+                expected['declared_files'][declared] = version
+        expected['control_plane_hash'] = digest(expected['files'])
+        expected['task_hash'] = digest({'current-task.yaml': expected['files']['current-task.yaml']})
+        def finalize():
+            require_fresh(expected, capture(harness_dir))
+            require_fresh(expected, capture(harness_dir))
+
+        artifacts = tuple(transaction.StagedArtifact(n, b) for n, b in payloads.items())
+        staged = transaction.stage(harness_dir, artifacts, operation_id=f'context-expand-{uuid4().hex}')
+        require_fresh(versions, capture(harness_dir))
+        transaction.publish(harness_dir, staged, replace_paths=frozenset(payloads),
+                            after_publish=finalize, durable=True,
+                            expected_sources=before, expected_artifacts=artifacts)
+        increment('expansion_events_written', len(events))
+
+
+def _record_expansion(
+    harness_dir: Path, trigger: str, reason: str, *, automatic: dict | None = None, mode: str = 'full',
+) -> dict:
+    from .integrity import build_context
+    from .store import _paths
+
+    harness_dir = harness_dir.absolute()
+    with telemetry_lock(harness_dir):
+        transaction.recover_pending_publications(harness_dir)
+        _paths(harness_dir)
         context = build_context(harness_dir, mode=mode)
         if automatic is not None:
             if automatic not in automatic_candidates(context):
-                raise ContextBuildError(
-                    "CONTEXT_STALE", "automatic trigger basis changed"
-                )
-            for existing in context["expansions"]:
-                if all(
-                    existing.get(key) == automatic[key]
-                    for key in ("trigger", "object_id", "source_hash")
-                ):
+                raise ContextBuildError('CONTEXT_STALE', 'automatic trigger basis changed')
+            for existing in context['expansions']:
+                if all(existing.get(key) == automatic[key] for key in ('trigger', 'object_id', 'source_hash')):
                     return existing
-        task_bytes = task_path.read_bytes()
-        task = yaml.safe_load(task_bytes)
-        old_log = log_path.read_bytes() if log_path.exists() else None
-        events = [] if old_log is None else yaml.safe_load(old_log)["expansions"]
-        policy = context["policy"]
-        event = {
-            "task_id": task["task"]["id"],
-            "source_hash": digest(context["generated_from"]),
-            "from": policy,
-            "to": ORDER[min(ORDER.index(policy) + 1, 2)],
-            "trigger": trigger,
-            "reason": reason.strip(),
-        }
-        if automatic is not None:
-            event.update(automatic)
-            if trigger == "RISK_ESCALATED":
-                index = int(automatic["object_id"].split(":")[1])
-                history = task["risk"]["escalation_history"][index]
-                start = max(
-                    [
-                        int(history["from"][1]) - 1,
-                        *(ORDER.index(item["to"]) for item in context["expansions"]),
-                    ]
-                )
-                event["from"] = ORDER[start]
-                event["to"] = ORDER[max(start, ORDER.index(policy))]
-        task["budget"]["context_expansions"] = (
-            task["budget"].get("context_expansions", 0) + 1
-        )
-        log = {"expansions": events + [event]}
-        active_expansions(task, log)
-        payloads = {
-            "current-task.yaml": yaml.safe_dump(task, sort_keys=False).encode(),
-            "context/expansions.yaml": yaml.safe_dump(log, sort_keys=False).encode(),
-        }
-        paths = {"current-task.yaml": task_path, "context/expansions.yaml": log_path}
-        before = {"current-task.yaml": task_bytes, "context/expansions.yaml": old_log}
-        operation = f"context-expand-{uuid4().hex}"
-        staged = staging_root / operation
-        publishing = False
-        try:
-            transaction.stage(
-                harness_dir,
-                [
-                    transaction.StagedArtifact(name, value)
-                    for name, value in payloads.items()
-                ],
-                operation_id=operation,
-            )
-            require_fresh(context["generated_from"], capture(harness_dir))
-            publishing = True
-            transaction.publish(harness_dir, staged, replace_paths=frozenset(payloads))
-            expected = deepcopy(context["generated_from"])
-            import hashlib
-
-            for name, value in payloads.items():
-                version = "sha256:" + hashlib.sha256(value).hexdigest()
-                expected["files"][name] = version
-                declared = f"{harness_dir.name}/{name}"
-                if declared in expected["declared_files"]:
-                    expected["declared_files"][declared] = version
-            expected["control_plane_hash"] = digest(expected["files"])
-            expected["task_hash"] = digest(
-                {"current-task.yaml": expected["files"]["current-task.yaml"]}
-            )
-            require_fresh(expected, capture(harness_dir))
-        except BaseException:
-            _paths(harness_dir)
-            if any(path.is_symlink() for path in paths.values()):
-                raise ContextBuildError(
-                    "CONTEXT_REFERENCE_BROKEN", "expansion storage changed"
-                )
-            if publishing:
-                # Roll back only bytes this operation wrote; never undo an
-                # unmanaged edit discovered by the post-publication hash check.
-                owned = {
-                    name: path
-                    for name, path in paths.items()
-                    if path.exists() and path.read_bytes() == payloads[name]
-                }
-                _restore(owned, before)
-            raise
-        finally:
-            shutil.rmtree(staged, ignore_errors=True)
+        task = yaml.safe_load((harness_dir / 'current-task.yaml').read_bytes())
+        event = _make_expansion_event(task, context, trigger, reason, automatic)
+        _publish_expansion_events(harness_dir, context['generated_from'], [event])
         return event

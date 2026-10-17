@@ -63,7 +63,7 @@ def test_required_architecture_is_conditional_named_freshness_input(harness):
     test_context_builder.enable_required_architecture(harness)
 
     before = freshness.capture(harness)
-    assert before["projection_version"] == 4
+    assert before["projection_version"] == 5
     assert before["files"]["architecture.yaml"].startswith("sha256:")
 
     (harness / "architecture.yaml").write_text(

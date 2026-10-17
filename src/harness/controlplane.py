@@ -6,6 +6,7 @@ Harness modules. Compatibility wrappers in ``scripts/`` re-export this source.
 
 import datetime
 from dataclasses import replace
+from functools import wraps
 
 from harness import (
     alignment,
@@ -45,10 +46,35 @@ from harness.task_replacement import (
     trusted_architecture_mode,
 )
 from harness.templates import templates_dir
+from harness.transaction_recovery import PublicationAdmissionError, publication_admission
 
 
 class HarnessStateError(Exception):
     """Invalid harness state (maps to exit code 2)."""
+
+
+def _publication_entry(command):
+    """Admit before task facts and retain lock through consequential command."""
+    @wraps(command)
+    def admitted(*args, **kwargs):
+        completed = False
+        try:
+            with publication_admission(Path('.harness')):
+                result = command(*args, **kwargs)
+                completed = True
+            return result
+        except PublicationAdmissionError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        except OSError:
+            if not completed:
+                raise  # Do not relabel or swallow command-body I/O.
+            print(
+                "PUBLICATION_LOCK_TEARDOWN_FAILED: command completed; inspect persisted state",
+                file=sys.stderr,
+            )
+            return 2
+    return admitted
 
 
 def load_task(harness_dir: Path) -> dict:
@@ -167,6 +193,7 @@ def _render_plan_status(report: dict) -> str:
     return "\n".join(lines)
 
 
+@_publication_entry
 def cmd_plan_status(json_output: bool, verbose: bool = False) -> int:
     from . import plan_reporting
 
@@ -221,6 +248,7 @@ def cmd_plan_status(json_output: bool, verbose: bool = False) -> int:
     return 0
 
 
+@_publication_entry
 def cmd_plan_sync_markdown(target: str) -> int:
     from . import plan_markdown
 
@@ -254,6 +282,7 @@ def cmd_plan_sync_markdown(target: str) -> int:
     return 0
 
 
+@_publication_entry
 def cmd_plan_mutation(args) -> int:
     harness_dir = Path(".harness")
     disposition = getattr(args, "plan_disposition", None)
@@ -305,6 +334,7 @@ def cmd_plan_mutation(args) -> int:
     return 0
 
 
+@_publication_entry
 def cmd_architecture(args) -> int:
     """Dispatch Architecture mutations and deterministic read-only projections."""
     from harness.architecture import ArchitectureError
@@ -430,7 +460,7 @@ def _architecture_freeze_facts(
             sealed, "alignment-freeze.schema.json", sealed_path
         )
         if (
-            sealed["version"] != 2
+            sealed["version"] not in {2, 3}
             or sealed["task_id"] != task.get("task", {}).get("id")
             or sealed["architecture_mode"] != "required"
         ):
@@ -581,6 +611,7 @@ def _print_alignment_blocked(issues: list[alignment.AlignmentIssue]) -> None:
         print(f"Next: {_alignment_next_action(issues)}", file=sys.stderr)
 
 
+@_publication_entry
 def cmd_align(command: str, *, reason: str | None = None) -> int:
     """Bootstrap or inspect one Alignment artifact without workflow changes."""
     harness_dir = Path(".harness")
@@ -663,6 +694,27 @@ def cmd_align(command: str, *, reason: str | None = None) -> int:
             print("ALIGNMENT_ALREADY_FROZEN", file=sys.stderr)
             return 1
         try:
+            import hashlib
+
+            from .context.freshness import capture, digest, require_fresh
+
+            def capture_freeze_inputs():
+                versions = capture(harness_dir)
+                # Context versions Decision membership/index, not every raw body.
+                versions['freeze_decision_records'] = {
+                    member.name: hashlib.sha256(source_access.read_regular_bytes_beneath(
+                        member.absolute(), harness_dir.absolute()
+                    )).hexdigest()
+                    for member in source_access.members(harness_dir / 'decisions', 'DEC-*.yaml')
+                }
+                return versions
+
+            before = capture_freeze_inputs()
+            original_alignment = source_access.read_regular_bytes_beneath(
+                path.absolute(), harness_dir.absolute()
+            )
+            if yaml.safe_load(original_alignment) != document:
+                raise alignment.AlignmentError("CONTEXT_STALE")
             task = load_task(harness_dir)
             decisions = decision.load_decisions(harness_dir)
             issues = _alignment_completeness_issues(harness_dir, task, document)
@@ -680,6 +732,22 @@ def cmd_align(command: str, *, reason: str | None = None) -> int:
             }
             document["freeze"]["contract_hash"] = alignment.contract_hash(document)
             boundary_refs = current_boundary_refs(document, impact.get("impact", {}))
+            from ._scope_replay import SCOPE_FILES, freeze_scope_facts
+
+            # These are untrusted candidate facts, not an authority verdict.
+            # Strict replay below must see the complete prospective freeze.
+            candidate_scope = None
+            if any(source_access.exists(harness_dir / name) for name in SCOPE_FILES):
+                scope_seal_path = harness_dir / 'test-scope-seal.yaml'
+                scope_seal = yaml.safe_load(source_access.read_text(scope_seal_path))
+                try:
+                    quality_gate.validate_schema(scope_seal, 'test-scope-seal.schema.json', scope_seal_path)
+                except quality_gate.InvalidHarnessState as exc:
+                    raise alignment.AlignmentError('ALIGNMENT_FREEZE_INVALID') from exc
+                candidate_scope = {
+                    'baseline_hash': scope_seal['baseline_hash'],
+                    'origin_decisions': scope_seal['origin_decisions'],
+                }
             record = alignment.freeze_record(
                 document,
                 decisions=decisions,
@@ -687,15 +755,43 @@ def cmd_align(command: str, *, reason: str | None = None) -> int:
                 architecture_mode=facts.mode,
                 architecture_fingerprint=facts.fingerprint,
                 declared_modules=facts.declared_modules,
+                test_scope=candidate_scope,
             )
             quality_gate.validate_schema(record, "alignment-freeze.schema.json", sealed_path)
-            staged = transaction.stage(harness_dir, [
+            artifacts = (
                 transaction.StagedArtifact("alignment.yaml", yaml.safe_dump(document, sort_keys=False).encode()),
                 transaction.StagedArtifact("alignment-freeze.yaml", yaml.safe_dump(record, sort_keys=False).encode()),
-            ])
-            transaction.publish(harness_dir, staged, replace_paths=frozenset({"alignment.yaml"}))
+            )
+            expected = {**before, 'files': dict(before['files']),
+                        'declared_files': dict(before['declared_files'])}
+            for artifact in artifacts:
+                version = 'sha256:' + hashlib.sha256(artifact.content).hexdigest()
+                expected['files'][artifact.relative_path] = version
+                reference = f'{harness_dir.name}/{artifact.relative_path}'
+                if reference in expected['declared_files']:
+                    expected['declared_files'][reference] = version
+            expected['control_plane_hash'] = digest(expected['files'])
+
+            def validate_candidate():
+                # Own active journal is expected here; no ordinary re-admission.
+                for _ in range(2):
+                    require_fresh(expected, capture_freeze_inputs())
+                    if freeze_scope_facts(harness_dir) != candidate_scope:
+                        raise alignment.AlignmentError('ALIGNMENT_FREEZE_INVALID')
+
+            staged = transaction.stage(harness_dir, list(artifacts))
+            require_fresh(before, capture_freeze_inputs())
+            transaction.publish(
+                harness_dir, staged, replace_paths=frozenset({"alignment.yaml"}),
+                expected_sources={'alignment.yaml': original_alignment, 'alignment-freeze.yaml': None},
+                expected_artifacts=artifacts, after_publish=validate_candidate, durable=True,
+            )
         except (alignment.AlignmentError, decision.DecisionError, ValueError, KeyError, TypeError) as exc:
             print(f"ALIGNMENT_FREEZE_INVALID: {exc}", file=sys.stderr)
+            return 2
+        except yaml.YAMLError:
+            # Parser diagnostics can contain the rejected source payload.
+            print("ALIGNMENT_FREEZE_INVALID", file=sys.stderr)
             return 2
         except OSError as exc:
             print(f"ALIGNMENT_FREEZE_FAILED: {exc}", file=sys.stderr)
@@ -788,6 +884,19 @@ def cmd_align(command: str, *, reason: str | None = None) -> int:
 
 
 def _decision_document(args) -> dict:
+    fields = ('topic', 'question', 'context', 'option', 'recommend', 'reason', 'tradeoff', 'scope', 'constraint')
+    filename = getattr(args, 'source_file', None)
+    if filename is not None:
+        if any(getattr(args, field, None) for field in fields):
+            raise ValueError('DECISION_PROPOSAL_ARGUMENTS_INVALID')
+        path = Path(filename).absolute()
+        document = yaml.safe_load(source_access.read_regular_bytes_beneath(path, path.parent))
+        allowed = {'topic', 'question', 'context', 'options', 'recommendation', 'scope', 'constraints'}
+        if not isinstance(document, dict) or set(document) != allowed:
+            raise ValueError('DECISION_PROPOSAL_INVALID')
+        return document
+    if any(not getattr(args, field, None) for field in fields[:6]):
+        raise ValueError('DECISION_PROPOSAL_ARGUMENTS_INVALID')
     options = []
     for value in args.option:
         option_id, separator, description = value.partition("=")
@@ -809,6 +918,7 @@ def _decision_document(args) -> dict:
     }
 
 
+@_publication_entry
 def cmd_decision(args) -> int:
     """Route decision commands without leaking schema errors through CLI."""
     import yaml
@@ -848,6 +958,9 @@ def cmd_decision(args) -> int:
         else:
             print("DECISION_COMMAND_INVALID", file=sys.stderr)
             return 2
+    except (OSError, yaml.YAMLError):
+        print('DECISION_PROPOSAL_SOURCE_INVALID', file=sys.stderr)
+        return 2
     except (decision.DecisionError, ValueError) as exc:
         print(str(exc), file=sys.stderr)
         return 2
@@ -855,6 +968,7 @@ def cmd_decision(args) -> int:
     return 0
 
 
+@_publication_entry
 def cmd_interface(args) -> int:
     """Route external interface contract commands."""
     import yaml
@@ -1005,6 +1119,7 @@ def _specifying_contract_admission(harness_dir: Path, task: dict) -> list[str]:
     return diagnostics
 
 
+@_publication_entry
 def cmd_transition(target: str, *, reason: str | None = None) -> int:
     harness_dir = Path(".harness")
     task = load_task(harness_dir)
@@ -1033,6 +1148,13 @@ def cmd_transition(target: str, *, reason: str | None = None) -> int:
     except Exception as exc:
         print(f"INVALID_HARNESS_STATE: {exc}", file=sys.stderr)
         return 2
+    if target in {'VERIFYING', 'REVIEWING', 'GATING', 'CONVERGED', 'DONE'}:
+        from ._scope_replay import assess_test_scope_retirements
+
+        scope_blockers = assess_test_scope_retirements(harness_dir)
+        if scope_blockers:
+            _print_preflight_failure(scope_blockers)
+            return 1
     if current == "IMPLEMENTING" and target == "VERIFYING" and profile in {"STANDARD", "STRICT"}:
         try:
             document = alignment.load_alignment(harness_dir)
@@ -1407,6 +1529,7 @@ def cmd_transition(target: str, *, reason: str | None = None) -> int:
     return 0
 
 
+@_publication_entry
 def cmd_resume() -> int:
     """Recover BLOCKED task using highest-priority typed blocker only."""
     from harness.blockers import GateBlocker, select_recovery
@@ -1435,6 +1558,7 @@ def cmd_resume() -> int:
     return 0
 
 
+@_publication_entry
 def cmd_check_minimal(source: Path) -> int:
     import yaml
 
@@ -1453,6 +1577,7 @@ def cmd_check_minimal(source: Path) -> int:
     return 0
 
 
+@_publication_entry
 def cmd_review_outcome(outcome: str, reason_code: str, finding_ids: list[str]) -> int:
     """Persist a structured review outcome and take its sole legal route."""
     routes = {
@@ -1524,6 +1649,7 @@ def cmd_review_outcome(outcome: str, reason_code: str, finding_ids: list[str]) -
     return 0
 
 
+@_publication_entry
 def cmd_review_interface(source: Path, base_ref: str | None = None) -> int:
     harness_dir = Path(".harness")
     try:
@@ -1543,6 +1669,7 @@ def cmd_review_interface(source: Path, base_ref: str | None = None) -> int:
     return 0
 
 
+@_publication_entry
 def cmd_review_diagnosability(source: Path, base_ref: str | None = None) -> int:
     harness_dir = Path(".harness")
     try:
@@ -1566,6 +1693,7 @@ def cmd_review_diagnosability(source: Path, base_ref: str | None = None) -> int:
     return 0
 
 
+@_publication_entry
 def cmd_review_complexity(source: Path, base_ref: str | None = None) -> int:
     import yaml
 
@@ -1607,6 +1735,7 @@ def cmd_review_complexity(source: Path, base_ref: str | None = None) -> int:
     return 0
 
 
+@_publication_entry
 def cmd_evidence_attach(evidence_type, command, scope, result_file):
     if result_file is None:
         print("EVIDENCE_ATTACH_INCOMPLETE", file=sys.stderr)
@@ -1824,39 +1953,82 @@ def cmd_benchmark_run(fixtures: Path) -> int:
     return 0
 
 
-def cmd_context(action: str | None, mode: str, json_output: bool, *, trigger: str | None = None, reason: str | None = None) -> int:
+def cmd_context(action: str | None, mode: str, json_output: bool, *, trigger: str | None = None, reason: str | None = None, profile_json: Path | None = None, progress: bool = False) -> int:
+    from contextlib import nullcontext
     from .context.model import ContextBuildError
     from .context.store import explain_context, generate_context, load_context
+    from .context.telemetry import ContextTelemetry, ProfileDestination
 
-    try:
-        if action == "expand":
-            from .context.escalation import expand_context
-            result = expand_context(Path(".harness"), trigger, reason)
-        elif action is None:
-            result = generate_context(Path(".harness"), mode=mode)
-        else:
-            document, integrity = load_context(Path(".harness"))
-            result = (
-                explain_context(document) if action == "explain"
-                else {"context_hash": document["context_hash"], "integrity": integrity}
+    enabled = profile_json is not None or progress
+    if enabled and action is not None:
+        print("CONTEXT_PROFILE_GENERATION_ONLY context_published=false", file=sys.stderr)
+        return 2
+    timer = ContextTelemetry(progress=progress) if enabled else None
+    destination = None
+    if profile_json is not None:
+        try:
+            destination = ProfileDestination(profile_json, Path.cwd())
+        except OSError:
+            print("PROFILE_DESTINATION_INVALID context_published=false", file=sys.stderr)
+            return 2
+    published = False
+    outcome, exit_code = "FAILED", 2
+    with timer.activate() if timer else nullcontext(), timer.cancellation_handler() if timer else nullcontext():
+        try:
+            if action == "expand":
+                from .context.escalation import expand_context
+                result = expand_context(Path(".harness"), trigger, reason)
+            elif action is None:
+                result = generate_context(Path(".harness"), mode=mode)
+                published = True
+            else:
+                document, integrity = load_context(Path(".harness"))
+                result = (
+                    explain_context(document) if action == "explain"
+                    else {"context_hash": document["context_hash"], "integrity": integrity}
+                )
+            rendered = (
+                json.dumps(result, indent=2, ensure_ascii=False, allow_nan=False) + "\n"
+                if json_output else yaml.safe_dump(result, sort_keys=False, allow_unicode=True)
             )
-        rendered = (
-            json.dumps(result, indent=2, ensure_ascii=False, allow_nan=False) + "\n"
-            if json_output else yaml.safe_dump(result, sort_keys=False, allow_unicode=True)
-        )
-    except ContextBuildError as exc:
-        print(str(exc), file=sys.stderr)
-        return 2
-    except OSError as exc:
-        print(f"INVALID_HARNESS_STATE: Context I/O failed: {exc}", file=sys.stderr)
-        return 2
-    except (ValueError, TypeError, RecursionError, yaml.YAMLError):
-        print("CONTEXT_SCHEMA_INVALID: invalid Context data", file=sys.stderr)
-        return 2
-    print(rendered, end="")
-    return 0
+            try:
+                print(rendered, end="")
+            except OSError:
+                print(f"CONTEXT_OUTPUT_FAILED context_published={str(published).lower()}", file=sys.stderr)
+            else:
+                outcome, exit_code = "SUCCESS", 0
+        except ContextBuildError as exc:
+            suffix = f" context_published={str(timer.context_published).lower()}" if timer else ""
+            print(f"{exc}{suffix}", file=sys.stderr)
+        except OSError as exc:
+            suffix = f" context_published={str(published or (timer and timer.context_published)).lower()}" if timer else ""
+            print(f"INVALID_HARNESS_STATE: Context I/O failed: {exc}{suffix}", file=sys.stderr)
+        except (ValueError, TypeError, RecursionError, yaml.YAMLError):
+            suffix = f" context_published={str(published or (timer and timer.context_published)).lower()}" if timer else ""
+            print(f"CONTEXT_SCHEMA_INVALID: invalid Context data{suffix}", file=sys.stderr)
+        except KeyboardInterrupt:
+            if timer is None:
+                raise
+            timer.cancelled = True
+            exit_code = 130
+    # No Harness writes or locks remain here. Exactly one terminal profile.
+    if timer:
+        published = published or timer.context_published
+        report = timer.finish(outcome, published)
+        if timer.cancelled:
+            exit_code = 130
+        if destination:
+            try:
+                destination.publish(report)
+            except OSError:
+                if published and report['outcome'] == "SUCCESS":
+                    print("PROFILE_WRITE_FAILED_CONTEXT_PUBLISHED context_published=true", file=sys.stderr)
+                    return 3
+                print(f"PROFILE_WRITE_FAILED context_published={str(published).lower()}", file=sys.stderr)
+    return exit_code
 
 
+@_publication_entry
 def cmd_telemetry_report(source_file: Path) -> int:
     import yaml
 
@@ -1873,6 +2045,7 @@ def cmd_telemetry_report(source_file: Path) -> int:
     return 0
 
 
+@_publication_entry
 def cmd_telemetry_show() -> int:
     path = Path(".harness/telemetry.json")
     if not path.is_file():
@@ -1897,6 +2070,7 @@ def cmd_mr_describe() -> int:
     return 0
 
 
+@_publication_entry
 def cmd_gate_preflight() -> int:
     """Run Gate assessment without changing task state."""
     from . import plan_reporting
@@ -1936,12 +2110,25 @@ def cmd_gate_preflight() -> int:
 
 
 def cmd_gate() -> int:
-    """Evaluate Gate once and apply its deterministic convergence decision."""
+    """Own admission through decision, including committed-result teardown."""
+    decision_result = None
     try:
-        return _cmd_gate_convergence()
-    except OSError:
-        # A failed task replacement never emits a decision. Post-commit
-        # telemetry failures are handled separately by save_task.
+        with publication_admission(Path('.harness')):
+            decision_result = _cmd_gate_convergence()
+        return decision_result
+    except OSError as exc:
+        # Every successful convergence return follows persistence AND decision
+        # emission. Only outer teardown remains after that return; never treat
+        # a body/admission failure as a completed, committed decision.
+        if decision_result == 0:
+            print(
+                "TELEMETRY_UPDATE_FAILED: publication lock teardown after committed Gate decision",
+                file=sys.stderr,
+            )
+            return 0
+        if isinstance(exc, PublicationAdmissionError):
+            print(str(exc), file=sys.stderr)
+            return 2
         print("GATE_IO_FAILED: no decision emitted; inspect persisted task", file=sys.stderr)
         return 2
 
@@ -1964,6 +2151,7 @@ def _findings(harness_dir: Path) -> list:
     return out
 
 
+@_publication_entry
 def cmd_finding_list() -> int:
     findings = _findings(Path(".harness"))
     if not findings:
@@ -1978,6 +2166,7 @@ def cmd_finding_list() -> int:
     return 0
 
 
+@_publication_entry
 def cmd_finding_show(finding_id: str) -> int:
     for f in _findings(Path(".harness")):
         if f.get("id") == finding_id:
@@ -2190,6 +2379,7 @@ _FINDING_TRANSITIONS = {
 }
 
 
+@_publication_entry
 def cmd_finding_resume_review(fid):
     harness_dir = Path(".harness")
     task = load_task(harness_dir)
@@ -2223,6 +2413,7 @@ def cmd_finding_resume_review(fid):
     return 0
 
 
+@_publication_entry
 def cmd_finding_transition(
     fid,
     target,
@@ -2356,6 +2547,19 @@ def cmd_finding_transition(
     return 0
 
 
+def cmd_finding_refresh_proof(fid: str, evidence: str) -> int:
+    from .finding_refresh import refresh_finding_proof
+    from .workspace import WorkspaceError
+
+    try:
+        changed = refresh_finding_proof(Path('.harness'), fid, evidence)
+    except (ValueError, OSError, WorkspaceError, evidence_validator.EvidenceValidationError) as exc:
+        print(f'FINDING_PROOF_REFRESH_INVALID: {exc}', file=sys.stderr)
+        return 2
+    print(f'OK: {fid} FIXED proof {"refreshed" if changed else "unchanged"}')
+    return 0
+
+
 def cmd_task_migrate_id(task_id: str) -> int:
     import re
 
@@ -2363,9 +2567,44 @@ def cmd_task_migrate_id(task_id: str) -> int:
         print("INVALID TASK ID: must match TASK-[0-9]+", file=sys.stderr)
         return 2
     harness_dir = Path(".harness")
-    task = load_task(harness_dir)
-    task.setdefault("task", {})["id"] = task_id
-    save_task(harness_dir, task)
+    from .transaction_recovery import publication_recovery
+
+    entered = False
+    result = None
+    try:
+        with publication_recovery(harness_dir):
+            entered = True
+            result = _migrate_task_id_owned(harness_dir, task_id)
+        return result
+    except OSError as exc:
+        if not entered:
+            print(str(exc), file=sys.stderr)
+            return 2
+        if result is None:
+            raise  # Preserve command-body failure over owner cleanup failure.
+        if result == 0:
+            print(
+                "PUBLICATION_LOCK_TEARDOWN_FAILED: command completed; inspect persisted state",
+                file=sys.stderr,
+            )
+            return 2
+        return result  # Preserve already-reported recovery/binding failure.
+
+
+def _migrate_task_id_owned(harness_dir: Path, task_id: str) -> int:
+    from ._scope_replay import SCOPE_FILES, bind_scope_identity
+
+    if any((harness_dir / name).exists() or (harness_dir / name).is_symlink() for name in SCOPE_FILES):
+        try:
+            bind_scope_identity(harness_dir, task_id)
+        except (OSError, ValueError) as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+    else:
+        # Legacy identity-only command does not create or trust scope origin.
+        task = load_task(harness_dir)
+        task.setdefault("task", {})["id"] = task_id
+        save_task(harness_dir, task)
     print(f"OK: task id -> {task_id}")
     return 0
 
@@ -2405,6 +2644,27 @@ def _classification_artifacts(task: dict, level: str) -> list[transaction.Staged
 
 
 def cmd_task_classify(level: str, dimensions: dict[str, str]) -> int:
+    """Keep classification failure policy outside actual owner teardown."""
+    completed = False
+    try:
+        with publication_admission(Path('.harness')):
+            result = _cmd_task_classify_locked(level, dimensions)
+            completed = True
+    except PublicationAdmissionError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    except OSError:
+        if not completed:
+            raise  # Preserve body I/O semantics, not a teardown failure.
+        print("RISK_CLASSIFICATION_INVALID: publication lock teardown", file=sys.stderr)
+        return 2
+    if result == 0:
+        print(f"OK: classified {level}/{risk.PROFILES[level]}")
+    return result
+
+
+def _cmd_task_classify_locked(level: str, dimensions: dict[str, str]) -> int:
+    """Internal classification; public entry owns admission and final output."""
     harness_dir = Path(".harness")
     task = load_task(harness_dir)
     if task.get("state") != "CREATED":
@@ -2484,10 +2744,10 @@ def cmd_task_classify(level: str, dimensions: dict[str, str]) -> int:
     except Exception as exc:
         print(f"RISK_CLASSIFICATION_INVALID: {exc}", file=sys.stderr)
         return 2
-    print(f"OK: classified {level}/{profile}")
     return 0
 
 
+@_publication_entry
 def cmd_task_verify_existing(
     reference: str,
     reason: str,
@@ -2523,6 +2783,27 @@ def cmd_task_verify_existing(
 
 
 def cmd_task_escalate(level: str, reason: str) -> int:
+    """Keep escalation failure policy outside actual owner teardown."""
+    completed = False
+    try:
+        with publication_admission(Path('.harness')):
+            result = _cmd_task_escalate_locked(level, reason)
+            completed = True
+    except PublicationAdmissionError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    except OSError:
+        if not completed:
+            raise  # Preserve body I/O semantics, not a teardown failure.
+        print("RISK_ESCALATION_INVALID: publication lock teardown", file=sys.stderr)
+        return 2
+    if result == 0:
+        print(f"OK: escalated to {level}/{risk.PROFILES[level]}")
+    return result
+
+
+def _cmd_task_escalate_locked(level: str, reason: str) -> int:
+    """Internal escalation; public entry owns admission and final output."""
     import shutil
 
     harness_dir = Path(".harness")
@@ -2573,10 +2854,10 @@ def cmd_task_escalate(level: str, reason: str) -> int:
             shutil.rmtree(staged, ignore_errors=True)
         print(f"RISK_ESCALATION_INVALID: {exc}", file=sys.stderr)
         return 2
-    print(f"OK: escalated to {level}/{risk.PROFILES[level]}")
     return 0
 
 
+@_publication_entry
 def _verify_record(kind: str, rid: str, ref: str) -> int:
     import yaml
 
@@ -2631,6 +2912,7 @@ def task_git_head_or_error() -> str:
     return workspace.git_head()
 
 
+@_publication_entry
 def cmd_task_new(task_id: str, title: str = "") -> int:
     import re
     import shutil
@@ -2701,6 +2983,9 @@ def cmd_task_new(task_id: str, title: str = "") -> int:
         initialize_task_git(task, head)
         restore_architecture_mode(staged, architecture_mode)
         save_task(staged, task)
+        from .task_replacement import install_replacement_scope
+
+        install_replacement_scope(staged, archive)
         publish_replacement(harness_dir, staged)
     except Exception as exc:
         print(f"TASK_REPLACEMENT_FAILED: {exc}", file=sys.stderr)
@@ -2709,6 +2994,7 @@ def cmd_task_new(task_id: str, title: str = "") -> int:
     return 0
 
 
+@_publication_entry
 def cmd_task_recover(task_id: str, title: str, reason: str) -> int:
     """Atomically archive active task and publish replacement task."""
     import re
@@ -2792,6 +3078,9 @@ def cmd_task_recover(task_id: str, title: str, reason: str) -> int:
         initialize_task_git(task, head)
         restore_architecture_mode(staged, architecture_mode)
         save_task(staged, task)
+        from .task_replacement import install_replacement_scope
+
+        install_replacement_scope(staged, archive)
         publish_replacement(harness_dir, staged)
     except Exception as exc:
         print(f"TASK_REPLACEMENT_FAILED: {exc}", file=sys.stderr)
@@ -2820,6 +3109,7 @@ def authorization_granted(task: dict, action: str) -> bool:
     return isinstance(normalized, dict) and normalized.get("granted") is True
 
 
+@_publication_entry
 def cmd_authorize(action: str, granted: bool) -> int:
     if action not in AUTHORIZATION_ACTIONS:
         print("AUTHORIZATION_ACTION_INVALID", file=sys.stderr)
@@ -2870,7 +3160,82 @@ def _impact():
     return path, yaml.safe_load(path.read_text()) if path.exists() else default
 
 
+def cmd_evidence_plan(json_output: bool) -> int:
+    from .context.model import ContextBuildError
+    from .evidence_plan import plan_evidence
+
+    try:
+        report = plan_evidence(Path('.harness'))
+        rendered = json.dumps(report, indent=2, ensure_ascii=False, allow_nan=False) if json_output else yaml.safe_dump(report, sort_keys=False, allow_unicode=True)
+        print(rendered)
+    except ContextBuildError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    except (OSError, ValueError, TypeError, yaml.YAMLError, quality_gate.AlignmentRepairRequired):
+        print('INVALID_HARNESS_STATE: evidence plan sources unavailable', file=sys.stderr)
+        return 2
+    return 0
+
+
+def cmd_impact_reconcile(args) -> int:
+    from .context.model import ContextBuildError
+    from ._scope_replay import TestScopeError
+    from .test_scope import apply_reconciliation, plan_reconciliation
+
+    try:
+        path = Path(args.source_file).absolute()
+        proposal = yaml.safe_load(source_access.read_regular_bytes_beneath(path, path.parent))
+        operation = plan_reconciliation if args.dry_run else apply_reconciliation
+        report = operation(Path('.harness'), proposal)
+        print(yaml.safe_dump(report, sort_keys=False, allow_unicode=True))
+    except (TestScopeError, ContextBuildError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    except (OSError, ValueError, TypeError, yaml.YAMLError, quality_gate.AlignmentRepairRequired):
+        print('INVALID_HARNESS_STATE: reconciliation sources unavailable', file=sys.stderr)
+        return 2
+    return 0
+
+
+def cmd_impact_migrate_scope(args) -> int:
+    from ._scope_replay import TestScopeError
+    from .context.model import ContextBuildError
+    from .test_scope import migrate_test_scope
+
+    try:
+        path = Path(args.source_file).absolute()
+        proposal = yaml.safe_load(source_access.read_regular_bytes_beneath(path, path.parent))
+        report = migrate_test_scope(Path('.harness'), proposal)
+        print(yaml.safe_dump(report, sort_keys=False, allow_unicode=True))
+    except (TestScopeError, ContextBuildError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    except (OSError, ValueError, TypeError, yaml.YAMLError, quality_gate.AlignmentRepairRequired):
+        print('INVALID_HARNESS_STATE: scope migration sources unavailable', file=sys.stderr)
+        return 2
+    return 0
+
+
 def cmd_impact(action, value=None, reason=None, args=None):
+    if action == 'reconcile':
+        return cmd_impact_reconcile(args)
+    if action == 'migrate-scope':
+        return cmd_impact_migrate_scope(args)
+    if action == 'add-test':
+        from ._scope_replay import add_required_test
+        from .context.model import ContextBuildError
+
+        try:
+            add_required_test(Path('.harness'), value)
+        except (ValueError, OSError, ContextBuildError, quality_gate.AlignmentRepairRequired) as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        return 0
+    return _cmd_impact_regular(action, value, reason, args)
+
+
+@_publication_entry
+def _cmd_impact_regular(action, value=None, reason=None, args=None):
     import yaml
 
     path, document = _impact()
@@ -2962,7 +3327,6 @@ def cmd_impact(action, value=None, reason=None, args=None):
         return 0
     key = {
         "add-change": "changed",
-        "add-test": "required_tests",
         "add-dependent": "direct_dependents",
         "add-contract": "contracts",
         "add-risk": "risks",
