@@ -233,6 +233,21 @@ Markdown checkboxes are a one-way projection of canonical Plan execution. They a
 
 `--auto` may establish only a mechanical `COMPLETE`. It selects a bounded evidence cover and changed surfaces, then submits an ordinary COMPLETE request through the existing locked reconciliation path. It cannot choose `SKIPPED` or `SUPERSEDED`.
 
+### Recovery guidance
+
+Harness errors may include `Next:` with a suggested command. This is guidance only: Harness never runs the suggested command automatically. Inspect any state-changing command before running it. For an explanation of a stable diagnostic code, use:
+
+```bash
+harness explain PLAN_STALE
+harness explain CONTRACT_CHANGED
+```
+
+Before `PLANNED → IMPLEMENTING`, use the read-only aggregate checker to report independent contract, test-plan, alignment, freeze, and Plan initialization defects in one run:
+
+```bash
+harness check admission
+```
+
 **Gate and Finding contract:** Only `harness gate` evaluates or persists product Gate results; direct `python scripts/quality_gate.py` is disabled. Persisted Findings require an explicit category (`adversarial`, `diagnosability`, `complexity`, or `interface`); category-less legacy records fail with `MIGRATION_REQUIRED`. `finding.schema.json` was removed; use category-specific schemas.
 
 ### Iron laws

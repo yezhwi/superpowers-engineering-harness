@@ -224,6 +224,21 @@ Markdown checkbox 是 canonical Plan execution 的单向投影。它不是 Gate 
 
 `--auto` 只能确立机械 `COMPLETE`。它选择有界的证据覆盖和已变更表面，再把一条普通 COMPLETE 请求交给现有的加锁核对路径。它不能选择 `SKIPPED` 或 `SUPERSEDED`。
 
+### 恢复指引
+
+Harness 错误可能包含建议命令 `Next:`。它只提供指引：Harness 永远不会自动执行建议命令。运行任何会修改状态的命令前先检查其含义。查询稳定诊断码的说明：
+
+```bash
+harness explain PLAN_STALE
+harness explain CONTRACT_CHANGED
+```
+
+在 `PLANNED → IMPLEMENTING` 前，使用只读聚合检查器，在一次运行中报告彼此独立的 contract、test-plan、alignment、freeze 与 Plan 初始化缺陷：
+
+```bash
+harness check admission
+```
+
 **Gate 与 Finding 契约：** 只有 `harness gate` 可以评估或持久化产品 Gate 结果；直接运行 `python scripts/quality_gate.py` 已禁用。持久化 Finding 必须显式声明 category（`adversarial`、`diagnosability`、`complexity` 或 `interface`）；无 category 的旧记录以 `MIGRATION_REQUIRED` 失败。`finding.schema.json` 已删除，改用分类 Schema。
 
 ### 铁律
