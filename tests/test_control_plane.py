@@ -90,6 +90,25 @@ def test_gate_preflight_requires_release_readiness_for_ready_output(tmp_path, mo
     assert "READY: no" in capsys.readouterr().out
 
 
+def test_gate_preflight_appends_remediation_for_known_blocker(tmp_path, monkeypatch, capsys):
+    from harness.blockers import GateBlocker
+
+    harness = tmp_path / ".harness"
+    harness.mkdir()
+    (harness / "gate.yaml").write_text("gate: {verification_commands: {}}\n")
+    monkeypatch.chdir(tmp_path)
+    gate = quality_gate.GateAssessment(
+        "BLOCKED",
+        (GateBlocker("EVIDENCE_MISSING", "verification", "missing unit evidence"),),
+        {"status": "BLOCKED"},
+        {"status": "NOT_READY", "reasons": []},
+    )
+    monkeypatch.setattr(quality_gate, "assess_gate", lambda *_args, **_kwargs: gate)
+
+    assert controlplane.cmd_gate_preflight() == 1
+    assert "Next: Run: harness status; then run: harness resume" in capsys.readouterr().out
+
+
 def test_gate_preflight_appends_plan_preview_without_duplicate_plan_blocker(
     tmp_path, monkeypatch, capsys
 ):

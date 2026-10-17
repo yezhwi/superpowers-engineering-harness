@@ -2208,6 +2208,7 @@ def cmd_gate_preflight() -> int:
         if assessment.plan_assessment is not None and blocker.code.startswith("PLAN_"):
             continue
         print(f"- {blocker.code}: {blocker.message}")
+        _print_next_step(blocker.code, stream=sys.stdout)
         if blocker.source in commands:
             print(f"  command: {commands[blocker.source]}")
     if assessment.plan_assessment is not None:
