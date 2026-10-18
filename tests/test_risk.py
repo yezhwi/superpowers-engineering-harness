@@ -126,13 +126,14 @@ def test_standard_profile_retains_complexity_requirement(tmp_path):
     assert run_cli(tmp_path, "init").returncode == 0
     subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
     subprocess.run(["git", "commit", "-qm", "base"], cwd=tmp_path, check=True)
+    migrated = run_cli(tmp_path, "task", "migrate-id", "TASK-004")
+    assert migrated.returncode == 0, migrated.stderr
     flags = [item for pair in SAFE.items() for item in (f"--{pair[0]}", pair[1])]
     assert (
         run_cli(tmp_path, "task", "classify", "--level", "Q2", *flags).returncode == 0
     )
     current = tmp_path / ".harness/current-task.yaml"
     task = yaml.safe_load(current.read_text())
-    task["task"]["id"] = "TASK-004"
     task["state"] = "VERIFYING"
     current.write_text(yaml.safe_dump(task))
     from test_test_plan_transition import write_alignment
@@ -194,6 +195,8 @@ def test_fast_implementation_escalation_restarts_standard_contract(tmp_path):
 def test_fast_escalation_from_verifying_restarts_standard_contract(tmp_path):
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
     assert run_cli(tmp_path, "init").returncode == 0
+    migrated = run_cli(tmp_path, "task", "migrate-id", "TASK-004")
+    assert migrated.returncode == 0, migrated.stderr
     subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
     subprocess.run(["git", "commit", "-qm", "base"], cwd=tmp_path, check=True)
     flags = [item for pair in SAFE.items() for item in (f"--{pair[0]}", pair[1])]
@@ -222,6 +225,8 @@ def test_fast_escalation_from_verifying_restarts_standard_contract(tmp_path):
 def test_fast_profile_uses_lightweight_state_path(tmp_path):
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
     assert run_cli(tmp_path, "init").returncode == 0
+    migrated = run_cli(tmp_path, "task", "migrate-id", "TASK-004")
+    assert migrated.returncode == 0, migrated.stderr
     subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
     subprocess.run(["git", "commit", "-qm", "base"], cwd=tmp_path, check=True)
     flags = [item for pair in SAFE.items() for item in (f"--{pair[0]}", pair[1])]
@@ -322,6 +327,8 @@ def test_fast_without_alignment_has_no_alignment_obligation(tmp_path):
 def test_fast_gate_uses_latest_immutable_phase_receipt(tmp_path):
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
     assert run_cli(tmp_path, "init").returncode == 0
+    migrated = run_cli(tmp_path, "task", "migrate-id", "TASK-004")
+    assert migrated.returncode == 0, migrated.stderr
     subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
     subprocess.run(["git", "commit", "-qm", "base"], cwd=tmp_path, check=True)
     flags = [item for pair in SAFE.items() for item in (f"--{pair[0]}", pair[1])]
