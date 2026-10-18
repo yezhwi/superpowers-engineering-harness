@@ -126,6 +126,33 @@ def make_gate_repo(tmp_path: Path, **kwargs) -> Path:
     return make_repo(tmp_path, state="GATING", trusted_scope=True, **kwargs)
 
 
+def initialize_scope_from_current_impact(harness_dir: Path) -> None:
+    """Seal test scope after a fixture writes its final task and impact facts."""
+    from test_test_scope import initialize_test_origin
+
+    impact_document = yaml.safe_load((harness_dir / "impact.yaml").read_text())
+    initialize_test_origin(
+        harness_dir,
+        impact_document.get("impact", {}).get("required_tests", []),
+        impact_document=impact_document,
+    )
+
+
+def seal_alignment_with_current_scope(harness_dir: Path, document: dict, *, decisions=(), boundary_refs=None) -> None:
+    """Publish a test alignment seal bound to current scope provenance."""
+    from harness.alignment import ArchitectureFreezeFacts, validate_sealed_freeze
+
+    initialize_scope_from_current_impact(harness_dir)
+    validate_sealed_freeze(
+        harness_dir,
+        document,
+        decisions=list(decisions),
+        boundary_refs=boundary_refs or {"interface": [], "permission": [], "persistence": []},
+        bootstrap_legacy_off=True,
+        architecture_facts=ArchitectureFreezeFacts("off", None, ()),
+    )
+
+
 def add_finding(h: Path, fid: str, status="PROPOSED", severity="major"):
     (h / "findings" / f"{fid.lower()}.yaml").write_text(
         yaml.safe_dump(
@@ -345,15 +372,7 @@ def test_schema_rejects_malformed_convergence_metadata(tmp_path, malformed_conve
 
 
 def _seal_alignment(h: Path, *, summary: str = "original goal") -> dict:
-    from harness.alignment import ArchitectureFreezeFacts, contract_hash, validate_sealed_freeze
-    from test_test_scope import initialize_test_origin
-
-    impact_document = yaml.safe_load((h / "impact.yaml").read_text())
-    initialize_test_origin(
-        h,
-        impact_document.get("impact", {}).get("required_tests", []),
-        impact_document=impact_document,
-    )
+    from harness.alignment import contract_hash
     document = {
         "version": 1,
         "task_id": "TASK-001",
@@ -379,14 +398,7 @@ def _seal_alignment(h: Path, *, summary: str = "original goal") -> dict:
     }
     document["freeze"]["contract_hash"] = contract_hash(document)
     (h / "alignment.yaml").write_text(yaml.safe_dump(document))
-    validate_sealed_freeze(
-        h,
-        document,
-        decisions=[],
-        boundary_refs={"interface": [], "permission": [], "persistence": []},
-        bootstrap_legacy_off=True,
-        architecture_facts=ArchitectureFreezeFacts("off", None, ()),
-    )
+    seal_alignment_with_current_scope(h, document)
     return document
 
 
