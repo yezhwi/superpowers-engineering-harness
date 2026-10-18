@@ -121,6 +121,11 @@ def make_repo(tmp_path: Path, state="GATING", iteration=0, max_iterations=5, *, 
     return populate_complete_harness(tmp_path, h)
 
 
+def make_gate_repo(tmp_path: Path, **kwargs) -> Path:
+    """Create a Gate fixture with valid test-scope provenance."""
+    return make_repo(tmp_path, state="GATING", trusted_scope=True, **kwargs)
+
+
 def add_finding(h: Path, fid: str, status="PROPOSED", severity="major"):
     (h / "findings" / f"{fid.lower()}.yaml").write_text(
         yaml.safe_dump(
@@ -173,9 +178,7 @@ def test_fingerprint_normalization_and_sorting():
 
 
 def test_legacy_task_initializes_fingerprint_and_count_on_blocked(tmp_path):
-    h = make_repo(
-        tmp_path, state="GATING", iteration=0, max_iterations=5, trusted_scope=True
-    )
+    h = make_gate_repo(tmp_path, iteration=0, max_iterations=5)
     # Remove an evidence file so gate is BLOCKED
     (h / "evidence" / "unit-test.json").unlink()
 
@@ -201,9 +204,7 @@ def test_legacy_task_initializes_fingerprint_and_count_on_blocked(tmp_path):
 
 
 def test_second_consecutive_identical_blocker_escalates_no_progress(tmp_path):
-    h = make_repo(
-        tmp_path, state="GATING", iteration=0, max_iterations=5, trusted_scope=True
-    )
+    h = make_gate_repo(tmp_path, iteration=0, max_iterations=5)
     (h / "evidence" / "unit-test.json").unlink()
 
     # First blocked assessment
@@ -238,9 +239,7 @@ def test_second_consecutive_identical_blocker_escalates_no_progress(tmp_path):
 
 
 def test_repeated_gate_from_blocked_fails_and_never_increments_count(tmp_path):
-    h = make_repo(
-        tmp_path, state="GATING", iteration=0, max_iterations=5, trusted_scope=True
-    )
+    h = make_gate_repo(tmp_path, iteration=0, max_iterations=5)
     (h / "evidence" / "unit-test.json").unlink()
 
     run_cli(tmp_path, "gate")
@@ -263,9 +262,7 @@ def test_repeated_gate_from_blocked_fails_and_never_increments_count(tmp_path):
 
 
 def test_changed_blocker_replaces_fingerprint_resets_count_and_continues(tmp_path):
-    h = make_repo(
-        tmp_path, state="GATING", iteration=0, max_iterations=5, trusted_scope=True
-    )
+    h = make_gate_repo(tmp_path, iteration=0, max_iterations=5)
     (h / "evidence" / "unit-test.json").unlink()
 
     run_cli(tmp_path, "gate")
@@ -300,9 +297,7 @@ def test_changed_blocker_replaces_fingerprint_resets_count_and_continues(tmp_pat
 
 
 def test_pass_deletes_fingerprint_and_count(tmp_path):
-    h = make_repo(
-        tmp_path, state="GATING", iteration=1, max_iterations=5, trusted_scope=True
-    )
+    h = make_gate_repo(tmp_path, iteration=1, max_iterations=5)
     task = yaml.safe_load((h / "current-task.yaml").read_text())
     task["convergence"] = {"fingerprint": "sha256:" + "a" * 64, "count": 1}
     (h / "current-task.yaml").write_text(yaml.safe_dump(task))
