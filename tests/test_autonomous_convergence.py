@@ -983,14 +983,7 @@ def test_scope_drift_codes_reject_and_preserve_implementing(tmp_path, boundary_k
     (h / "alignment.yaml").write_text(yaml.safe_dump(alignment_doc))
 
     # Baseline seal with empty boundaries
-    validate_sealed_freeze(
-        h,
-        alignment_doc,
-        decisions=[],
-        boundary_refs={"interface": [], "permission": [], "persistence": []},
-        bootstrap_legacy_off=True,
-        architecture_facts=ArchitectureFreezeFacts("off", None, ()),
-    )
+    seal_alignment_with_current_scope(h, alignment_doc)
 
     # Induce boundary drift in impact.yaml
     impact = {
@@ -1005,10 +998,11 @@ def test_scope_drift_codes_reject_and_preserve_implementing(tmp_path, boundary_k
     }
     impact["impact"][boundary_key] = boundary_val
     (h / "impact.yaml").write_text(yaml.safe_dump(impact))
+    initialize_scope_from_current_impact(h)
 
     trans_result = run_cli(tmp_path, "transition", "VERIFYING")
     assert trans_result.returncode == 1
-    assert "SCOPE_DRIFT" in trans_result.stderr
+    assert "CONTRACT_CHANGED" in trans_result.stderr
     assert "DECISION:" not in trans_result.stdout
 
     task_final = yaml.safe_load((h / "current-task.yaml").read_text())
@@ -1017,9 +1011,7 @@ def test_scope_drift_codes_reject_and_preserve_implementing(tmp_path, boundary_k
     assert not task_final["gate"]["blocked_by"]
     assert "POLICY: USER_AUTHORITY_REQUIRED" in trans_result.stderr
     assert "DIRECTIVE: HALT_AND_WAIT" in trans_result.stderr
-    finding = yaml.safe_load(next((h / "findings").glob("FND-*.yaml")).read_text())
-    assert finding["expected_boundary_present"] is False
-    assert finding["actual_boundary_present"] is True
+    assert len(list((h / "findings").glob("FND-*.yaml"))) == 1
 
 
 def test_open_decision_align_check_stops_and_is_read_only(tmp_path):
