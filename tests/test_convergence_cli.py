@@ -31,6 +31,8 @@ def make_repo(tmp_path: Path, state="GATING", iteration=0, max_iterations=5) -> 
         ["git", "commit", "-qm", "init"], cwd=tmp_path, check=True, capture_output=True
     )
     h = tmp_path / ".harness"
+    bound = run_cli(tmp_path, "task", "migrate-id", "TASK-001")
+    assert bound.returncode == 0, bound.stdout + bound.stderr
     task = yaml.safe_load((h / "current-task.yaml").read_text())
     task.update(
         {"state": state, "iteration": iteration, "max_iterations": max_iterations}
@@ -161,7 +163,7 @@ def test_converge_pass_transitions_to_converged(tmp_path):
     result = run_cli(tmp_path, "gate")
     assert result.returncode == 0, result.stdout + result.stderr
     task = yaml.safe_load((tmp_path / ".harness" / "current-task.yaml").read_text())
-    assert task["state"] == "CONVERGED"
+    assert task["state"] == "CONVERGED", result.stdout + result.stderr
     assert "CONVERGED" in result.stdout or "PASS" in result.stdout
 
 
