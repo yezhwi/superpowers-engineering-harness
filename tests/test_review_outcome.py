@@ -192,6 +192,8 @@ def test_pass_review_outcome_maps_invalid_gate_state_to_exit_2(tmp_path):
 def test_generic_transition_cannot_bypass_review_outcome(tmp_path):
     """Break caught: agent labels a review result by directly choosing target state."""
     repo = make_repo(tmp_path)
+    migrated = run_cli(repo, "task", "migrate-id", "TASK-004")
+    assert migrated.returncode == 0, migrated.stderr
     set_task_state(repo, "REVIEWING")
 
     result = run_cli(repo, "transition", "GATING")
