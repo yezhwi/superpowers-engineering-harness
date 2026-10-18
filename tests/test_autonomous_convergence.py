@@ -346,7 +346,14 @@ def test_schema_rejects_malformed_convergence_metadata(tmp_path, malformed_conve
 
 def _seal_alignment(h: Path, *, summary: str = "original goal") -> dict:
     from harness.alignment import ArchitectureFreezeFacts, contract_hash, validate_sealed_freeze
+    from test_test_scope import initialize_test_origin
 
+    impact_document = yaml.safe_load((h / "impact.yaml").read_text())
+    initialize_test_origin(
+        h,
+        impact_document.get("impact", {}).get("required_tests", []),
+        impact_document=impact_document,
+    )
     document = {
         "version": 1,
         "task_id": "TASK-001",
