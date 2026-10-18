@@ -752,7 +752,7 @@ def test_user_authority_outranks_repeated_regression_and_max_iterations(tmp_path
 
 
 def test_repeated_regression_outranks_no_progress_and_max_iterations(tmp_path):
-    h = make_repo(tmp_path, state="GATING", iteration=5, max_iterations=5)
+    h = make_gate_repo(tmp_path, iteration=5, max_iterations=5)
     (h / "evidence" / "unit-test.json").unlink()
     add_finding(h, "FND-0009")
     p = h / "findings" / "fnd-0009.yaml"
@@ -779,7 +779,7 @@ def test_repeated_regression_outranks_no_progress_and_max_iterations(tmp_path):
 
 
 def test_no_progress_outranks_max_iterations(tmp_path):
-    h = make_repo(tmp_path, state="GATING", iteration=5, max_iterations=5)
+    h = make_gate_repo(tmp_path, iteration=5, max_iterations=5)
     (h / "evidence" / "unit-test.json").unlink()
 
     # Pre-set convergence count to 1 with same fingerprint
