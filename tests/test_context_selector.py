@@ -47,6 +47,16 @@ def select(root, mode="compact"):
     )
 
 
+def seal_current_alignment(harness):
+    """Create scope-bound alignment required by STANDARD and STRICT fixtures."""
+    from test_autonomous_convergence import seal_alignment_with_current_scope
+
+    task = yaml.safe_load((harness / "current-task.yaml").read_text())
+    document = test_context_builder._frozen_alignment(task["task"]["id"])
+    write_yaml(harness / "alignment.yaml", document)
+    seal_alignment_with_current_scope(harness, document)
+
+
 @pytest.mark.parametrize(
     "level,profile,want",
     [
@@ -170,6 +180,8 @@ def test_dependencies_and_declared_contracts_require_bounded_policy(
             }
         },
     )
+    if expected:
+        seal_current_alignment(harness)
     _, selected = select(harness)
     assert "src/local.py" in selected.working["files"]
     assert "tests/local.py::test_case" in selected.working["tests"]
