@@ -889,14 +889,16 @@ def test_real_drift_workflow_fails_and_preserves_implementing(tmp_path):
             "contract_hash": None,
         },
     }
-    alignment_doc["freeze"]["contract_hash"] = contract_hash(alignment_doc)
-    # Induce drift: change goal summary after freeze
-    alignment_doc["goal"]["summary"] = "changed goal summary"
-    (h / "alignment.yaml").write_text(yaml.safe_dump(alignment_doc))
-
     impact = yaml.safe_load((h / "impact.yaml").read_text()) if (h / "impact.yaml").exists() else {}
     impact.setdefault("impact", {})["required_tests"] = ["tests/test_autonomous_convergence.py"]
     (h / "impact.yaml").write_text(yaml.safe_dump(impact))
+
+    alignment_doc["freeze"]["contract_hash"] = contract_hash(alignment_doc)
+    (h / "alignment.yaml").write_text(yaml.safe_dump(alignment_doc))
+    seal_alignment_with_current_scope(h, alignment_doc)
+    # Induce drift after the matching seal is published.
+    alignment_doc["goal"]["summary"] = "changed goal summary"
+    (h / "alignment.yaml").write_text(yaml.safe_dump(alignment_doc))
 
     # 1. Attempt transition to VERIFYING -> fails with exit 1 and CONTRACT_CHANGED
     trans_result = run_cli(tmp_path, "transition", "VERIFYING")
@@ -1176,13 +1178,8 @@ def test_mixed_open_decision_and_contract_changed(tmp_path):
     (h / "alignment.yaml").write_text(yaml.safe_dump(alignment_doc))
 
     # Baseline seal with empty boundaries
-    validate_sealed_freeze(
-        h,
-        alignment_doc,
-        decisions=decision.load_decisions(h),
-        boundary_refs={"interface": [], "permission": [], "persistence": []},
-        bootstrap_legacy_off=True,
-        architecture_facts=ArchitectureFreezeFacts("off", None, ()),
+    seal_alignment_with_current_scope(
+        h, alignment_doc, decisions=decision.load_decisions(h)
     )
 
     # Modify goal summary to also cause CONTRACT_CHANGED and update contract_hash so freeze is valid
