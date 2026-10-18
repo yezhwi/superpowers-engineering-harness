@@ -1676,6 +1676,7 @@ def cmd_check_admission() -> int:
     return 0
 
 
+@_publication_entry
 def cmd_check_minimal(source: Path) -> int:
     import yaml
 
