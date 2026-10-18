@@ -43,6 +43,7 @@ ALLOWED = ENTRIES | {
     "context.freshness",
     "context.store",
     "context.evidence",
+    "context.telemetry",
     "context.model",
     "context.policy",
     "context.selector",
@@ -59,6 +60,8 @@ ALLOWED = ENTRIES | {
     "source_access",
     "git_query",
     "transaction",
+    "transaction_recovery",
+    "_scope_replay",
     "evidence_validator",
     "decision",
     "interface_contract",
@@ -78,6 +81,8 @@ ADAPTERS = {
     "git_query": "fixed Git subprocess adapter",
     "schema_resources": "registered package resources",
     "transaction": "publication writes",
+    "transaction_recovery": "publication recovery admission adapter",
+    "_scope_replay": "test-scope provenance read and publication adapter",
     "telemetry_lock": "process lock adapter",
     "context.escalation": "projection uses pure policy readers; expansion publication is outside read scope",
     "context.freshness": "bootstrap manifest construction; two-phase source guard tracked by SRC-09 audit",
@@ -85,6 +90,7 @@ ADAPTERS = {
     "test_plan": "test plan validator dependency boundary",
     "collect_evidence": "evidence collection dependency boundary",
     "context.store": "derived snapshot publication boundary",
+    "context.telemetry": "opt-in profile publication adapter",
 }
 
 
