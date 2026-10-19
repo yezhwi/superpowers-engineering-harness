@@ -13,6 +13,23 @@ Development candidate; metadata and implementation only. Formal review/Gate acce
 - Task-bound initial test-scope baseline, append-only audit and seal, transactional additions, explicit selected-authority reconstruction, and atomic authorized reconciliation. Gate enforcement and transactional add activate together; apply requires both mechanisms and operation-specific authority. Alignment v3 binds immutable origin; Context projection v5 includes scope sources.
 - Inode-preserving v2 publication/recovery outside staging; final independent validation runs before durable commit, not in an unjournaled outer rollback. Admitted Gate/transitions hold shared lock before reading canonical facts and refuse pending recovery without implicit repair.
 
+- Add a shared remediation registry and read-only `harness explain <CODE>`. Known Plan mutation, Gate preflight, implementation-admission and related-evidence failures include operator guidance; related-test coverage errors show a full example rather than requiring another `--help` call.
+- Add `harness check admission` to aggregate independent implementation-entry defects and explicit `harness plan sync-fingerprint` for empty execution records only. Execution history cannot be rebound. Printed `Next:` guidance never executes a recovery command.
+- Suggest near-match subcommands and unknown long options. Option suggestions are limited to the selected command, exclude ambiguous/low-confidence matches and arguments after `--`, and preserve invalid-usage exit code 2 without automatic correction.
+
+### Fixed
+
+- Admit `harness check minimal` before canonical reads and retain the publication owner through validation and output rendering.
+- Validate Test Plan targets against the Harness repository rather than the caller's working directory; a same-named test in another checkout cannot satisfy a missing target.
+- Declare publication-recovery, test-scope provenance and profile-publication adapters in the finite Context dependency closure.
+- Restore legacy test fixtures to trusted scope/alignment setup without weakening `TEST_SCOPE_AUDIT_INVALID`. Isolated wheel checks remove inherited Python source paths and verify that imports resolve inside the installed environment.
+
+### Development validation
+
+- Implementation commit `520f0c7`: 2,975 tests passed across all 141 test files, with four file-level workers and no test failures, errors or skips. One scope-migration file exceeded its concurrent 600-second limit and passed all 80 cases on an isolated rerun; this is not a single uninterrupted suite run.
+- A wheel built from that commit installed as version `0.3.2` in a fresh venv outside the checkout. All 16 CLI acceptance scenarios passed, including scoped suggestions, Plan/evidence/admission guidance, unchanged Harness file contents and rejection before the supplied evidence command executes.
+- These checks are development verification, not formal review/Gate acceptance, publication authorization, or completion of the separately pending behavioral/benchmark validation below.
+
 ### Compatibility and boundaries
 
 - Source builds require `setuptools>=77.0.3` for PEP 639 SPDX license metadata, correcting the incompatible `>=68` declaration. Apache-2.0 SPDX metadata and Python `>=3.11` runtime requirement remain unchanged; this is a build-time floor, not release approval.
