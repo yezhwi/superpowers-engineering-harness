@@ -8,6 +8,8 @@ Covers:
 """
 
 import json
+import os
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -318,28 +320,49 @@ def test_collect_non_test_evidence_rejects_covered_test(tmp_path):
     assert "COVERED_TEST_TYPE_INVALID" in result.stderr
 
 
-def test_collect_related_scope_requires_covered_test(tmp_path):
+@pytest.mark.parametrize("entrypoint", ["script", "cli"])
+def test_collect_related_scope_requires_covered_test(tmp_path, entrypoint):
+    marker = tmp_path / "MUST_NOT_EXECUTE"
+    cwd = REPO
+    harness_dir = tmp_path
+    if entrypoint == "cli":
+        cwd = tmp_path
+        harness_dir = tmp_path / ".harness"
+        subprocess.run(["git", "init", "-q"], cwd=cwd, check=True)
+        subprocess.run(
+            ["git", "-c", "user.name=Test", "-c", "user.email=test@example.com",
+             "commit", "--allow-empty", "-qm", "fixture"],
+            cwd=cwd,
+            check=True,
+        )
+    command = (
+        [sys.executable, str(REPO / "scripts" / "collect_evidence.py")]
+        if entrypoint == "script"
+        else [sys.executable, "-m", "harness.cli", "evidence", "run"]
+    )
     result = subprocess.run(
-        [
-            sys.executable,
-            str(REPO / "scripts" / "collect_evidence.py"),
+        command + [
             "--type",
             "unit_test",
             "--scope",
             "related",
             "--command",
-            "true",
-            "--harness-dir",
-            str(tmp_path),
-        ],
+            f"touch {shlex.quote(str(marker))}",
+        ] + (["--harness-dir", str(harness_dir)] if entrypoint == "script" else []),
         capture_output=True,
         text=True,
-        cwd=REPO,
+        cwd=cwd,
+        env={**os.environ, "PYTHONPATH": str(REPO / "src")},
     )
     assert result.returncode == 2
     assert "RELATED_COVERED_TEST_REQUIRED" in result.stderr
-    assert "--covered-test path/to/test.py::test_name" in result.stderr
-    assert "Next: harness evidence run --help" in result.stderr
+    assert (
+        "Next: Run: harness evidence run --type unit_test --scope related "
+        "--covered-test path/to/test.py::test_name --command '<test command>'"
+    ) in result.stderr
+    assert "--help" not in result.stderr
+    assert not marker.exists()
+    assert not (harness_dir / "evidence").exists()
 
 
 def test_collect_integration_evidence_records_covered_tests(tmp_path):

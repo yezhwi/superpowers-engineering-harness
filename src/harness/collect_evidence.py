@@ -39,6 +39,7 @@ from .budget import (
 )
 from .evidence_validator import ReuseRequest, can_reuse_evidence
 from .paths import EvidenceReferenceError, evidence_output_path, evidence_receipt_order
+from .remediation import explain
 from .transaction_recovery import publication_admission
 from .workspace import git_head as workspace_head
 from .workspace import snapshot
@@ -855,7 +856,8 @@ def _preflight(args, root: Path) -> _Collection | int:
             "RELATED_COVERED_TEST_REQUIRED: add --covered-test path/to/test.py::test_name",
             file=sys.stderr,
         )
-        print("Next: harness evidence run --help", file=sys.stderr)
+        if remediation := explain("RELATED_COVERED_TEST_REQUIRED"):
+            print(f"Next: {remediation.next_step}", file=sys.stderr)
         return 2
     if any(
         not re.fullmatch(r"TC-[0-9]+", value)

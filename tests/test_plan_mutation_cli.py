@@ -612,17 +612,24 @@ def test_plan_mutation_cli_runs_lifecycle_and_exact_refresh_retry(tmp_path):
 
 
 def test_plan_mutation_cli_stale_plan_is_domain_refusal_without_write(tmp_path):
-    mutation_repo(tmp_path, stale=True)
+    harness_dir = mutation_repo(tmp_path, stale=True)
     before = execution_bytes(tmp_path)
+    facts_before = {
+        name: (harness_dir / name).read_bytes()
+        for name in ("current-task.yaml", "plan.yaml")
+    }
 
     result = cli(tmp_path, "plan", "begin", "P-001")
 
     assert (result.returncode, result.stdout, result.stderr) == (
         1,
         "",
-        "PLAN_STALE\n",
+        "PLAN_STALE\nNext: Run: harness plan sync-fingerprint (only when execution is empty)\n",
     )
     assert execution_bytes(tmp_path) == before
+    assert {
+        name: (harness_dir / name).read_bytes() for name in facts_before
+    } == facts_before
 
 
 def test_plan_mutation_cli_malformed_task_is_invalid_state_without_write(tmp_path):

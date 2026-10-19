@@ -356,6 +356,7 @@ def cmd_plan_mutation(args) -> int:
         )
     except plan_reconciliation.PlanMutationError as exc:
         print(exc.code, file=sys.stderr)
+        _print_next_step(exc.code, stream=sys.stderr)
         return 1
     except (
         HarnessStateError,
