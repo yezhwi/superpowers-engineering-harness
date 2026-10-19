@@ -2,12 +2,21 @@
 
 import json
 
+import pytest
 import yaml
 
 from test_convergence_cli import make_repo, run_cli
 
 
 NODE = "tests/test_test_plan.py::test_valid_feature_bugfix_and_critical_invariant_plan_passes"
+
+
+@pytest.fixture(autouse=True)
+def bound_test_target(tmp_path):
+    path, name = NODE.split("::", 1)
+    target = tmp_path / path
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(f"def {name}():\n    pass\n")
 
 
 def test_missing_case_evidence_recovers_only_through_verifying(tmp_path):

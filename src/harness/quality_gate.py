@@ -1068,7 +1068,9 @@ def _evaluate_gate(
             )
 
     # 3b. Test Plan: all non-FAST tasks must remain complete at Final Gate.
-    for issue in validate_test_plan(requirements_doc, invariants_doc):
+    for issue in validate_test_plan(
+        requirements_doc, invariants_doc, repo_root=harness_dir.parent
+    ):
         block(
             "TEST_PLAN_INCOMPLETE",
             "implementation",

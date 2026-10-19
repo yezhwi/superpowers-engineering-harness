@@ -400,6 +400,9 @@ def test_gate_unions_fresh_related_test_evidence(tmp_path):
     (h / "requirements.yaml").write_text(yaml.safe_dump(requirements))
     base = json.loads((h / "evidence" / "unit-test.json").read_text())
     for name, target in (("unit-test-a.json", "tests/test_quality_gate.py"), ("unit-test-b.json", "tests/test_evidence.py")):
+        test_path = tmp_path / target
+        test_path.parent.mkdir(parents=True, exist_ok=True)
+        test_path.write_text("def test_ok():\n    pass\n")
         record = {**base, "scope": "related", "covered_tests": [target], "command": f"pytest {target}"}
         (h / "evidence" / name).write_text(json.dumps(record))
     (h / "evidence" / "unit-test.json").unlink()

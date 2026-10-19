@@ -13,6 +13,15 @@ NODE_B = "tests/test_orders.py::test_refund"
 
 
 def configure_requirement_case(harness_dir, *, tests):
+    for target in tests:
+        test_path = harness_dir.parent / target.split("::", 1)[0]
+        test_path.parent.mkdir(parents=True, exist_ok=True)
+        content = (
+            "// fixture test target\n"
+            if test_path.suffix == ".ts"
+            else "def test_cancel():\n    pass\n\ndef test_refund():\n    pass\n"
+        )
+        test_path.write_text(content)
     path = harness_dir / "requirements.yaml"
     document = yaml.safe_load(path.read_text())
     document["requirements"][0]["test_plan"] = {
@@ -166,6 +175,23 @@ def test_gate_blocks_binding_without_fresh_covered_evidence(tmp_path):
 
     assert status == "BLOCKED"
     assert blocker_codes(blockers) == {"TEST_EVIDENCE_MISSING"}
+
+
+def test_gate_rejects_target_missing_from_harness_repository(tmp_path):
+    """A target present in process CWD cannot prove a different repository's plan."""
+    from harness.quality_gate import run_gate
+
+    harness_dir = make_harness(tmp_path)
+    node = "tests/test_test_plan_gate.py::test_gate_blocks_binding_without_fresh_covered_evidence"
+    assert (REPO / node.split("::", 1)[0]).is_file()
+    configure_requirement_case(harness_dir, tests=[node])
+    (tmp_path / node.split("::", 1)[0]).unlink()
+    integration_evidence(harness_dir, "integration.json", [node])
+
+    status, blockers = run_gate(harness_dir)
+
+    assert status == "BLOCKED"
+    assert blocker_codes(blockers) == {"TEST_PLAN_INCOMPLETE"}
 
 
 def test_gate_uses_multiple_same_type_evidence_records_for_case_coverage(tmp_path):
