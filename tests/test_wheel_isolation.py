@@ -19,6 +19,12 @@ def _harness(venv_dir: Path) -> Path:
 
 
 def test_wheel_runs_outside_checkout(tmp_path):
+    # Source-checkout imports must not masquerade as an installed distribution.
+    isolated_env = {
+        key: value
+        for key, value in os.environ.items()
+        if key not in {"PYTHONPATH", "PYTHONHOME"}
+    }
     dist = tmp_path / "dist"
     subprocess.run(
         [
@@ -43,16 +49,27 @@ def test_wheel_runs_outside_checkout(tmp_path):
     wheel = next(dist.glob("*.whl"))
     subprocess.run(
         [python, "-m", "pip", "install", str(wheel)],
+        env=isolated_env,
         check=True,
         capture_output=True,
         text=True,
     )
     outside = tmp_path / "outside"
     outside.mkdir()
+    imported = subprocess.run(
+        [python, "-c", "import harness; print(harness.__file__)"],
+        cwd=outside,
+        env=isolated_env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert Path(imported.stdout.strip()).is_relative_to(venv_dir)
     subprocess.run(["git", "init", "-q"], cwd=outside, check=True)
     for args in (["--help"], ["evidence", "--help"], ["init"], ["status"]):
         result = subprocess.run(
             [harness, *args],
+            env=isolated_env,
             cwd=outside,
             capture_output=True,
             text=True,
@@ -64,6 +81,7 @@ def test_wheel_runs_outside_checkout(tmp_path):
 
     result = subprocess.run(
         [harness, "task", "recover", "TASK-005", "--reason", "stale"],
+        env=isolated_env,
         cwd=outside,
         capture_output=True,
         text=True,
