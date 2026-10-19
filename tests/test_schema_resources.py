@@ -130,7 +130,7 @@ def test_resource_symlink_outside_schema_root_is_rejected(tmp_path, monkeypatch)
         schema_resources.read_schema("decision.schema.json")
 
 
-def test_context_schema_registers_optional_architecture_projection_v4():
+def test_context_schema_registers_optional_architecture_projection_v5():
     from harness.schema_resources import read_schema
 
     schema = read_schema("context.schema.json")
@@ -141,7 +141,7 @@ def test_context_schema_registers_optional_architecture_projection_v4():
     }
     assert schema["properties"]["generated_from"]["properties"][
         "projection_version"
-    ] == {"const": 4}
+    ] == {"const": 5}
 
 
 def test_architecture_p1_modules_are_installed_package_imports():
