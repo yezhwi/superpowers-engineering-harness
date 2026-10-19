@@ -46,13 +46,25 @@
     },
     "error_detail": {
       "type": "object",
-      "required": ["code", "kind", "timeout_seconds"],
-      "properties": {
-        "code": {"type": "string", "minLength": 1},
-        "kind": {"const": "timeout"},
-        "timeout_seconds": {"type": "number", "exclusiveMinimum": 0}
-      },
-      "additionalProperties": false
+      "oneOf": [
+        {
+          "required": ["code", "kind", "timeout_seconds"],
+          "properties": {
+            "code": {"type": "string", "minLength": 1},
+            "kind": {"const": "timeout"},
+            "timeout_seconds": {"type": "number", "exclusiveMinimum": 0}
+          },
+          "additionalProperties": false
+        },
+        {
+          "required": ["code", "kind"],
+          "properties": {
+            "code": {"const": "EVIDENCE_COMMAND_CANCELLED"},
+            "kind": {"const": "cancelled"}
+          },
+          "additionalProperties": false
+        }
+      ]
     },
     "workspace_fingerprint": {
       "type": "string",
@@ -131,6 +143,18 @@
   ],
   "allOf": [
     {"if": {"required": ["subject"]}, "then": {"required": ["test"]}},
-    {"if": {"required": ["test"]}, "then": {"required": ["subject"]}}
+    {"if": {"required": ["test"]}, "then": {"required": ["subject"]}},
+    {
+      "if": {
+        "required": ["error_detail"],
+        "properties": {
+          "error_detail": {
+            "required": ["kind"],
+            "properties": {"kind": {"const": "cancelled"}}
+          }
+        }
+      },
+      "then": {"properties": {"exit_code": {"const": 130}}}
+    }
   ]
 }

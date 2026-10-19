@@ -53,6 +53,59 @@ def bundle_bytes(root):
     }
 
 
+@pytest.mark.parametrize("cancel", [False, True], ids=["ordinary-nonzero", "sigint"])
+def test_failed_collection_remains_readable_to_context(harness, cancel):
+    """Break caught: real SIGINT publishes malformed Evidence and poisons Context."""
+    import shlex
+    import signal
+    import time
+
+    from harness.context.store import generate_context
+    from harness.evidence_validator import EvidenceStatus, project_evidence
+    from harness.workspace import snapshot
+
+    generate_context(harness)
+    marker = harness / 'collector-child-ready'
+    program = (
+        f'from pathlib import Path; import time; Path({str(marker)!r}).write_text("ready"); time.sleep(60)'
+        if cancel else 'print("ordinary failed measurement"); raise SystemExit(7)'
+    )
+    command = shlex.join([sys.executable, '-u', '-c', program])
+    process = subprocess.Popen(
+        [sys.executable, '-m', 'harness.cli', 'evidence', 'run', '--type', 'custom', '--command', command],
+        cwd=harness.parent, env={**os.environ, 'PYTHONPATH': str(REPO / 'src')},
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True,
+    )
+    try:
+        if cancel:
+            deadline = time.monotonic() + 20
+            while not marker.exists() and process.poll() is None and time.monotonic() < deadline:
+                time.sleep(.02)
+            assert marker.exists(), 'measured child did not start'
+            os.killpg(process.pid, signal.SIGINT)
+        stdout, stderr = process.communicate(timeout=30)
+    finally:
+        if process.poll() is None:
+            os.killpg(process.pid, signal.SIGKILL)
+            process.communicate(timeout=10)
+    assert process.returncode == (130 if cancel else 0), stdout + stderr
+    path = harness / 'evidence/custom.json'
+    original = path.read_bytes()
+    record = json.loads(original)
+    assert record['exit_code'] == (130 if cancel else 7)
+    if cancel:
+        assert record['error'] == 'EVIDENCE_COMMAND_CANCELLED'
+        assert record['error_detail'] == {'code': 'EVIDENCE_COMMAND_CANCELLED', 'kind': 'cancelled'}
+    workspace = snapshot(harness.parent)
+    projection = project_evidence(path, workspace.head, workspace.fingerprint, expected_success=False)
+    assert projection.status is EvidenceStatus.FRESH, projection.code
+    assert project_evidence(path, workspace.head, workspace.fingerprint).status is EvidenceStatus.FAILED
+    result = run_cli(harness.parent)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert path.read_bytes() == original, 'Context must not repair or rewrite measured receipt'
+    assert run_cli(harness.parent, 'validate').returncode == 0
+
+
 def test_fast_context_allows_existing_verification_import(harness):
     from importlib.util import cache_from_source
 

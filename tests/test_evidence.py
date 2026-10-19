@@ -459,12 +459,62 @@ def test_collect_timeout_normalizes_byte_output_and_records_detail(monkeypatch):
     }
 
 
-def test_evidence_schema_declares_structured_timeout_error_detail():
-    schema = json.loads((REPO / "src/harness/schemas/evidence.schema.json").read_text())
+@pytest.mark.parametrize("detail, valid", [
+    ({"code": "EVIDENCE_COMMAND_TIMEOUT", "kind": "timeout", "timeout_seconds": 2}, True),
+    ({"code": "OTHER_TIMEOUT", "kind": "timeout", "timeout_seconds": .5}, True),
+    ({"code": "EVIDENCE_COMMAND_CANCELLED", "kind": "cancelled"}, True),
+    ({}, False),
+    (None, False),
+    ({"kind": "cancelled"}, False),
+    ({"code": "EVIDENCE_COMMAND_CANCELLED"}, False),
+    ({"code": "OTHER", "kind": "cancelled"}, False),
+    ({"code": "", "kind": "cancelled"}, False),
+    ({"code": "EVIDENCE_COMMAND_CANCELLED", "kind": "cancelled", "timeout_seconds": 2}, False),
+    ({"code": "EVIDENCE_COMMAND_CANCELLED", "kind": "cancelled", "extra": "unexpected"}, False),
+    ({"code": "EVIDENCE_COMMAND_TIMEOUT", "kind": "timeout"}, False),
+    ({"kind": "timeout", "timeout_seconds": 2}, False),
+    ({"code": "EVIDENCE_COMMAND_TIMEOUT", "timeout_seconds": 2}, False),
+    ({"code": "", "kind": "timeout", "timeout_seconds": 2}, False),
+    ({"code": "EVIDENCE_COMMAND_TIMEOUT", "kind": "timeout", "timeout_seconds": 0}, False),
+    ({"code": "EVIDENCE_COMMAND_TIMEOUT", "kind": "timeout", "timeout_seconds": -1}, False),
+    ({"code": "EVIDENCE_COMMAND_TIMEOUT", "kind": "timeout", "timeout_seconds": "2"}, False),
+    ({"code": "EVIDENCE_COMMAND_TIMEOUT", "kind": "timeout", "timeout_seconds": True}, False),
+    ({"code": "EVIDENCE_COMMAND_TIMEOUT", "kind": "timeout", "timeout_seconds": 2, "extra": 1}, False),
+    ({"code": "OTHER", "kind": "unknown", "timeout_seconds": 2}, False),
+])
+def test_evidence_error_detail_validation_preserves_failure_contract(detail, valid):
+    """Break caught: cancellation is unreadable, or timeout validation is relaxed."""
+    from harness.evidence_validator import EvidenceValidationError, validate_evidence
 
-    detail = schema["properties"]["error_detail"]
-    assert detail["required"] == ["code", "kind", "timeout_seconds"]
-    assert detail["additionalProperties"] is False
+    fingerprint = "sha256:" + "b" * 64
+    record = {
+        "type": "custom", "timestamp": "2026-01-01T00:00:00+00:00",
+        "command": "measured command", "exit_code": 130, "commit": "a" * 40,
+        "workspace_fingerprint": fingerprint, "workspace_fingerprint_after": fingerprint,
+        "error_detail": detail,
+    }
+    kwargs = {"current_head": "a" * 40, "current_workspace": fingerprint, "expected_success": False}
+    if valid:
+        validate_evidence(record, **kwargs)
+    else:
+        with pytest.raises(EvidenceValidationError, match="EVIDENCE_SCHEMA_INVALID"):
+            validate_evidence(record, **kwargs)
+
+
+@pytest.mark.parametrize("exit_code", [0, 7, 124])
+def test_cancelled_detail_cannot_be_relabelled_as_another_result(exit_code):
+    """Break caught: new cancelled schema branch lets a cancellation claim success."""
+    from harness.evidence_validator import EvidenceValidationError, validate_evidence
+
+    fingerprint = "sha256:" + "b" * 64
+    record = {
+        "type": "custom", "timestamp": "2026-01-01T00:00:00+00:00",
+        "command": "measured command", "exit_code": exit_code, "commit": "a" * 40,
+        "workspace_fingerprint": fingerprint, "workspace_fingerprint_after": fingerprint,
+        "error_detail": {"code": "EVIDENCE_COMMAND_CANCELLED", "kind": "cancelled"},
+    }
+    with pytest.raises(EvidenceValidationError, match="EVIDENCE_SCHEMA_INVALID"):
+        validate_evidence(record, current_head="a" * 40, current_workspace=fingerprint)
 
 
 def test_collect_failure_still_writes_evidence(tmp_path):
