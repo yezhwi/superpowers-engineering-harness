@@ -1003,20 +1003,90 @@ def test_committed_retention_is_not_pending_authority(harness, entry):
         assert result.status in {'PASS', 'BLOCKED'}
 
 
-def test_explicit_context_recovery_restores_before_read(harness):
-    from harness.context.store import generate_context
-
+def interrupt_context_task_publication(harness, version):
     task = harness / 'current-task.yaml'
     original = task.read_bytes()
     value = yaml.safe_load(original)
     value['budget']['context_expansions'] = 1
     changed = yaml.safe_dump(value, sort_keys=False).encode()
     with telemetry_lock(harness):
-        transaction_recovery.begin(harness, [(task, original, changed)])
-        task.write_bytes(changed)
+        if version == 1:
+            transaction_recovery.begin(harness, [(task, original, changed)])
+            task.write_bytes(changed)
+        else:
+            with publication_journal.prepare(harness, (
+                publication_journal.Member('current-task.yaml', original, changed),
+            )) as operation:
+                operation._save(state='APPLYING')
+                operation._step(0, 'forward')
+    assert task.read_bytes() == changed
+    pending = list((harness / '.transactions').glob('*.json'))
+    assert len(pending) == 1
+    assert json.loads(pending[0].read_bytes())['version'] == version
+    return original
+
+
+@pytest.mark.parametrize('version', [1, 2])
+@pytest.mark.parametrize('entry', ['validate', 'explain', 'load'])
+def test_readonly_context_refuses_pending_without_recovery(harness, version, entry):
+    """Break caught: Context diagnostics silently roll back canonical task facts."""
+    from harness.context.store import generate_context, load_context
+
+    generate_context(harness)
+    original = interrupt_context_task_publication(harness, version)
+    before = tree(harness)
+    if entry == 'load':
+        with pytest.raises(OSError, match='TRANSACTION_RECOVERY_REQUIRED'):
+            load_context(harness)
+    else:
+        result = subprocess.run(
+            [sys.executable, '-m', 'harness.cli', 'context', entry, '--json'],
+            cwd=harness.parent,
+            env={**os.environ, 'PYTHONPATH': str(Path(__file__).resolve().parents[1] / 'src')},
+            capture_output=True, text=True, timeout=30, check=False,
+        )
+        assert result.returncode == 2, result.stdout + result.stderr
+        assert result.stdout == ''
+        assert 'TRANSACTION_RECOVERY_REQUIRED' in result.stderr
+    assert tree(harness) == before, 'read-only refusal must preserve canonical and recovery bytes'
+    with telemetry_lock(harness):
+        transaction_recovery.recover_pending_publications(harness)
+    assert (harness / 'current-task.yaml').read_bytes() == original
+    assert load_context(harness)[1]['freshness']
+
+
+@pytest.mark.parametrize('storage', ['non_directory', 'unknown_member', 'multiple'])
+def test_readonly_context_refuses_unknown_storage_before_bundle_reads(harness, monkeypatch, storage):
+    """Break caught: bypassing admission reads Context through unsafe recovery storage."""
+    from harness.context import store
+
+    directory = harness / '.transactions'
+    if storage == 'non_directory':
+        directory.rmdir()
+        directory.write_bytes(b'unknown storage')
+    else:
+        (directory / ('unknown.tmp' if storage == 'unknown_member' else 'a.json')).write_bytes(b'unknown')
+        if storage == 'multiple':
+            (directory / 'b.json').write_bytes(b'other owner')
+    before = tree(harness)
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError('Context facts read before publication admission')
+
+    monkeypatch.setattr(store, '_require_task', forbidden)
+    with pytest.raises(OSError, match='TRANSACTION_RECOVERY_BLOCKED'):
+        store.load_context(harness)
+    assert tree(harness) == before
+
+
+@pytest.mark.parametrize('version', [1, 2])
+def test_explicit_context_recovery_restores_before_read(harness, version):
+    from harness.context.store import generate_context
+
+    original = interrupt_context_task_publication(harness, version)
     document = generate_context(harness)
     assert document['control']['task']['id'] == 'TASK-028'
-    assert task.read_bytes() == original
+    assert (harness / 'current-task.yaml').read_bytes() == original
     assert not list((harness / '.transactions').iterdir())
 
 

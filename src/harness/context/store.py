@@ -8,6 +8,7 @@ import yaml
 
 from harness import source_access, transaction
 from harness.telemetry_lock import telemetry_lock
+from harness.transaction_recovery import require_no_pending_publications
 
 from .evidence import context_evidence
 from .freshness import capture, digest, require_fresh
@@ -142,10 +143,10 @@ def generate_context(harness_dir: Path, *, mode: str = "compact") -> dict:
 
 
 def load_context(harness_dir: Path) -> tuple[dict, dict]:
-    """Read-only validation of current + its companions; never regenerate."""
+    """Read-only validation; refuse pending publication, never recover or regenerate."""
     harness_dir = harness_dir.absolute()
     with telemetry_lock(harness_dir):
-        transaction.recover_pending_publications(harness_dir)
+        require_no_pending_publications(harness_dir)
         _require_task(harness_dir)
         paths = _paths(harness_dir)
         document = _read(paths["current.yaml"])
