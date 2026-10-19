@@ -21,7 +21,18 @@ from harness.repository import RepositoryNotFoundError, find_git_root
 
 
 class _HarnessArgumentParser(argparse.ArgumentParser):
-    """Add one deterministic near-match hint for unknown subcommands."""
+    """Suggest near matches without changing parsing or command execution."""
+
+    def parse_known_args(self, args=None, namespace=None):
+        parsed, extras = super().parse_known_args(args, namespace)
+        self._unknown_args = extras
+        self._hint_options = self._option_string_actions
+        for action in self._actions:
+            if isinstance(action, argparse._SubParsersAction):
+                selected = action.choices.get(getattr(parsed, action.dest, None))
+                if selected is not None:
+                    self._hint_options = selected._hint_options
+        return parsed, extras
 
     def error(self, message: str) -> None:
         match = re.fullmatch(r"argument [^:]+: invalid choice: '([^']+)' \(choose from (.+)\)", message)
@@ -30,6 +41,25 @@ class _HarnessArgumentParser(argparse.ArgumentParser):
             choices = re.findall(r"'([^']+)'", raw_choices)
             if suggestion := difflib.get_close_matches(unknown, choices, n=1, cutoff=0.6):
                 message += f"\nDid you mean: {suggestion[0]}?"
+        elif message.startswith("unrecognized arguments:"):
+            for argument in self._unknown_args:
+                if argument == "--":
+                    break
+                if not argument.startswith("--"):
+                    continue
+                option = argument.split("=", 1)[0]
+                matches = difflib.get_close_matches(
+                    option, self._hint_options, n=2, cutoff=0.8
+                )
+                if not matches:
+                    continue
+                if len(matches) == 2 and (
+                    difflib.SequenceMatcher(None, matches[0], option).ratio()
+                    == difflib.SequenceMatcher(None, matches[1], option).ratio()
+                ):
+                    continue
+                message += f"\nDid you mean: {matches[0]}?"
+                break
         super().error(message)
 
 
@@ -47,7 +77,7 @@ def _render(result: InitResult) -> str:
 def _main(argv=None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv[:2] == ["evidence", "plan"]:
-        diagnostic = argparse.ArgumentParser(prog="harness evidence plan")
+        diagnostic = _HarnessArgumentParser(prog="harness evidence plan")
         diagnostic.add_argument("--json", dest="json_output", action="store_true")
         options = diagnostic.parse_args(argv[2:])
         try:
