@@ -64,6 +64,22 @@ def test_efficiency_routing_preserves_authority_and_final_freshness(path):
         assert required in section
 
 
+@pytest.mark.parametrize("path", SKILLS)
+def test_efficiency_routing_declares_guidance_only_batch_manifest(path):
+    text = (ROOT / path).read_text()
+    section = text.split("## Efficient Evidence Scheduling", 1)[1].split("\n## ", 1)[0]
+    for required in (
+        "planned batch manifest",
+        "repository-root `--covered-test` selectors",
+        "preserve the original selectors",
+        "complete required-test union",
+        "no required test is skipped",
+        "guidance only",
+        "automated scheduler",
+    ):
+        assert required in section
+
+
 def test_collection_guidance_uses_exact_reuse_and_preserves_red():
     text = (ROOT / "skills/collect-evidence/SKILL.md").read_text()
     section = text.split("## Plan and Reuse Before Execution", 1)[1].split("\n## ", 1)[0]

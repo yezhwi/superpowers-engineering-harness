@@ -6,8 +6,14 @@
 
 Development candidate; metadata and implementation only. Formal review/Gate acceptance, tag, publication, and deployment remain pending and separately authorized.
 
+### Planned follow-up — not implemented
+
+- Define `.harness` storage inventory, retention and controlled cleanup, starting with read-only inventory/dry-run. Stale evidence is not garbage: protect audit provenance, referenced history, user files and publication recovery objects; no automatic age-based deletion.
+- Storage lifecycle work remains a documentation-only addition to the intended v0.3.2 scope, not a shipped capability or accepted implementation contract. See the [proposed follow-up](docs/superpowers/plans/2026-10-14-v032-context-evidence-efficiency.md#v032-proposed-follow-up-evidence-batching-and-artifact-lifecycle). Inventory and retention design, implementation, related verification and new candidate acceptance remain pending; no deletion is authorized.
+
 ### Added
 
+- Agent guidance now calls for proactive bounded batching of long-running related verification, immutable receipts per batch, and reuse of only fresh successful coverage. This is instructional guidance using the existing collector, Gate, deadline and budgets—not an automated scheduler, proof of Agent obedience or a measured speedup—and makes no Core behavior change.
 - Opt-in Context timing/profile output and ordered batch expansion with bounded full builds/source loads/Gate assessments. A candidate losing eligibility commits its legal prefix and stops; genuine prepublication errors publish no new events. Empty expansion still independently validates.
 - Read-only `harness evidence plan --json` and `harness impact reconcile --file proposal.yaml --dry-run`; neither executes tests, initializes missing provenance, nor grants execution authority.
 - Task-bound initial test-scope baseline, append-only audit and seal, transactional additions, explicit selected-authority reconstruction, and atomic authorized reconciliation. Gate enforcement and transactional add activate together; apply requires both mechanisms and operation-specific authority. Alignment v3 binds immutable origin; Context projection v5 includes scope sources.

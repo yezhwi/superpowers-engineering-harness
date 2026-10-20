@@ -38,6 +38,12 @@ Replace the example selector with an existing declared target. Collector delegat
 
 Run commands sharing databases, ports, workspaces, or other mutually exclusive resources serial. Reuse fresh related coverage; collect only missing/stale obligations, not a full-suite fallback. Persist actual Plan proof promptly, then regenerate final Context after legitimate metadata changes are stable. Neither reuse nor an exit-zero command declares requirements verified or task complete.
 
+Before launching a large or known-slow scope, write a planned batch manifest with each exact command and its repository-root `--covered-test` selectors; preserve the original selectors across batches, select only missing fresh related coverage, and require the complete required-test union so no required test is skipped. Qualify duration history to the same source and environment; treat unknown duration conservatively. A roughly 50–70% available-deadline margin is illustrative, not a numeric mandate. Execute serial unless databases, ports, workspaces, and other resources are demonstrably disjoint.
+
+Every executed batch must leave a genuine immutable receipt and JUnit that record or substantiate its command, exit code, runtime, current HEAD, before/after product-workspace fingerprints, and actual covered tests; collector process exit alone is not success. If a batch is failed, cancelled, timed out, or drifted, stop scheduling, diagnose before retry, and never blindly run until green; retain successful fresh batches without re-executing them, but reuse only through the existing `can_reuse_evidence` predicate. RED and finding requests still execute the actual command. Never reuse cross-HEAD proof or narrower coverage, and never widen to a full suite.
+
+This is guidance only, not an automated scheduler or a claim of Agent obedience or measured performance. It preserves existing budget accounting and authority with no new limits, exemptions, or deadline extensions, and changes no collector, timeout, freshness, schema, CLI, or Gate behavior.
+
 ## Execute
 
 For each required type:

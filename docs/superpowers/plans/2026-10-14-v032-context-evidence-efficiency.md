@@ -204,3 +204,54 @@ Self-review: all approved unconditional sections mapped; parse cache intentional
 ## Handoff
 
 User approved native execution against spec v0.6, with review clarifications incorporated above. Proceed sequentially with task-local RED/GREEN and explicit external review gap. Approval covers implementation, not commit/push, production migration or release publication.
+
+## v0.3.2 Proposed follow-up: evidence batching and artifact lifecycle
+
+**Status: A GUIDANCE IMPLEMENTED / B NOT IMPLEMENTED.** The Agent-facing guidance in Follow-up A is implemented as a static/instructional change; it is not an automatic Core capability. Follow-up B remains a proposed backlog, not an amendment to the approved v0.6 implementation contract or permission to execute cleanup. Its exact interfaces, retention policy and implementation scope still require design confirmation.
+
+### Follow-up A: Plan bounded related-test batches before execution
+
+**Status: GUIDANCE IMPLEMENTED.** The completed entries below describe static Agent guidance, not runtime automation.
+
+**Problem:** A combined related-test command reached the collector's fixed 1,800-second limit with exit 124. Partial output without reported test failures was not successful proof. Subsequent disjoint serial batches completed and the existing Gate unioned their fresh coverage. Waiting for the first timeout was avoidable execution-planning waste, not evidence that the collector deadline or Gate must be relaxed.
+
+**Guidance scope:**
+
+- [x] Guidance plans batches before launching a large or historically slow related scope and reuses the existing evidence collector and coverage-union behavior.
+- [x] Guidance permits qualified historical duration information when available, preserving source/environment identity and uncertainty; without it, use conservative bounded groups rather than an unbounded trial run.
+- [x] Guidance plans only missing fresh coverage and maps original repository-root targets/selectors to batches while preserving selector semantics and checking the final union for omissions.
+- [x] Guidance runs batches serially by default, requires demonstrated isolation before parallel work, and retains each completed batch's immutable receipt and actual JUnit/output independently.
+- [x] Guidance validates HEAD, workspace, runtime and command/coverage qualification for every batch, stops on drift, and reuses completed fresh coverage through existing rules.
+- [x] Guidance checks execution budgets before starting and preserves failed, timed-out or cancelled batches as non-success records requiring diagnosis.
+- [x] Guidance verifies exact required coverage, avoids repeating completed fresh batches, and forbids false-green unions, full-suite fallback, skipped obligations, cross-HEAD inheritance and automatic deadline extension.
+- [ ] Automated scheduling/grouping and automatic manifest generation remain deferred pending separate design and verification.
+- [ ] Runtime duration telemetry and any automatic duration policy remain deferred; no runtime collection or fixed timing guarantee is implemented.
+
+**Delivery boundary:** Only guidance is implemented. This is not an automated scheduler, proof of Agent obedience, runtime duration telemetry, automatic manifest generation or performance proof. The existing collector, Gate, deadline and execution budgets are unchanged. A genuinely slow single target needs its own diagnosis, not silent omission; retain the original timeout receipt and never turn partial execution into a successful batch.
+
+Historical TASK-095 acceptance covered 45 related tests: existing fixture-backed Guard/CLI tests plus new static guidance assertions, with an independent CLEAN review and packaged bytes matching the 3 guidance source files. Those results are historical and not fresh proof of this document candidate; they do not establish that all 45 checks were pure static assertions, Agent obedience, automatic scheduling, runtime duration behavior or speedup.
+
+### Follow-up B: Define `.harness` inventory, retention and controlled cleanup
+
+**Status: NOT IMPLEMENTED.** All checklist entries remain pending, and no cleanup or deletion is authorized.
+
+**Problem:** Evidence, task history, acceptance artifacts, build/install workspaces and retained publication objects accumulate. Growth needs lifecycle management, but evidence freshness is not a deletion policy. File count alone does not prove Context/Gate slowdown; measure category sizes, counts and relevant traversal costs before claiming a performance fix.
+
+**Proposed scope:**
+
+- [ ] Start with read-only inventory/dry-run: classify known owned artifacts, report counts/bytes, retained reasons and potential reclaimable space. Keep unknown or unreadable objects protected; do not infer ownership from directory name alone.
+- [ ] Define approved retention rules and reference reachability before any destructive mode. Protect current authoritative facts, current proof, referenced historical execution/provenance, audit chains, findings and required failure/RED/cancellation records. An old or non-DONE task is not automatically disposable.
+- [ ] Protect pending publication journals, retained objects needed for recovery, objects with unresolved ownership, and all user-owned files. Respect inode/mode/byte/link identity obligations. Ordinary cleanup must not recover transactions, discard recovery state or reinterpret terminal retained data as garbage.
+- [ ] Prioritize positively identified, tool-owned, reproducible caches and temporary build/install workspaces. Age alone is insufficient. Reconstruction cost, reference dependencies and user edits must be considered; no blanket recursive deletion of artifact/history directories.
+- [ ] Keep archival and deletion distinct. Archive only when references, hashes and provenance remain resolvable; copying, compression or relocation must not invalidate identity-sensitive recovery evidence. Do not silently remove old proof links or rewrite receipt payloads to make an object collectible.
+- [ ] If destructive cleanup is later approved, require an explicit reviewed candidate list, ownership/reference revalidation under appropriate concurrency control, containment/no-follow checks, and an audit of actual removals/failures. Refuse unsafe concurrent activity and newly referenced/replaced objects; deletion failures must not be reported as reclaimed space or successful completion.
+- [ ] Validate dry-run byte identity, preservation of referenced history/user files, recovery-object protection, path/symlink/replacement races and accurate interrupted/partial-operation reporting. Preserve existing Gate/freshness/authorization semantics.
+
+**Delivery boundary:** Inventory and retention design come first. Stale evidence is not garbage: referenced history, recovery objects and user-owned files remain protected. Actual deletion scope, retention periods, archive format and any public CLI remain undecided. No cleanup or automatic age-based pruning is authorized by this document. The existing indefinite preservation contract, including retained publication objects and accepted disk-growth/ENOSPC limits, remains in force until explicitly revised and verified.
+
+### Follow-up sequencing and acceptance
+
+1. Keep the implemented batching guidance within its instructional boundary; automation requires a separate design and approval.
+2. Implement and verify only approved future scope. Storage inventory/retention design precedes destructive cleanup; no broad storage subsystem or persistent scheduling cache is implied.
+3. Record new related verification, package/build impact and review obligations for any future implementation candidate. Documentation and historical tests are not proof of new runtime behavior.
+4. Require fresh candidate acceptance through the existing preflight/review/Gate path before describing storage cleanup or batching automation as delivered in v0.3.2. Commit, push, tag and publish authorization remain pending and separate.

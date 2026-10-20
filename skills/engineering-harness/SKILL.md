@@ -77,6 +77,10 @@ Persist legitimate metadata changes and actual Plan proof promptly. Once metadat
 
 Collect only related missing/stale proof. Use the existing exact evidence reuse option described in collect-evidence; preserve historical RED. Tests sharing databases, ports, workspaces, or other mutually exclusive resources must run serial, not in parallel for speed. A successful diagnostic, benchmark, or test command never completes the task by itself.
 
+For a large or known-slow related scope, preplan bounded batches before launching any test; do not wait for a timeout. Qualify duration history to the same source and environment, and treat unknown duration conservatively. Using roughly 50–70% of the available deadline is an illustrative safety margin, not a numeric mandate, limit, exemption, or deadline extension.
+
+Record a planned batch manifest with exact commands and repository-root `--covered-test` selectors. Each batch must preserve the original selectors, select only missing fresh related coverage, and together form the complete required-test union so no required test is skipped. Run serial unless databases, ports, workspaces, and other resources are demonstrably disjoint. This is guidance only: it adds no automated scheduler and makes no claim of Agent obedience or measured performance; existing budget accounting, authority, collector, freshness, and Gate behavior remain unchanged.
+
 ## Inputs
 
 Validated Context is a derived view, not a new authoritative source. Its Control Core retains global constraints; Layer 2 references allow reading a specific source file on demand. The following are canonical sources, not an eager startup reading checklist:
