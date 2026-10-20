@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import stat
 import sys
@@ -26,6 +27,30 @@ class PublicationOutcome:
     """Invocation-local fact, not authority: commit may precede a raised error."""
 
     committed: bool = False
+
+
+def _active_publication_member(document: dict) -> str | None:
+    intent = document['intent']
+    if intent is None:
+        return None
+    return Path(document['members'][intent['index']]['path']).name
+
+
+def _report_publication_failure(document: dict, canonical_member: str | None) -> None:
+    # Diagnostic formatting and sinks are subordinate to the publication failure.
+    with suppress(BaseException):
+        context = {
+            'operation_id': document['id'],
+            'observed_state': document['state'],
+            'retained_location': f".publication-retained/{document['id']}",
+        }
+        if canonical_member is not None:
+            context['canonical_member'] = canonical_member
+        print(
+            'PUBLICATION_FAILURE_CONTEXT '
+            + json.dumps(context, sort_keys=True, separators=(',', ':')),
+            file=sys.stderr,
+        )
 
 
 def atomic_write(path: Path, content: bytes) -> None:
@@ -319,28 +344,41 @@ def publish(
             _require_stage(staged, snapshot)
             _retain_stage(root, staged, expected=snapshot)
             return
-        with journal.prepare(root, members) as operation:
-            try:
-                _require_stage(staged, snapshot)
-                operation.apply()
-                if after_publish is not None:
-                    after_publish()
-                _require_stage(staged, snapshot)
+        operation = None
+        failure_member = None
+        try:
+            with journal.prepare(root, members) as operation:
                 try:
-                    operation.commit()
-                finally:
-                    if outcome is not None:
-                        outcome.committed = operation.document['state'] == 'COMMITTED'
-            except BaseException:
-                if operation.document['state'] not in {'COMMITTED', 'ABORTED'}:
+                    _require_stage(staged, snapshot)
+                    operation.apply()
+                    if after_publish is not None:
+                        after_publish()
+                    _require_stage(staged, snapshot)
                     try:
-                        operation.abort()
-                    except BaseException:  # noqa: BLE001 - Compensation must not replace active primary.
-                        # Even a diagnostic adapter's cancellation cannot replace primary.
-                        with suppress(BaseException):
-                            print('PUBLICATION_ABORT_FAILED: recovery required; primary failure preserved', file=sys.stderr)
-                raise
-            _retain_stage(root, staged, expected=snapshot, root_fd=operation.fds['root'])
+                        operation.commit()
+                    finally:
+                        if outcome is not None:
+                            outcome.committed = operation.document['state'] == 'COMMITTED'
+                except BaseException:
+                    with suppress(BaseException):
+                        failure_member = _active_publication_member(operation.document)
+                    if operation.document['state'] not in {'COMMITTED', 'ABORTED'}:
+                        try:
+                            operation.abort()
+                        except BaseException:  # noqa: BLE001 - Compensation must not replace active primary.
+                            with suppress(BaseException):
+                                failure_member = (
+                                    _active_publication_member(operation.document) or failure_member
+                                )
+                            # Even a diagnostic adapter's cancellation cannot replace primary.
+                            with suppress(BaseException):
+                                print('PUBLICATION_ABORT_FAILED: recovery required; primary failure preserved', file=sys.stderr)
+                    raise
+                _retain_stage(root, staged, expected=snapshot, root_fd=operation.fds['root'])
+        except BaseException:
+            if operation is not None:
+                _report_publication_failure(operation.document, failure_member)
+            raise
 
 
 def recover_pending_publications(harness_dir: Path) -> None:
