@@ -6,10 +6,11 @@
 
 Development candidate; metadata and implementation only. Formal review/Gate acceptance, tag, publication, and deployment remain pending and separately authorized.
 
-### Planned follow-up — not implemented
+### Planned follow-up
 
-- Define `.harness` storage inventory, retention and controlled cleanup, starting with read-only inventory/dry-run. Stale evidence is not garbage: protect audit provenance, referenced history, user files and publication recovery objects; no automatic age-based deletion.
-- Storage lifecycle work remains a documentation-only addition to the intended v0.3.2 scope, not a shipped capability or accepted implementation contract. See the [proposed follow-up](docs/superpowers/plans/2026-10-14-v032-context-evidence-efficiency.md#v032-proposed-follow-up-evidence-batching-and-artifact-lifecycle). Inventory and retention design, implementation, related verification and new candidate acceptance remain pending; no deletion is authorized.
+- Add manual `harness task prune`: preview is read-only by default, while `--apply --plan-id <digest>` revalidates the exact plan under publication admission before deleting recognized task-history packages. The fixed policy retains the current task plus nine newest distinct historical task IDs and every version of retained IDs; unknown, unsafe, referenced, shared-retained, fixture and user-owned data remain protected.
+- The command is not automatic cleanup or a whole-`.harness` size bound. It adds no TTL, scheduler, configurable policy, persistent registry, implicit recovery or atomic rollback promise; partial failures report only actual removals and logical bytes. See [Follow-up B](docs/superpowers/plans/2026-10-14-v032-context-evidence-efficiency.md#follow-up-b-define-harness-inventory-retention-and-controlled-cleanup).
+- Follow-up C records a [Gate before commit readiness design](docs/superpowers/plans/2026-10-14-v032-context-evidence-efficiency.md#follow-up-c-gate-before-commit-readiness). It is not implemented: Core behavior, evidence freshness, task state and commit/push authorization remain unchanged.
 
 ### Added
 

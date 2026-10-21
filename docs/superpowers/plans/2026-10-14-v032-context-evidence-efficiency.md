@@ -207,7 +207,7 @@ User approved native execution against spec v0.6, with review clarifications inc
 
 ## v0.3.2 Proposed follow-up: evidence batching and artifact lifecycle
 
-**Status: A GUIDANCE IMPLEMENTED / B NOT IMPLEMENTED.** The Agent-facing guidance in Follow-up A is implemented as a static/instructional change; it is not an automatic Core capability. Follow-up B remains a proposed backlog, not an amendment to the approved v0.6 implementation contract or permission to execute cleanup. Its exact interfaces, retention policy and implementation scope still require design confirmation.
+**Status: A GUIDANCE IMPLEMENTED / B AND C NOT IMPLEMENTED.** The Agent-facing guidance in Follow-up A is implemented as a static/instructional change; it is not an automatic Core capability. Follow-ups B and C remain proposed backlog, not amendments to the approved v0.6 implementation contract or permission to execute cleanup, change Gate semantics, or commit. Their exact interfaces and implementation scope still require design confirmation.
 
 ### Follow-up A: Plan bounded related-test batches before execution
 
@@ -233,21 +233,32 @@ Historical TASK-095 acceptance covered 45 related tests: existing fixture-backed
 
 ### Follow-up B: Define `.harness` inventory, retention and controlled cleanup
 
-**Status: NOT IMPLEMENTED.** All checklist entries remain pending, and no cleanup or deletion is authorized.
+**Status: MANUAL FIXED-POLICY IMPLEMENTATION CANDIDATE.** TASK-099 implements the user-approved current-plus-nine task-history policy and exact-plan manual interface. Formal review, Gate, release and real-workspace cleanup authorization remain separate and pending.
 
 **Problem:** Evidence, task history, acceptance artifacts, build/install workspaces and retained publication objects accumulate. Growth needs lifecycle management, but evidence freshness is not a deletion policy. File count alone does not prove Context/Gate slowdown; measure category sizes, counts and relevant traversal costs before claiming a performance fix.
 
-**Proposed scope:**
+**Implemented candidate scope:**
 
-- [ ] Start with read-only inventory/dry-run: classify known owned artifacts, report counts/bytes, retained reasons and potential reclaimable space. Keep unknown or unreadable objects protected; do not infer ownership from directory name alone.
-- [ ] Define approved retention rules and reference reachability before any destructive mode. Protect current authoritative facts, current proof, referenced historical execution/provenance, audit chains, findings and required failure/RED/cancellation records. An old or non-DONE task is not automatically disposable.
-- [ ] Protect pending publication journals, retained objects needed for recovery, objects with unresolved ownership, and all user-owned files. Respect inode/mode/byte/link identity obligations. Ordinary cleanup must not recover transactions, discard recovery state or reinterpret terminal retained data as garbage.
-- [ ] Prioritize positively identified, tool-owned, reproducible caches and temporary build/install workspaces. Age alone is insufficient. Reconstruction cost, reference dependencies and user edits must be considered; no blanket recursive deletion of artifact/history directories.
-- [ ] Keep archival and deletion distinct. Archive only when references, hashes and provenance remain resolvable; copying, compression or relocation must not invalidate identity-sensitive recovery evidence. Do not silently remove old proof links or rewrite receipt payloads to make an object collectible.
-- [ ] If destructive cleanup is later approved, require an explicit reviewed candidate list, ownership/reference revalidation under appropriate concurrency control, containment/no-follow checks, and an audit of actual removals/failures. Refuse unsafe concurrent activity and newly referenced/replaced objects; deletion failures must not be reported as reclaimed space or successful completion.
-- [ ] Validate dry-run byte identity, preservation of referenced history/user files, recovery-object protection, path/symlink/replacement races and accurate interrupted/partial-operation reporting. Preserve existing Gate/freshness/authorization semantics.
+- [x] `harness task prune` produces a deterministic read-only preview; execution requires `--apply --plan-id <digest>` and recomputes the plan under the existing publication lock and read-only pending-publication admission.
+- [x] The fixed rule retains the current task ID plus the nine newest distinct trusted historical IDs by canonical UTC creation time and retains every archive version of those IDs. At most ten distinct IDs is a no-op.
+- [x] Candidate admission is limited to recognizable direct-child whole archive packages with the actual task-new/recover member shape and scope artifacts. Unknown, malformed, ambiguous, symlinked, hard-linked, cross-device or unreadable groups are skipped whole.
+- [x] Bounded structured scalar scanning covers actual canonical YAML/JSON in current and retained roots, including provenance references. Qualified normalized history paths protect live candidates; ambiguous potential candidate paths fail closed without repository-wide or candidate-graph scanning.
+- [x] Apply revalidates plan facts and member identity using directory-relative no-follow operations, stops on the first unlink/rmdir failure, and reports actual removed entries and logical bytes without promising rollback or physical reclamation.
+- [x] Anonymous related tests cover preview/apply authorization, fixed retention, all-version protection, unsafe-package skips, references, ambiguity, pending publication, partial failure and sanitized structured output. Package acceptance remains a coordinator-run post-GREEN step.
 
-**Delivery boundary:** Inventory and retention design come first. Stale evidence is not garbage: referenced history, recovery objects and user-owned files remain protected. Actual deletion scope, retention periods, archive format and any public CLI remain undecided. No cleanup or automatic age-based pruning is authorized by this document. The existing indefinite preservation contract, including retained publication objects and accepted disk-growth/ENOSPC limits, remains in force until explicitly revised and verified.
+**Delivery boundary:** This is a manual task-history mechanism, not authorization to clean this repository. Shared retained publication objects, fixtures, probes, current/live facts, referenced history and user-owned files remain protected; unknown ownership is skipped. The feature adds no automatic or age-based pruning, configurable retention, persistent ownership registry, reachability graph, scheduler or whole-tree size guarantee. Formal review/Gate and any real cleanup remain separately authorized.
+
+### Follow-up C: Gate before commit readiness
+
+**Status: NOT IMPLEMENTED / DESIGN PENDING.** This is a v0.3.2 backlog proposal only. The current Core remains bound to HEAD + workspace and is unchanged; no new CLI or API is mandated, no old receipts become fresh on a new HEAD, and no runtime behavior is claimed.
+
+**Intent and sequence:** Treat commit as a readiness boundary for an already accepted candidate, not an unverified candidate snapshot. The proposed order is: finish implementation and documentation; run the relevant tests, builds and review; obtain the original Gate pass; verify that the actual commit will contain the exact accepted candidate and only authorized scope; obtain user-authorized commit permission; then obtain separately authorized push or release permission. A Gate pass is not commit or push authorization, and routine commit-then-first-Gate is outside this proposal.
+
+**Future proof binding:** A future design must bind acceptance to the candidate Git tree, a content manifest including tracked, untracked and user-path inputs, the parent/reference HEAD, actual test source and dependencies, runtime and environment, exact command and coverage, contract and review inputs, and build inputs. Candidate Git tree equality is necessary, not sufficient: HEAD-sensitive tests or builds, post-Gate hooks, index/worktree drift and other inputs need explicit semantics and must fail closed. Untracked or user-path inputs cannot be silently excluded.
+
+**Invalidation and trace:** Unexpected candidate invalidation occurs on content drift, a failed commit, hooks altering the index, an unexpected HEAD change or parent drift, or unbound HEAD-sensitive inputs; each requires new validation before readiness can be asserted, rather than an automatic Gate after an expected approved commit. The expected HEAD advance for the exact already accepted candidate must instead be verified by an append-only trace from the new commit to the Gate acceptance; the commit hash change alone does not trigger a new full Gate. This remains future design, not implemented behavior: current Core HEAD and workspace freshness are unchanged, no old receipt HEAD may be rewritten, no blanket cross-HEAD inheritance is created, and HEAD-sensitive inputs must fail closed until their binding semantics are specified.
+
+**Boundary:** Task-state semantics remain unchanged. This proposal does not allow a false Gate or DONE state and does not grant commit or push authority. It adds no garbage collection and no automatic scheduler. Retention mechanism, proof representation and any public interface remain design pending.
 
 ### Follow-up sequencing and acceptance
 

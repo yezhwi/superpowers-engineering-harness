@@ -9,6 +9,7 @@ Exit codes:
 
 import argparse
 import difflib
+import json
 import os
 import re
 import sys
@@ -63,6 +64,28 @@ class _HarnessArgumentParser(argparse.ArgumentParser):
         super().error(message)
 
 
+class _PruneArgumentParser(argparse.ArgumentParser):
+    """Keep rejected prune tokens outside the public diagnostic boundary."""
+
+    def error(self, message: str) -> None:
+        del message
+        raise SystemExit(controlplane.render_task_prune_refusal("INVALID_ARGUMENTS"))
+
+
+def _task_prune(argv: list[str]) -> int:
+    parser = _PruneArgumentParser(prog="harness task prune")
+    parser.add_argument("--apply", action="store_true")
+    parser.add_argument("--plan-id")
+    args = parser.parse_args(argv)
+    if args.apply != bool(args.plan_id):
+        parser.error("invalid prune execution arguments")
+    try:
+        os.chdir(find_git_root(Path.cwd()))
+    except (RepositoryNotFoundError, OSError):
+        return controlplane.render_task_prune_refusal("REPOSITORY_NOT_FOUND")
+    return controlplane.cmd_task_prune(args.apply, args.plan_id)
+
+
 def _render(result: InitResult) -> str:
     lines = [f"Harness initialized at {result.harness_dir}"]
     if result.created:
@@ -76,6 +99,8 @@ def _render(result: InitResult) -> str:
 
 def _main(argv=None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
+    if argv[:2] == ["task", "prune"]:
+        return _task_prune(argv[2:])
     if argv[:2] == ["evidence", "plan"]:
         diagnostic = _HarnessArgumentParser(prog="harness evidence plan")
         diagnostic.add_argument("--json", dest="json_output", action="store_true")
@@ -457,6 +482,9 @@ def _main(argv=None) -> int:
     p_recover.add_argument("id")
     p_recover.add_argument("--title", default="")
     p_recover.add_argument("--reason", required=True)
+    p_prune = ts.add_parser("prune")
+    p_prune.add_argument("--apply", action="store_true")
+    p_prune.add_argument("--plan-id")
     p_classify = ts.add_parser("classify")
     p_classify.add_argument("--level", choices=["Q1", "Q2", "Q3"], required=True)
     for dimension in (
@@ -697,6 +725,10 @@ def _main(argv=None) -> int:
             return controlplane.cmd_task_new(args.id, args.title)
         if args.task_command == "recover":
             return controlplane.cmd_task_recover(args.id, args.title, args.reason)
+        if args.task_command == "prune":
+            if args.apply != bool(args.plan_id):
+                p_prune.error("--apply and --plan-id are required together")
+            return controlplane.cmd_task_prune(args.apply, args.plan_id)
         if args.task_command == "classify":
             return controlplane.cmd_task_classify(
                 args.level,

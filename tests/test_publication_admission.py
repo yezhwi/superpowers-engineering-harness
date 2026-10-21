@@ -23,6 +23,18 @@ from harness.telemetry_lock import telemetry_lock
 harness = test_context_builder.harness
 
 
+def test_task_prune_refuses_pending_publication_without_recovery(harness):
+    pending = harness / '.transactions' / 'fixture.json'
+    pending.parent.mkdir(exist_ok=True)
+    pending.write_text('{}')
+    before = pending.read_bytes()
+
+    result = controlplane.cmd_task_prune(apply=False, plan_id=None)
+
+    assert result == 2
+    assert pending.read_bytes() == before
+
+
 @pytest.mark.parametrize('entry', ['validate', 'resolve', 'check', 'summary', 'publish_noop', 'scope_noop'])
 @pytest.mark.parametrize('boundary', ['cli', 'domain'])
 def test_architecture_refuses_pending_native_alignment_revision(harness, entry, boundary):

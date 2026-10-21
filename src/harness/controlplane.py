@@ -3209,6 +3209,99 @@ def cmd_task_recover(task_id: str, title: str, reason: str) -> int:
     return 0
 
 
+def _render_task_prune_result(value: dict, error_code: str | None = None) -> int:
+    """Emit one bounded prune result, including when an output stream fails."""
+    import json
+    import re
+
+    from . import task_prune
+    rendered = json.dumps(value, sort_keys=True, separators=(",", ":"))
+    try:
+        print(rendered)
+    except (OSError, UnicodeError):
+        task_id = value.get("task_id")
+        if not isinstance(task_id, str) or not task_prune.TASK_ID.fullmatch(task_id):
+            task_id = "UNKNOWN"
+        safe_plan_id = value.get("plan_id")
+        if not isinstance(safe_plan_id, str) or not re.fullmatch(
+            r"task-prune-plan/v1:[0-9a-f]{64}", safe_plan_id
+        ):
+            safe_plan_id = ""
+        counts = {
+            name: count if isinstance(count, int) and count >= 0 else 0
+            for name, count in task_prune.empty_counts().items()
+            for count in [value.get("counts", {}).get(name)]
+        }
+        emergency = task_prune.result(
+            task_id,
+            safe_plan_id,
+            "RESULT_EMISSION_FAILED",
+            counts,
+            value.get("phase")
+            if value.get("phase") in {"preview", "complete", "partial", "refused"}
+            else "refused",
+            value.get("mutation_started") is True,
+        )
+        try:
+            print(
+                json.dumps(emergency, sort_keys=True, separators=(",", ":")),
+                file=sys.stderr,
+            )
+        except (OSError, UnicodeError):
+            pass
+        return 2
+    if error_code is not None or value["reason"] not in {"READY", "NOOP", "APPLIED"}:
+        try:
+            print(error_code or f"TASK_PRUNE_{value['reason']}", file=sys.stderr)
+        except (OSError, UnicodeError):
+            pass
+        return 2
+    return 0
+
+
+def render_task_prune_refusal(reason: str) -> int:
+    """Render a zero-count refusal before repository-bound prune work begins."""
+    from . import task_prune
+
+    value = task_prune.result(
+        "UNKNOWN", "", reason, task_prune.empty_counts(), "refused", False,
+    )
+    error_code = (
+        "TASK_PRUNE_ARGUMENTS_INVALID"
+        if reason == "INVALID_ARGUMENTS"
+        else f"TASK_PRUNE_{reason}"
+    )
+    return _render_task_prune_result(value, error_code)
+
+
+def cmd_task_prune(apply: bool = False, plan_id: str | None = None) -> int:
+    """Render one bounded JSON result for manual task-history pruning."""
+    from . import task_prune
+    from .transaction_recovery import PublicationAdmissionError
+
+    try:
+        value = (
+            task_prune.apply(Path(".harness"), plan_id or "")
+            if apply
+            else task_prune.preview(Path(".harness"))
+        )
+    except PublicationAdmissionError:
+        value = task_prune.result(
+            "UNKNOWN", "", "PENDING_PUBLICATION", task_prune.empty_counts(),
+            "refused", False,
+        )
+    except task_prune.PruneError as exc:
+        value = task_prune.result(
+            "UNKNOWN", "", exc.code, task_prune.empty_counts(), "refused", False,
+        )
+    except (OSError, UnicodeError, ValueError, RecursionError):
+        value = task_prune.result(
+            "UNKNOWN", "", "PRUNE_INPUT_INVALID", task_prune.empty_counts(),
+            "refused", False,
+        )
+    return _render_task_prune_result(value)
+
+
 AUTHORIZATION_ACTIONS = (
     "commit",
     "push",
