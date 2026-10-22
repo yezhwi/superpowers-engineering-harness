@@ -59,14 +59,13 @@ def init_harness(repo_root: Path, templates: Path | None = None) -> InitResult:
     harness_dir = repo_root / ".harness"
     result = InitResult(repo_root=repo_root, harness_dir=harness_dir)
 
-    _ensure_dir(harness_dir)
-    for dirname in REQUIRED_DIRS:
-        _ensure_dir(harness_dir / dirname)
-
     from ._scope_replay import SCOPE_FILES
     from .transaction_recovery import publication_recovery
 
     with publication_recovery(harness_dir):
+        _ensure_dir(harness_dir)
+        for dirname in REQUIRED_DIRS:
+            _ensure_dir(harness_dir / dirname)
         fresh = (not any((harness_dir / name).exists() or (harness_dir / name).is_symlink()
                          for name in (*REQUIRED_FILES, *SCOPE_FILES, 'decisions/index.yaml'))
                  and not list((harness_dir / 'decisions').glob('DEC-*.yaml')))

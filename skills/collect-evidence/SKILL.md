@@ -79,6 +79,10 @@ script that cannot be resolved to pytest/`vitest run` fails with
 `TEST_RUNNER_UNRESOLVED`. Build/lint `npm run` without covered tests is not
 a missing test runner. Do not change cwd just to satisfy string matching.
 
+## Opt-in Candidate Reference
+
+When canonical `gate.candidate_commit` is enrolled and `.harness/.candidate-active.json` selects this task's candidate, use the declarative `harness candidate prove --candidate sha256:HEX --spec FILE --json` path described in `<package-root>/docs/candidate-commit.md`. Read `candidate-command-result/v1` fields and preserve actual namespaced receipts/JUnit; do not relabel generic evidence or execute arbitrary shell through a profile. Ordinary evidence collection/reuse remains unchanged outside that opt-in domain. Development checks are not release qualification.
+
 ## Hard Boundaries (不得违反)
 
 1. **禁止自己写判定**："测试应该通过" / "看起来没问题" is not evidence.

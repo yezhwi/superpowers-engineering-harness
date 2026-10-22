@@ -214,7 +214,15 @@ def validate_review_evidence(record: dict) -> None:
         raise ValueError("DIAG_CHECK_VALUE_INVALID")
 
 
-def gate_blockers(harness_dir: Path, task: dict, *, head: str, workspace: str):
+def gate_blockers(
+    harness_dir: Path,
+    task: dict,
+    *,
+    head: str,
+    workspace: str,
+    review_record: dict | None = None,
+    review_report: dict | None = None,
+):
     """Return deterministic Contract/readiness blockers; never inspect source."""
     from .blockers import GateBlocker
 
@@ -247,7 +255,7 @@ def gate_blockers(harness_dir: Path, task: dict, *, head: str, workspace: str):
     if not required:
         return []
     path = harness_dir / "evidence" / "diagnosability-review.json"
-    if not source_access.exists(path):
+    if review_record is None and not source_access.exists(path):
         return [
             GateBlocker(
                 "DIAGNOSABILITY_REVIEW_MISSING",
@@ -257,8 +265,32 @@ def gate_blockers(harness_dir: Path, task: dict, *, head: str, workspace: str):
             )
         ]
     try:
-        record = json.loads(source_access.read_text(path))
+        record = (
+            review_record
+            if review_record is not None
+            else json.loads(source_access.read_text(path))
+        )
         validate_review_evidence(record)
+        if review_report is not None:
+            source = validate_review_input(
+                review_report, task_id=task.get("task", {}).get("id")
+            )
+            if (
+                source.contract_required != record.get("contract_required")
+                or source.checks != record.get("checks")
+                or set(source.finding_ids) != set(record.get("finding_ids") or [])
+                or set(source.claimed_files)
+                != set((record.get("review_scope") or {}).get("files") or [])
+                or set(source.claimed_contract_refs)
+                != set((record.get("review_scope") or {}).get("contract_refs") or [])
+                or set(source.direct_dependencies)
+                != set(
+                    (record.get("review_scope") or {}).get(
+                        "direct_dependencies", []
+                    )
+                )
+            ):
+                raise ValueError("DIAG_REVIEW_RESULT_MISMATCH")
         findings = [
             yaml.safe_load(source_access.read_text(item))
             for item in source_access.members(harness_dir / "findings", "*.yaml")

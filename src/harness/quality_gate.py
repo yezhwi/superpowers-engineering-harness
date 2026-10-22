@@ -505,6 +505,7 @@ def _evaluate_gate(
     allow_converged: bool = False,
     allow_preflight: bool = False,
     architecture_assessment=None,
+    assessment_view=None,
 ) -> tuple[str, list, PlanAssessment | None, object | None]:
     """Return status, blockers, optional Plan and Architecture assessments."""
     from harness import source_access
@@ -534,11 +535,19 @@ def _evaluate_gate(
         if expected_profile is None or risk.get("profile") != expected_profile:
             raise InvalidHarnessState("RISK_PROFILE_INVALID")
 
-    head = head if head is not None else git_head()
-    try:
-        current_workspace = snapshot().fingerprint
-    except WorkspaceError as exc:
-        raise InvalidHarnessState(f"cannot fingerprint workspace: {exc}") from exc
+    if assessment_view is not None:
+        from .candidate_assessment import CandidateAssessmentView, DOMAIN
+
+        if not isinstance(assessment_view, CandidateAssessmentView) or assessment_view.domain != DOMAIN:
+            raise InvalidHarnessState("CANDIDATE_ASSESSMENT_INVALID")
+        head = assessment_view.candidate_tree
+        current_workspace = assessment_view.export_fingerprint
+    else:
+        head = head if head is not None else git_head()
+        try:
+            current_workspace = snapshot().fingerprint
+        except WorkspaceError as exc:
+            raise InvalidHarnessState(f"cannot fingerprint workspace: {exc}") from exc
     gate_doc = _load_yaml(harness_dir / "gate.yaml")
     validate_schema(gate_doc, "gate.schema.json", harness_dir / "gate.yaml")
     if (task.get("risk") or {}).get("profile") == "FAST":
@@ -568,6 +577,22 @@ def _evaluate_gate(
     findings = load_findings(harness_dir / "findings")
     impact_path = harness_dir / "impact.yaml"
     impact = _load_yaml(impact_path) if source_access.exists(impact_path) else {}
+
+    def obligation_evidence(reference: str, **binding) -> dict | None:
+        if assessment_view is not None:
+            return assessment_view.resolve_evidence(reference, **binding)
+        try:
+            path = evidence_path(harness_dir, reference)
+        except EvidenceReferenceError:
+            return None
+        if not source_access.is_file(path):
+            return None
+        return json.loads(source_access.read_text(path))
+
+    validation_evidence = [
+        *evidence,
+        *(assessment_view.evidence_records() if assessment_view is not None else ()),
+    ]
 
     # HEAD alone misses uncommitted edits. Shared snapshot excludes harness
     # runtime files, so evidence writes do not invalidate business proof.
@@ -682,7 +707,22 @@ def _evaluate_gate(
     from .diagnosability import gate_blockers
 
     blockers.extend(
-        gate_blockers(harness_dir, task, head=head, workspace=current_workspace)
+        gate_blockers(
+            harness_dir,
+            task,
+            head=head,
+            workspace=current_workspace,
+            review_record=(
+                assessment_view.review_record("diagnosability")
+                if assessment_view is not None
+                else None
+            ),
+            review_report=(
+                assessment_view.review_report("diagnosability")
+                if assessment_view is not None
+                else None
+            ),
+        )
     )
 
     # Persisted decision facts are task constraints, not advisory chat context.
@@ -816,9 +856,11 @@ def _evaluate_gate(
             continue
         for reference in verification_refs:
             try:
-                evidence_record = json.loads(
-                    source_access.read_text(evidence_path(harness_dir, reference))
+                evidence_record = obligation_evidence(
+                    reference, interface_id=contract["id"]
                 )
+                if evidence_record is None:
+                    raise EvidenceValidationError("EVIDENCE_MISSING")
                 validate_evidence(
                     evidence_record,
                     current_head=head,
@@ -841,7 +883,13 @@ def _evaluate_gate(
     if external_interfaces:
         review_path = harness_dir / "evidence" / "interface-review.json"
         try:
-            review_record = json.loads(source_access.read_text(review_path))
+            review_record = (
+                assessment_view.review_record("interface")
+                if assessment_view is not None
+                else json.loads(source_access.read_text(review_path))
+            )
+            if review_record is None:
+                raise ValueError("missing interface review")
             validate_evidence(
                 review_record,
                 current_head=head,
@@ -852,6 +900,15 @@ def _evaluate_gate(
                 value == "fail" for value in review_record.get("checks", {}).values()
             ):
                 raise ValueError("invalid interface review")
+            if assessment_view is not None:
+                source_report = assessment_view.review_report("interface") or {}
+                if (
+                    source_report.get("task") != task["task"]["id"]
+                    or source_report.get("checks") != review_record.get("checks")
+                    or set(source_report.get("contracts") or [])
+                    != set(review_record.get("contracts") or [])
+                ):
+                    raise ValueError("interface review result mismatch")
             expected_files, expected_refs = project_typed_scope(
                 task,
                 impact.get("impact") or {},
@@ -914,29 +971,43 @@ def _evaluate_gate(
                         requirement_id=req.get("id"),
                     )
                     continue
-                try:
-                    path = evidence_path(harness_dir, name)
-                except EvidenceReferenceError:
+                if assessment_view is None:
+                    try:
+                        path = evidence_path(harness_dir, name)
+                    except EvidenceReferenceError:
+                        block(
+                            "EVIDENCE_MISSING",
+                            "verification",
+                            f"{req.get('id')} evidence reference invalid",
+                            requirement_id=req.get("id"),
+                        )
+                        continue
+                    if not source_access.is_file(path):
+                        block(
+                            "EVIDENCE_MISSING",
+                            "verification",
+                            f"{req.get('id')} evidence missing: {path.name}",
+                            source=path.name,
+                            requirement_id=req.get("id"),
+                        )
+                        continue
+                    try:
+                        ev = json.loads(source_access.read_text(path))
+                    except json.JSONDecodeError as exc:
+                        raise InvalidHarnessState(f"bad JSON in {path}: {exc}")
+                    evidence_label = path.name
+                else:
+                    ev = obligation_evidence(name, requirement_id=req.get("id"))
+                    evidence_label = name
+                if ev is None:
                     block(
                         "EVIDENCE_MISSING",
                         "verification",
-                        f"{req.get('id')} evidence reference invalid",
+                        f"{req.get('id')} evidence reference missing or unqualified: {name}",
+                        source=name or None,
                         requirement_id=req.get("id"),
                     )
                     continue
-                if not source_access.is_file(path):
-                    block(
-                        "EVIDENCE_MISSING",
-                        "verification",
-                        f"{req.get('id')} evidence missing: {path.name}",
-                        source=path.name,
-                        requirement_id=req.get("id"),
-                    )
-                    continue
-                try:
-                    ev = json.loads(source_access.read_text(path))
-                except json.JSONDecodeError as exc:
-                    raise InvalidHarnessState(f"bad JSON in {path}: {exc}")
                 try:
                     validate_evidence(
                         ev,
@@ -948,8 +1019,8 @@ def _evaluate_gate(
                     block(
                         str(exc).split(":", 1)[0],
                         "verification",
-                        f"{req.get('id')} evidence {path.name} invalid: {exc}",
-                        source=path.name,
+                        f"{req.get('id')} evidence {evidence_label} invalid: {exc}",
+                        source=evidence_label,
                         requirement_id=req.get("id"),
                     )
 
@@ -996,24 +1067,36 @@ def _evaluate_gate(
                 )
             for ref in refs:
                 name = ref if isinstance(ref, str) else (ref or {}).get("ref", "")
-                try:
-                    path = evidence_path(harness_dir, name)
-                except EvidenceReferenceError:
+                if assessment_view is None:
+                    try:
+                        path = evidence_path(harness_dir, name)
+                    except EvidenceReferenceError:
+                        block(
+                            "EVIDENCE_MISSING",
+                            "verification",
+                            f"{iid} verification evidence reference invalid",
+                            invariant_id=iid,
+                        )
+                        continue
+                    try:
+                        ev = json.loads(source_access.read_text(path))
+                    except (OSError, json.JSONDecodeError):
+                        block(
+                            "EVIDENCE_MISSING",
+                            "verification",
+                            f"{iid} verification evidence missing: {name}",
+                            source=name,
+                            invariant_id=iid,
+                        )
+                        continue
+                else:
+                    ev = obligation_evidence(name, invariant_id=iid)
+                if ev is None:
                     block(
                         "EVIDENCE_MISSING",
                         "verification",
-                        f"{iid} verification evidence reference invalid",
-                        invariant_id=iid,
-                    )
-                    continue
-                try:
-                    ev = json.loads(source_access.read_text(path))
-                except (OSError, json.JSONDecodeError):
-                    block(
-                        "EVIDENCE_MISSING",
-                        "verification",
-                        f"{iid} verification evidence missing: {name}",
-                        source=name,
+                        f"{iid} verification evidence missing or unqualified: {name}",
+                        source=name or None,
                         invariant_id=iid,
                     )
                     continue
@@ -1038,7 +1121,9 @@ def _evaluate_gate(
     for vtype, policy in ver_cfg.items():
         if policy != "required":
             continue
-        matching = [record for record in evidence if record.get("type") == vtype]
+        matching = [
+            record for record in validation_evidence if record.get("type") == vtype
+        ]
         label = vtype.replace("_", "-")
         if not matching:
             block(
@@ -1093,7 +1178,7 @@ def _evaluate_gate(
             return False
 
     for issue in validate_test_coverage(
-        requirements_doc, invariants_doc, evidence, evidence_is_fresh
+        requirements_doc, invariants_doc, validation_evidence, evidence_is_fresh
     ):
         if issue.code == "TEST_BINDING_MISSING":
             block(
@@ -1117,9 +1202,15 @@ def _evaluate_gate(
     if complexity_cfg.get("required", False):
         review_path = harness_dir / "evidence" / "complexity-review.json"
         try:
-            review = json.loads(source_access.read_text(review_path))
+            review = (
+                assessment_view.review_record("complexity")
+                if assessment_view is not None
+                else json.loads(source_access.read_text(review_path))
+            )
+            if review is None:
+                raise ValueError("missing complexity review")
             validate_schema(review, "evidence.schema.json", review_path)
-        except (OSError, json.JSONDecodeError, InvalidHarnessState):
+        except (OSError, json.JSONDecodeError, InvalidHarnessState, ValueError):
             block(
                 "COMPLEXITY_REVIEW_MISSING",
                 "verification",
@@ -1142,7 +1233,15 @@ def _evaluate_gate(
                     source="complexity-review",
                 )
             else:
+                from .complexity import validate_complexity_checks
+
                 try:
+                    validate_complexity_checks(review)
+                    if assessment_view is not None:
+                        source_report = assessment_view.review_report("complexity") or {}
+                        validate_complexity_checks(source_report)
+                        if source_report.get("checks") != review.get("checks"):
+                            raise ValueError("complexity review result mismatch")
                     expected_files, expected_refs = project_typed_scope(
                         task,
                         impact.get("impact") or {},
@@ -1150,6 +1249,14 @@ def _evaluate_gate(
                     )
                 except WorkspaceError as exc:
                     raise InvalidHarnessState(f"IMPACT_CONTRACT_INVALID: {exc}") from exc
+                except (ValidationError, ValueError):
+                    block(
+                        "COMPLEXITY_REVIEW_STALE",
+                        "verification",
+                        "complexity review validation is incomplete",
+                        source="complexity-review",
+                    )
+                    expected_files, expected_refs = (), ()
                 recorded_files, recorded_refs = claimed_scope_sets(
                     review.get("review_scope") or {}
                 )
@@ -1212,6 +1319,7 @@ def _evaluate_gate(
                 execution,
                 head=head,
                 workspace=current_workspace,
+                assessment_view=assessment_view,
             )
         except DecisionError:
             if not any(
@@ -1298,12 +1406,14 @@ def assess_gate(
     allow_converged: bool = False,
     allow_preflight: bool = False,
     architecture_assessment=None,
+    assessment_view=None,
 ) -> GateAssessment:
     """Admit before first canonical fact; hold lock through pure assessment."""
     with publication_admission(harness_dir):
         return _assess_gate_locked(
             harness_dir, head=head, allow_converged=allow_converged,
             allow_preflight=allow_preflight, architecture_assessment=architecture_assessment,
+            assessment_view=assessment_view,
         )
 
 
@@ -1313,6 +1423,7 @@ def _assess_gate_locked(
     allow_converged: bool = False,
     allow_preflight: bool = False,
     architecture_assessment=None,
+    assessment_view=None,
 ) -> GateAssessment:
     """Internal evaluation; public caller owns admission and continuous lock."""
     status, blockers, plan_assessment, architecture_assessment = _evaluate_gate(
@@ -1321,6 +1432,7 @@ def _assess_gate_locked(
         allow_converged=allow_converged,
         allow_preflight=allow_preflight,
         architecture_assessment=architecture_assessment,
+        assessment_view=assessment_view,
     )
     from ._scope_replay import assess_test_scope_retirements
 
@@ -1348,12 +1460,14 @@ def run_gate(
     head: str | None = None,
     allow_converged: bool = False,
     allow_preflight: bool = False,
+    assessment_view=None,
 ) -> tuple[str, list]:
     assessment = assess_gate(
         harness_dir,
         head=head,
         allow_converged=allow_converged,
         allow_preflight=allow_preflight,
+        assessment_view=assessment_view,
     )
     return assessment.status, list(assessment.blockers)
 

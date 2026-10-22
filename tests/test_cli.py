@@ -297,3 +297,177 @@ original_stdout.write(json.dumps({
     assert json.loads(observed["discovery_stdout"])["reason"] == "REPOSITORY_NOT_FOUND"
     assert observed["discovery_stderr"] == "TASK_PRUNE_REPOSITORY_NOT_FOUND\n"
     assert "/private/discovery-path" not in json.dumps(observed)
+def test_candidate_commit_reports_sanitized_durable_outcomes_with_dead_streams(tmp_path, monkeypatch):
+    from test_workspace import candidate_repo, git
+    from harness import cli as command_line
+    from harness.schema_resources import read_schema
+    from jsonschema import validate
+
+    home = tmp_path / 'home'
+    home.mkdir()
+    monkeypatch.setenv('HOME', str(home))
+    monkeypatch.setenv('XDG_CONFIG_HOME', str(home / 'config'))
+    repo = candidate_repo(tmp_path)
+    (repo / 'tracked.py').write_text('value = 2\n')
+    git(repo, 'add', 'tracked.py')
+    index = (repo / '.git/index').read_bytes()
+    result = cli(repo, 'candidate', 'prepare', '--path', 'tracked.py', '--json')
+    assert result.returncode == 0, result.stderr
+    document = json.loads(result.stdout)
+    validate(document, read_schema('candidate-command-result.schema.json'))
+    assert document['schema'] == 'candidate-command-result/v1'
+    assert document['ok'] is True
+    assert document['command'] == 'candidate prepare'
+    assert document['phase'] == 'PREPARED'
+    assert document['mutation_started'] is False
+    artifact = repo / document['artifact_ref']
+    original = artifact.read_bytes()
+    class DeadStream:
+        def write(self, text):
+            raise BrokenPipeError('secret absolute path must never escape')
+        def flush(self):
+            raise BrokenPipeError('secret absolute path must never escape')
+    with monkeypatch.context() as patch:
+        patch.chdir(repo)
+        patch.setattr(sys, 'stdout', DeadStream())
+        patch.setattr(sys, 'stderr', DeadStream())
+        assert command_line.main(['candidate', 'prepare', '--path', 'tracked.py', '--json']) == 0
+    assert artifact.read_bytes() == original
+    assert (repo / '.git/index').read_bytes() == index
+    from test_cli_task_recovery import _exercise_candidate_workflow
+    strict = tmp_path / 'strict'
+    strict.mkdir()
+    _exercise_candidate_workflow(strict, faults=True)
+
+
+def test_candidate_command_correlates_under_same_task_lock(tmp_path, monkeypatch, capsys):
+    import threading
+    import yaml
+    from test_workspace import candidate_repo, git
+    from harness import candidate_commit, cli as command_line
+    from harness.telemetry_lock import telemetry_lock
+
+    home = tmp_path / 'home'
+    home.mkdir()
+    monkeypatch.setenv('HOME', str(home))
+    monkeypatch.setenv('XDG_CONFIG_HOME', str(home / 'config'))
+    repo = candidate_repo(tmp_path)
+    (repo / 'tracked.py').write_text('value = 2\n')
+    git(repo, 'add', 'tracked.py')
+    attempted, acquired = threading.Event(), threading.Event()
+    original = candidate_commit.command_result
+    workers = []
+    def competing_task():
+        attempted.set()
+        with telemetry_lock(repo / '.harness'):
+            path = repo / '.harness/current-task.yaml'
+            task = yaml.safe_load(path.read_text())
+            task['task']['id'] = 'TASK-2'
+            path.write_text(yaml.safe_dump(task))
+            acquired.set()
+    def correlated(*args, **kwargs):
+        worker = threading.Thread(target=competing_task)
+        workers.append(worker)
+        worker.start()
+        assert attempted.wait(2)
+        acquired.wait(0.15)
+        return original(*args, **kwargs)
+    monkeypatch.chdir(repo)
+    monkeypatch.setattr(candidate_commit, 'command_result', correlated)
+    try:
+        assert command_line.main(['candidate', 'prepare', '--path', 'tracked.py', '--json']) == 0
+    finally:
+        for worker in workers:
+            worker.join(timeout=5)
+    document = json.loads(capsys.readouterr().out)
+    assert document['task_id'] == 'TASK-1'
+    assert acquired.is_set()
+
+
+@pytest.mark.parametrize('boundary', ['lock', 'correlation'])
+def test_candidate_boundary_failure_is_sanitized_unknown_outcome(tmp_path, monkeypatch, capsys, boundary):
+    import importlib
+    from test_workspace import candidate_repo
+    from harness import candidate_commit, cli as command_line
+
+    repo = candidate_repo(tmp_path)
+    def fault(*args, **kwargs):
+        raise OSError('/private/home/SECRET_TOKEN=secret-value')
+    if boundary == 'lock':
+        monkeypatch.setattr(importlib.import_module('harness.telemetry_lock'), 'telemetry_lock', fault)
+    else:
+        monkeypatch.setattr(candidate_commit, 'command_result', fault)
+    monkeypatch.chdir(repo)
+    assert command_line.main(['candidate', 'status', '--candidate', 'sha256:' + 'a' * 64, '--json']) == 70
+    output = capsys.readouterr()
+    assert 'SECRET_TOKEN' not in output.out + output.err
+    document = json.loads(output.out)
+    assert document['reason_code'] == 'CANDIDATE_INTERNAL_ERROR'
+    assert document['phase'] == 'UNKNOWN' and document['mutation_started'] is None
+
+
+def test_candidate_unknown_intent_reports_uncertainty_not_false_no_mutation(tmp_path, monkeypatch):
+    from test_workspace import candidate_repo, git
+    from harness.candidate_commit import prepare
+
+    home = tmp_path / 'home'
+    home.mkdir()
+    monkeypatch.setenv('HOME', str(home))
+    monkeypatch.setenv('XDG_CONFIG_HOME', str(home / 'config'))
+    repo = candidate_repo(tmp_path)
+    (repo / 'tracked.py').write_text('value = 2\n')
+    git(repo, 'add', 'tracked.py')
+    prepared = prepare(repo, ['tracked.py'])
+    operations = repo / '.harness/.candidate-operations'
+    operations.mkdir()
+    (operations / ('a' * 64 + '.json')).write_text('{}')
+    result = cli(repo, 'candidate', 'status', '--candidate', prepared['candidate'], '--json')
+    assert result.returncode == 1
+    outcome = json.loads(result.stdout)
+    assert outcome['reason_code'] == 'RECOVERY_UNSUPPORTED'
+    assert outcome['phase'] == 'UNKNOWN'
+    assert outcome['mutation_started'] is None
+
+
+def test_candidate_internal_exception_is_sanitized_exit70(tmp_path, monkeypatch, capsys):
+    from test_workspace import candidate_repo
+    from harness import candidate_commit, cli as command_line
+    from harness.schema_resources import read_schema
+    from jsonschema import validate
+
+    repo = candidate_repo(tmp_path)
+    def failing_prepare(*args):
+        raise RuntimeError('/private/home/SECRET_TOKEN=secret-value')
+    monkeypatch.chdir(repo)
+    monkeypatch.setattr(candidate_commit, 'prepare', failing_prepare)
+    assert command_line.main(['candidate', 'prepare', '--path', 'tracked.py', '--json']) == 70
+    output = capsys.readouterr()
+    assert 'SECRET_TOKEN' not in output.out + output.err
+    document = json.loads(output.out)
+    validate(document, read_schema('candidate-command-result.schema.json'))
+    assert document['reason_code'] == 'CANDIDATE_INTERNAL_ERROR'
+    assert document['mutation_started'] is False
+    assert document['phase'] == 'NOT_STARTED'
+
+
+@pytest.mark.parametrize('arguments,exit_code', [
+    (('candidate', 'prepare', '--path', 'SECRET_MASK_ME'), 2),
+    (('candidate', 'prepare', '--pa', 'SECRET_MASK_ME', '--json'), 2),
+    (('gate', '--candid', 'SECRET_MASK_ME', '--json'), 2),
+    (('gate', '--candidate', 'SECRET_MASK_ME'), 2),
+    (('candidate', 'status', '--candidate', 'sha256:' + 'a' * 64, '--json'), 1),
+])
+def test_candidate_cli_has_closed_sanitized_failure_envelope(tmp_path, arguments, exit_code):
+    from jsonschema import validate
+    from harness.schema_resources import read_schema
+
+    result = cli(tmp_path, *arguments)
+    assert result.returncode == exit_code
+    assert 'SECRET_MASK_ME' not in result.stdout + result.stderr
+    document = json.loads(result.stdout)
+    validate(document, read_schema('candidate-command-result.schema.json'))
+    assert document['schema'] == 'candidate-command-result/v1'
+    assert document['ok'] is False
+    assert document['reason_code'] == 'CANDIDATE_UNSUPPORTED'
+    assert document['mutation_started'] is False
+    assert not list(tmp_path.iterdir())

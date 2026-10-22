@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "candidate-prepared.schema.json",
+  "type": "object",
+  "required": ["schema", "domain", "candidate_id", "parent", "full_ref", "candidate_tree", "selected", "index", "inputs", "semantic_sources"],
+  "properties": {
+    "schema": {"const": "candidate-prepared/v1"},
+    "domain": {"const": "harness:candidate-prepared:v1"},
+    "task": {"type": "object"},
+    "risk": {"type": "object"},
+    "git_policy": {"type": "object"},
+    "scope": {"type": "object"},
+    "git": {"type": "object"},
+    "plan_reconciliation": {"type": ["object", "null"]},
+    "repository_identity": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "common_git_dir_identity": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "object_format": {"const": "sha1"},
+    "candidate_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "parent": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "full_ref": {"type": "string", "pattern": "^refs/heads/"},
+    "candidate_tree": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "selected": {"type": "array", "minItems": 1},
+    "index": {"type": "object"},
+    "inputs": {"type": "object"},
+    "semantic_sources": {"type": "object", "minProperties": 1, "additionalProperties": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}}
+  },
+  "additionalProperties": false
+}

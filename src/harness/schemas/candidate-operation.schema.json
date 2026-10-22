@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "candidate-operation.schema.json",
+  "type": "object",
+  "required": ["schema", "domain", "operation_id", "payload", "phase", "mutation_started", "grant_consumed"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {"const": "candidate-operation/v1"},
+    "domain": {"const": "harness:candidate-operation:v1"},
+    "operation_id": {"$ref": "#/$defs/digest"},
+    "phase": {"enum": ["PREPARED", "REF_CAS_STARTED", "TRACE_PUBLISHED", "ABORTED_AUTHORITY_REVOKED"]},
+    "mutation_started": {"type": "boolean"},
+    "grant_consumed": {"type": "boolean"},
+    "payload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["task_id", "candidate_id", "acceptance_id", "parent", "tree", "full_ref", "proposed", "message_base64", "message_sha256", "identity", "git_policy", "accepted_sources", "grant_receipt"],
+      "properties": {
+        "task_id": {"type": "string", "pattern": "^TASK-[0-9]+$"},
+        "candidate_id": {"$ref": "#/$defs/digest"},
+        "acceptance_id": {"$ref": "#/$defs/digest"},
+        "parent": {"$ref": "#/$defs/oid"},
+        "tree": {"$ref": "#/$defs/oid"},
+        "proposed": {"$ref": "#/$defs/oid"},
+        "full_ref": {"type": "string", "pattern": "^refs/heads/[^\\s\\x00]+$"},
+        "message_base64": {"type": "string", "minLength": 1},
+        "message_sha256": {"$ref": "#/$defs/digest"},
+        "grant_receipt": {"$ref": "#/$defs/digest"},
+        "identity": {
+          "type": "object", "additionalProperties": false,
+          "required": ["GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_AUTHOR_DATE", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL", "GIT_COMMITTER_DATE"],
+          "properties": {
+            "GIT_AUTHOR_NAME": {"$ref": "#/$defs/identity"}, "GIT_AUTHOR_EMAIL": {"$ref": "#/$defs/identity"}, "GIT_AUTHOR_DATE": {"$ref": "#/$defs/identity"},
+            "GIT_COMMITTER_NAME": {"$ref": "#/$defs/identity"}, "GIT_COMMITTER_EMAIL": {"$ref": "#/$defs/identity"}, "GIT_COMMITTER_DATE": {"$ref": "#/$defs/identity"}
+          }
+        },
+        "git_policy": {"type": "object", "minProperties": 1},
+        "accepted_sources": {"type": "object", "minProperties": 2, "additionalProperties": {"type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$"}}
+      }
+    }
+  },
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "oid": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "identity": {"type": "string", "minLength": 1, "pattern": "^[^\\r\\n\\x00]+$"}
+  }
+}

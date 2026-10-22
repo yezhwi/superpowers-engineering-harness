@@ -17,6 +17,15 @@ make_repo = partial(_make_repo, trusted_scope=True)
 ROOT = Path(__file__).resolve().parents[1]
 
 
+@pytest.mark.parametrize('path', ['SKILL.md', 'skills/engineering-harness/SKILL.md',
+    'skills/collect-evidence/SKILL.md', 'skills/quality-gate/SKILL.md', 'skills/convergence/SKILL.md'])
+def test_candidate_guidance_exposes_packaged_operator_reference(path):
+    text = (ROOT / path).read_text()
+    assert '<package-root>/docs/candidate-commit.md' in text
+    assert 'candidate-command-result/v1' in text
+    assert (ROOT / 'docs/candidate-commit.md').is_file()
+
+
 def _guidance_section(path, heading):
     text = (ROOT / path).read_text()
     return text.split(heading, 1)[1].split("\n## ", 1)[0]
@@ -125,7 +134,17 @@ def test_only_gate_emits_convergence_decision():
                 for value in ast.walk(arg)
             ):
                 decision_emitters.add(node.name)
-    assert decision_emitters == {"_cmd_gate_convergence"}
+    assert decision_emitters == {'_apply_gate_convergence'}
+    # Both entrypoints invoke the extracted original policy, not new state writers.
+    generic = ast.parse(inspect.getsource(controlplane._cmd_gate_convergence))
+    assert sum(isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+               and node.func.id == '_apply_gate_convergence' for node in ast.walk(generic)) == 1
+    from harness import candidate_commit
+    candidate = ast.parse(inspect.getsource(candidate_commit.accept))
+    assert any(isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+               and node.func.id == '_apply_gate_convergence' for node in ast.walk(candidate))
+    assert any(isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+               and node.func.id == 'assess_gate' for node in ast.walk(candidate))
 
 
 def test_stale_guard_blocker_cannot_override_current_passing_gate(tmp_path):

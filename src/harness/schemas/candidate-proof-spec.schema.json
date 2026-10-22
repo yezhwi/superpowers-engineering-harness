@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "candidate-proof-spec.schema.json",
+  "type": "object",
+  "required": [
+    "schema",
+    "profile",
+    "interpreter",
+    "dependencies",
+    "environment",
+    "writable_paths",
+    "input_policy"
+  ],
+  "properties": {
+    "schema": {"const": "candidate-proof-spec/v1"},
+    "profile": {
+      "enum": ["pytest-junit-v1", "python-module-build-v1", "python-script-v1"]
+    },
+    "interpreter": {"type": "string", "minLength": 1},
+    "dependencies": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["source", "target"],
+        "properties": {
+          "source": {"type": "string", "minLength": 1},
+          "target": {"type": "string", "minLength": 1}
+        },
+        "additionalProperties": false
+      }
+    },
+    "environment": {
+      "type": "object",
+      "propertyNames": {"enum": ["LC_ALL", "PYTHONHASHSEED", "SOURCE_DATE_EPOCH", "TZ"]},
+      "additionalProperties": {"type": "string"}
+    },
+    "writable_paths": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "input_policy": {
+      "type": "object",
+      "required": ["git", "hooks", "network", "secrets", "dynamic_dependencies"],
+      "properties": {
+        "git": {"const": "forbidden"},
+        "hooks": {"const": "forbidden"},
+        "network": {"const": "forbidden"},
+        "secrets": {"const": "forbidden"},
+        "dynamic_dependencies": {"const": "forbidden"}
+      },
+      "additionalProperties": false
+    },
+    "script": {"type": "string", "minLength": 1},
+    "args": {"type": "array", "items": {"type": "string"}},
+    "selectors": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+    "evidence_type": {"enum": ["unit_test", "integration_test", "contract_test", "security"]}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"profile": {"const": "python-script-v1"}}},
+      "then": {
+        "required": ["script", "args"],
+        "not": {"anyOf": [{"required": ["selectors"]}, {"required": ["evidence_type"]}]}
+      }
+    },
+    {
+      "if": {"properties": {"profile": {"const": "pytest-junit-v1"}}},
+      "then": {
+        "required": ["selectors", "evidence_type"],
+        "not": {"anyOf": [{"required": ["script"]}, {"required": ["args"]}]}
+      }
+    },
+    {
+      "if": {"properties": {"profile": {"const": "python-module-build-v1"}}},
+      "then": {
+        "not": {
+          "anyOf": [
+            {"required": ["script"]},
+            {"required": ["args"]},
+            {"required": ["selectors"]},
+            {"required": ["evidence_type"]}
+          ]
+        }
+      }
+    }
+  ],
+  "additionalProperties": false
+}

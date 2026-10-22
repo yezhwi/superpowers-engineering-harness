@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "candidate-review.schema.json",
+  "type": "object",
+  "required": ["schema", "domain", "candidate_id", "review_id", "kind", "inputs", "report", "record", "qualification"],
+  "properties": {
+    "schema": {"const": "candidate-review/v1"},
+    "domain": {"const": "harness:candidate-review:v1"},
+    "candidate_id": {"$ref": "#/definitions/digest"},
+    "review_id": {"$ref": "#/definitions/digest"},
+    "kind": {"enum": ["complexity", "diagnosability", "interface"]},
+    "inputs": {
+      "type": "object",
+      "required": ["manifest", "scope", "report"],
+      "properties": {
+        "manifest": {"$ref": "#/definitions/digest"},
+        "scope": {"$ref": "#/definitions/digest"},
+        "report": {"$ref": "#/definitions/digest"}
+      },
+      "additionalProperties": false
+    },
+    "report": {"type": "object", "minProperties": 1},
+    "record": {
+      "type": "object",
+      "required": ["type", "timestamp", "command", "exit_code", "execution_domain", "candidate_tree", "source_fingerprint", "checks", "review_scope"],
+      "properties": {
+        "type": {"enum": ["review", "diagnosability_review"]},
+        "timestamp": {"type": "string", "format": "date-time"},
+        "command": {"enum": ["harness review complexity", "harness review diagnosability", "harness review interface"]},
+        "exit_code": {"const": 0},
+        "execution_domain": {"const": "outside-git"},
+        "candidate_tree": {"$ref": "#/definitions/gitOid"},
+        "source_fingerprint": {"$ref": "#/definitions/digest"},
+        "checks": {"type": "object", "minProperties": 1},
+        "review_scope": {"type": "object", "required": ["files", "contract_refs"]}
+      },
+      "not": {
+        "anyOf": [
+          {"required": ["commit"]},
+          {"required": ["workspace_fingerprint"]},
+          {"required": ["workspace_fingerprint_after"]}
+        ]
+      }
+    },
+    "qualification": {
+      "type": "object",
+      "required": ["candidate_tree", "parent_commit", "source_fingerprint", "outcome", "scope_complete", "review_scope"],
+      "properties": {
+        "candidate_tree": {"$ref": "#/definitions/gitOid"},
+        "parent_commit": {"$ref": "#/definitions/gitOid"},
+        "source_fingerprint": {"$ref": "#/definitions/digest"},
+        "outcome": {"const": "PASS"},
+        "scope_complete": {"const": true},
+        "review_scope": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+      },
+      "additionalProperties": false
+    }
+  },
+  "definitions": {
+    "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "gitOid": {"type": "string", "pattern": "^[0-9a-f]{40}$"}
+  },
+  "additionalProperties": false
+}

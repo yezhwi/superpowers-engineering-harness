@@ -90,6 +90,10 @@ Code-detected codes (`USER_AUTHORITY_REQUIRED`, `REPEATED_REGRESSION`, `NO_PROGR
 `POLICY: USER_AUTHORITY_REQUIRED` / `DIRECTIVE: HALT_AND_WAIT` and preserves task state. Stop without calling `harness gate` or `harness resume`; report blocker to user. Text directive is guidance, not authenticated approval. When Gate emits `DECISION: ESCALATED`, stop and report reason + blockers.
 For the others YOU must declare them explicitly to the user with evidence — never silently retry past a judgment-call blocker.
 
+## Opt-in Candidate Reference
+
+For an explicitly enrolled canonical `gate.candidate_commit` task with its active candidate pointer, candidate Gate uses `candidate-command-result/v1` JSON rather than ordinary text. Check canonical task state and typed blockers: the original convergence policy still owns CONVERGED/BLOCKED. Continue native DONE admission and require separate live commit authority; never interpret a historical trace as current readiness. See `<package-root>/docs/candidate-commit.md` for explicit recovery and UNKNOWN outcome handling. Default convergence commands remain unchanged for ordinary tasks.
+
 ## Hard Boundaries
 
 1. DONE only via CONVERGED → DONE, and CONVERGED only after `DECISION: CONVERGED`.

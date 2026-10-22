@@ -67,6 +67,10 @@ Only enter after the Q0 Decision Table confirms mutating work.
 > `pip install -e <harness-repo>`). Raw `python scripts/*.py` paths are
 > ONLY valid with CWD = the harness repo root — never use them elsewhere.
 
+## Opt-in Candidate Reference
+
+For tasks explicitly enrolled in canonical `.harness/gate.yaml` → `gate.candidate_commit`, consult `<package-root>/docs/candidate-commit.md` before using the development capability. A current-task `.candidate-active.json` selects the candidate; it does not grant authority. Candidate responses use `candidate-command-result/v1` (`candidate_id`, `artifact_ref`), never the old raw development dictionaries. Preserve native obligation/Plan/review/state admission and separate commit authority. Historical traces never grant generic cross-HEAD freshness; pending operations require explicit candidate recovery. Without enrollment and an active candidate, retain the ordinary workflow.
+
 ## Efficient Evidence Scheduling
 
 After validated startup, use `harness evidence plan --json` to inspect declared selectors, contract/Plan links, and evidence gaps before scheduling tests. For a proposed binding/scope repair, inspect `harness impact reconcile --file proposal.yaml --dry-run` first. Both diagnostics are read-only advice, not execution authority, valid Context, or Gate acceptance; malformed inputs fail closed. Pending transaction recovery must follow its explicit route, not an implicit diagnostic repair.

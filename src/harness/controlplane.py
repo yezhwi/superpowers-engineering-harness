@@ -59,7 +59,12 @@ def _publication_entry(command):
     def admitted(*args, **kwargs):
         completed = False
         try:
-            with publication_admission(Path('.harness')):
+            admission = publication_admission
+            if (command.__name__ == 'cmd_authorize'
+                    and (args[0] if args else kwargs.get('action')) == 'commit'):
+                from .transaction_recovery import candidate_commit_authority_admission
+                admission = candidate_commit_authority_admission
+            with admission(Path('.harness')):
                 result = command(*args, **kwargs)
                 completed = True
             return result
@@ -75,6 +80,31 @@ def _publication_entry(command):
             )
             return 2
     return admitted
+
+
+def _active_assessment_view(harness_dir: Path, *, require_reviews: bool = False):
+    """Native opt-in commands share one view and validate live preparation inputs."""
+    from .candidate_assessment import CandidateAssessmentError, active_assessment_view
+    from .candidate_commit import CandidateRefusal, _candidate_record, _input_consistent, _proof_inputs_unchanged
+
+    try:
+        view = active_assessment_view(harness_dir, require_reviews=require_reviews)
+        if view is not None:
+            _, candidate = _candidate_record(harness_dir.parent, view.candidate_id)
+            if not _input_consistent(harness_dir.parent, candidate, head=view.parent_commit):
+                raise HarnessStateError('CANDIDATE_DRIFT')
+            _proof_inputs_unchanged(harness_dir.parent, view.candidate_id)
+        return view
+    except (CandidateAssessmentError, CandidateRefusal) as exc:
+        raise HarnessStateError(str(exc)) from exc
+
+
+def _run_active_gate(harness_dir: Path, **options):
+    """Explicit candidate lookup for native lifecycle preflights only."""
+    view = _active_assessment_view(harness_dir, require_reviews=True)
+    if view is not None:
+        options['assessment_view'] = view
+    return quality_gate.run_gate(harness_dir, **options)
 
 
 def load_task(harness_dir: Path) -> dict:
@@ -351,8 +381,11 @@ def cmd_plan_mutation(args) -> int:
         quality_gate.validate_schema(
             task, "task.schema.json", harness_dir / "current-task.yaml"
         )
+        view = None
+        if action in {'RECONCILE', 'REFRESH_PROOF'}:
+            view = _active_assessment_view(harness_dir)
         changed = plan_reconciliation.mutate_plan_execution(
-            harness_dir, task, request
+            harness_dir, task, request, assessment_view=view
         )
     except plan_reconciliation.PlanMutationError as exc:
         print(exc.code, file=sys.stderr)
@@ -1041,7 +1074,8 @@ def cmd_interface(args) -> int:
                 },
             )
         elif args.interface_command == "verify":
-            record = domain.verify(harness_dir, args.id, args.evidence)
+            view = _active_assessment_view(harness_dir)
+            record = domain.verify(harness_dir, args.id, args.evidence, assessment_view=view)
         elif args.interface_command == "approve-breaking":
             record = domain.approve_breaking(harness_dir, args.id, args.reason)
         elif args.interface_command == "list":
@@ -1062,7 +1096,7 @@ def cmd_interface(args) -> int:
         else:
             print("INTERFACE_COMMAND_INVALID", file=sys.stderr)
             return 2
-    except domain.InterfaceContractError as exc:
+    except (domain.InterfaceContractError, HarnessStateError) as exc:
         print(str(exc), file=sys.stderr)
         return 2
     print(f"OK: {record['id']} {record['status']}")
@@ -1169,7 +1203,7 @@ def cmd_transition(target: str, *, reason: str | None = None) -> int:
     profile = (task.get("risk") or {}).get("profile")
     if target == "GATING" and current != "REVIEWING":
         try:
-            status, blockers = quality_gate.run_gate(harness_dir, allow_preflight=True)
+            status, blockers = _run_active_gate(harness_dir, allow_preflight=True)
         except quality_gate.AlignmentRepairRequired as exc:
             print(str(exc), file=sys.stderr)
             return 1
@@ -1365,7 +1399,7 @@ def cmd_transition(target: str, *, reason: str | None = None) -> int:
         return 1
     if current == "CONVERGED" and target == "DONE":
         try:
-            status, _ = quality_gate.run_gate(harness_dir, allow_converged=True)
+            status, _ = _run_active_gate(harness_dir, allow_converged=True)
         except quality_gate.AlignmentRepairRequired as exc:
             print(str(exc), file=sys.stderr)
             return 1
@@ -1514,7 +1548,7 @@ def cmd_transition(target: str, *, reason: str | None = None) -> int:
         return 1
     if current == "VERIFYING" and target == "REVIEWING" and profile != "FAST":
         try:
-            status, blockers = quality_gate.run_gate(harness_dir, allow_preflight=True)
+            status, blockers = _run_active_gate(harness_dir, allow_preflight=True)
         except quality_gate.AlignmentRepairRequired as exc:
             print(str(exc), file=sys.stderr)
             return 1
@@ -1526,11 +1560,14 @@ def cmd_transition(target: str, *, reason: str | None = None) -> int:
             return 1
         review_path = harness_dir / "evidence" / "complexity-review.json"
         try:
-            review = json.loads(review_path.read_text(encoding="utf-8"))
-            fingerprint = collect_evidence.workspace_fingerprint()
+            view = _active_assessment_view(harness_dir, require_reviews=True)
+            review = (view.review_record('complexity') if view is not None
+                      else json.loads(review_path.read_text(encoding="utf-8")))
+            fingerprint = (view.export_fingerprint if view is not None
+                           else collect_evidence.workspace_fingerprint())
             evidence_validator.validate_evidence(
                 review,
-                current_head=quality_gate.git_head(),
+                current_head=view.candidate_tree if view is not None else quality_gate.git_head(),
                 current_workspace=fingerprint,
                 expected_success=True,
             )
@@ -1746,7 +1783,7 @@ def cmd_review_outcome(outcome: str, reason_code: str, finding_ids: list[str]) -
                 quality_gate.validate_schema(
                     quality_gate._load_yaml(path), schema, path
                 )
-            status, blockers = quality_gate.run_gate(harness_dir, allow_preflight=True)
+            status, blockers = _run_active_gate(harness_dir, allow_preflight=True)
         except quality_gate.AlignmentRepairRequired as exc:
             print(str(exc), file=sys.stderr)
             return 1
@@ -2040,6 +2077,7 @@ def cmd_benchmark_alignment(records: Path) -> int:
     return 0
 
 
+@_publication_entry
 def cmd_benchmark_compare(fixtures: Path, baseline: Path, adaptive: Path) -> int:
     harness_dir = Path(".harness")
     try:
@@ -2060,6 +2098,7 @@ def cmd_benchmark_compare(fixtures: Path, baseline: Path, adaptive: Path) -> int
     return 0
 
 
+@_publication_entry
 def cmd_benchmark_run(fixtures: Path) -> int:
     harness_dir = Path(".harness")
     try:
@@ -2333,6 +2372,12 @@ def _cmd_gate_convergence() -> int:
         print(f"INVALID_HARNESS_STATE: {exc}", file=sys.stderr)
         return 2
 
+    return _apply_gate_convergence(harness_dir, task, assessment)
+
+
+def _apply_gate_convergence(harness_dir, task, assessment, *, emit=print, head=None) -> int:
+    """Persist one original assessment through the unchanged convergence policy."""
+    print = emit
     status, blockers = assessment.status, list(assessment.blockers)
     try:
         prev_fp, prev_count = _load_convergence_metadata(task)
@@ -2362,7 +2407,7 @@ def _cmd_gate_convergence() -> int:
             "release_readiness": assessment.release_readiness,
         }
     )
-    task.setdefault("git", {})["head"] = quality_gate.git_head()
+    task.setdefault("git", {})["head"] = head if head is not None else quality_gate.git_head()
 
     if status == "PASS":
         state_machine.require_legal("GATING", "CONVERGED")
@@ -2993,12 +3038,25 @@ def _verify_record(kind: str, rid: str, ref: str) -> int:
         print(f"{kind} not found: {rid}", file=sys.stderr)
         return 1
     try:
-        evidence_file = evidence_path(harness_dir, ref)
-        evidence = json.loads(evidence_file.read_text())
+        from .candidate_assessment import _safe_reference
+
+        view = _active_assessment_view(harness_dir)
+        if view is not None:
+            evidence = view.resolve_evidence(ref, **{kind + '_id': rid})
+            if evidence is None:
+                raise ValueError('CANDIDATE_EVIDENCE_REFERENCE_INVALID')
+            reference = _safe_reference(ref)
+            current_head, current_workspace = view.candidate_tree, view.export_fingerprint
+        else:
+            evidence_file = evidence_path(harness_dir, ref)
+            evidence = json.loads(evidence_file.read_text())
+            reference = evidence_file.name
+            current_head = quality_gate.git_head()
+            current_workspace = collect_evidence.workspace_fingerprint()
         evidence_validator.validate_evidence(
             evidence,
-            current_head=quality_gate.git_head(),
-            current_workspace=collect_evidence.workspace_fingerprint(),
+            current_head=current_head,
+            current_workspace=current_workspace,
             expected_success=True,
         )
     except Exception as exc:
@@ -3006,8 +3064,8 @@ def _verify_record(kind: str, rid: str, ref: str) -> int:
         return 2
     field = "evidence" if kind == "requirement" else "verification"
     record.setdefault(field, [])
-    if evidence_file.name not in record[field]:
-        record[field].append(evidence_file.name)
+    if reference not in record[field]:
+        record[field].append(reference)
     record["status"] = "verified"
     transaction.atomic_write(path, yaml.safe_dump(document, sort_keys=False).encode())
     print(f"OK: {rid} verified")

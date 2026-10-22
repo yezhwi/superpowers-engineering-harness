@@ -123,5 +123,6 @@ def build_control_core(source: AuthoritativeContext) -> ControlCore:
             "evidence": source.evidence,
             "gate": {"status": source.gate.status, "blocked_by": blockers},
             **({"architecture": architecture} if architecture is not None else {}),
+            **({'candidate': source.candidate} if source.candidate is not None else {}),
         }
     )

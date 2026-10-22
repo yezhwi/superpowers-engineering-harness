@@ -23,6 +23,8 @@
 		"skills",
 		"docs/architecture.md",
 		"docs/test-scope-migration.md",
+		"docs/candidate-commit.md",
+		"docs/superpowers/specs/2026-10-21-gate-before-commit-design.md",
 		"docs/2026-10-14-context-evidence-collection-efficiency-spec.md",
 		"docs/superpowers/reports/v032-context-efficiency.md",
 		"docs/Superpowers-Engineering-Harness-v0.2.10-Implementation-Contract.md",

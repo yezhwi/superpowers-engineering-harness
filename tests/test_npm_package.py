@@ -31,6 +31,8 @@ def test_npm_tarball_matches_explicit_release_manifest():
         "docs/Superpowers-Engineering-Harness-v0.3.0-Architecture-Scope-and-Drift-Design.md",
         "docs/superpowers/reports/v030-architecture-benchmark-template.md",
         "docs/test-scope-migration.md",
+        "docs/candidate-commit.md",
+        "docs/superpowers/specs/2026-10-21-gate-before-commit-design.md",
         "docs/2026-10-14-context-evidence-collection-efficiency-spec.md",
         "docs/superpowers/reports/v032-context-efficiency.md",
     } <= files

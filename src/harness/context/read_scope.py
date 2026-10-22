@@ -25,6 +25,9 @@ def context_read_scope(harness_dir: Path, versions: dict):
             ("findings", "*.yaml"),
             ("decisions", "DEC-*.yaml"),
             ("interface-contracts", "INT-*.yaml"),
+            (".candidate-operations", "*.json"),
+            *((f"evidence/candidate-{kind}", "*.json")
+              for kind in ("prepared", "proof", "review", "acceptance", "trace")),
         )
     ]
     with source_scope(

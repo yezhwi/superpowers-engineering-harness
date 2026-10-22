@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "candidate-command-result.schema.json",
+  "type": "object",
+  "required": ["schema", "ok", "command", "task_id", "candidate_id", "operation_id", "acceptance_id", "parent_commit", "proposed_commit", "phase", "mutation_started", "reason_code", "message", "artifact_ref"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {"const": "candidate-command-result/v1"},
+    "ok": {"type": "boolean"},
+    "command": {"enum": ["candidate", "candidate prepare", "candidate prove", "candidate review-record", "candidate status", "candidate recover", "gate", "commit"]},
+    "task_id": {"type": ["string", "null"], "pattern": "^TASK-[0-9]+$"},
+    "candidate_id": {"$ref": "#/$defs/id"},
+    "operation_id": {"$ref": "#/$defs/id"},
+    "acceptance_id": {"$ref": "#/$defs/id"},
+    "parent_commit": {"$ref": "#/$defs/commit"},
+    "proposed_commit": {"$ref": "#/$defs/commit"},
+    "phase": {"enum": ["NOT_STARTED", "UNKNOWN", "PREPARED", "PROVED", "RECORDED", "CONVERGED", "KNOWN", "REF_CAS_STARTED", "TRACE_PUBLISHED", "ABORTED_AUTHORITY_REVOKED"]},
+    "mutation_started": {"type": ["boolean", "null"]},
+    "reason_code": {"enum": [null, "CANDIDATE_UNSUPPORTED", "CANDIDATE_DRIFT", "CANDIDATE_PROOF_UNQUALIFIED", "CANDIDATE_REVIEW_UNQUALIFIED", "CANDIDATE_GATE_BLOCKED", "USER_AUTHORITY_REQUIRED", "CANDIDATE_OPERATION_PENDING", "CANDIDATE_REF_CONFLICT", "REF_PUBLISHED_POSTCHECK_FAILED", "RECOVERY_UNSUPPORTED", "CANDIDATE_SCHEMA_UNSUPPORTED", "CANDIDATE_INTERNAL_ERROR"]},
+    "message": {"type": "string", "minLength": 1},
+    "artifact_ref": {"type": ["string", "null"], "pattern": "^\\.harness/(evidence/candidate-(prepared|proof|review|acceptance|trace)/[a-f0-9]{64}\\.json|\\.candidate-operations/[a-f0-9]{64}\\.json)$"}
+  },
+  "$defs": {
+    "id": {"type": ["string", "null"], "pattern": "^sha256:[a-f0-9]{64}$"},
+    "commit": {"type": ["string", "null"], "pattern": "^[a-f0-9]{40}$"}
+  }
+}

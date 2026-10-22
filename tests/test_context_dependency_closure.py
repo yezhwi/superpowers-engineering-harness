@@ -54,6 +54,16 @@ def test_quality_gate_closure_accepts_plan_automation_source_access():
     assert_trusted_closure(ROOT / "src/harness", entries={"quality_gate"})
 
 
+def test_candidate_assessment_is_a_reviewed_read_only_gate_dependency():
+    from harness.context.dependency_closure import ADAPTERS, ALLOWED, assert_trusted_closure
+
+    assert "candidate_assessment" in ALLOWED
+    assert "candidate_assessment" not in ADAPTERS
+    assert_trusted_closure(
+        ROOT / "src/harness", entries={"candidate_assessment", "quality_gate"}
+    )
+
+
 def test_gate_closure_does_not_import_cli_projection_modules():
     import ast
 

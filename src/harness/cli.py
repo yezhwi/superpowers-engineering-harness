@@ -86,6 +86,113 @@ def _task_prune(argv: list[str]) -> int:
     return controlplane.cmd_task_prune(args.apply, args.plan_id)
 
 
+class _CandidateUsageError(ValueError):
+    pass
+
+
+class _CandidateArgumentParser(_HarnessArgumentParser):
+    def __init__(self, *args, **kwargs):
+        kwargs['allow_abbrev'] = False
+        super().__init__(*args, **kwargs)
+
+    def error(self, message):
+        raise _CandidateUsageError('CANDIDATE_UNSUPPORTED')
+
+
+def _candidate_invocation(argv):
+    return bool(argv and (argv[0] in {'candidate', 'commit'} or (
+        argv[0] == 'gate' and any(arg.startswith('--cand') or arg.split('=', 1)[0] in {'--c', '--ca', '--can'}
+                                 for arg in argv[1:]))))
+
+
+def _candidate_command_name(argv):
+    if argv[0] == 'candidate':
+        return 'candidate ' + argv[1] if len(argv) > 1 and argv[1] in {
+            'prepare', 'prove', 'review-record', 'status', 'recover'} else 'candidate'
+    return argv[0]
+
+
+class _SilentStream:
+    def write(self, text):
+        return len(text)
+
+    def flush(self):
+        pass
+
+
+def _emit_candidate_result(document, exit_code):
+    """Delivery failure cannot replace the primary durable operation outcome."""
+    from jsonschema import validate
+    from harness.schema_resources import read_schema
+    validate(document, read_schema('candidate-command-result.schema.json'))
+    try:
+        sys.stdout.write(json.dumps(document, sort_keys=True, separators=(',', ':')) + '\n')
+        sys.stdout.flush()
+    except (OSError, ValueError):
+        # Avoid another failed flush during interpreter shutdown (exit 120).
+        sys.stdout = _SilentStream()
+    return exit_code
+
+
+def _execute_candidate(args, command):
+    from harness import candidate_commit as domain
+    from harness.telemetry_lock import telemetry_lock
+
+    try:
+        root = find_git_root(Path.cwd())
+        os.chdir(root)
+    except RepositoryNotFoundError:
+        return _emit_candidate_result(domain.command_result(None, command, reason='CANDIDATE_UNSUPPORTED'), 1)
+    except Exception:
+        return _emit_candidate_result(domain.command_result(None, command, reason='CANDIDATE_INTERNAL_ERROR'), 70)
+    try:
+        with telemetry_lock(root / '.harness'):
+            document, exit_code = _candidate_outcome(root, args, command)
+    except Exception:
+        document = domain.unavailable_command_result(command,
+            candidate_id=getattr(args, 'candidate', None), operation_id=getattr(args, 'operation', None))
+        exit_code = 70
+    # A slow/dead consumer must not extend the cooperation lock lifetime.
+    if document['reason_code'] == 'USER_AUTHORITY_REQUIRED':
+        try:
+            controlplane._print_authority_halt(document['reason_code'])
+        except (OSError, ValueError):
+            sys.stderr = _SilentStream()
+    return _emit_candidate_result(document, exit_code)
+
+
+def _candidate_outcome(root, args, command):
+    from harness import candidate_commit as domain
+
+    payload, reason, exit_code = None, None, 0
+    try:
+        if command == 'candidate prepare':
+            payload = domain.prepare(root, args.candidate_paths)
+        elif command == 'candidate prove':
+            payload = domain.prove(root, args.candidate, args.spec)
+        elif command == 'candidate review-record':
+            payload = domain.review_record(root, args.candidate, args.kind, args.manifest,
+                                           args.scope_attestation, args.report)
+        elif command == 'candidate status':
+            payload = domain.status(root, args.candidate)
+        elif command == 'candidate recover':
+            payload = domain.recover(root, args.operation)
+        elif command == 'gate':
+            payload = domain.accept(root, args.candidate)
+        else:
+            payload = domain.controlled_commit(root, args.candidate, args.message_file)
+    except RepositoryNotFoundError:
+        reason, exit_code = 'CANDIDATE_UNSUPPORTED', 1
+    except domain.CandidateRefusal as exc:
+        reason, exit_code = exc.code, 1
+    except Exception:
+        reason, exit_code = 'CANDIDATE_INTERNAL_ERROR', 70
+    document = domain.command_result(root, command, payload, reason=reason,
+                                    candidate_id=getattr(args, 'candidate', None),
+                                    operation_id=getattr(args, 'operation', None))
+    return document, exit_code
+
+
 def _render(result: InitResult) -> str:
     lines = [f"Harness initialized at {result.harness_dir}"]
     if result.created:
@@ -120,7 +227,8 @@ def _main(argv=None) -> int:
         mode = argv.pop(1)
         if mode == "attach":
             argv.insert(1, "--attach")
-    parser = _HarnessArgumentParser(
+    parser_class = _CandidateArgumentParser if _candidate_invocation(argv) else _HarnessArgumentParser
+    parser = parser_class(
         prog="harness",
         description="Engineering Harness deterministic control plane",
     )
@@ -343,6 +451,8 @@ def _main(argv=None) -> int:
     p_gate = sub.add_parser("gate", help="run the deterministic quality gate")
     gate_sub = p_gate.add_subparsers(dest="gate_command")
     gate_sub.add_parser("preflight")
+    p_gate.add_argument("--candidate")
+    p_gate.add_argument("--json", action="store_true", dest="gate_json")
     p_telemetry = sub.add_parser("telemetry")
     telemetry_sub = p_telemetry.add_subparsers(dest="telemetry_command")
     telemetry_sub.add_parser("show")
@@ -511,8 +621,38 @@ def _main(argv=None) -> int:
     p_existing.add_argument("--accept-diff")
     p_existing.add_argument("--untraceable-reason")
     sub.add_parser("converge", help="deterministic convergence decision")
+    p_candidate = sub.add_parser("candidate", help="manage immutable commit candidates")
+    candidate_sub = p_candidate.add_subparsers(dest="candidate_command", required=True)
+    candidate_prepare = candidate_sub.add_parser("prepare")
+    candidate_prepare.add_argument("--path", action="append", required=True, dest="candidate_paths")
+    candidate_prepare.add_argument("--json", action="store_true", required=True, dest="candidate_json")
+    candidate_prove = candidate_sub.add_parser("prove")
+    candidate_prove.add_argument("--candidate", required=True)
+    candidate_prove.add_argument("--spec", required=True, type=Path)
+    candidate_prove.add_argument("--json", action="store_true", required=True)
+    candidate_review = candidate_sub.add_parser("review-record")
+    candidate_review.add_argument("--candidate", required=True)
+    candidate_review.add_argument("--kind", choices=["complexity", "diagnosability", "interface"], required=True)
+    candidate_review.add_argument("--manifest", required=True, type=Path)
+    candidate_review.add_argument("--scope-attestation", required=True, type=Path)
+    candidate_review.add_argument("--report", required=True, type=Path)
+    candidate_review.add_argument("--json", action="store_true", required=True)
+    candidate_status = candidate_sub.add_parser("status")
+    candidate_status.add_argument("--candidate", required=True)
+    candidate_status.add_argument("--json", action="store_true", required=True)
+    candidate_recover = candidate_sub.add_parser("recover")
+    candidate_recover.add_argument("--operation", required=True)
+    candidate_recover.add_argument("--json", action="store_true", required=True)
+    p_commit = sub.add_parser("commit", help="publish an accepted candidate locally")
+    p_commit.add_argument("--candidate", required=True)
+    p_commit.add_argument("--message-file", required=True, type=Path)
+    p_commit.add_argument("--json", action="store_true", required=True)
 
     args = parser.parse_args(argv)
+    if _candidate_invocation(argv):
+        if args.subcommand == 'gate' and (not args.gate_json or args.gate_command is not None):
+            raise _CandidateUsageError('CANDIDATE_UNSUPPORTED')
+        return _execute_candidate(args, _candidate_command_name(argv))
     if args.subcommand == "context" and args.context_command and args.context_mode:
         parser.error("Context mode flags apply only to generation")
     if args.subcommand == "plan" and args.plan_command == "reconcile":
@@ -758,7 +898,6 @@ def _main(argv=None) -> int:
         return 2
     if args.subcommand == "converge":
         return controlplane.cmd_converge()
-
     parser.print_usage(sys.stderr)
     return 2
 
@@ -768,6 +907,11 @@ def main(argv=None) -> int:
     original_dir = Path.cwd()
     try:
         return _main(argv)
+    except _CandidateUsageError:
+        from harness.candidate_commit import command_result
+        arguments = list(sys.argv[1:] if argv is None else argv)
+        return _emit_candidate_result(command_result(None, _candidate_command_name(arguments),
+                                                     reason='CANDIDATE_UNSUPPORTED'), 2)
     finally:
         os.chdir(original_dir)
 

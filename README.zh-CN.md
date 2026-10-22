@@ -214,6 +214,12 @@ harness plan refresh-proof P-001 \
 
 风险只能升级，不能降级。Evidence reuse、soft budget、local telemetry、fixture benchmark 已提供；remote telemetry 和外部 agent benchmark 声明不提供。
 
+## 显式候选提交（开发中）
+
+TASK-103 提供不可变 Gate 验收候选与单独授权本地提交的显式路径。实现验证仍在进行，不代表发布或安装包资格。默认 Gate 与通用证据 freshness 不变；不自动 staging、不授权 push、不跨 HEAD 复用旧证据。
+
+冻结契约前启用 `gate.candidate_commit`，先读[操作指引](docs/candidate-commit.md)和[实现设计](docs/superpowers/specs/2026-10-21-gate-before-commit-design.md)。候选命令要求闭合的 `candidate-command-result/v1` JSON 接口。历史 trace 不等于当前就绪；pending operation 只能显式执行 candidate recovery。
+
 ## 边界
 
 > **安全边界：** `harness evidence run --command` 以本地 Harness 操作者直接输入、受信任 shell 文本执行（`shell=True`）。
