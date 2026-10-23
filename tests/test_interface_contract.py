@@ -37,17 +37,6 @@ def contract(**overrides) -> dict:
     }
 
 
-def test_generic_interface_verification_supports_relative_harness_directory(tmp_path, monkeypatch):
-    from harness.interface_contract import declare, verify
-
-    harness = setup_harness(tmp_path)
-    declared = declare(harness, contract())
-    (harness / 'evidence/unit-test.json').write_text('{}')
-    monkeypatch.chdir(tmp_path)
-    record = verify(Path('.harness'), declared['id'], '.harness/evidence/unit-test.json')
-    assert record['verification'] == ['unit-test.json']
-
-
 def test_declare_persists_schema_valid_external_contract(tmp_path):
     """Break caught: public boundary has no durable consumer contract."""
     from harness.interface_contract import declare, load_interface_contract

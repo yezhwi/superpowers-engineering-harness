@@ -11,15 +11,6 @@ import yaml
 REPO = Path(__file__).resolve().parent.parent
 
 
-def test_candidate_operator_and_design_links_resolve_in_both_readmes():
-    targets = ('docs/candidate-commit.md', 'docs/superpowers/specs/2026-10-21-gate-before-commit-design.md')
-    for name in ('README.md', 'README.zh-CN.md'):
-        links = re.findall(r'\]\(([^)]+)\)', (REPO / name).read_text())
-        for target in targets:
-            assert target in links
-            assert (REPO / target).is_file()
-
-
 def test_task_contract_writes_alignment_before_planned_admission():
     text = (REPO / "skills/task-contract/SKILL.md").read_text()
     exit_steps = text.split("### 7. Exit PLANNED", 1)[1].split("## Production Diagnosability", 1)[0]

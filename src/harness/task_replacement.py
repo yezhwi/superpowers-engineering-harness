@@ -88,14 +88,6 @@ def install_replacement_scope(staged: Path, archive: Path) -> None:
     from ._scope_replay import SCOPE_FILES, new_scope_artifacts
     from .telemetry_lock import telemetry_lock
 
-    # These task-owned records must follow their original evidence into history.
-    # Move only the disposable replacement copy, never the live source tree.
-    for name in ('.candidate-operations', '.candidate-operation-inputs', '.candidate-active.json'):
-        source = staged / name
-        if source.is_symlink():
-            raise OSError('TRANSACTION_RECOVERY_BLOCKED: candidate storage invalid')
-        if source.exists():
-            source.rename(archive / name)
     for name in SCOPE_FILES:
         source = staged / name
         if source.is_symlink():

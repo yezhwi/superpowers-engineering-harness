@@ -16,8 +16,6 @@ from harness import (
     source_access,
     workspace,
 )
-# Import code before read authority freezes; self-hosted pycache is not a control source.
-from harness.candidate_assessment import CandidateAssessmentError, candidate_context_projection
 from harness.architecture import architecture_document
 from harness.evidence_validator import EvidenceStatus, project_evidence
 from harness.plan_reconciliation import (
@@ -42,9 +40,6 @@ ARTIFACT_PATTERNS = {
     "findings": "*.yaml",
     "interface-contracts": "*.yaml",
     "evidence": "*.json",
-    **{f'evidence/candidate-{kind}': '*.json'
-       for kind in ('prepared', 'proof', 'review', 'acceptance', 'trace')},
-    '.candidate-operations': '*.json',
 }
 
 
@@ -470,12 +465,7 @@ class FileContextSource:
         expansions = active_expansions(
             task, self._document("context/expansions.yaml", optional=True)
         )
-        try:
-            candidate = candidate_context_projection(self.harness_dir, current.head)
-        except CandidateAssessmentError as exc:
-            raise ContextBuildError('CONTEXT_SCHEMA_INVALID', str(exc)) from exc
         return AuthoritativeContext(
-            candidate=candidate,
             expansions=expansions,
             task=task,
             plan=plan,

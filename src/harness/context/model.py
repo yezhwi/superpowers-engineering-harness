@@ -44,7 +44,6 @@ class AuthoritativeContext:
     architecture_assessment: ArchitectureAssessment | None = None
     plan_assessment: Any | None = None
     expansions: list[dict] = field(default_factory=list)
-    candidate: dict | None = None
 
 
 class ContextSource(Protocol):
@@ -68,4 +67,3 @@ class ControlCore(TypedDict):
     evidence: list[dict]
     gate: dict
     architecture: NotRequired[dict]
-    candidate: NotRequired[dict]

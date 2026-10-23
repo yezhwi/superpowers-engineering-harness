@@ -9,7 +9,6 @@
       "additionalProperties": false,
       "properties": {
         "test_scope": {"type": "object", "required": ["minimum_reader"], "additionalProperties": false, "properties": {"minimum_reader": {"const": "0.3.2"}}},
-        "candidate_commit": {"type": "object", "required": ["format", "capability_version", "minimum_reader"], "additionalProperties": false, "properties": {"format": {"const": "candidate-commit/v1"}, "capability_version": {"const": 1}, "minimum_reader": {"const": "0.3.2"}}},
         "requirements": {"$ref": "#/definitions/requirementPolicy"},
         "architecture": {
           "type": "object",

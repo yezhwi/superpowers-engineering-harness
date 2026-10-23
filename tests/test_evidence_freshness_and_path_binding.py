@@ -374,16 +374,3 @@ def test_requirement_verify_does_not_stale_product_evidence(tmp_path):
         assert str(exc) == "EVIDENCE_WORKSPACE_STALE"
     else:
         raise AssertionError("product edit must stale evidence")
-def test_tree_equality_alone_never_reuses_candidate_evidence():
-    candidate = {"domain": "harness:candidate-proof:v1", "candidate_tree": "a" * 40}
-    legacy = {"commit": "b" * 40, "workspace_fingerprint": "sha256:" + "0" * 64}
-    assert candidate.get("commit") is None
-    assert candidate["domain"] != legacy.get("domain")
-
-
-def test_candidate_trace_does_not_rewrite_or_reuse_legacy_receipts():
-    legacy = {"commit": "a" * 40, "workspace_fingerprint": "sha256:" + "1" * 64}
-    before = dict(legacy)
-    trace = {"domain": "harness:candidate-trace:v1", "historical_acceptance": True}
-    assert legacy == before
-    assert trace["domain"] != legacy.get("domain")

@@ -209,7 +209,7 @@ User approved native execution against spec v0.6, with review clarifications inc
 
 ## v0.3.2 Proposed follow-up: evidence batching and artifact lifecycle
 
-**Status: A GUIDANCE IMPLEMENTED / B MANUAL IMPLEMENTED AND HISTORICALLY ACCEPTED / C IMPLEMENTED AND HISTORICALLY ACCEPTED.** Follow-up A is a static/instructional change, not an automatic Core capability. Follow-up B is the bounded manual fixed-policy feature described below; its historical acceptance does not authorize real cleanup. Follow-up C was delivered by TASK-103 (`6f453d9`); its opt-in candidate domain does not weaken default Gate behavior, generic evidence freshness, task states or separate commit/push authorization.
+**Status: A GUIDANCE IMPLEMENTED / B MANUAL IMPLEMENTED AND HISTORICALLY ACCEPTED.** Follow-up A is a static/instructional change, not an automatic Core capability. Follow-up B is the bounded manual fixed-policy feature described below; its historical acceptance does not authorize real cleanup.
 
 ### Follow-up A: Plan bounded related-test batches before execution
 
@@ -249,12 +249,6 @@ Historical TASK-095 acceptance covered 45 related tests: existing fixture-backed
 - [x] Anonymous related tests cover preview/apply authorization, fixed retention, all-version protection, unsafe-package skips, references, ambiguity, pending publication, partial failure and sanitized structured output. Historical package acceptance covered ten private scenarios.
 
 **Delivery boundary:** This is a manual task-history mechanism, not authorization to clean this repository. No real root cleanup was performed. Shared retained publication objects, fixtures, probes, current/live facts, referenced history and user-owned files remain protected; unknown ownership is skipped. The feature adds no automatic or age-based pruning, configurable retention, persistent ownership registry, reachability graph, scheduler or whole-tree size guarantee. Release and any real cleanup remain separately authorized.
-
-### Follow-up C: Gate before commit readiness
-
-**Status: IMPLEMENTED AND HISTORICALLY ACCEPTED.** TASK-103 delivered DEC-043 / INT-010 in commit `6f453d9`. This is no longer a pending proposal. See the [operator guide](../../candidate-commit.md), [implementation design](../specs/2026-10-21-gate-before-commit-design.md) and [qualified delivery status](../reports/v032-context-efficiency.md#v032-delivery-status).
-
-The opt-in workflow binds an immutable candidate, actual proof/runtime inputs and original Gate acceptance to a separately authorized local commit with expected-old ref CAS and explicit recovery. It does not introduce generic cross-HEAD evidence reuse, rewrite old receipt HEADs, auto-complete obligations or grant commit/push permission. Unsupported inputs refuse; architecture-required candidate mode remains unsupported. Release qualification and broader support require separate approval.
 
 ### Execution workflow corrections
 

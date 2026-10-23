@@ -86,35 +86,6 @@
       "additionalProperties": false
     },
     "proofReceipt": {
-      "oneOf": [{"$ref": "#/definitions/genericProofReceipt"}, {"$ref": "#/definitions/candidateProofReceipt"}]
-    },
-    "candidateEvidenceReceipt": {
-      "type": "object", "additionalProperties": false,
-      "required": ["ref", "sha256", "type", "exit_code", "candidate_id", "candidate_tree", "export_fingerprint"],
-      "properties": {
-        "ref": {"type": "string", "pattern": "^\\.harness/evidence/candidate-proof/[0-9a-f]{64}\\.json$"},
-        "sha256": {"$ref": "#/definitions/fingerprint"},
-        "type": {"$ref": "#/definitions/evidenceReceipt/properties/type"},
-        "exit_code": {"const": 0},
-        "candidate_id": {"$ref": "#/definitions/fingerprint"},
-        "candidate_tree": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
-        "export_fingerprint": {"$ref": "#/definitions/fingerprint"}
-      }
-    },
-    "candidateProofReceipt": {
-      "type": "object", "additionalProperties": false,
-      "required": ["execution_domain", "candidate_id", "candidate_tree", "head", "workspace", "evidence", "surface_refs"],
-      "properties": {
-        "execution_domain": {"const": "harness:candidate-assessment:v1"},
-        "candidate_id": {"$ref": "#/definitions/fingerprint"},
-        "candidate_tree": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
-        "head": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
-        "workspace": {"$ref": "#/definitions/fingerprint"},
-        "evidence": {"type": "array", "minItems": 1, "items": {"$ref": "#/definitions/candidateEvidenceReceipt"}},
-        "surface_refs": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/definitions/path"}}
-      }
-    },
-    "genericProofReceipt": {
       "type": "object",
       "required": ["head", "workspace", "evidence", "surface_refs"],
       "properties": {

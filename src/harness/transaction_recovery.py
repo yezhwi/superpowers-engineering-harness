@@ -9,12 +9,10 @@ import os
 import stat
 import sys
 from contextlib import ExitStack, contextmanager
-from contextvars import ContextVar
 from pathlib import Path
 from uuid import uuid4
 
 ERROR = 'TRANSACTION_RECOVERY_BLOCKED'
-_CANDIDATE_OWNER = ContextVar('candidate_publication_owner', default=None)
 
 
 class PublicationAdmissionError(OSError):
@@ -197,121 +195,10 @@ def _pending_paths(root: Path) -> list[Path]:
     return paths
 
 
-def candidate_operations(root: Path, *, allow_incomplete_trace: bool = False) -> list[dict]:
-    """Read bounded candidate intents without following or opening special entries."""
-    from .schema_resources import read_schema
-    from jsonschema import ValidationError, validate
-
-    directory = root / '.candidate-operations'
-    if directory.is_symlink():
-        raise OSError(f'{ERROR}: candidate storage invalid')
-    if not directory.exists():
-        return []
-    if not directory.is_dir():
-        raise OSError(f'{ERROR}: candidate storage invalid')
-    records = []
-    try:
-        for path in sorted(directory.iterdir()):
-            if path.suffix != '.json':
-                raise ValueError('unknown candidate entry')
-            document = json.loads(_bytes(root, path.relative_to(root).as_posix()))
-            validate(document, read_schema('candidate-operation.schema.json'))
-            encoded = json.dumps(document['payload'], sort_keys=True, separators=(',', ':'),
-                                 ensure_ascii=False).encode()
-            identifier = 'sha256:' + hashlib.sha256(b'harness:candidate-operation:v1\0' + encoded).hexdigest()
-            if document['operation_id'] != identifier or path.name != identifier[7:] + '.json':
-                raise ValueError('candidate identity mismatch')
-            started = document['phase'] in {'REF_CAS_STARTED', 'TRACE_PUBLISHED'}
-            if document['mutation_started'] is not started or document['grant_consumed'] is not started:
-                raise ValueError('candidate phase flags mismatch')
-            if document['phase'] == 'TRACE_PUBLISHED' and not allow_incomplete_trace:
-                reference = 'evidence/candidate-trace/' + identifier[7:] + '.json'
-                trace = json.loads(_bytes(root, reference))
-                validate(trace, read_schema('candidate-trace.schema.json'))
-                if (trace.get('operation_id') != identifier
-                        or trace.get('acceptance_id') != document['payload']['acceptance_id']
-                        or trace.get('parent') != document['payload']['parent']
-                        or trace.get('candidate_id') != document['payload']['candidate_id']
-                        or trace.get('proposed') != document['payload']['proposed']
-                        or trace.get('historical_acceptance') is not True):
-                    raise ValueError('candidate terminal trace mismatch')
-            records.append(document)
-    except (OSError, ValueError, TypeError, KeyError, ValidationError) as exc:
-        raise OSError(f'{ERROR}: candidate record invalid') from exc
-    pending = [record for record in records if record['phase'] in {'PREPARED', 'REF_CAS_STARTED'}]
-    if len(pending) > 1:
-        raise OSError(f'{ERROR}: multiple candidate operations')
-    return records
-
-
-def _require_candidate_admission(root: Path) -> None:
-    owner = _CANDIDATE_OWNER.get()
-    incomplete = bool(owner and owner[0] == str(root.resolve()) and _pending_paths(root))
-    pending = [record for record in candidate_operations(root, allow_incomplete_trace=incomplete)
-               if record['phase'] in {'PREPARED', 'REF_CAS_STARTED'}]
-    if not pending:
-        return
-    owner = _CANDIDATE_OWNER.get()
-    if owner != (str(root.resolve()), pending[0]['operation_id']):
-        raise OSError('TRANSACTION_RECOVERY_REQUIRED: pending candidate operation')
-    import yaml
-    try:
-        task = yaml.safe_load(_bytes(root, 'current-task.yaml'))
-        if (not isinstance(task, dict) or not isinstance(task.get('task'), dict)
-                or task['task'].get('id') != pending[0]['payload']['task_id']):
-            raise ValueError('candidate task mismatch')
-    except (OSError, ValueError, yaml.YAMLError) as exc:
-        raise OSError(f'{ERROR}: candidate task mismatch') from exc
-
-
-@contextmanager
-def candidate_publication_owner(root: Path, operation_id: str):
-    """Internal, task-bound metadata/recovery permit; never performs Git recovery."""
-    from .telemetry_lock import telemetry_lock
-
-    with telemetry_lock(root):
-        records = candidate_operations(root, allow_incomplete_trace=bool(_pending_paths(root)))
-        if any(record['phase'] in {'PREPARED', 'REF_CAS_STARTED'}
-               and record['operation_id'] != operation_id for record in records):
-            raise OSError(f'{ERROR}: foreign candidate operation')
-        token = _CANDIDATE_OWNER.set((str(root.resolve()), operation_id))
-        try:
-            yield
-        finally:
-            _CANDIDATE_OWNER.reset(token)
-
-
-@contextmanager
-def candidate_commit_authority_admission(root: Path):
-    """Only the commit grant/revoke entry uses this same-task metadata exception."""
-    import yaml
-    from .telemetry_lock import telemetry_lock
-
-    with telemetry_lock(root):
-        try:
-            pending = [item for item in candidate_operations(root)
-                       if item['phase'] in {'PREPARED', 'REF_CAS_STARTED'}]
-            if pending:
-                task = yaml.safe_load(_bytes(root, 'current-task.yaml'))
-                if (not isinstance(task, dict) or not isinstance(task.get('task'), dict)
-                        or task['task'].get('id') != pending[0]['payload']['task_id']):
-                    raise OSError(f'{ERROR}: candidate task mismatch')
-        except (OSError, ValueError, yaml.YAMLError) as exc:
-            raise PublicationAdmissionError(f'{ERROR}: candidate authority unavailable') from exc
-        if pending:
-            with candidate_publication_owner(root, pending[0]['operation_id']):
-                with publication_admission(root):
-                    yield
-        else:
-            with publication_admission(root):
-                yield
-
-
 def require_no_pending_publications(root: Path) -> None:
     """Read-only admission; never recover or probe filesystem capabilities."""
     if _pending_paths(root):
         raise OSError('TRANSACTION_RECOVERY_REQUIRED: pending publication')
-    _require_candidate_admission(root)
 
 
 @contextmanager
@@ -380,7 +267,6 @@ def publication_recovery(root: Path):
 
 
 def recover_pending_publications(root: Path):
-    _require_candidate_admission(root)
     for path in _pending_paths(root):
         try:
             document = json.loads(_bytes(root, path.relative_to(root).as_posix()))

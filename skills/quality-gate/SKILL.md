@@ -37,10 +37,6 @@ harness finding resume-review FND-001
 
 On exit `0`, a missing, unknown, duplicate, or decision-conflicting `DIRECTIVE:` is not permission to resume or transition; stop and inspect persisted task. `harness gate` persists `gate.blocked_by` and task state itself. Never copy blockers or transition Gate states manually. Guard `POLICY: USER_AUTHORITY_REQUIRED` / `DIRECTIVE: HALT_AND_WAIT` is not Gate `DECISION:`; stop and request user decision without calling `harness resume` or advancing task.
 
-## Opt-in Candidate Reference
-
-If canonical `gate.candidate_commit` is enrolled and `.harness/.candidate-active.json` selects this task's candidate, use `harness gate --candidate sha256:HEX --json` in GATING; otherwise retain ordinary `harness gate`. Read the `candidate-command-result/v1` envelope and canonical task state. This invokes the original assessor/convergence policy, not a waiver for pending obligations, Plan or reviews. Instructions: `<package-root>/docs/candidate-commit.md`. Acceptance never grants commit/push authority or generic cross-HEAD evidence reuse.
-
 ## Hard Boundaries (不得违反)
 
 1. **禁止 Skill 自己评估**："综合来看质量足够好" is forbidden. Stdout

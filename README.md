@@ -223,12 +223,6 @@ harness plan refresh-proof P-001 \
 
 Risk may only escalate, never downgrade. Evidence reuse, soft budgets, local telemetry, and fixture benchmarks are available. Remote telemetry and external-agent benchmark claims are unavailable.
 
-## Opt-in candidate commits (development)
-
-TASK-103 adds an opt-in path from an immutable Gate-accepted candidate to a separately authorized local commit. Implementation checks are in progress; this is not release/package qualification. Default Gate and generic evidence freshness remain unchanged. No automatic staging, push or cross-HEAD evidence reuse is granted.
-
-Read the [operator guide](docs/candidate-commit.md) and [implementation design](docs/superpowers/specs/2026-10-21-gate-before-commit-design.md) before enrolling `gate.candidate_commit` before contract freeze. Candidate commands require the closed `candidate-command-result/v1` JSON interface. Historical traces are not current readiness; pending operations require explicit candidate recovery.
-
 ## Boundaries
 
 > **Security boundary:** `harness evidence run --command` executes shell syntax (`shell=True`) as trusted text entered directly by the local Harness operator.

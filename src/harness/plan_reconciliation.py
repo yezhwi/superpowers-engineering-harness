@@ -13,12 +13,7 @@ from jsonschema import ValidationError, validate
 from . import plan_automation
 from .blockers import GateBlocker
 from .collect_evidence import command_covers_test, record_covers_test
-from .evidence_validator import (
-    EvidenceStatus,
-    EvidenceValidationError,
-    project_evidence,
-    validate_evidence,
-)
+from .evidence_validator import EvidenceStatus, project_evidence
 from .paths import EvidenceReferenceError, evidence_path
 from .plan_execution import (
     PlanExecutionError,
@@ -357,60 +352,11 @@ def _blocker(issue: PlanIssue, *, source: str | None = None) -> GateBlocker:
     )
 
 
-def _item_evidence_record(
-    harness_dir: Path,
-    reference: str,
-    head: str,
-    workspace: str,
-    *,
-    assessment_view=None,
-    plan_item_id: str | None = None,
-) -> dict | None:
-    if assessment_view is not None:
-        record = assessment_view.resolve_evidence(
-            reference, plan_item_id=plan_item_id
-        )
-        if record is None:
-            return None
-        try:
-            validate_evidence(
-                record,
-                current_head=head,
-                current_workspace=workspace,
-                expected_success=True,
-            )
-        except EvidenceValidationError:
-            return None
-        return record
-    try:
-        projection = project_evidence(
-            evidence_path(harness_dir, reference), head, workspace
-        )
-    except EvidenceReferenceError:
-        return None
-    return projection.record if projection.status is EvidenceStatus.FRESH else None
-
-
-def _fresh_item_evidence(
-    harness_dir: Path,
-    references: list[str],
-    head: str,
-    workspace: str,
-    *,
-    assessment_view=None,
-    plan_item_id: str | None = None,
-) -> bool:
+def _fresh_item_evidence(harness_dir: Path, references: list[str], head: str, workspace: str) -> bool:
     try:
         return all(
-            _item_evidence_record(
-                harness_dir,
-                reference,
-                head,
-                workspace,
-                assessment_view=assessment_view,
-                plan_item_id=plan_item_id,
-            )
-            is not None
+            project_evidence(evidence_path(harness_dir, reference), head, workspace).status
+            is EvidenceStatus.FRESH
             for reference in references
         )
     except EvidenceReferenceError:
@@ -424,22 +370,16 @@ def _latest_receipt_matches(
     *,
     head: str,
     workspace: str,
-    assessment_view=None,
-    plan_item_id: str | None = None,
 ) -> bool:
     """Require current proof identity to match latest accepted v2 receipt."""
     from harness import source_access
 
-    if not isinstance(receipt, dict) or receipt.get('surface_refs') != record.get('surface_refs', []):
-        return False
-    if assessment_view is not None:
-        if (receipt.get('execution_domain') != assessment_view.domain
-                or receipt.get('candidate_id') != assessment_view.candidate_id
-                or receipt.get('candidate_tree') != assessment_view.candidate_tree
-                or receipt.get('head') != assessment_view.parent_commit
-                or receipt.get('workspace') != assessment_view.export_fingerprint):
-            return False
-    elif receipt.get('execution_domain') is not None or receipt.get('head') != head or receipt.get('workspace') != workspace:
+    if (
+        not isinstance(receipt, dict)
+        or receipt.get("head") != head
+        or receipt.get("workspace") != workspace
+        or receipt.get("surface_refs") != record.get("surface_refs", [])
+    ):
         return False
     evidence_refs = record.get("evidence_refs", [])
     evidence_receipts = receipt.get("evidence")
@@ -450,27 +390,9 @@ def _latest_receipt_matches(
         return False
     try:
         for entry in evidence_receipts:
-            if assessment_view is not None:
-                candidate_record = _item_evidence_record(
-                    harness_dir,
-                    entry["ref"],
-                    head,
-                    workspace,
-                    assessment_view=assessment_view,
-                    plan_item_id=plan_item_id,
-                )
-                if (candidate_record is None
-                        or entry.get('type') != candidate_record.get('type')
-                        or entry.get('exit_code') != candidate_record.get('exit_code')
-                        or entry.get('candidate_id') != assessment_view.candidate_id
-                        or entry.get('candidate_tree') != assessment_view.candidate_tree
-                        or entry.get('export_fingerprint') != assessment_view.export_fingerprint):
-                    return False
-                from .candidate_assessment import _safe_reference
-                path = harness_dir.parent / _safe_reference(entry['ref'])
-                content = source_access.read_regular_bytes_beneath(path, harness_dir)
-            else:
-                content = source_access.read_bytes(evidence_path(harness_dir, entry['ref']))
+            content = source_access.read_bytes(
+                evidence_path(harness_dir, entry["ref"])
+            )
             digest = "sha256:" + hashlib.sha256(content).hexdigest()
             if digest != entry.get("sha256"):
                 return False
@@ -513,19 +435,9 @@ def _manual_cases_are_covered(
     qualified_cases: dict[str, dict],
     head: str,
     workspace: str,
-    *,
-    assessment_view=None,
-    plan_item_id: str | None = None,
 ) -> bool:
     records = [
-        _item_evidence_record(
-            harness_dir,
-            reference,
-            head,
-            workspace,
-            assessment_view=assessment_view,
-            plan_item_id=plan_item_id,
-        )
+        project_evidence(evidence_path(harness_dir, reference), head, workspace).record
         for reference in evidence_refs
     ]
     for reference in test_case_refs:
@@ -546,21 +458,11 @@ def _missing_automated_case_nodes(
     qualified_cases: dict[str, dict],
     head: str,
     workspace: str,
-    *,
-    assessment_view=None,
-    plan_item_id: str | None = None,
 ) -> list[tuple[str, str]]:
     records = []
     missing = []
     records = [
-        _item_evidence_record(
-            harness_dir,
-            reference,
-            head,
-            workspace,
-            assessment_view=assessment_view,
-            plan_item_id=plan_item_id,
-        )
+        project_evidence(evidence_path(harness_dir, reference), head, workspace).record
         for reference in evidence_refs
     ]
     for reference in test_case_refs:
@@ -629,7 +531,6 @@ def _validate_p0_projection(
     workspace: str,
     latest_proof_receipts: dict[str, dict] | None = None,
     check_proof: bool = True,
-    assessment_view=None,
 ) -> list[GateBlocker]:
     """Return existing final-state blockers for one explicit item projection."""
     plan_ids = {item["id"] for item in plan["items"]}
@@ -771,8 +672,6 @@ def _validate_p0_projection(
                 latest_proof_receipts.get(item_id),
                 head=head,
                 workspace=workspace,
-                assessment_view=assessment_view,
-                plan_item_id=item_id,
             )
         ):
             blockers.append(
@@ -811,12 +710,7 @@ def _validate_p0_projection(
             and record["status"] == "COMPLETE"
             and item.get("test_case_refs", [])
             and not _fresh_item_evidence(
-                harness_dir,
-                record["evidence_refs"],
-                head,
-                workspace,
-                assessment_view=assessment_view,
-                plan_item_id=item_id,
+                harness_dir, record["evidence_refs"], head, workspace
             )
         ):
             blockers.append(
@@ -839,8 +733,6 @@ def _validate_p0_projection(
                 qualified_cases,
                 head,
                 workspace,
-                assessment_view=assessment_view,
-                plan_item_id=item_id,
             )
         ):
             blockers.append(
@@ -858,11 +750,7 @@ def _validate_p0_projection(
             and item.get("test_case_refs", [])
             and (missing_nodes := _missing_automated_case_nodes(
                 harness_dir, item["test_case_refs"], record["evidence_refs"],
-                qualified_cases,
-                head,
-                workspace,
-                assessment_view=assessment_view,
-                plan_item_id=item_id,
+                qualified_cases, head, workspace,
             ))
         ):
             blockers.append(
@@ -1002,7 +890,6 @@ def assess_plan_reconciliation_documents(
     *,
     head: str,
     workspace: str,
-    assessment_view=None,
 ) -> PlanAssessment:
     """Assess public task-level trust and independent P0 final state."""
     early = _artifact_early_blockers(plan, execution)
@@ -1030,7 +917,6 @@ def assess_plan_reconciliation_documents(
                 execution["items"],
                 head=head,
                 workspace=workspace,
-                assessment_view=assessment_view,
             )
         )
         blocker = _task_level_blocker(
@@ -1050,7 +936,6 @@ def assess_plan_reconciliation_documents(
                     execution["items"],
                     head=head,
                     workspace=workspace,
-                    assessment_view=assessment_view,
                 )
             )
             blocker = _task_level_blocker(
@@ -1074,7 +959,6 @@ def assess_plan_reconciliation_documents(
             latest_proof_receipts=(
                 replay.latest_proof_receipts if replay is not None else None
             ),
-            assessment_view=assessment_view,
         )
     )
     return PlanAssessment(final, final, projection, replay, plan)
@@ -1085,8 +969,6 @@ def assess_plan_verification_entry_documents(
     task: dict,
     plan: dict | None,
     execution: dict | None,
-    *,
-    assessment_view=None,
 ) -> list[GateBlocker]:
     """Require trusted terminal Q3 history without current final-proof checks."""
     configuration = effective_plan_reconciliation(task)
@@ -1128,12 +1010,12 @@ def assess_plan_verification_entry_documents(
 
 
 def validate_plan_verification_entry(
-    harness_dir: Path, task: dict, *, assessment_view=None
+    harness_dir: Path, task: dict
 ) -> list[GateBlocker]:
     """Load once and assess task-level readiness to enter verification."""
     plan, execution = load_plan_artifacts(harness_dir, optional=True)
     return assess_plan_verification_entry_documents(
-        harness_dir, task, plan, execution, assessment_view=assessment_view
+        harness_dir, task, plan, execution
     )
 
 
@@ -1237,28 +1119,11 @@ def _evidence_receipts(
     *,
     head: str,
     workspace: str,
-    assessment_view=None,
-    plan_item_id: str | None = None,
 ) -> list[dict]:
     from harness import source_access
 
     receipts: list[dict] = []
     for reference in references:
-        if assessment_view is not None:
-            from .candidate_assessment import _safe_reference
-            canonical = _safe_reference(reference)
-            record = _item_evidence_record(harness_dir, canonical, head, workspace,
-                                           assessment_view=assessment_view, plan_item_id=plan_item_id)
-            if record is None:
-                raise PlanMutationError('PLAN_PROOF_MISSING')
-            path = harness_dir.parent / canonical
-            content = source_access.read_regular_bytes_beneath(path, harness_dir)
-            receipts.append({'ref': canonical, 'sha256': 'sha256:' + hashlib.sha256(content).hexdigest(),
-                             'type': record['type'], 'exit_code': record['exit_code'],
-                             'candidate_id': assessment_view.candidate_id,
-                             'candidate_tree': assessment_view.candidate_tree,
-                             'export_fingerprint': assessment_view.export_fingerprint})
-            continue
         try:
             path = evidence_path(harness_dir, reference)
             projection = project_evidence(path, head, workspace)
@@ -1292,18 +1157,13 @@ def _proof_transition_payload(
     *,
     action: str,
     initial_snapshot=None,
-    assessment_view=None,
 ) -> dict:
     before = initial_snapshot or workspace_snapshot(harness_dir.parent)
-    proof_head = assessment_view.candidate_tree if assessment_view else before.head
-    proof_workspace = assessment_view.export_fingerprint if assessment_view else before.fingerprint
     evidence = _evidence_receipts(
         harness_dir,
         request.evidence_refs,
-        head=proof_head,
-        workspace=proof_workspace,
-        assessment_view=assessment_view,
-        plan_item_id=request.item_id,
+        head=before.head,
+        workspace=before.fingerprint,
     )
     prior = replay.items.get(request.item_id, {})
     record = {"status": "COMPLETE"}
@@ -1318,9 +1178,8 @@ def _proof_transition_payload(
         task,
         plan,
         {**replay.items, request.item_id: record},
-        head=proof_head,
-        workspace=proof_workspace,
-        assessment_view=assessment_view,
+        head=before.head,
+        workspace=before.fingerprint,
     )
     target_blockers = [blocker for blocker in blockers if blocker.source == request.item_id]
     if target_blockers:
@@ -1337,9 +1196,7 @@ def _proof_transition_payload(
         "surface_refs": list(record.get("surface_refs", [])),
         "proof_receipt": {
             "head": before.head,
-            "workspace": proof_workspace,
-            **({'execution_domain': assessment_view.domain, 'candidate_id': assessment_view.candidate_id,
-                'candidate_tree': assessment_view.candidate_tree} if assessment_view else {}),
+            "workspace": before.fingerprint,
             "evidence": evidence,
             "surface_refs": list(record.get("surface_refs", [])),
         },
@@ -1385,7 +1242,6 @@ def _lifecycle_transition(
     request: PlanMutationRequest,
     *,
     initial_snapshot=None,
-    assessment_view=None,
 ) -> dict:
     item_id = request.item_id
     if not item_id or item_id not in {item["id"] for item in plan["items"]}:
@@ -1445,7 +1301,6 @@ def _lifecycle_transition(
                 request,
                 action="RECONCILE",
                 initial_snapshot=initial_snapshot,
-                assessment_view=assessment_view,
             )
         elif request.disposition in {"SKIPPED", "SUPERSEDED"}:
             if not isinstance(request.reason, str) or not request.reason.strip():
@@ -1489,7 +1344,6 @@ def _lifecycle_transition(
             replay,
             request,
             action="REFRESH_PROOF",
-            assessment_view=assessment_view,
         )
         if _exact_transition_retry(execution, request, transition):
             raise PlanMutationError("PLAN_EXACT_RETRY")
@@ -1597,8 +1451,6 @@ def mutate_plan_execution(
     harness_dir: Path,
     task: dict,
     request: PlanMutationRequest,
-    *,
-    assessment_view=None,
 ) -> bool:
     """Apply one authorized task-level mutation under canonical Harness lock."""
     configuration = effective_plan_reconciliation(task)
@@ -1646,7 +1498,6 @@ def mutate_plan_execution(
                     replay,
                     normalized,
                     initial_snapshot=initial_snapshot,
-                    assessment_view=assessment_view,
                 )
             except PlanMutationError as exc:
                 if exc.code == "PLAN_EXACT_RETRY":

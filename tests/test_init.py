@@ -25,18 +25,14 @@ def repo(tmp_path):
     return tmp_path
 
 
-def test_init_refuses_candidate_intent_before_creating_any_directories(repo):
-    harness = repo / '.harness'
-    operations = harness / '.candidate-operations'
-    operations.mkdir(parents=True)
-    (harness / 'current-task.yaml').write_text('task:\n  id: TASK-1\n')
-    (operations / 'unknown.json').write_text('{}')
-    before = {path.relative_to(harness).as_posix() for path in harness.rglob('*')}
+def test_init_refuses_unknown_publication_before_creating_directories(repo):
+    harness = repo / ".harness"
+    pending = harness / ".transactions" / "unknown"
+    pending.mkdir(parents=True)
+    before = {path.relative_to(harness) for path in harness.rglob("*")}
     with pytest.raises(OSError):
         init_harness(repo)
-    after = {path.relative_to(harness).as_posix() for path in harness.rglob('*')}
-    assert after == before
-    assert (operations / 'unknown.json').read_text() == '{}'
+    assert {path.relative_to(harness) for path in harness.rglob("*")} == before
 
 
 def test_creates_harness_directory(repo):

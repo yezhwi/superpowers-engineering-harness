@@ -130,30 +130,18 @@ def _declare_locked(harness_dir: Path, document: dict) -> dict:
     return record
 
 
-def verify(harness_dir: Path, contract_id: str, evidence: str, *, assessment_view=None) -> dict:
+def verify(harness_dir: Path, contract_id: str, evidence: str) -> dict:
     with publication_admission(harness_dir):
-        return _verify_locked(
-            harness_dir, contract_id, evidence, assessment_view=assessment_view
-        )
+        return _verify_locked(harness_dir, contract_id, evidence)
 
 
-def _verify_locked(harness_dir: Path, contract_id: str, evidence: str, *, assessment_view=None) -> dict:
+def _verify_locked(harness_dir: Path, contract_id: str, evidence: str) -> dict:
     record = load_interface_contract(harness_dir, contract_id)
-    if assessment_view is not None:
-        from .candidate_assessment import CandidateAssessmentError, _safe_reference
-        try:
-            canonical = _safe_reference(evidence)
-        except CandidateAssessmentError as exc:
-            raise InterfaceContractError("INTERFACE_VERIFICATION_CANDIDATE_MISMATCH") from exc
-        if (not assessment_view.qualifies_interface(contract_id)
-                or assessment_view.resolve_evidence(canonical, interface_id=contract_id) is None):
-            raise InterfaceContractError("INTERFACE_VERIFICATION_CANDIDATE_MISMATCH")
-    else:
-        try:
-            resolved = evidence_path(harness_dir, evidence)
-        except EvidenceReferenceError as exc:
-            raise InterfaceContractError(str(exc)) from exc
-        canonical = resolved.name
+    try:
+        resolved = evidence_path(harness_dir, evidence)
+    except EvidenceReferenceError as exc:
+        raise InterfaceContractError(str(exc)) from exc
+    canonical = resolved.name
     if canonical not in record["verification"]:
         record["verification"].append(canonical)
     _validate(record)

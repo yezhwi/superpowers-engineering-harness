@@ -21,32 +21,6 @@ from .workspace import (
 CHECKS = {"boundary", "dto", "errors", "dependency", "compatibility", "tests"}
 
 
-def validate_review_report(harness_dir: Path, review: dict, *, task_id: str) -> None:
-    """Validate interface-review source without publishing canonical artifacts."""
-    if not isinstance(review, dict) or review.get("task") != task_id:
-        raise ValueError("INTERFACE_REVIEW_TASK_INVALID")
-    contracts = review.get("contracts")
-    checks = review.get("checks")
-    if (
-        not isinstance(contracts, list)
-        or not contracts
-        or not isinstance(checks, dict)
-        or set(checks) != CHECKS
-        or any(
-            value not in {"pass", "fail", "not_applicable"}
-            for value in checks.values()
-        )
-        or not isinstance(review.get("proposals", []), list)
-    ):
-        raise ValueError("INTERFACE_REVIEW_INVALID")
-    for contract_id in contracts:
-        load_interface_contract(harness_dir, contract_id)
-    if any(value == "fail" for value in checks.values()) and not review.get(
-        "proposals"
-    ):
-        raise ValueError("INTERFACE_FINDING_REQUIRED")
-
-
 def _load_existing_findings(findings_dir: Path) -> list[dict]:
     findings = []
     for path in sorted(findings_dir.glob("FND-*.yaml")):
@@ -82,9 +56,26 @@ def _write_review_locked(
         review = yaml.safe_load(source.read_text())
     except (OSError, yaml.YAMLError) as exc:
         raise ValueError("INTERFACE_REVIEW_INVALID") from exc
-    validate_review_report(harness_dir, review, task_id=task_id)
+    if not isinstance(review, dict) or review.get("task") != task_id:
+        raise ValueError("INTERFACE_REVIEW_TASK_INVALID")
     contracts = review.get("contracts")
     checks = review.get("checks")
+    if (
+        not isinstance(contracts, list)
+        or not contracts
+        or not isinstance(checks, dict)
+        or set(checks) != CHECKS
+        or any(
+            value not in {"pass", "fail", "not_applicable"} for value in checks.values()
+        )
+    ):
+        raise ValueError("INTERFACE_REVIEW_INVALID")
+    for contract_id in contracts:
+        load_interface_contract(harness_dir, contract_id)
+    if any(value == "fail" for value in checks.values()) and not review.get(
+        "proposals"
+    ):
+        raise ValueError("INTERFACE_FINDING_REQUIRED")
 
     existing = _load_existing_findings(harness_dir / "findings")
     next_id = max(

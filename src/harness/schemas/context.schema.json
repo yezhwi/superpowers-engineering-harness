@@ -30,8 +30,7 @@
         "alignment": {"type": ["object", "null"]},
         "evidence": {"$ref": "#/definitions/records"},
         "gate": {"type": "object"},
-        "architecture": {"$ref": "#/definitions/architecture"},
-        "candidate": {"$ref": "#/definitions/candidate"}
+        "architecture": {"$ref": "#/definitions/architecture"}
       }
     },
     "working": {
@@ -48,32 +47,6 @@
     "hash": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
     "versions": {"type": "object", "additionalProperties": {"anyOf": [{"type": "null"}, {"$ref": "#/definitions/hash"}]}},
     "records": {"type": "array", "items": {"type": "object"}},
-    "candidate": {
-      "type": "object",
-      "required": ["candidate_id", "parent_commit", "historical_acceptance", "acceptance_ids", "historically_committed", "operations", "live_parent", "live_proposed", "current_readiness", "generic_evidence_reuse"],
-      "additionalProperties": false,
-      "properties": {
-        "candidate_id": {"$ref": "#/definitions/hash"},
-        "parent_commit": {"type": "string", "pattern": "^[a-f0-9]{40}$"},
-        "historical_acceptance": {"type": "boolean"},
-        "acceptance_ids": {"type": "array", "maxItems": 1, "uniqueItems": true, "items": {"$ref": "#/definitions/hash"}},
-        "historically_committed": {"type": "boolean"},
-        "operations": {
-          "type": "array",
-          "items": {
-            "type": "object", "required": ["operation_id", "phase"], "additionalProperties": false,
-            "properties": {
-              "operation_id": {"$ref": "#/definitions/hash"},
-              "phase": {"enum": ["PREPARED", "REF_CAS_STARTED", "TRACE_PUBLISHED", "ABORTED_AUTHORITY_REVOKED"]}
-            }
-          }
-        },
-        "live_parent": {"type": "boolean"},
-        "live_proposed": {"type": "boolean"},
-        "current_readiness": {"const": "NOT_ASSESSED"},
-        "generic_evidence_reuse": {"const": false}
-      }
-    },
     "architecture": {
       "oneOf": [
         {

@@ -19,7 +19,6 @@ from .telemetry import instrument
 PROJECTION_VERSION = 5
 ROOT_FILES = (
     "current-task.yaml",
-    ".candidate-active.json",
     "requirements.yaml",
     "invariants.yaml",
     "impact.yaml",
@@ -78,18 +77,6 @@ def file_version(path: Path) -> str | None:
     if path.is_dir():
         return digest({"directory": path.name})
     return "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
-
-
-def _candidate_file_version(path: Path, harness_dir: Path) -> str | None:
-    if source_access.is_symlink(path):
-        raise ContextBuildError('CONTEXT_REFERENCE_BROKEN', 'candidate source is a symlink')
-    if not source_access.exists(path):
-        return None
-    try:
-        raw = source_access.read_regular_bytes_beneath(path, harness_dir)
-    except (OSError, ValueError) as exc:
-        raise ContextBuildError('CONTEXT_SCHEMA_INVALID', 'candidate source is not a regular file') from exc
-    return 'sha256:' + hashlib.sha256(raw).hexdigest()
 
 
 def _declared_paths(harness_dir: Path) -> set[str]:
@@ -290,8 +277,6 @@ def version_scope(
     for directory, pattern in ARTIFACT_PATTERNS.items():
         path = harness_dir / directory
         allowed.append(path)
-        if (directory.startswith('evidence/candidate-') or directory == '.candidate-operations') and path.is_symlink():
-            raise ContextBuildError('CONTEXT_REFERENCE_BROKEN', 'candidate directory is a symlink')
         if path.is_dir():
             allowed.extend(path.glob(pattern))
     for name in discovered:
@@ -367,12 +352,9 @@ def _capture_versions(
         )
         for name in root_files:
             path = contained_path(root, f"{harness_dir.name}/{name}")
-            files[name] = (_candidate_file_version(path, harness_dir)
-                           if name == '.candidate-active.json' else file_version(path))
+            files[name] = file_version(path)
         for directory in ARTIFACT_DIRS:
             path = contained_path(root, f"{harness_dir.name}/{directory}")
-            if (directory.startswith('evidence/candidate-') or directory == '.candidate-operations') and path.is_symlink():
-                raise ContextBuildError('CONTEXT_REFERENCE_BROKEN', 'candidate directory is a symlink')
             if path.exists() and not path.is_dir():
                 raise ContextBuildError(
                     "CONTEXT_SCHEMA_INVALID", f"not a directory: {directory}"
@@ -384,8 +366,6 @@ def _capture_versions(
                     checked = contained_path(root, f"{harness_dir.name}/{relative}")
                     if directory == "decisions":
                         files[relative] = digest({"member": member.name})
-                    elif directory.startswith('evidence/candidate-') or directory == '.candidate-operations':
-                        files[relative] = _candidate_file_version(checked, harness_dir)
                     else:
                         files[relative] = file_version(checked)
         declared = {}

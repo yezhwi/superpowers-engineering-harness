@@ -34,26 +34,6 @@ def fixture_workspace(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
 
 
-@pytest.mark.parametrize('command', ['run', 'compare'])
-def test_benchmark_report_mutators_refuse_candidate_intent_before_provider(tmp_path, monkeypatch, command):
-    harness = tmp_path / '.harness'
-    operations = harness / '.candidate-operations'
-    operations.mkdir(parents=True)
-    (harness / 'current-task.yaml').write_text('task:\n  id: TASK-1\n')
-    (operations / 'unknown.json').write_text('{}')
-    def forbidden_provider(*args):
-        pytest.fail('benchmark provider executed before candidate admission')
-    if command == 'run':
-        monkeypatch.setattr(controlplane.benchmark, 'run_benchmarks', forbidden_provider)
-        result = controlplane.cmd_benchmark_run(tmp_path)
-    else:
-        monkeypatch.setattr(controlplane.benchmark, 'compare_benchmarks', forbidden_provider)
-        result = controlplane.cmd_benchmark_compare(tmp_path, tmp_path, tmp_path)
-    assert result == 2
-    assert not (harness / 'benchmark-report.json').exists()
-    assert (operations / 'unknown.json').read_text() == '{}'
-
-
 def test_alignment_completeness_helper_uses_current_task_proposed_decisions(tmp_path):
     from test_alignment import complete_alignment
 

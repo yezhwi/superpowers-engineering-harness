@@ -99,12 +99,6 @@ def _proof_issue(transition: dict) -> ReplayIssue | None:
             return ReplayIssue("RECEIPT_INVALID", "proof evidence receipt is malformed")
         if record.get("exit_code") != 0:
             return ReplayIssue("RECEIPT_MISMATCH", "proof evidence was not successful")
-        if receipt.get('execution_domain') == 'harness:candidate-assessment:v1':
-            if (record.get('candidate_id') != receipt.get('candidate_id')
-                    or record.get('candidate_tree') != receipt.get('candidate_tree')
-                    or record.get('export_fingerprint') != receipt.get('workspace')):
-                return ReplayIssue('RECEIPT_MISMATCH', 'candidate proof domain differs from receipt')
-            continue
         if record.get("commit") != receipt.get("head"):
             return ReplayIssue("RECEIPT_MISMATCH", "proof evidence head differs from receipt")
         if record.get("workspace_fingerprint") != receipt.get("workspace"):
