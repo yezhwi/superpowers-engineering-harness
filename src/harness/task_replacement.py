@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import os
 import shutil
+import sys
 import tempfile
+from contextlib import suppress
 from pathlib import Path
 from typing import Literal
 from uuid import uuid4
@@ -57,14 +59,24 @@ def restore_architecture_mode(
 
 
 def replacement_workspace(harness_dir: Path) -> Path:
-    """Return sibling copy of Harness state for all-or-nothing mutation."""
+    """Copy task facts; opaque probes stay in the original tree for retention."""
+    ignore_storage = shutil.ignore_patterns(".staging", ".publication-retained")
+
+    def ignore(directory, names):
+        ignored = ignore_storage(directory, names)
+        if Path(directory) == harness_dir:
+            # Never traverse probes, including FIFO/symlink fixtures. Publication
+            # retains their original inodes with the whole old Harness root.
+            ignored.add("acceptance-probes")
+        return ignored
+
     parent = harness_dir.parent
     staged = Path(
         tempfile.mkdtemp(prefix=f".{harness_dir.name}.replacement-", dir=parent)
     )
     try:
         shutil.rmtree(staged)
-        shutil.copytree(harness_dir, staged, ignore=shutil.ignore_patterns(".staging", ".publication-retained"))
+        shutil.copytree(harness_dir, staged, ignore=ignore)
     except Exception:
         shutil.rmtree(staged, ignore_errors=True)
         raise
@@ -129,6 +141,12 @@ def _retain_replaced_harness(harness_dir: Path, backup: Path) -> None:
         fs.move_noreplace(parent, backup.name, slot, 'previous')
         fs.sync_directory(slot)
         fs.sync_directory(parent)
+        # Reporting retained objects is subordinate to the completed move.
+        with suppress(BaseException):
+            print(
+                f'TASK_REPLACEMENT_RETAINED: .publication-retained/{identifier}/previous',
+                file=sys.stderr,
+            )
     except BaseException:
         failed = True
         raise
