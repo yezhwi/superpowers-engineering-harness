@@ -10,6 +10,8 @@
 
 **Spec:** `docs/2026-10-14-context-evidence-collection-efficiency-spec.md` v0.6, approved by user for implementation.
 
+> **Historical checklist note:** The unchecked Task 1–8 boxes below preserve the design-time implementation plan; they are not a live list of unfinished v0.3.2 features and must not be bulk-marked complete without item-level receipts. See the canonical human-readable [delivery status](../reports/v032-context-efficiency.md#v032-delivery-status) for the qualified historical/current distinction.
+
 ## Global Constraints
 
 - EF-INV-01–08 apply to every task; no compression of global must requirements, critical invariants, accepted decisions, open findings or typed blockers.
@@ -207,7 +209,7 @@ User approved native execution against spec v0.6, with review clarifications inc
 
 ## v0.3.2 Proposed follow-up: evidence batching and artifact lifecycle
 
-**Status: A GUIDANCE IMPLEMENTED / B AND C NOT IMPLEMENTED.** The Agent-facing guidance in Follow-up A is implemented as a static/instructional change; it is not an automatic Core capability. Follow-ups B and C remain proposed backlog, not amendments to the approved v0.6 implementation contract or permission to execute cleanup, change Gate semantics, or commit. Their exact interfaces and implementation scope still require design confirmation.
+**Status: A GUIDANCE IMPLEMENTED / B MANUAL IMPLEMENTED AND HISTORICALLY ACCEPTED / C IMPLEMENTED AND HISTORICALLY ACCEPTED.** Follow-up A is a static/instructional change, not an automatic Core capability. Follow-up B is the bounded manual fixed-policy feature described below; its historical acceptance does not authorize real cleanup. Follow-up C was delivered by TASK-103 (`6f453d9`); its opt-in candidate domain does not weaken default Gate behavior, generic evidence freshness, task states or separate commit/push authorization.
 
 ### Follow-up A: Plan bounded related-test batches before execution
 
@@ -233,7 +235,7 @@ Historical TASK-095 acceptance covered 45 related tests: existing fixture-backed
 
 ### Follow-up B: Define `.harness` inventory, retention and controlled cleanup
 
-**Status: MANUAL FIXED-POLICY IMPLEMENTATION CANDIDATE.** TASK-099 implements the user-approved current-plus-nine task-history policy and exact-plan manual interface. Formal review, Gate, release and real-workspace cleanup authorization remain separate and pending.
+**Status: MANUAL IMPLEMENTED AND HISTORICALLY ACCEPTED.** TASK-099 accepted the user-approved current-plus-nine task-history policy and exact-plan manual interface at parent `999bfb94bef1cbe32067a5488c1203f843d9085f`; the accepted bytes were then committed exactly as `3b4fa2853b1990990df847d80461e7a5c454a175`. Its 362 related tests across four files, ten private package-acceptance scenarios, independent CLEAN/formal reviews and original Gate convergence are historical parent/candidate evidence, not a Gate or 362-test run on `3b4fa28`.
 
 **Problem:** Evidence, task history, acceptance artifacts, build/install workspaces and retained publication objects accumulate. Growth needs lifecycle management, but evidence freshness is not a deletion policy. File count alone does not prove Context/Gate slowdown; measure category sizes, counts and relevant traversal costs before claiming a performance fix.
 
@@ -244,25 +246,29 @@ Historical TASK-095 acceptance covered 45 related tests: existing fixture-backed
 - [x] Candidate admission is limited to recognizable direct-child whole archive packages with the actual task-new/recover member shape and scope artifacts. Unknown, malformed, ambiguous, symlinked, hard-linked, cross-device or unreadable groups are skipped whole.
 - [x] Bounded structured scalar scanning covers actual canonical YAML/JSON in current and retained roots, including provenance references. Qualified normalized history paths protect live candidates; ambiguous potential candidate paths fail closed without repository-wide or candidate-graph scanning.
 - [x] Apply revalidates plan facts and member identity using directory-relative no-follow operations, stops on the first unlink/rmdir failure, and reports actual removed entries and logical bytes without promising rollback or physical reclamation.
-- [x] Anonymous related tests cover preview/apply authorization, fixed retention, all-version protection, unsafe-package skips, references, ambiguity, pending publication, partial failure and sanitized structured output. Package acceptance remains a coordinator-run post-GREEN step.
+- [x] Anonymous related tests cover preview/apply authorization, fixed retention, all-version protection, unsafe-package skips, references, ambiguity, pending publication, partial failure and sanitized structured output. Historical package acceptance covered ten private scenarios.
 
-**Delivery boundary:** This is a manual task-history mechanism, not authorization to clean this repository. Shared retained publication objects, fixtures, probes, current/live facts, referenced history and user-owned files remain protected; unknown ownership is skipped. The feature adds no automatic or age-based pruning, configurable retention, persistent ownership registry, reachability graph, scheduler or whole-tree size guarantee. Formal review/Gate and any real cleanup remain separately authorized.
+**Delivery boundary:** This is a manual task-history mechanism, not authorization to clean this repository. No real root cleanup was performed. Shared retained publication objects, fixtures, probes, current/live facts, referenced history and user-owned files remain protected; unknown ownership is skipped. The feature adds no automatic or age-based pruning, configurable retention, persistent ownership registry, reachability graph, scheduler or whole-tree size guarantee. Release and any real cleanup remain separately authorized.
 
 ### Follow-up C: Gate before commit readiness
 
-**Status: NOT IMPLEMENTED / DESIGN PENDING.** This is a v0.3.2 backlog proposal only. The current Core remains bound to HEAD + workspace and is unchanged; no new CLI or API is mandated, no old receipts become fresh on a new HEAD, and no runtime behavior is claimed.
+**Status: IMPLEMENTED AND HISTORICALLY ACCEPTED.** TASK-103 delivered DEC-043 / INT-010 in commit `6f453d9`. This is no longer a pending proposal. See the [operator guide](../../candidate-commit.md), [implementation design](../specs/2026-10-21-gate-before-commit-design.md) and [qualified delivery status](../reports/v032-context-efficiency.md#v032-delivery-status).
 
-**Intent and sequence:** Treat commit as a readiness boundary for an already accepted candidate, not an unverified candidate snapshot. The proposed order is: finish implementation and documentation; run the relevant tests, builds and review; obtain the original Gate pass; verify that the actual commit will contain the exact accepted candidate and only authorized scope; obtain user-authorized commit permission; then obtain separately authorized push or release permission. A Gate pass is not commit or push authorization, and routine commit-then-first-Gate is outside this proposal.
+The opt-in workflow binds an immutable candidate, actual proof/runtime inputs and original Gate acceptance to a separately authorized local commit with expected-old ref CAS and explicit recovery. It does not introduce generic cross-HEAD evidence reuse, rewrite old receipt HEADs, auto-complete obligations or grant commit/push permission. Unsupported inputs refuse; architecture-required candidate mode remains unsupported. Release qualification and broader support require separate approval.
 
-**Future proof binding:** A future design must bind acceptance to the candidate Git tree, a content manifest including tracked, untracked and user-path inputs, the parent/reference HEAD, actual test source and dependencies, runtime and environment, exact command and coverage, contract and review inputs, and build inputs. Candidate Git tree equality is necessary, not sufficient: HEAD-sensitive tests or builds, post-Gate hooks, index/worktree drift and other inputs need explicit semantics and must fail closed. Untracked or user-path inputs cannot be silently excluded.
+### Execution workflow corrections
 
-**Invalidation and trace:** Unexpected candidate invalidation occurs on content drift, a failed commit, hooks altering the index, an unexpected HEAD change or parent drift, or unbound HEAD-sensitive inputs; each requires new validation before readiness can be asserted, rather than an automatic Gate after an expected approved commit. The expected HEAD advance for the exact already accepted candidate must instead be verified by an append-only trace from the new commit to the Gate acceptance; the commit hash change alone does not trigger a new full Gate. This remains future design, not implemented behavior: current Core HEAD and workspace freshness are unchanged, no old receipt HEAD may be rewritten, no blanket cross-HEAD inheritance is created, and HEAD-sensitive inputs must fail closed until their binding semantics are specified.
+**Status: REPOSITORY GUIDANCE UPDATED; LIGHTWEIGHT VERIFICATION ONLY.** The user approved direct skill/test/documentation work without creating a new Harness task after native task creation refused a pre-existing FIFO probe. TASK-103 remains its own historical DONE task; this correction claims no new Gate/DONE, independent review, installed-skill update or release qualification.
 
-**Boundary:** Task-state semantics remain unchanged. This proposal does not allow a false Gate or DONE state and does not grant commit or push authority. It adds no garbage collection and no automatic scheduler. Retention mechanism, proof representation and any public interface remain design pending.
+- Keep one implementation executor across checker repairs, wording edits and diagnosed retries; skill invocation is not agent/process delegation. Preserve explicitly selected per-task review or parallel execution rather than silently overriding it.
+- Separate setup/checker failures, genuine product RED and authority/policy refusals. Retain invalid attempts, repair diagnosed oracles in the same executor, and establish a valid identified RED/GREEN pair. Existing budgets and user-authority stops remain binding.
+- Decide changed paths, related selectors, required build/review/Gate work and stop conditions before execution. Surface workflow conflicts before expanding scope; do not manufacture RED or bypass native policy.
+- Validate documentation facts/sequence by human review and interfaces, links and history mechanically. Ordinary prose variants must not force wording changes for a brittle oracle.
+- Consolidate required closeout after content stabilizes; retain original logs and one concise record. Static regression/package checks do not prove model compliance or speedup. Core, state machine, Gate, authorization, collector and freshness remain unchanged.
 
 ### Follow-up sequencing and acceptance
 
 1. Keep the implemented batching guidance within its instructional boundary; automation requires a separate design and approval.
-2. Implement and verify only approved future scope. Storage inventory/retention design precedes destructive cleanup; no broad storage subsystem or persistent scheduling cache is implied.
-3. Record new related verification, package/build impact and review obligations for any future implementation candidate. Documentation and historical tests are not proof of new runtime behavior.
-4. Require fresh candidate acceptance through the existing preflight/review/Gate path before describing storage cleanup or batching automation as delivered in v0.3.2. Commit, push, tag and publish authorization remain pending and separate.
+2. For any future cleanup beyond the delivered fixed-policy manual mechanism, design and verify only separately approved scope; no broad storage subsystem or persistent scheduling cache is implied.
+3. Record new related verification, package/build impact and review obligations for future candidates. Documentation and historical tests are not proof of new runtime behavior, and this sequencing is not a retroactive TASK-099 obligation.
+4. Require fresh candidate acceptance through the then-applicable preflight/review/Gate path before describing broader storage cleanup or batching automation as delivered. Push, tag and publication authorization remain separate.

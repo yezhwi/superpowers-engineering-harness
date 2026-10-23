@@ -4,16 +4,12 @@
 
 ## 0.3.2
 
-Development candidate; metadata and implementation only. Formal review/Gate acceptance, tag, publication, and deployment remain pending and separately authorized.
-
-### Planned follow-up
-
-- Add manual `harness task prune`: preview is read-only by default, while `--apply --plan-id <digest>` revalidates the exact plan under publication admission before deleting recognized task-history packages. The fixed policy retains the current task plus nine newest distinct historical task IDs and every version of retained IDs; unknown, unsafe, referenced, shared-retained, fixture and user-owned data remain protected.
-- The command is not automatic cleanup or a whole-`.harness` size bound. It adds no TTL, scheduler, configurable policy, persistent registry, implicit recovery or atomic rollback promise; partial failures report only actual removals and logical bytes. See [Follow-up B](docs/superpowers/plans/2026-10-14-v032-context-evidence-efficiency.md#follow-up-b-define-harness-inventory-retention-and-controlled-cleanup).
-- Follow-up C records a [Gate before commit readiness design](docs/superpowers/plans/2026-10-14-v032-context-evidence-efficiency.md#follow-up-c-gate-before-commit-readiness). It is not implemented: Core behavior, evidence freshness, task state and commit/push authorization remain unchanged.
+Development candidate; implementation and documentation are present, with historical acceptance qualifications summarized in the [delivery status](docs/superpowers/reports/v032-context-efficiency.md#v032-delivery-status). This is not a release record: tag, publication, and deployment remain separately authorized and are not established here.
 
 ### Added
 
+- Add opt-in [immutable Gate-accepted candidate commits](docs/candidate-commit.md), implemented in TASK-103 (`6f453d9`). Candidate acceptance and local commit authorization remain separate; default Gate behavior and generic HEAD/workspace evidence freshness remain unchanged. Push and release are not implied.
+- Add manual `harness task prune`: preview is read-only by default, while `--apply --plan-id <digest>` revalidates the exact plan under publication admission before deleting recognized task-history packages. The fixed policy retains the current task plus nine newest distinct historical task IDs and every version of retained IDs; unknown, unsafe, referenced, shared-retained, fixture and user-owned data remain protected. This is not automatic cleanup or a whole-`.harness` size bound; it adds no TTL, scheduler, configurable policy, persistent registry, implicit recovery or atomic rollback promise, and partial failures report only actual removals and logical bytes. See [Follow-up B](docs/superpowers/plans/2026-10-14-v032-context-evidence-efficiency.md#follow-up-b-define-harness-inventory-retention-and-controlled-cleanup).
 - Agent guidance now calls for proactive bounded batching of long-running related verification, immutable receipts per batch, and reuse of only fresh successful coverage. This is instructional guidance using the existing collector, Gate, deadline and budgets—not an automated scheduler, proof of Agent obedience or a measured speedup—and makes no Core behavior change.
 - Opt-in Context timing/profile output and ordered batch expansion with bounded full builds/source loads/Gate assessments. A candidate losing eligibility commits its legal prefix and stops; genuine prepublication errors publish no new events. Empty expansion still independently validates.
 - Read-only `harness evidence plan --json` and `harness impact reconcile --file proposal.yaml --dry-run`; neither executes tests, initializes missing provenance, nor grants execution authority.
@@ -26,6 +22,7 @@ Development candidate; metadata and implementation only. Formal review/Gate acce
 
 ### Fixed
 
+- Clarify execution guidance: use one continuing executor by default; invoking an implementation skill does not require another agent or Codex. Diagnose checker/setup errors in the same executor, retain invalid attempts without claiming product RED, and preserve budget/authority stops. Documentation checks distinguish semantic review from exact interface/link checks, with related verification and closeout planned before execution. This is a repository-skill correction, not Core automation or proof of Agent obedience; Gate, states, authorization, budgets and freshness are unchanged.
 - Admit `harness check minimal` before canonical reads and retain the publication owner through validation and output rendering.
 - Validate Test Plan targets against the Harness repository rather than the caller's working directory; a same-named test in another checkout cannot satisfy a missing target.
 - Declare publication-recovery, test-scope provenance and profile-publication adapters in the finite Context dependency closure.
@@ -35,19 +32,19 @@ Development candidate; metadata and implementation only. Formal review/Gate acce
 
 - Implementation commit `520f0c7`: 2,975 tests passed across all 141 test files, with four file-level workers and no test failures, errors or skips. One scope-migration file exceeded its concurrent 600-second limit and passed all 80 cases on an isolated rerun; this is not a single uninterrupted suite run.
 - A wheel built from that commit installed as version `0.3.2` in a fresh venv outside the checkout. All 16 CLI acceptance scenarios passed, including scoped suggestions, Plan/evidence/admission guidance, unchanged Harness file contents and rejection before the supplied evidence command executes.
-- These checks are development verification, not formal review/Gate acceptance, publication authorization, or completion of the separately pending behavioral/benchmark validation below.
+- These checks are development verification at `520f0c7`, not current-HEAD execution or publication authorization. Later historical acceptance is qualified separately in the delivery-status summary; the benchmark below remains observational rather than acceptance by itself.
 
 ### Compatibility and boundaries
 
 - Source builds require `setuptools>=77.0.3` for PEP 639 SPDX license metadata, correcting the incompatible `>=68` declaration. Apache-2.0 SPDX metadata and Python `>=3.11` runtime requirement remain unchanged; this is a build-time floor, not release approval.
 - User-narrowed macOS-only support: native `renameatx_np` exchange/no-replace plus destination capability validation. Linux, Windows and other OS publication backends fail closed with `PUBLICATION_UNSUPPORTED`; no Linux support/matrix or implicit network/FUSE/remote-filesystem guarantee. Symbol presence/probe success is not universal filesystem or power-loss certification.
-- Qualified preservation, not content CAS or permanent canonical freshness: unmanaged inodes may relocate to retained recovery storage. All stages, displaced objects, probes and terminal data remain indefinitely; disk growth/`ENOSPC` is accepted. New private directories/files request `0700`/`0600`; displaced objects keep inode/mode. No pruning command, automatic cleanup, standalone-write or task-directory-swap safety upgrade.
+- Qualified preservation, not content CAS or permanent canonical freshness: unmanaged inodes may relocate to retained recovery storage. Publication-retained and staging data, displaced objects, probes and terminal publication storage remain unpruned; disk growth/`ENOSPC` is still possible outside the bounded manual task-history policy. New private directories/files request `0700`/`0600`; displaced objects keep inode/mode. The manual task-history pruning command is not automatic cleanup, a standalone-write safety upgrade or a task-directory-swap safety upgrade.
 
 - Missing/untrusted legacy scope fails closed with `TEST_SCOPE_AUDIT_INVALID`; current required tests never self-certify historical scope. Explicit MIGRATE reconstructs provenance only, never RETIRE or REBIND. Retire/rebind require exact selected user authority, frozen contract and preserved obligations. Old readers reject `gate.test_scope.minimum_reader: 0.3.2`; do not roll back by deleting legal audit/events/proof.
 - Profile writes occur once outside lock. Prepublication failure remains exit 2; postpublication profile-write OSError is exit 3 with `PROFILE_WRITE_FAILED_CONTEXT_PUBLISHED context_published=true`. Context is already published: inspect/validate it instead of retrying blindly. Stdout failure is not classified as profile exit 3.
 - Existing `can_reuse_evidence` is unchanged; no cross-HEAD inheritance, persistent parse cache, automatic freeze/resume, risk downgrade, or verified/COMPLETE status from diagnostics. RED/finding commands execute again.
 - User-reduced anonymous benchmark: 80 completed samples for N=0/1/10/50, five cold and five steady samples per arm/count. N=100 remaining measurements cancelled by user; no full-matrix acceptance claim. Batch-heavy cold samples improve, but N=0 and steady medians regress. See [actual report](docs/superpowers/reports/v032-context-efficiency.md); no p95 or universal speedup claim. Cache deferred: aggregate parse timings do not establish evidence-specific payoff.
-- Skills now diagnose first, preserve exact grants and reuse boundaries, serialize shared resources, persist actual Plan proof promptly and refresh final Context after stable metadata. Independent agent behavioral validation remains pending.
+- Skills now diagnose first, preserve exact grants and reuse boundaries, serialize shared resources, persist actual Plan proof promptly and refresh final Context after stable metadata. TASK-094 historically accepted the original source-qualified behavior within its macOS and controlled-fault limits; the newer batching guidance's Agent obedience or speedup remains unestablished by its static checks.
 
 Migration details: [test-scope migration](docs/test-scope-migration.md). Historical release entries below are unchanged.
 

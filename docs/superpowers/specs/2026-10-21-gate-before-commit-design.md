@@ -1,6 +1,6 @@
 # Gate-accepted candidates and controlled commits
 
-Status: TASK-103 implementation design, DEC-043 / INT-010. Implementation and bounded anonymous-repository tests exist; final independent review, package qualification and task Gate remain pending. This document does not claim release qualification or authorize committing this repository.
+Status: TASK-103 implemented, DEC-043 / INT-010; committed as `6f453d9d4a41cd566ddfff89f3c62ea032755efa`. Precommit related tests and private package qualification completed; original task Gate converged and TASK-103 reached DONE. Subsequent independent static review found no actionable defects, and committed bytes matched the reviewed candidate. See the [qualified delivery status](../reports/v032-context-efficiency.md#v032-delivery-status). These historical results are not current-HEAD reruns, release qualification or continuing commit/push authorization.
 
 ## Boundary
 

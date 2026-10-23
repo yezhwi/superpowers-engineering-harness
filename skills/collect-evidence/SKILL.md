@@ -44,6 +44,10 @@ Every executed batch must leave a genuine immutable receipt and JUnit that recor
 
 This is guidance only, not an automated scheduler or a claim of Agent obedience or measured performance. It preserves existing budget accounting and authority with no new limits, exemptions, or deadline extensions, and changes no collector, timeout, freshness, schema, CLI, or Gate behavior.
 
+## Documentation Verification
+
+Use engineering-harness's [documentation checks](../engineering-harness/SKILL.md#documentation-verification) and [failure triage](../engineering-harness/SKILL.md#verification-failure-triage) before treating a failed command as product RED. Keep the same executor for diagnosed checker/setup repairs; retain the original checker, baseline and failed execution, then establish a valid RED/GREEN pair with the corrected checker. Do not change prose merely to satisfy an ordinary-wording match. A budget refusal or user-authority halt still follows existing policy; this guidance grants no retries, exemptions or proof status. Consolidate required build/Gate work after content is stable, and revalidate affected inputs after later changes under existing freshness rules.
+
 ## Execute
 
 For each required type:

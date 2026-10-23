@@ -1,9 +1,10 @@
 # v0.3.2 Context efficiency observations
 
-Status: implementation-candidate measurements, **not formal acceptance or release**.
-User explicitly reduced benchmark scope to completed samples and cancelled remaining
-N=100 work. Original five-count matrix is incomplete. Independent whole-branch
-review and fresh-agent skill pressure validation remain pending.
+Status: historical implementation-candidate measurements, **not acceptance by
+themselves and not a release record**. User explicitly reduced benchmark scope to
+completed samples and cancelled remaining N=100 work; cancellation is not unfinished
+mandatory work. The original five-count matrix is incomplete. Later feature
+acceptance is summarized separately below and does not rebind these measurements.
 
 ## Method and identity
 
@@ -97,3 +98,23 @@ Existing exact `can_reuse_evidence` unchanged; RED/finding commands still execut
 
 Reduced samples do not imply Gate CONVERGED, task DONE, independent review PASS,
 commit/merge/tag/publication authorization, or production task migration.
+
+<a id="v032-delivery-status"></a>
+
+## v0.3.2 delivery status
+
+This is the canonical human-readable status summary, not a second runtime authority. Historical artifacts named below are repository-local acceptance records; they are not guaranteed to be present in a packaged or public archive. Current Core HEAD/workspace freshness rules are unchanged, and no historical receipt is relabeled as current-HEAD proof.
+
+| Area | Status | Qualified task and revision | Evidence limits |
+|---|---|---|---|
+| Original Core context/evidence/scope/provenance/publication work | Historically accepted | TASK-094, source commit `51c705280fb34d565e402ed2202e6d9153bdf34d`; `.harness/acceptance-artifacts/task094-reference-rebind/delivery-summary.json` and `gate.log` | macOS native only; controlled exits/injected I/O are not real power loss or hardware faults; no N=100 benchmark, full-suite, or native/actor rerun. |
+| A: bounded related-test batching guidance | Guidance implemented and historically accepted | TASK-095 at `51c7052`, then TASK-097 already-satisfied verification on `999bfb94bef1cbe32067a5488c1203f843d9085f`; corresponding `delivery-summary.json` files under `.harness/acceptance-artifacts/task095-final-plan/` and `task097-verification/` | Static guidance checks do not prove Agent obedience, automatic scheduling, runtime-duration policy, or speedup. |
+| B: manual keep-ten task-history pruning | Implemented and historically accepted | TASK-099 accepted the eight-file candidate at parent `999bfb9`; exact accepted bytes committed as `3b4fa2853b1990990df847d80461e7a5c454a175`; `.harness/acceptance-artifacts/task099-final-validation-v3/delivery-summary.json`, `gate.log`, and `task099-commit/summary.json` | 362 related tests/four files, ten private package scenarios, CLEAN/formal reviews, and Gate convergence belong to the precommit candidate. They were not rerun on `3b4fa28`. No real cleanup occurred; shared retained data, fixtures, probes, unknown/user-owned data and live/referenced archives remain excluded, with no whole-`.harness` size bound. |
+| C: Gate-before-commit readiness binding | Implemented and historically accepted | TASK-103, commit `6f453d9d4a41cd566ddfff89f3c62ea032755efa`; `.harness/acceptance-artifacts/task103-verification-native-closeout/delivery-report.json`, `task103-independent-review/reviewer-report.md`, and `task103-commit/commit-receipt.json` | Precommit qualification: 830 related tests, 119 package byte checks and 82 installed CLI commands; subsequent independent static review found no actionable defects. Committed bytes matched the reviewed candidate. These are not current-HEAD reruns or release qualification. Opt-in finite candidate domain only; no generic cross-HEAD reuse. See [support limits](../../candidate-commit.md). |
+| Execution workflow corrections | Repository guidance updated; lightweight validation only | Root/engineering skill mirrors, collector guidance and related static regression tests; see [execution guidance](../../../skills/engineering-harness/SKILL.md#executor-continuity) | One continuing executor, diagnosed checker repairs, semantic-versus-interface checks and bounded closeout guidance. No new Harness Gate/DONE, independent review, Agent-behavior experiment, measured speedup or installed-skill update is claimed. Core safety rules remain unchanged. |
+| Deferred | Not required for accepted scope | Automatic batching scheduler/manifests/runtime-duration policy; conditional parse cache | Cache has no evidence-specific benefit proof. These are not mandatory unfinished v0.3.2 features. |
+| Excluded | Outside accepted scope | Broad GC/TTL, configurable retention, scheduler, Linux support/matrix | Not release blockers for the user-narrowed accepted scope. |
+| Later proposals | Separate proposals | Control-plane Phase 0/1 and dependency-scoped freshness | Not original v0.3.2 acceptance failures or retroactive obligations. |
+| Release | Not established by this workflow | Current HEAD `3b4fa2853b1990990df847d80461e7a5c454a175` | No current-HEAD formal release Gate, tag, publication, deployment, or system install is claimed. |
+
+The 80-sample benchmark above remains observational and is not acceptance by itself. TASK-094 and TASK-099 acceptance were separate historical processes with the qualifications shown here.

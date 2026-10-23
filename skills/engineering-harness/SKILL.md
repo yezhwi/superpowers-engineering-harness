@@ -1,13 +1,14 @@
 ---
 name: engineering-harness
-description: "Use when starting or resuming a task in a repo with .harness/ state, when unsure which harness phase comes next, or when asked to run the Engineering Harness loop end-to-end. Orchestrates the fixed state machine; MUST NOT implement business code itself."
+description: "Use when starting or resuming a task in a repo with .harness/ state, when unsure which harness phase comes next, or when asked to run the Engineering Harness loop end-to-end."
 compatibility: Requires Python 3.11+, Git, and a matching superpowers-engineering-harness CLI installed separately.
 ---
 
 # Engineering Harness Skill
 
-Orchestrator for the Engineering Harness. You do NOT do the development work
-yourself. Your job is one thing, repeated:
+Route the Engineering Harness workflow through the appropriate skills. The
+same session may execute the implementation skill; a skill invocation is not
+a requirement to start another agent or Codex process. Repeat:
 
 ```text
 read state
@@ -25,8 +26,10 @@ run gate
 
 ## Hard Boundaries (不得违反)
 
-1. **No implementation.** Never write business code, tests of the target
-   project, or contract content yourself. Sub-skills do that.
+1. **Separate workflow roles, not mandatory processes.** Use the appropriate
+   implementation/contract skill to do that work, inline or delegated. Choosing
+   an executor does not grant permission or waive classification, verification,
+   independent-review requirements, or native state admission.
 2. **No state in context only.** Task state lives ONLY in
    `.harness/current-task.yaml`. Always read it from disk before deciding.
 3. **No ad-hoc transitions.** Persist state only through harness CLI
@@ -70,6 +73,32 @@ Only enter after the Q0 Decision Table confirms mutating work.
 ## Opt-in Candidate Reference
 
 For tasks explicitly enrolled in canonical `.harness/gate.yaml` → `gate.candidate_commit`, consult `<package-root>/docs/candidate-commit.md` before using the development capability. A current-task `.candidate-active.json` selects the candidate; it does not grant authority. Candidate responses use `candidate-command-result/v1` (`candidate_id`, `artifact_ref`), never the old raw development dictionaries. Preserve native obligation/Plan/review/state admission and separate commit authority. Historical traces never grant generic cross-HEAD freshness; pending operations require explicit candidate recovery. Without enrollment and an active candidate, retain the ordinary workflow.
+
+## Executor Continuity
+
+Default to one implementation executor for the agreed scope. Use **executing-plans** in this session when the user chooses inline execution or no subagent tool is available; use **subagent-driven-development** when per-task delegation/review is explicitly chosen. Neither route requires Codex. Existing user restrictions on delegation still apply.
+
+Keep the same executor for checker repairs, wording edits and diagnosed retries. Stop scheduling invalid proof, not the executor: retain failures, fix the diagnosed cause, then continue within existing authority and budgets. Change executors only for an explicit user handoff, an unavailable/exhausted or unrecoverable context, a demonstrated independent parallel scope, or a required fresh-context review. Record the reason and hand off only current source identity, completed work, remaining work and exact evidence references; do not restart completed work or add nested reviewers.
+
+Before execution, record changed paths, verification commands/selectors, required build/review/Gate obligations and the conditions that require stopping. Reuse the existing plan or one brief task note, not another planning framework. If a mandatory workflow conflicts with the scope, explain it before adding work and obtain the required decision; do not silently bypass it. After content stabilizes, perform the required closeout. Later changes require affected verification under existing freshness rules, not unconditional full workflow replay.
+
+## Verification Failure Triage
+
+These are diagnostic categories, not new task states, exemptions or retry grants.
+
+| Failure | Detection and next action | Evidence |
+|---|---|---|
+| Setup/checker failure | Import, path, schema lookup or oracle error: diagnose and repair in the same executor; inspect a bounded diagnostic before collecting a new valid RED. | Retain original checker/baseline identity and failure; setup failure is not product RED. |
+| Product regression | A valid check demonstrates the requested missing/wrong behavior: fix the product through the selected implementation skill and verify affected scope. | Keep genuine RED and qualified GREEN; never rewrite old receipts or lower the requirement to pass. |
+| Authority/policy refusal | On `BUDGET_OVERRIDE_REQUIRED`, use only the existing audited policy with required evidence/reason/hypothesis; on `HALT_AND_WAIT`, stop for user authority. | Keep counters, refusal and prior evidence; do not auto-override, reset budgets or create a new task to escape limits. |
+
+Checker stability applies to the valid RED/GREEN pair. A setup failure does not freeze a broken oracle forever: preserve it, justify the repair independently of the desired result and start a newly identified pair. If a checker changes after valid RED, retain that history and establish new valid RED before claiming GREEN. Do not relabel a diagnostic as proof or repeatedly rerun without a new cause/fix.
+
+## Documentation Verification
+
+For a documentation-only scope, check factual status and intended sequence by human review; check link/anchor targets, versions, declared command syntax, scope and required historical preservation mechanically. Exact matching belongs to interfaces and stable identifiers, not ordinary wording: equivalent punctuation or synonyms must not force prose edits merely to satisfy an oracle. A checker repair needs a counterexample showing the intended defect remains rejected.
+
+Use only required related tests and builds; a prose edit does not justify Core changes, full-suite execution, new dependencies or another executor. Required RED must demonstrate an actual requested change, not an intentional import/lookup failure or arbitrary wording constraint. If meaningful RED or a mandatory build cannot be provided, surface that conflict before execution and use only an explicitly authorized existing path; do not fabricate proof or silently waive Gate. Keep one concise record pointing to original logs, not repeated reports. Static guidance/link checks are not evidence of Agent obedience, semantic correctness or measured speedup.
 
 ## Efficient Evidence Scheduling
 
@@ -155,7 +184,7 @@ Read persisted `state` and `risk.profile` from `.harness/current-task.yaml`, the
 | `CLASSIFIED` | FAST only: transition to IMPLEMENTING and follow RED/fix/GREEN/Light Gate, or `harness task verify-existing` when the work is already implemented. Q2/Q3 classification must use standard task contract before implementation. |
 | `PLANNED` | Invoke **minimal-implementation** before any implementation. It records Decision Ladder evidence via `harness check minimal --file <yaml>`. Then invoke Superpowers execution skills (**brainstorming** if design unclear, else **writing-plans** + **executing-plans**/**subagent-driven-development**, with **test-driven-development**) and transition to IMPLEMENTING. |
 | `IMPLEMENTING` | Continue execution skill. If the transition to VERIFYING prints `POLICY: USER_AUTHORITY_REQUIRED` and `DIRECTIVE: HALT_AND_WAIT`, stop and report to the user. Do not repair the contract, call `harness gate`, or realign on your own. Otherwise, before requesting VERIFYING, record impacted files, dependents, contracts, risks, and required related tests with `harness impact add-*`. Full-suite execution is forbidden, including when AGENTS.md or user instructions request it. Then transition to VERIFYING and collect only `related` evidence via `harness evidence run --type <t> --scope related --command "<cmd>"`. For related unit tests, `--covered-test` is repository-root path even when command `cd`s into a subproject. Record effective review scope with `harness impact scope --format yaml`. |
-| `VERIFYING` | Run deterministic Verification Plan commands/tests. Any red -> IMPLEMENTING (TDD), then re-verify. For Q3, and Q2 when `observability.required: true`, invoke **diagnosability-review** and persist evidence before `VERIFYING -> REVIEWING`; Gate freshness preflight must pass; stale required evidence blocks entry. All green -> invoke **complexity-reviewer** and transition to REVIEWING. Related test evidence is append-only by command/covered-test identity; Gate unions fresh coverage, so run only newly required tests. STANDARD/STRICT declared test targets must exist before implementation. Control-plane writes under `.harness/` do not stale product evidence. |
+| `VERIFYING` | Run deterministic Verification Plan commands/tests. Classify failed verification using Verification Failure Triage; a genuine product regression -> IMPLEMENTING (TDD), then re-verify. For Q3, and Q2 when `observability.required: true`, invoke **diagnosability-review** and persist evidence before `VERIFYING -> REVIEWING`; Gate freshness preflight must pass; stale required evidence blocks entry. All green -> invoke **complexity-reviewer** and transition to REVIEWING. Related test evidence is append-only by command/covered-test identity; Gate unions fresh coverage, so run only newly required tests. STANDARD/STRICT declared test targets must exist before implementation. Control-plane writes under `.harness/` do not stale product evidence. |
 | `REVIEWING` | Invoke Superpowers review and route only with review outcome. |
 | `REPRODUCING` | Invoke **reproduce-finding** skill. CONFIRMED finding -> FIXING (fix with TDD) -> VERIFYING. REJECTED finding -> close it, return to REVIEWING. |
 | `GATING` | Run `harness gate`; inspect stdout `DECISION:` and `harness status`. `DECISION: CONVERGED` with `DIRECTIVE: NONE` -> `harness transition DONE`; `CONTINUE` with `DIRECTIVE: RESUME_TYPED_RECOVERY` -> `harness resume`; `ESCALATED` with `DIRECTIVE: NONE` ends autonomous work. |
@@ -171,7 +200,7 @@ Run exact regression + impact-related tests after each repair. `related` evidenc
 
 ## Deterministic Commands
 
-Never hand-judge what a script can judge:
+Use deterministic commands for machine-checkable facts; human semantic review supplements them and never replaces native Gate/state authority:
 
 ```bash
 harness status                              # current state overview; status is read-only
@@ -214,7 +243,7 @@ output attached.
 
 ## Red Flags — STOP
 
-- Writing business code because "faster to do it myself here"
+- Treating an inline implementation skill as permission to skip verification or native admission
 - Skipping VERIFYING because "tests passed earlier"
 - Marking a finding rejected without running reproduction steps
 - Editing `.harness/current-task.yaml` state without validating the transition

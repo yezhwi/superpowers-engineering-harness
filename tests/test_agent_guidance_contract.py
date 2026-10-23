@@ -28,6 +28,7 @@ def test_candidate_guidance_exposes_packaged_operator_reference(path):
 
 def _guidance_section(path, heading):
     text = (ROOT / path).read_text()
+    assert heading in text, f"missing guidance section: {heading} in {path}"
     return text.split(heading, 1)[1].split("\n## ", 1)[0]
 
 
@@ -53,6 +54,45 @@ def test_evidence_scheduling_preplans_complete_bounded_batches(path):
         "Agent obedience or measured performance",
     ):
         assert required in section
+
+
+@pytest.mark.parametrize("path", ["SKILL.md", "skills/engineering-harness/SKILL.md"])
+def test_execution_guidance_has_inline_route_and_no_orchestrator_only_rule(path):
+    """Static routing regression, not an Agent compliance experiment."""
+    text = (ROOT / path).read_text()
+    metadata = yaml.safe_load(text.split("---", 2)[1])
+    assert "MUST NOT implement business code itself" not in metadata["description"]
+    assert "You do NOT do the development work" not in text
+    assert "Never write business code" not in text
+    assert "Writing business code because" not in text
+    section = _guidance_section(path, "## Executor Continuity")
+    assert "executing-plans" in section
+    assert "subagent-driven-development" in section
+    assert "## Verification Failure Triage" in text
+
+
+@pytest.mark.parametrize("path", ["SKILL.md", "skills/engineering-harness/SKILL.md"])
+def test_failure_triage_covers_setup_product_and_authority_without_new_states(path):
+    """Check documented decision-table shape; prose needs human semantic review."""
+    section = _guidance_section(path, "## Verification Failure Triage")
+    rows = [line.strip().strip("|").split("|")
+            for line in section.splitlines() if line.strip().startswith("|")]
+    entries = {cells[0].strip(): [cell.strip() for cell in cells[1:]]
+               for cells in rows[2:]}
+    assert set(entries) == {"Setup/checker failure", "Product regression", "Authority/policy refusal"}
+    assert all(len(cells) == 2 and all(cells) for cells in entries.values())
+    assert "BUDGET_OVERRIDE_REQUIRED" in entries["Authority/policy refusal"][0]
+    assert "HALT_AND_WAIT" in entries["Authority/policy refusal"][0]
+
+
+def test_doc_verification_reference_resolves_and_mirrors_stay_identical():
+    root = (ROOT / "SKILL.md").read_bytes()
+    assert root == (ROOT / "skills/engineering-harness/SKILL.md").read_bytes()
+    marker = "## Documentation Verification"
+    assert marker in root.decode()
+    assert "engineering-harness" in _guidance_section(
+        "skills/collect-evidence/SKILL.md", marker
+    )
 
 
 def test_collection_batch_proof_is_genuine_qualified_and_fail_stop():

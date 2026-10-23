@@ -4,7 +4,7 @@
 >
 > 日期：2026-10-14（实测案例日期：2026-10-13）
 >
-> 状态：IMPLEMENTATION_CONTRACT / 已按评审明确契约；未实现、未做性能验收
+> 状态：IMPLEMENTATION_CONTRACT / 本行是设计时状态，不是当前交付判定；历史实现与验收边界见[交付状态](superpowers/reports/v032-context-efficiency.md#v032-delivery-status)，本文未据此追溯宣称性能验收
 >
 > 设计基线：Harness checkout `c74ac4d4477469fdbeda80a2b470094d3134375f`
 >
@@ -396,6 +396,6 @@ HEAD改变后的内容等价继承、环境epoch/依赖版本的新proof模型�
 
 本轮仅完成：源码/既有记录核对、字段级脱敏证据摘要、接口和验收设计、文档格式/链接/hash核查。不执行任何Harness任务命令、业务测试、性能benchmark、迁移/seed或部署。
 
-v0.1已收到用户提供的源码/证据评审；v0.2按其结论修订并收到可作为实现契约的评审；v0.3消除旧句冲突、核对cmd_context并明确集成分支，获得用户提供的实现契约评审结论；v0.4关闭Gate/add-test启用窗口并补齐EF-T03停止断言；v0.5明确启用前要求迁移机制/回滚/兼容测试就绪，既有任务数据迁移可在启用后完成、期间维持typed blocker；v0.6将§11.3发布清单同步为机制/规范验收口径，具体任务apply仍受Gate约束，不改变已批准语义。本文修订自查不等于实现review、人类Approval或deterministic Gate。所有拟新增接口尚未实现/验收；没有新benchmark，也没有TASK-1038001状态变化。
+v0.1已收到用户提供的源码/证据评审；v0.2按其结论修订并收到可作为实现契约的评审；v0.3消除旧句冲突、核对cmd_context并明确集成分支，获得用户提供的实现契约评审结论；v0.4关闭Gate/add-test启用窗口并补齐EF-T03停止断言；v0.5明确启用前要求迁移机制/回滚/兼容测试就绪，既有任务数据迁移可在启用后完成、期间维持typed blocker；v0.6将§11.3发布清单同步为机制/规范验收口径，具体任务apply仍受Gate约束，不改变已批准语义。本文修订自查不等于实现review、人类Approval或deterministic Gate。文中的“尚未实现/验收”是该设计时修订轮次的历史表述，不应作为当前功能状态清单；当前的分项历史交付结论及限制以[交付状态](superpowers/reports/v032-context-efficiency.md#v032-delivery-status)为准，且不表示逐项完成本文所有拟议接口、性能验收或TASK-1038001状态变化。
 
 修订清单：资格消失/真实错误三分支、共用event构造/RISK history、连续可重入锁、函数计数、Gate范围退役强制点、exclusive计时、cmd_context发布前2/发布后独立3分支、profile原子改名、CANCELLED实际context_published、同事务add-test与Gate检查同一次启用、启用前历史增加获授权迁移、消失点后初始合格候选本次不发射、既有reuse谓词、撤销50%/10%验收条件。原E01–E11/S01–S10证据包不改写；新增判断可直接对照 [telemetry_lock](../src/harness/telemetry_lock.py)、[event构造](../src/harness/context/escalation.py#L244)、[Gate公共评估](../src/harness/quality_gate.py#L1284)、[capture范围](../src/harness/context/freshness.py)、[reuse谓词](../src/harness/evidence_validator.py#L37)。不能引用本文声称优化已生效或任务已Ready。
