@@ -402,6 +402,14 @@ harness task escalate --level Q2 --reason "public contract changed"
 
 仅 `docs/`、`tests/`、`test/`、根目录 Markdown 变更无需 policy。
 
+### 任务身份保留
+
+`task new`、`task recover`、`task migrate-id` 拒绝复用当前任务、history 归档名／任务文档、持久化 Decision 记录／索引中已有的 ID。前导零别名（`TASK-5`／`TASK-005`）按同一数值身份处理。在现有 publication 锁内、替换复制或身份写入之前，以退出码 2、`TASK_ID_ALREADY_USED` 拒绝。应选未使用 ID，不要删历史或决策绕过守卫。
+
+身份来源不可读、结构非法或含符号链接时，以 `TASK_ID_RESERVATION_INVALID` 拒绝；先诊断来源，不能把读取失败当作无占用。历史重号不批量改写，也不妨碍使用真正空闲的 ID。已绑定 scope 的迁移限制不变；legacy 迁移到完全相同的当前 ID 不创建新身份。迁移前既有的显式 publication recovery 仍执行。
+
+守卫仅检查当前身份、history 直属名称／任务文档及 Decision 归属，不遍历探针、验收转储或 retained 树。这不是所有权威痕迹已被移除后的永久身份注册表。归档已裁剪但决策仍在时，决策仍保留其 task ID。
+
 ### 证据复用
 
 复用必须显式请求，且只限当前 task：

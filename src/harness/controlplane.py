@@ -89,6 +89,17 @@ def load_task(harness_dir: Path) -> dict:
     return data
 
 
+def _task_identity_available(harness_dir, task_id, task, *, migration=False):
+    from .task_identity import TaskIdentityError, require_available
+
+    try:
+        require_available(harness_dir, task_id, task, migration=migration)
+    except TaskIdentityError as exc:
+        print(str(exc), file=sys.stderr)
+        return False
+    return True
+
+
 def save_task(
     harness_dir: Path, task: dict, *, tolerate_post_commit_telemetry: bool = False
 ) -> None:
@@ -2726,6 +2737,8 @@ def _migrate_task_id_owned(harness_dir: Path, task_id: str) -> int:
     else:
         # Legacy identity-only command does not create or trust scope origin.
         task = load_task(harness_dir)
+        if not _task_identity_available(harness_dir, task_id, task, migration=True):
+            return 2
         task.setdefault("task", {})["id"] = task_id
         save_task(harness_dir, task)
     print(f"OK: task id -> {task_id}")
@@ -3048,6 +3061,8 @@ def cmd_task_new(task_id: str, title: str = "") -> int:
     if old.get("state") not in {"DONE", "ESCALATED"}:
         print("task new requires DONE or ESCALATED task", file=sys.stderr)
         return 1
+    if not _task_identity_available(harness_dir, task_id, old):
+        return 2
     try:
         head = task_git_head_or_error()
     except workspace.WorkspaceError as exc:
@@ -3135,6 +3150,8 @@ def cmd_task_recover(task_id: str, title: str, reason: str) -> int:
     if old.get("state") in {"DONE", "ESCALATED"}:
         print("task recover requires active task", file=sys.stderr)
         return 1
+    if not _task_identity_available(harness_dir, task_id, old):
+        return 2
     old_id = old.get("task", {}).get("id") or "UNKNOWN"
     try:
         head = task_git_head_or_error()

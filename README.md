@@ -412,6 +412,14 @@ harness task escalate --level Q2 --reason "public contract changed"
 
 `docs/`, `tests/`, `test/`, and root Markdown-only changes do not require policy.
 
+### Task identity reservation
+
+`task new`, `task recover`, and `task migrate-id` reject an ID already reserved by the current task, history archive names/documents, or persistent decision records/index. Leading-zero aliases (`TASK-5` / `TASK-005`) count as the same numeric identity. Refusal is exit 2 with `TASK_ID_ALREADY_USED`, before replacement copying or identity writes under the existing publication lock. Choose an unused ID; never delete history or decisions to bypass the refusal.
+
+Unreadable, malformed or symlinked identity sources refuse with `TASK_ID_RESERVATION_INVALID`; diagnose the source rather than treating it as an empty reservation set. Existing historical duplicates are not rewritten and do not prevent a genuinely unused ID. Scope-bound migration restrictions remain; legacy migration to the exact current ID does not create a new identity. Existing explicit publication recovery still runs before migration admission.
+
+The guard reads only current identity, immediate history names/task documents and decision ownership, not probe/acceptance/retained trees. It is not a permanent all-time registry after every authoritative trace has been removed. A surviving decision still reserves its task ID when its archive has been pruned.
+
 ### Evidence reuse
 
 Reuse is explicit and same-task only:
