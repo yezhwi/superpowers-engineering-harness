@@ -222,7 +222,18 @@ def test_fast_escalation_from_verifying_restarts_standard_contract(tmp_path):
     assert task["risk"]["profile"] == "STRICT"
 
 
+def _phase_commands(repo, covered):
+    relative, name = covered.split("::", 1)
+    target = repo / relative
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(f"import os\ndef {name}():\n    assert os.environ['HARNESS_FIXTURE_RED'] == '0'\n")
+    return {phase: f"HARNESS_FIXTURE_RED={int(phase == 'red')} {sys.executable} -B -m pytest -q -p no:cacheprovider {covered}"
+            for phase in ("red", "green")}
+
+
 def test_fast_profile_uses_lightweight_state_path(tmp_path):
+    covered = "tests/test_risk.py::test_fast_profile_uses_lightweight_state_path"
+    commands = _phase_commands(tmp_path, covered)
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
     assert run_cli(tmp_path, "init").returncode == 0
     migrated = run_cli(tmp_path, "task", "migrate-id", "TASK-004")
@@ -234,7 +245,6 @@ def test_fast_profile_uses_lightweight_state_path(tmp_path):
         run_cli(tmp_path, "task", "classify", "--level", "Q1", *flags).returncode == 0
     )
     assert run_cli(tmp_path, "transition", "IMPLEMENTING").returncode == 0
-    covered = "tests/test_risk.py::test_fast_profile_uses_lightweight_state_path"
     assert (
         run_cli(
             tmp_path,
@@ -246,7 +256,7 @@ def test_fast_profile_uses_lightweight_state_path(tmp_path):
             "--covered-test",
             covered,
             "--command",
-            "false",
+            commands["red"],
         ).returncode
         == 0
     )
@@ -261,7 +271,7 @@ def test_fast_profile_uses_lightweight_state_path(tmp_path):
             "--covered-test",
             covered,
             "--command",
-            "true",
+            commands["green"],
         ).returncode
         == 0
     )
@@ -325,6 +335,8 @@ def test_fast_without_alignment_has_no_alignment_obligation(tmp_path):
 
 
 def test_fast_gate_uses_latest_immutable_phase_receipt(tmp_path):
+    covered = "tests/test_risk.py::test_fast_gate_uses_latest_immutable_phase_receipt"
+    commands = _phase_commands(tmp_path, covered)
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
     assert run_cli(tmp_path, "init").returncode == 0
     migrated = run_cli(tmp_path, "task", "migrate-id", "TASK-004")
@@ -334,12 +346,11 @@ def test_fast_gate_uses_latest_immutable_phase_receipt(tmp_path):
     flags = [item for pair in SAFE.items() for item in (f"--{pair[0]}", pair[1])]
     assert run_cli(tmp_path, "task", "classify", "--level", "Q1", *flags).returncode == 0
     assert run_cli(tmp_path, "transition", "IMPLEMENTING").returncode == 0
-    covered = "tests/test_risk.py::test_fast_gate_uses_latest_immutable_phase_receipt"
-    for phase, command in (("red", "false"), ("green", "true")):
+    for phase, command in commands.items():
         assert run_cli(tmp_path, "evidence", "--type", "unit_test", "--phase", phase, "--covered-test", covered, "--command", command).returncode == 0
     (tmp_path / "docs").mkdir()
     (tmp_path / "docs/change.md").write_text("new\n")
-    for phase, command in (("red", "false"), ("green", "true")):
+    for phase, command in commands.items():
         assert run_cli(tmp_path, "evidence", "--type", "unit_test", "--phase", phase, "--covered-test", covered, "--command", command, "--budget-override-reason", "repeat receipt", "--budget-override-evidence", "immutable receipt regression", "--budget-override-hypothesis", "latest suffix is selected").returncode == 0
     assert (tmp_path / ".harness/evidence/fast-red-unit-test-2.json").exists()
     assert run_cli(tmp_path, "evidence", "--type", "build", "--command", "true").returncode == 0

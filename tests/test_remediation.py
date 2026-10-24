@@ -45,6 +45,15 @@ def test_explain_recoverable_gate_code_suggests_resume_after_status():
     assert "harness status; then run: harness resume" in result.stdout
 
 
+def test_execution_proof_failure_has_safe_existing_recovery():
+    from harness.blockers import GateBlocker, select_recovery
+    result = cli("explain", "EVIDENCE_TEST_EXECUTION_INVALID")
+    assert result.returncode == 0
+    assert "pytest" in result.stdout
+    assert "EVIDENCE_TEST_EXECUTION_INVALID" in result.stdout
+    assert select_recovery([GateBlocker("EVIDENCE_TEST_EXECUTION_INVALID", "verification", "fixture")]) == "VERIFYING"
+
+
 def test_explain_unknown_code_returns_invalid_usage():
     result = cli("explain", "NOT_A_CODE")
 

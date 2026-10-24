@@ -15,6 +15,11 @@ class Remediation:
 
 
 _EXACT = {
+    "EVIDENCE_TEST_EXECUTION_INVALID": Remediation(
+        "EVIDENCE_TEST_EXECUTION_INVALID",
+        "Test proof lacks qualifying actual test calls or contains collection/setup/internal or unchecked checker errors.",
+        "Collect a fresh supported pytest execution for the exact target; do not rewrite old receipts. Diagnose setup or unsupported reporters before retrying.",
+    ),
     "PLAN_STALE": Remediation(
         "PLAN_STALE",
         "Plan semantic digest differs from its execution record.",

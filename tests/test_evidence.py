@@ -135,32 +135,40 @@ def test_reuse_miss_allocates_immutable_suffix(tmp_path, phase):
     assert json.loads(newer.read_text())["command"] == "echo new receipt"
 
 
-def test_reuse_selects_latest_matching_immutable_receipt(tmp_path):
-    assert __collect(tmp_path, "unit_test", "true", covered_test="tests/test_a.py").returncode == 0
-    assert __collect(tmp_path, "unit_test", "true", covered_test="tests/test_a.py").returncode == 0
+def _assert_actual_test_reuses_latest(tmp_path, phase=None):
+    from test_task_replacement import committed_repo
+    from test_cli_task_recovery import run_cli
 
-    result = __collect(
-        tmp_path, "unit_test", "true", covered_test="tests/test_a.py", reuse_if_valid=True
+    repo = committed_repo(tmp_path)
+    (repo / "tests").mkdir()
+    (repo / "tests/test_actual.py").write_text(
+        "from pathlib import Path\ndef test_run():\n    Path('.harness/ran').write_text('ran')\n"
     )
+    marker = repo / ".harness/ran"
+    command = f"{sys.executable} -B -m pytest -q -p no:cacheprovider tests/test_actual.py"
+    args = ["evidence", "run", "--type", "unit_test", "--covered-test", "tests/test_actual.py", "--command", command]
+    if phase:
+        args += ["--phase", phase]
+    assert run_cli(repo, *args).returncode == 0
+    original = next((repo / ".harness/evidence").glob("*unit-test*.json"))
+    assert run_cli(repo, *args).returncode == 0
+    latest = original.with_name(original.stem + "-2.json")
+    assert latest.is_file()
+    marker.unlink()
+    before = {p.name: p.read_bytes() for p in (repo / ".harness/evidence").glob("*.json")}
+    result = run_cli(repo, *args, "--reuse-if-valid")
+    assert result.returncode == 0, result.stderr
+    assert f"EVIDENCE_REUSED: {latest.name}" in result.stdout
+    assert not marker.exists()
+    assert {p.name: p.read_bytes() for p in (repo / ".harness/evidence").glob("*.json")} == before
 
-    assert result.returncode == 0
-    assert "EVIDENCE_REUSED: unit-test-9196f11cb5cc-2.json" in result.stdout
+
+def test_reuse_selects_latest_matching_immutable_receipt(tmp_path):
+    _assert_actual_test_reuses_latest(tmp_path)
 
 
 def test_green_phase_reuses_latest_receipt(tmp_path):
-    marker = tmp_path / "ran"
-    command = f"sh -c 'echo ran >> {marker}'"
-    assert __collect(tmp_path, "unit_test", command, phase="green").returncode == 0
-    assert __collect(tmp_path, "unit_test", command, phase="green").returncode == 0
-    marker.unlink()
-    before = {p.name: p.read_bytes() for p in (tmp_path / "evidence").glob("*.json")}
-
-    result = __collect(tmp_path, "unit_test", command, phase="green", reuse_if_valid=True)
-
-    assert result.returncode == 0, result.stderr
-    assert "EVIDENCE_REUSED: fast-green-unit-test-2.json" in result.stdout
-    assert not marker.exists()
-    assert {p.name: p.read_bytes() for p in (tmp_path / "evidence").glob("*.json")} == before
+    _assert_actual_test_reuses_latest(tmp_path, "green")
 
 
 @pytest.mark.parametrize("exit_code", [0, 1])
@@ -493,9 +501,11 @@ def test_evidence_error_detail_validation_preserves_failure_contract(detail, val
         "workspace_fingerprint": fingerprint, "workspace_fingerprint_after": fingerprint,
         "error_detail": detail,
     }
-    kwargs = {"current_head": "a" * 40, "current_workspace": fingerprint, "expected_success": False}
+    kwargs = {"current_head": "a" * 40, "current_workspace": fingerprint, "expected_success": None}
     if valid:
-        validate_evidence(record, **kwargs)
+        validate_evidence(record, **kwargs)  # Historical measurement is readable, not product RED.
+        with pytest.raises(EvidenceValidationError, match="EVIDENCE_TEST_EXECUTION_INVALID"):
+            validate_evidence(record, **{**kwargs, "expected_success": False})
     else:
         with pytest.raises(EvidenceValidationError, match="EVIDENCE_SCHEMA_INVALID"):
             validate_evidence(record, **kwargs)

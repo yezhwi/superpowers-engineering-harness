@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from evidence_factory import synthetic_execution
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "scripts"))
@@ -33,7 +34,9 @@ def record(**changes):
         "subject": {"kind": "finding", "id": "FND-001"},
         "test": {"node_id": TEST},
     }
-    return {**base, **changes}
+    value = {**base, **changes}
+    value["test_execution"] = synthetic_execution([TEST, *value.get("covered_tests", [])], value["exit_code"])
+    return value
 
 
 RUNTIME = {
@@ -55,7 +58,9 @@ def generic_record(**changes):
     )
     evidence.pop("subject")
     evidence.pop("test")
-    return {**evidence, **changes}
+    evidence = {**evidence, **changes}
+    evidence["test_execution"] = synthetic_execution(evidence.get("covered_tests"), evidence["exit_code"])
+    return evidence
 
 
 def reuse_request():
@@ -97,6 +102,15 @@ def test_green_reuse_matches_test_coverage_for_all_test_types(evidence_type, cha
         generic_record(type=evidence_type, phase="green", **changes),
         request, current_head=HEAD, current_workspace=FP, current_runtime=RUNTIME,
     ) is expected
+
+
+@pytest.mark.parametrize("field", ["covered_tests", "covered_test_cases"])
+@pytest.mark.parametrize("value", [None, [{}], "not a list"])
+def test_reuse_malformed_coverage_returns_false_without_exception(field, value):
+    evidence = generic_record()
+    evidence[field] = value
+    assert can_reuse_evidence(evidence, reuse_request(), current_head=HEAD,
+                             current_workspace=FP, current_runtime=RUNTIME) is False
 
 
 def test_reuse_requires_exact_generic_successful_evidence():

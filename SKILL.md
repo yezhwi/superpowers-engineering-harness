@@ -88,6 +88,8 @@ These are diagnostic categories, not new task states, exemptions or retry grants
 | Product regression | A valid check demonstrates the requested missing/wrong behavior: fix the product through the selected implementation skill and verify affected scope. | Keep genuine RED and qualified GREEN; never rewrite old receipts or lower the requirement to pass. |
 | Authority/policy refusal | On `BUDGET_OVERRIDE_REQUIRED`, use only the existing audited policy with required evidence/reason/hypothesis; on `HALT_AND_WAIT`, stop for user authority. | Keep counters, refusal and prior evidence; do not auto-override, reset budgets or create a new task to escape limits. |
 
+Test proof requires actual `test_execution`, not selector strings alone. On `EVIDENCE_TEST_EXECUTION_INVALID`, follow collect-evidence's Actual Test Execution rules: diagnose infrastructure, use a supported reporter and collect fresh proof; never retrofit old receipts. RED is an assertion-style call failure, not an unchecked checker exception. Unsupported runners provide measurements only; semantic correctness remains a human review obligation.
+
 Checker stability applies to the valid RED/GREEN pair. A setup failure does not freeze a broken oracle forever: preserve it, justify the repair independently of the desired result and start a newly identified pair. If a checker changes after valid RED, retain that history and establish new valid RED before claiming GREEN. Do not relabel a diagnostic as proof or repeatedly rerun without a new cause/fix.
 
 ## Documentation Verification

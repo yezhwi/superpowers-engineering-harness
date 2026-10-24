@@ -19,7 +19,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from evidence_factory import write_evidence
+from evidence_factory import synthetic_execution, write_evidence
 
 REPO = Path(__file__).resolve().parent.parent
 SAFE_DIMENSIONS = {
@@ -403,7 +403,8 @@ def test_gate_unions_fresh_related_test_evidence(tmp_path):
         test_path = tmp_path / target
         test_path.parent.mkdir(parents=True, exist_ok=True)
         test_path.write_text("def test_ok():\n    pass\n")
-        record = {**base, "scope": "related", "covered_tests": [target], "command": f"pytest {target}"}
+        record = {**base, "scope": "related", "covered_tests": [target], "command": f"pytest {target}",
+                  "test_execution": synthetic_execution([f"{target}::test_ok"])}
         (h / "evidence" / name).write_text(json.dumps(record))
     (h / "evidence" / "unit-test.json").unlink()
 
@@ -603,7 +604,8 @@ def test_fast_gate_requires_build_by_default(tmp_path):
     assert any(item.code == "FAST_REPOSITORY_VERIFICATION_MISSING" for item in blockers)
 
 
-def test_fast_gate_requires_only_task_phase_proof(tmp_path):
+@pytest.mark.parametrize("measurement_only", [None, "fast-red-unit-test.json", "fast-green-unit-test.json", "unit-test.json"])
+def test_fast_gate_requires_only_task_phase_proof(tmp_path, measurement_only):
     from harness.workspace import protected_paths_fingerprint
 
     h = make_harness(tmp_path)
@@ -632,13 +634,27 @@ def test_fast_gate_requires_only_task_phase_proof(tmp_path):
     (h / "invariants.yaml").unlink()
     write_evidence(REPO, h, "unit_test", exit_code=1, name="fast-red-unit-test.json")
     write_evidence(REPO, h, "unit_test", name="fast-green-unit-test.json")
+    gate_path = h / "gate.yaml"
+    gate = yaml.safe_load(gate_path.read_text())
+    gate["gate"]["fast"] = {"verification": {"build": "required", "unit_test": "required"}}
+    gate_path.write_text(yaml.safe_dump(gate))
+    if measurement_only:
+        path = h / "evidence" / measurement_only
+        record = json.loads(path.read_text())
+        record["type"] = "custom"
+        record.pop("test_execution")
+        path.write_text(json.dumps(record))  # Deliberately malformed unit input, never a native receipt.
 
     status, blockers = __import__(
         "harness.quality_gate", fromlist=["run_gate"]
     ).run_gate(h)
 
-    assert status == "PASS"
-    assert blockers == []
+    if measurement_only:
+        assert status == "BLOCKED"
+        assert any(item.code in {"FAST_REGRESSION_EVIDENCE_MISSING", "FAST_REPOSITORY_VERIFICATION_MISSING"} for item in blockers)
+    else:
+        assert status == "PASS"
+        assert blockers == []
 
 
 def test_fast_gate_blocks_business_change_without_risk_policy(tmp_path, monkeypatch):

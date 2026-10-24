@@ -884,7 +884,10 @@ def write_test_proof_harness(harness_dir: Path, monkeypatch) -> tuple[dict, str]
     (harness_dir / "requirements.yaml").write_text(yaml.safe_dump(requirements))
     (harness_dir / "invariants.yaml").write_text("invariants: []\n")
     workspace = stable_workspace(monkeypatch)
+    from evidence_factory import synthetic_execution
+
     evidence = {
+        "test_execution": synthetic_execution(["tests/test_plan_mutation.py::test_fixture"]),
         "type": "unit_test",
         "timestamp": "2026-01-01T00:00:00+00:00",
         "command": "pytest tests/test_plan_mutation.py",

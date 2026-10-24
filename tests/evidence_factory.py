@@ -10,6 +10,18 @@ sys.path.insert(0, str(ROOT / "scripts"))
 from collect_evidence import workspace_fingerprint
 
 
+def synthetic_execution(nodes=(), exit_code=0):
+    """Synthetic unit input only, never a claim of native execution qualification."""
+    selected = sorted({node if "::" in node else node + "::test_fixture"
+                       for node in (nodes or ["tests/fixture.py::test_fixture"])})
+    return {"schema": "pytest-execution/v1", "runs": [{
+        "collected": selected, "passed": selected if exit_code == 0 else [],
+        "failed": selected if exit_code == 1 else [], "skipped": [],
+        "assertion_failures": selected if exit_code == 1 else [],
+        "errors": 0 if exit_code in {0, 1} else 1, "exit_code": exit_code,
+    }]}
+
+
 def write_evidence(repo, harness_dir, evidence_type, exit_code=0, name=None):
     head = subprocess.run(
         ["git", "rev-parse", "HEAD"],
@@ -32,6 +44,8 @@ def write_evidence(repo, harness_dir, evidence_type, exit_code=0, name=None):
                 "commit": head,
                 "workspace_fingerprint": fp,
                 "workspace_fingerprint_after": fp,
+                **({"test_execution": synthetic_execution(exit_code=exit_code)}
+                   if evidence_type in {"unit_test", "integration_test", "contract_test"} else {}),
             }
         )
     )

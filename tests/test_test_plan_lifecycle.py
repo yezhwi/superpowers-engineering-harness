@@ -1,6 +1,6 @@
 """Public lifecycle acceptance for Test Plan traceability."""
 
-import json
+import sys
 
 import pytest
 import yaml
@@ -48,11 +48,10 @@ def test_missing_case_evidence_recovers_only_through_verifying(tmp_path):
         == "VERIFYING"
     )
 
-    evidence = json.loads((harness_dir / "evidence" / "build.json").read_text())
-    evidence["type"] = "integration_test"
-    evidence["command"] = f"pytest {NODE}"
-    evidence["covered_tests"] = [NODE]
-    (harness_dir / "evidence" / "recovered-case.json").write_text(json.dumps(evidence))
+    measured = run_cli(tmp_path, "evidence", "run", "--type", "integration_test",
+                       "--covered-test", NODE, "--command",
+                       f"{sys.executable} -B -m pytest -q -p no:cacheprovider {NODE}")
+    assert measured.returncode == 0, measured.stdout + measured.stderr
 
     assert run_cli(tmp_path, "transition", "REVIEWING").returncode == 0
     assert (
@@ -84,11 +83,10 @@ def test_bound_case_with_fresh_evidence_reaches_done(tmp_path):
     }
     requirement_path.write_text(yaml.safe_dump(requirements))
 
-    build = json.loads((harness_dir / "evidence" / "build.json").read_text())
-    build["type"] = "integration_test"
-    build["command"] = f"pytest {NODE}"
-    build["covered_tests"] = [NODE]
-    (harness_dir / "evidence" / "case-evidence.json").write_text(json.dumps(build))
+    measured = run_cli(tmp_path, "evidence", "run", "--type", "integration_test",
+                       "--covered-test", NODE, "--command",
+                       f"{sys.executable} -B -m pytest -q -p no:cacheprovider {NODE}")
+    assert measured.returncode == 0, measured.stdout + measured.stderr
 
     gate = run_cli(tmp_path, "gate")
     done = run_cli(tmp_path, "transition", "DONE")

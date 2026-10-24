@@ -157,7 +157,10 @@ def evidence_record(
     covered_tests=(),
     covered_test_cases=(),
 ) -> dict:
+    from evidence_factory import synthetic_execution
+
     return {
+        "test_execution": synthetic_execution(covered_tests, exit_code),
         "type": "unit_test",
         "timestamp": "2026-01-01T00:00:00+00:00",
         "command": command,

@@ -28,7 +28,7 @@ from pathlib import Path
 
 import yaml
 
-from . import publication_fs, telemetry
+from . import execution_capture, publication_fs, telemetry
 from .budget import (
     BudgetOverrideRequired,
     budget_action,
@@ -639,6 +639,10 @@ def record_covers_test(
     record: dict, node_id: str, repo_root: Path | None = None
 ) -> bool:
     """Return True when evidence covered_tests bind to `node_id`."""
+    from .execution_proof import covers, valid
+
+    if not valid(record, True) or not covers(record, node_id):
+        return False
     repo_root = _repo_root(repo_root)
     command = record.get("command") or ""
     invocations = list(iter_test_invocations(command, repo_root))
@@ -700,14 +704,20 @@ def _collect(
     command_text = command.value
     before = workspace_fingerprint()
     error = None
+    execution = None
+    needs_execution = (evidence_type in TEST_EVIDENCE_TYPES or finding_id is not None
+                       or test_id is not None or bool(covered_tests) or phase in {"red", "green"})
     try:
-        run = subprocess.run(
-            command_text,
-            shell=True,
-            capture_output=True,
-            text=True,
-            timeout=timeout_seconds,
-        )
+        if needs_execution:
+            run, execution = execution_capture.run(command_text, timeout_seconds, _repo_root(None))
+        else:
+            run = subprocess.run(
+                command_text,
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=timeout_seconds,
+            )
         exit_code, stdout, stderr = run.returncode, run.stdout, run.stderr
     except subprocess.TimeoutExpired as exc:
         exit_code = 124
@@ -749,6 +759,11 @@ def _collect(
         evidence["covered_tests"] = list(covered_tests)
     if covered_test_cases:
         evidence["covered_test_cases"] = list(covered_test_cases)
+    if needs_execution:
+        if execution is not None:
+            evidence["test_execution"] = execution
+        else:
+            evidence["test_execution_error"] = "TEST_EXECUTION_REPORT_MISSING_OR_INVALID"
     if finding_id is None and phase is not None:
         evidence["phase"] = phase
     if finding_id is not None:

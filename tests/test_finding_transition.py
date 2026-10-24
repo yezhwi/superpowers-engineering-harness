@@ -1,15 +1,13 @@
 """TASK-004: deterministic finding lifecycle control plane."""
 
 import json
+import shlex
 import subprocess
 import sys
 from pathlib import Path
 import yaml
 
 REPO = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO / "scripts"))
-from collect_evidence import workspace_fingerprint
-
 
 def cli(cwd, *args):
     return subprocess.run(
@@ -27,11 +25,13 @@ def setup(tmp_path, *, trusted_scope=False):
     if trusted_scope:
         bound = cli(tmp_path, "task", "migrate-id", "TASK-001")
         assert bound.returncode == 0, bound.stderr
+    tests = tmp_path / "tests"
+    tests.mkdir()
+    (tests / "test_x.py").write_text(
+        "import os\ndef test_x():\n    assert os.environ.get('HARNESS_FINDING_RED') != '1'\n"
+    )
     subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
     subprocess.run(["git", "commit", "-qm", "init"], cwd=tmp_path, check=True)
-    head = subprocess.run(
-        ["git", "rev-parse", "HEAD"], cwd=tmp_path, capture_output=True, text=True
-    ).stdout.strip()
     h = tmp_path / ".harness"
     f = {
         "id": "FND-001",
@@ -43,29 +43,19 @@ def setup(tmp_path, *, trusted_scope=False):
         "status": "PROPOSED",
     }
     (h / "findings" / "fnd-001.yaml").write_text(yaml.safe_dump(f))
-    fingerprint = workspace_fingerprint(tmp_path)
-    for name, code in [("red.json", 1), ("green.json", 0), ("full.json", 0)]:
-        evidence = {
-            "type": "custom",
-            "timestamp": "2026-01-01T00:00:00+00:00",
-            "command": "test",
-            "exit_code": code,
-            "commit": head,
-            "workspace_fingerprint": fingerprint,
-            "workspace_fingerprint_after": fingerprint,
-        }
-        if name != "full.json":
-            evidence.update(
-                {
-                    "subject": {"kind": "finding", "id": "FND-001"},
-                    "test": {"node_id": "tests/test_x.py::test_x"},
-                }
-            )
-        else:
-            evidence.update(
-                {"scope": "related", "covered_tests": ["tests/test_x.py::test_x"]}
-            )
-        (h / "evidence" / name).write_text(json.dumps(evidence))
+    # Lifecycle fixtures use real child reports, never synthetic assertion manifests.
+    # Named aliases preserve original native receipts and copy their exact bytes.
+    for phase in ("red", "green", "full"):
+        before = set((h / "evidence").glob("*.json"))
+        command = (f"HARNESS_FINDING_RED={1 if phase == 'red' else 0} "
+                   f"{shlex.quote(sys.executable)} -B -m pytest -q -p no:cacheprovider tests/test_x.py")
+        result = cli(tmp_path, "evidence", "run", "--type", "unit_test", "--finding", "FND-001",
+                     "--phase", phase, "--test", "tests/test_x.py::test_x",
+                     "--covered-test", "tests/test_x.py::test_x", "--command", command)
+        assert result.returncode == 0, result.stdout + result.stderr
+        created = set((h / "evidence").glob("*.json")) - before
+        assert len(created) == 1
+        (h / "evidence" / f"{phase}.json").write_bytes(created.pop().read_bytes())
     if not trusted_scope:
         (h / "impact.yaml").write_text(
             yaml.safe_dump({"impact": {"required_tests": ["tests/test_x.py::test_x"]}})
@@ -342,10 +332,12 @@ def test_fixed_rejects_green_evidence_for_different_test(tmp_path):
         == 0
     )
     assert cli(tmp_path, "finding", "transition", "FND-001", "FIXING").returncode == 0
-    green_path = h / "evidence" / "green.json"
-    green = json.loads(green_path.read_text())
-    green["test"] = {"node_id": "tests/test_other.py::test_other"}
-    green_path.write_text(json.dumps(green))
+    # A truthful execution of the wrong test, not relabelled/tampered proof of test_x.
+    (tmp_path / "tests/test_other.py").write_text("def test_other():\n    assert True\n")
+    wrong = cli(tmp_path, "evidence", "run", "--type", "custom", "--finding", "FND-001",
+                "--phase", "green", "--test", "tests/test_other.py::test_other", "--command",
+                f"{shlex.quote(sys.executable)} -B -m pytest -q -p no:cacheprovider tests/test_other.py")
+    assert wrong.returncode == 0, wrong.stdout + wrong.stderr
 
     result = cli(
         tmp_path,
@@ -354,7 +346,7 @@ def test_fixed_rejects_green_evidence_for_different_test(tmp_path):
         "FND-001",
         "FIXED",
         "--evidence",
-        "green.json",
+        "FND-001-green-custom.json",
     )
 
     assert result.returncode == 2
@@ -492,7 +484,7 @@ def test_cli_preserves_finding_red_and_green_evidence_separately(tmp_path):
         "--test",
         "tests/test_x.py::test_x",
         "--command",
-        "false",
+        f"HARNESS_FINDING_RED=1 {shlex.quote(sys.executable)} -B -m pytest -q -p no:cacheprovider tests/test_x.py",
     )
     assert red.returncode == 0, red.stderr
     red_ref = "FND-001-red-custom.json"
@@ -523,7 +515,7 @@ def test_cli_preserves_finding_red_and_green_evidence_separately(tmp_path):
         "--test",
         "tests/test_x.py::test_x",
         "--command",
-        "true",
+        f"HARNESS_FINDING_RED=0 {shlex.quote(sys.executable)} -B -m pytest -q -p no:cacheprovider tests/test_x.py",
     )
     assert green.returncode == 0, green.stderr
     green_ref = "FND-001-green-custom.json"

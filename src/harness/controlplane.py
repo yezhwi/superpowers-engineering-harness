@@ -2580,6 +2580,7 @@ def cmd_finding_transition(
                 current_head=quality_gate.git_head(),
                 current_workspace=collect_evidence.workspace_fingerprint(),
                 expected_success=succeeds,
+                require_test_execution=True,
                 finding_id=fid if test_id else None,
                 test_id=test_id,
             )
@@ -3372,7 +3373,25 @@ def _impact():
             "required_tests": [],
         }
     }
-    return path, yaml.safe_load(path.read_text()) if path.exists() else default
+    try:
+        document = (yaml.safe_load(source_access.read_regular_bytes_beneath(path, path.parent))
+                    if path.exists() or path.is_symlink() else default)
+        if not isinstance(document, dict) or not isinstance(document.get("impact"), dict):
+            raise ValueError("invalid impact mapping")
+        impact = document["impact"]
+        for key in default["impact"]:
+            value = impact.setdefault(key, [])
+            if not isinstance(value, list):
+                raise ValueError("invalid impact list")
+            if key == "interfaces":
+                if any(not isinstance(item, dict) for item in value):
+                    raise ValueError("invalid interface record")
+            elif key != "contracts" and any(not isinstance(item, str) or not item for item in value):
+                raise ValueError("invalid impact item")
+        impact_domain.typed_contracts(impact)
+    except (OSError, ValueError, TypeError, yaml.YAMLError) as exc:
+        raise HarnessStateError("IMPACT_CONTRACT_INVALID") from exc
+    return path, document
 
 
 def cmd_evidence_plan(json_output: bool) -> int:
@@ -3453,7 +3472,11 @@ def cmd_impact(action, value=None, reason=None, args=None):
 def _cmd_impact_regular(action, value=None, reason=None, args=None):
     import yaml
 
-    path, document = _impact()
+    try:
+        path, document = _impact()
+    except HarnessStateError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
     impact = document["impact"]
     if action == "show":
         print(yaml.safe_dump(document, sort_keys=False))

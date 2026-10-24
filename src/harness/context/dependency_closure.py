@@ -29,6 +29,7 @@ ENTRIES = {
     "context.read_scope",
     "quality_gate",
     "evidence_validator",
+    "execution_proof",
     "decision",
     "interface_contract",
     "diagnosability",

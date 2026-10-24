@@ -5,7 +5,7 @@ import json
 import pytest
 import yaml
 
-from evidence_factory import write_evidence
+from evidence_factory import synthetic_execution, write_evidence
 from test_quality_gate import REPO, make_harness
 
 NODE_A = "tests/test_orders.py::test_cancel"
@@ -44,6 +44,7 @@ def integration_evidence(harness_dir, name, covered_tests):
     source["type"] = "integration_test"
     source["covered_tests"] = covered_tests
     source["command"] = "pytest " + " ".join(covered_tests)
+    source["test_execution"] = synthetic_execution(covered_tests)
     (harness_dir / "evidence" / name).write_text(json.dumps(source))
 
 

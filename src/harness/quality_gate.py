@@ -23,6 +23,7 @@ from jsonschema import ValidationError, validate
 from .blockers import RECOVERY_POLICY, GateBlocker, blocker_document
 from .context.telemetry import instrument
 from .evidence_validator import EvidenceValidationError, validate_evidence
+from .execution_proof import TEST_TYPES
 from .existing_verification import (
     green_unit_test_evidence,
     has_existing_verification,
@@ -414,6 +415,7 @@ def run_fast_gate(
                 current_head=head,
                 current_workspace=current_workspace,
                 expected_success=True,
+                require_test_execution=evidence_type in TEST_TYPES,
             )
         except (OSError, json.JSONDecodeError, EvidenceValidationError) as exc:
             block(
@@ -453,6 +455,7 @@ def run_fast_gate(
                 current_workspace=current_workspace,
                 expected_success=expected_success,
                 require_current_workspace=require_current,
+                require_test_execution=True,
             )
         except (OSError, json.JSONDecodeError, EvidenceValidationError) as exc:
             block(
@@ -583,6 +586,7 @@ def _evaluate_gate(
                 current_workspace=current_workspace,
                 expected_success=expected_success,
                 require_current_workspace=expected_success,
+                require_test_execution=True,
                 finding_id=finding["id"] if test_id else None,
                 test_id=test_id,
             )

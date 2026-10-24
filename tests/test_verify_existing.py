@@ -1,6 +1,7 @@
 """Existing-implementation verification does not fake RED or close GitLab."""
 
 import json
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -35,6 +36,13 @@ def classified_repo(tmp_path: Path) -> Path:
     assert run_cli(tmp_path, "init").returncode == 0
     (tmp_path / "src").mkdir()
     (tmp_path / "src/app.py").write_text("print('done')\n")
+    tests = tmp_path / "tests"
+    tests.mkdir()
+    (tests / "test_existing.py").write_text(
+        "import subprocess, sys\ndef test_existing():\n"
+        "    result = subprocess.run([sys.executable, 'src/app.py'], capture_output=True, text=True, check=True)\n"
+        "    assert result.stdout.strip() == 'done'\n"
+    )
     git(tmp_path, "add", "-A")
     git(tmp_path, "commit", "-qm", "implemented")
     assert run_cli(tmp_path, "task", "classify", "--level", "Q1", *CLASSIFY_FLAGS).returncode == 0
@@ -46,29 +54,15 @@ def classified_repo(tmp_path: Path) -> Path:
 
 
 def write_green(repo: Path) -> None:
-    from harness.workspace import git_head, snapshot
-
-    fingerprint = snapshot(repo).fingerprint
-    head = git_head(repo)
-    evidence = repo / ".harness/evidence"
-    evidence.mkdir(exist_ok=True)
-    for name, evidence_type in (
-        ("build.json", "build"),
-        ("fast-green-unit-test.json", "unit_test"),
-    ):
-        (evidence / name).write_text(
-            json.dumps(
-                {
-                    "type": evidence_type,
-                    "timestamp": "2026-01-01T00:00:00+00:00",
-                    "command": "true",
-                    "exit_code": 0,
-                    "commit": head,
-                    "workspace_fingerprint": fingerprint,
-                    "workspace_fingerprint_after": fingerprint,
-                }
-            )
-        )
+    # Native existing-implementation acceptance uses actual tests, not synthetic manifests.
+    python = shlex.quote(sys.executable)
+    build = run_cli(repo, "evidence", "run", "--type", "build", "--command",
+                    f"{python} -B -c \"compile(open('src/app.py').read(), 'src/app.py', 'exec')\"")
+    assert build.returncode == 0, build.stdout + build.stderr
+    green = run_cli(repo, "evidence", "run", "--type", "unit_test", "--phase", "green",
+                    "--covered-test", "tests/test_existing.py::test_existing", "--command",
+                    f"{python} -B -m pytest -q -p no:cacheprovider tests/test_existing.py")
+    assert green.returncode == 0, green.stdout + green.stderr
 
 
 def test_verify_existing_records_already_satisfied_without_red(tmp_path):
@@ -143,7 +137,7 @@ def test_verify_existing_blocks_unaccepted_target_diff(tmp_path):
 def test_verify_existing_accepts_diff_with_explicit_reason(tmp_path):
     repo = classified_repo(tmp_path)
     git(repo, "branch", "baseline")
-    (repo / "src/app.py").write_text("print('later')\n")
+    (repo / "src/app.py").write_text("print('done')  # cosmetic local change\n")
     git(repo, "add", "src/app.py")
     git(repo, "commit", "-qm", "later")
     write_green(repo)

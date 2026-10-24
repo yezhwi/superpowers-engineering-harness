@@ -97,8 +97,11 @@ def test_failed_collection_remains_readable_to_context(harness, cancel):
         assert record['error'] == 'EVIDENCE_COMMAND_CANCELLED'
         assert record['error_detail'] == {'code': 'EVIDENCE_COMMAND_CANCELLED', 'kind': 'cancelled'}
     workspace = snapshot(harness.parent)
-    projection = project_evidence(path, workspace.head, workspace.fingerprint, expected_success=False)
-    assert projection.status is EvidenceStatus.FRESH, projection.code
+    projection = project_evidence(path, workspace.head, workspace.fingerprint, expected_success=None)
+    assert projection.status is EvidenceStatus.FRESH, projection.code  # Readable measurement, not RED.
+    rejected_red = project_evidence(path, workspace.head, workspace.fingerprint, expected_success=False)
+    assert rejected_red.status is EvidenceStatus.FAILED
+    assert rejected_red.code == "EVIDENCE_TEST_EXECUTION_INVALID"
     assert project_evidence(path, workspace.head, workspace.fingerprint).status is EvidenceStatus.FAILED
     result = run_cli(harness.parent)
     assert result.returncode == 0, result.stdout + result.stderr
@@ -107,24 +110,20 @@ def test_failed_collection_remains_readable_to_context(harness, cancel):
 
 
 def test_fast_context_allows_existing_verification_import(harness):
-    from importlib.util import cache_from_source
-
-    from harness import existing_verification
-    from harness.context.store import generate_context
-
-    cache = Path(cache_from_source(existing_verification.__file__))
-    cached_bytes = cache.read_bytes() if cache.exists() else None
-    cache.unlink(missing_ok=True)
-    sys.modules.pop("harness.existing_verification", None)
-    try:
-        document = generate_context(harness, mode="compact")
-    finally:
-        if cached_bytes is None:
-            cache.unlink(missing_ok=True)
-        else:
-            cache.write_bytes(cached_bytes)
-
-    assert document["mode"] == "compact"
+    # Force a cold SDK import without deleting/restoring real checkout caches.
+    program = (
+        "import sys; from pathlib import Path; from harness.context.store import generate_context; "
+        "sys.modules.pop('harness.existing_verification', None); "
+        "print(generate_context(Path(sys.argv[1]), mode='compact')['mode'])"
+    )
+    result = subprocess.run(
+        [sys.executable, "-B", "-c", program, str(harness)], cwd=harness.parent,
+        env={**os.environ, "PYTHONPATH": str(REPO / "src"),
+             "PYTHONPYCACHEPREFIX": str(harness.parent / "isolated-pycache")},
+        capture_output=True, text=True, check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout.strip() == "compact"
     assert (harness / "context/current.yaml").exists()
 
 

@@ -87,6 +87,31 @@
       "type": "array",
       "items": {"type": "string", "minLength": 1}
     },
+    "test_execution": {
+      "type": "object",
+      "required": ["schema", "runs"],
+      "additionalProperties": false,
+      "properties": {
+        "schema": {"const": "pytest-execution/v1"},
+        "runs": {
+          "type": "array", "minItems": 1,
+          "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["collected", "passed", "failed", "skipped", "assertion_failures", "errors", "exit_code"],
+            "properties": {
+              "collected": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+              "passed": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+              "failed": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+              "skipped": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+              "assertion_failures": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+              "errors": {"type": "integer", "minimum": 0},
+              "exit_code": {"type": "integer"}
+            }
+          }
+        }
+      }
+    },
+    "test_execution_error": {"const": "TEST_EXECUTION_REPORT_MISSING_OR_INVALID"},
     "covered_test_cases": {
       "type": "array",
       "items": {"type": "string", "pattern": "^TC-[0-9]+$"},

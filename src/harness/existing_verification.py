@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 from .evidence_validator import EvidenceValidationError, validate_evidence
+from .execution_proof import TEST_TYPES
 from .risk_boundaries import business_paths
 from .workspace import (
     WorkspaceError,
@@ -67,6 +68,7 @@ def green_unit_test_evidence(
                 current_head=head,
                 current_workspace=workspace_hash,
                 expected_success=True,
+                require_test_execution=True,
             )
         except (OSError, json.JSONDecodeError, EvidenceValidationError):
             continue
@@ -94,6 +96,7 @@ def require_green_evidence(harness_dir: Path) -> None:
                 current_head=current.head,
                 current_workspace=current.fingerprint,
                 expected_success=True,
+                require_test_execution=name in TEST_TYPES,
             )
         except (OSError, json.JSONDecodeError, EvidenceValidationError):
             _fail("EXISTING_VERIFICATION_GREEN_MISSING")

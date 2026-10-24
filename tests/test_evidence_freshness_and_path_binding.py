@@ -7,6 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import yaml
+from evidence_factory import synthetic_execution
 
 from harness.collect_evidence import bind_covered_tests, command_covers_test, main
 from harness.evidence_validator import EvidenceValidationError, validate_evidence
@@ -68,6 +69,7 @@ def coverage_issues(node_id: str, command: str, covered_tests: list[str]):
         [
             {
                 "type": "unit_test",
+                "test_execution": synthetic_execution([node_id]),
                 "command": command,
                 "covered_tests": covered_tests,
                 "exit_code": 0,
@@ -82,7 +84,7 @@ def test_backend_cwd_selector_binds_repo_root_test_plan_path():
     issues = coverage_issues(
         "backend/tests/foo.py",
         "sh -lc 'cd backend && pytest tests/foo.py'",
-        ["tests/foo.py"],
+        ["backend/tests/foo.py"],
     )
     assert issues == []
 
@@ -92,7 +94,7 @@ def test_frontend_cwd_vitest_selector_binds_repo_root_test_plan_path():
     issues = coverage_issues(
         "agents-frontend/src/__tests__/foo.spec.ts",
         "sh -lc 'cd agents-frontend && npx vitest run src/__tests__/foo.spec.ts'",
-        ["src/__tests__/foo.spec.ts"],
+        ["agents-frontend/src/__tests__/foo.spec.ts"],
     )
     assert issues == []
 
@@ -186,10 +188,10 @@ def test_coverage_rejects_unexecuted_selector_even_when_path_suffix_matches():
     assert {issue.code for issue in issues} == {"TEST_EVIDENCE_MISSING"}
 
 
-def test_coverage_accepts_legacy_selector_or_canonical_covered_test():
-    """Break caught: old cwd-relative covered_tests cannot migrate to canonical plans."""
+def test_actual_coverage_requires_canonical_report_with_cwd_relative_command():
+    """Old receipts are not retrofitted; fresh collection canonicalizes declarations."""
     command = "sh -lc 'cd backend && pytest tests/foo.py'"
-    assert coverage_issues("backend/tests/foo.py", command, ["tests/foo.py"]) == []
+    assert coverage_issues("backend/tests/foo.py", command, ["tests/foo.py"])
     assert coverage_issues("backend/tests/foo.py", command, ["backend/tests/foo.py"]) == []
 
 

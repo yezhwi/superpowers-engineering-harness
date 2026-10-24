@@ -10,6 +10,7 @@ from jsonschema import ValidationError, validate
 from harness.schema_resources import read_schema
 
 from .context.telemetry import instrument
+from .execution_proof import requires_test_execution, valid as valid_test_execution
 
 
 class EvidenceValidationError(Exception):
@@ -68,6 +69,8 @@ def can_reuse_evidence(
         record.get("scope") != request.scope
     ):
         return False
+    if not _schema_valid(record):
+        return False
     if set(record.get("covered_tests", [])) != set(request.covered_tests):
         return False
     if set(record.get("covered_test_cases", [])) != set(request.covered_test_cases):
@@ -79,7 +82,8 @@ def can_reuse_evidence(
         return False
     if record.get("workspace_fingerprint_after") != current_workspace:
         return False
-    return record.get("runtime") == current_runtime and _schema_valid(record)
+    return (record.get("runtime") == current_runtime
+            and (not requires_test_execution(record) or valid_test_execution(record, True)))
 
 
 class EvidenceStatus(str, Enum):
@@ -106,6 +110,7 @@ def _projection(
     current_workspace,
     expected_success,
     require_current_workspace=True,
+    require_test_execution=False,
 ) -> EvidenceProjection:
     try:
         validate(record, read_schema("evidence.schema.json"))
@@ -148,6 +153,13 @@ def _projection(
                 before,
                 current_workspace,
             )
+    if ((require_test_execution or expected_success is False
+         or expected_success is not None and requires_test_execution(record))
+            and not valid_test_execution(record, True if expected_success is None else expected_success)):
+        return EvidenceProjection(
+            EvidenceStatus.FAILED, "EVIDENCE_TEST_EXECUTION_INVALID", record,
+            before, current_workspace,
+        )
     return EvidenceProjection(
         EvidenceStatus.FRESH, None, record, before, current_workspace
     )
@@ -201,6 +213,7 @@ def validate_evidence(
     finding_id=None,
     test_id=None,
     require_current_workspace=True,
+    require_test_execution=False,
 ):
     """Fail closed unless record proves required current evidence."""
     projection = _projection(
@@ -209,6 +222,7 @@ def validate_evidence(
         current_workspace=current_workspace,
         expected_success=expected_success,
         require_current_workspace=require_current_workspace,
+        require_test_execution=require_test_execution,
     )
     if projection.status is not EvidenceStatus.FRESH:
         _fail(projection.code or "EVIDENCE_SCHEMA_INVALID")
@@ -233,6 +247,7 @@ def validate_finding_closure_evidence(
         current_head=current_head,
         current_workspace=current_workspace,
         expected_success=True,
+        require_test_execution=True,
     )
     scope = record.get("scope")
     if scope is None:

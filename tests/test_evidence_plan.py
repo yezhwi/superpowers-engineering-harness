@@ -108,7 +108,9 @@ def test_minimum_fresh_coverage_uses_real_covered_tests_and_command(harness):
     declarations(harness, ['test_a.py', 'test_a.py::test_ok', 'test_b.py'])
     path = write_evidence(harness.parent, harness, 'unit_test')
     record = json.loads(path.read_text())
-    record.update(command='pytest test_a.py', scope='related', covered_tests=['test_a.py'])
+    from evidence_factory import synthetic_execution
+    record.update(command='pytest test_a.py', scope='related', covered_tests=['test_a.py'],
+                  test_execution=synthetic_execution(['test_a.py::test_ok']))
     path.write_text(json.dumps(record))
     report = planner().plan_evidence(harness)
     assert report['execution_plan']['tests'] == ['test_b.py']

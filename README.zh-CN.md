@@ -416,6 +416,16 @@ harness evidence run --type build --command "python -m pip wheel . --no-deps" --
 
 命令执行后准入或发布失败，收集器返回 `2`，不自动重跑或恢复。`EVIDENCE_RESULT_RETAINED: <path>` 指向系统临时目录 `harness-evidence-attempt-*` 下权限受限的非 canonical `result.json`；测量结果**不是已接受、可复用的证明**。若发布已完成但输出/解锁失败，报告 `EVIDENCE_PERSISTENCE_UNCERTAIN`，重试前先核对 canonical 状态。取消仍返回 `130`；普通命令失败/超时记录在 receipt 的 `exit_code`，不等于收集失败。保留失败会明确报告。保留对象可能包含命令/输出数据、持续占用磁盘且无自动清理；临时目录保留不保证断电或 OS 清理后仍存在。
 
+### 实际测试执行证明
+
+测试 receipt 必须带实际 pytest 子进程生成的 `test_execution`，不能仅凭命令字符串匹配声明覆盖。文件／函数级声明包含全部已收集的参数化用例；被过滤、跳过或未执行的成员不能证明整个目标。过滤执行应声明实际执行的具体节点。
+
+RED 必须由每个声明目标的实际 call 阶段断言型失败（含 pytest 期望失败）支撑，退出码为 1，且没有 collection/setup/teardown/internal 错误。检查器中未处理的 `KeyError`、超时、取消、collect-only 都不是 RED；应将预期产品行为写成断言，并单独诊断设置错误。断言是否对应真实需求仍需人工审阅。
+
+收集器向子进程加入私有独立 pytest reporter，不注入 Harness 源码；测试内部的嵌套 pytest 不算独立证明。合格命令 profile 限单一串行原生 pytest，保留 reporter，可带字面量环境赋值（支持 `env`）、`cd ... &&` 前缀及透明的 `sh/bash/zsh -c/-lc` 包装。复合顺序、管道、OR／后台命令、重定向、替换及任意程序包装仅保存测量，即使最后 pytest 通过也不能授予证明，防止前置失败被掩盖；远程／Vitest selector 解析不等于执行证明。未报告／未支持的 runner（含未经验证的 worker／传输适配）仍可记录测量，但不能证明覆盖、RED/GREEN 或复用。旧 receipt 保留原样；缺少实际执行记录以 `EVIDENCE_TEST_EXECUTION_INVALID` 阻断，不自动升级。collector exit 0 仅表示已保存，不表示证明合格。本地受信执行不是 OS sandbox 或可执行程序身份认证：所选 executable/module/plugin/conftest 代码受信。同名自定义 `pytest`／`python` 包装器可在内部吞掉前提失败，basename 分类无法识别；应使用已知测试程序，单独收集前提。显式 worker／传输参数（`-n`、`--numprocesses`、`--dist`、`--tx`、`-d`）仅保存测量；reporter 也拒绝 ini／环境注入的有效 worker 配置。这不等于 xdist 已获验证。
+
+wheel 从干净源码快照构建，并逐项核对实际载荷；不会清理或复用旧 `build/` 缓存。
+
 ### 产品 evidence freshness 与 covered-test 路径
 
 Test/build evidence 相对 **product workspace fingerprint** 判断是否 fresh（产品代码、测试、依赖、非 control-plane 配置）。另有 **control-plane fingerprint** 覆盖 `.harness/` 任务状态、evidence 文件、review 结果、requirement/invariant verification metadata。
