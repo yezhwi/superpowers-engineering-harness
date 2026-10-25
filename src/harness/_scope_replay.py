@@ -327,6 +327,9 @@ def bind_scope_identity(harness_dir: Path, task_id: str) -> None:
         before = _genesis_snapshot(root)
         try:
             task, task_bytes = _read(root, 'current-task.yaml', 'task.schema.json')
+            from .task_identity import require_available
+
+            require_available(root, task_id, task, migration=True)
             impact, impact_bytes = _read(root, 'impact.yaml')
             baseline, baseline_bytes = _read(root, SCOPE_FILES[0], 'test-scope-baseline.schema.json')
             audit, audit_bytes = _read(root, SCOPE_FILES[1], 'test-scope-audit.schema.json')

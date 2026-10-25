@@ -824,3 +824,291 @@ def test_gate_blocked_transitions_to_blocked(tmp_path):
     assert task["state"] == "BLOCKED"
     assert task["gate"]["quality"]["status"] == "BLOCKED"
     assert task["gate"]["release_readiness"]["status"] == "NOT_READY"
+
+
+def test_realign_task_write_failure_preserves_entire_contract(tmp_path, monkeypatch):
+    from test_alignment import complete_alignment
+
+    from harness import publication_fs
+    from harness.alignment import contract_hash, freeze_record
+
+    h = make_repo(tmp_path, profile="STANDARD", state="IMPLEMENTING")
+    document = complete_alignment()
+    document["freeze"] = {
+        "frozen": True,
+        "frozen_at": "2026-01-01T00:00:00+00:00",
+        "contract_hash": contract_hash(document),
+    }
+    (h / "alignment.yaml").write_text(yaml.safe_dump(document))
+    seal = freeze_record(
+        document,
+        decisions=[],
+        boundary_refs={"interface": [], "permission": [], "persistence": []},
+        architecture_mode="off",
+        architecture_fingerprint=None,
+        declared_modules=(),
+    )
+    (h / "alignment-freeze.yaml").write_text(yaml.safe_dump(seal))
+    before = {
+        name: (h / name).read_bytes()
+        for name in ("current-task.yaml", "alignment.yaml", "alignment-freeze.yaml")
+    }
+    original_replace, original_exchange = Path.replace, publication_fs.exchange
+    failures = []
+
+    def fail_once():
+        if not failures:
+            failures.append("task write")
+            raise OSError("TEST_REALIGN_TASK_WRITE_FAILED")
+
+    def replace(path, target):
+        if Path(target).name == "current-task.yaml":
+            fail_once()
+        return original_replace(path, target)
+
+    def exchange(src_fd, src_name, dst_fd, dst_name):
+        if "current-task.yaml" in (src_name, dst_name):
+            fail_once()
+        return original_exchange(src_fd, src_name, dst_fd, dst_name)
+
+    monkeypatch.setattr(Path, "replace", replace)
+    monkeypatch.setattr(publication_fs, "exchange", exchange)
+
+    with pytest.raises(OSError, match="TEST_REALIGN_TASK_WRITE_FAILED"):
+        controlplane.cmd_transition("SPECIFYING", reason="CONTRACT_CHANGED")
+
+    assert failures == ["task write"]
+    assert all((h / name).is_file() for name in before), (
+        "partial realignment removed canonical facts"
+    )
+    assert {name: (h / name).read_bytes() for name in before} == before
+
+
+@pytest.mark.parametrize("expected", ["CONVERGED", "BLOCKED", "ESCALATED"])
+@pytest.mark.parametrize("closed_warning", [False, True])
+def test_gate_committed_result_survives_broken_output(
+    tmp_path, monkeypatch, expected, closed_warning
+):
+    import builtins
+
+    from harness.blockers import GateBlocker
+
+    h = make_repo(tmp_path, state="GATING")
+    blockers = (
+        ()
+        if expected == "CONVERGED"
+        else (
+            GateBlocker(
+                "DECISION_CONFLICT" if expected == "ESCALATED" else "EVIDENCE_MISSING",
+                "harness",
+                "fixture blocker",
+            ),
+        )
+    )
+    assessment = quality_gate.GateAssessment(
+        "PASS" if not blockers else "BLOCKED",
+        blockers,
+        {"status": "PASS"},
+        {"status": "NOT_READY", "reasons": []},
+    )
+    monkeypatch.setattr(quality_gate, "assess_gate", lambda *_a, **_k: assessment)
+    real_print = builtins.print
+
+    def failed_print(*args, **kwargs):
+        if (args and str(args[0]).startswith("DECISION:")) or (
+            closed_warning and kwargs.get("file") is sys.stderr
+        ):
+            raise OSError("TEST_OUTPUT_FAILED")
+        return real_print(*args, **kwargs)
+
+    monkeypatch.setattr(builtins, "print", failed_print)
+
+    try:
+        result = controlplane.cmd_gate()
+    except OSError:
+        pytest.fail("committed Gate output failure escaped")
+
+    assert result == 0
+    assert yaml.safe_load((h / "current-task.yaml").read_text())["state"] == expected
+
+
+@pytest.mark.parametrize("flow", ["transition", "resume"])
+@pytest.mark.parametrize("failure", ["telemetry", "stdout", "unlock"])
+def test_state_command_committed_result_survives_diagnostic_failure(
+    tmp_path, monkeypatch, flow, failure
+):
+    import builtins
+    from contextlib import contextmanager
+
+    from harness.blockers import GateBlocker, blocker_document
+
+    h = make_repo(tmp_path, state="VERIFYING" if flow == "transition" else "BLOCKED")
+    if flow == "resume":
+        task = yaml.safe_load((h / "current-task.yaml").read_text())
+        task["gate"]["blocked_by"] = [
+            blocker_document(GateBlocker("EVIDENCE_MISSING", "verification", "collect"))
+        ]
+        (h / "current-task.yaml").write_text(yaml.safe_dump(task))
+    if failure == "telemetry":
+
+        def fail(*args, **kwargs):
+            raise OSError("TEST_TELEMETRY_FAILED")
+
+        monkeypatch.setattr(controlplane.telemetry, "update_telemetry", fail)
+    elif failure == "stdout":
+        real_print = builtins.print
+
+        def fail(*args, **kwargs):
+            if args and str(args[0]).startswith("OK:"):
+                raise OSError("TEST_OUTPUT_FAILED")
+            return real_print(*args, **kwargs)
+
+        monkeypatch.setattr(builtins, "print", fail)
+    else:
+        original = controlplane.publication_admission
+
+        @contextmanager
+        def fail(root):
+            with original(root):
+                yield
+            raise OSError("TEST_UNLOCK_FAILED")
+
+        monkeypatch.setattr(controlplane, "publication_admission", fail)
+    try:
+        result = (
+            controlplane.cmd_transition("IMPLEMENTING")
+            if flow == "transition"
+            else controlplane.cmd_resume()
+        )
+    except OSError:
+        pytest.fail("committed state command reported I/O failure")
+    assert result == 0
+    assert yaml.safe_load((h / "current-task.yaml").read_text())["state"] == (
+        "IMPLEMENTING" if flow == "transition" else "VERIFYING"
+    )
+
+
+def test_realignment_committed_result_survives_stage_retention_failure(
+    tmp_path, monkeypatch
+):
+    h = make_repo(tmp_path, profile="STANDARD", state="IMPLEMENTING")
+
+    def fail(*args, **kwargs):
+        raise OSError("TEST_STAGE_RETENTION_FAILED")
+
+    monkeypatch.setattr(controlplane.transaction, "_retain_stage", fail)
+    try:
+        result = controlplane.cmd_transition("SPECIFYING", reason="CONTRACT_CHANGED")
+    except OSError:
+        pytest.fail(
+            "committed realignment reported retention failure as command failure"
+        )
+    assert result == 0
+    assert (
+        yaml.safe_load((h / "current-task.yaml").read_text())["state"] == "SPECIFYING"
+    )
+
+
+@pytest.mark.parametrize("closed_stderr", [False, True])
+def test_gate_native_broken_pipe_keeps_process_success_after_commit(
+    tmp_path, closed_stderr
+):
+    import os
+
+    h = make_repo(tmp_path, state="GATING")
+    code = """
+from harness import controlplane, quality_gate
+input()
+quality_gate.assess_gate = lambda *a, **k: quality_gate.GateAssessment('PASS', (), {'status':'PASS'}, {'status':'READY','reasons':[]})
+raise SystemExit(controlplane.cmd_gate())
+"""
+    child = subprocess.Popen(
+        [sys.executable, "-c", code],
+        cwd=tmp_path,
+        env={**os.environ, "PYTHONPATH": str(REPO / "src")},
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    try:
+        child.stdout.close()
+        if closed_stderr:
+            child.stderr.close()
+        child.stdin.write(b"go\n")
+        child.stdin.close()
+        result = child.wait(timeout=30)
+        errors = "" if closed_stderr else child.stderr.read().decode()
+    finally:
+        if child.poll() is None:
+            child.kill()
+            child.wait()
+        if not closed_stderr:
+            child.stderr.close()
+    assert yaml.safe_load((h / "current-task.yaml").read_text())["state"] == "CONVERGED"
+    assert result == 0, errors
+
+
+@pytest.mark.parametrize("authority", [True, False])
+def test_planned_admission_next_step_respects_authority_halt(tmp_path, capsys, authority):
+    from fixtures.harness import populate_complete_harness
+    from test_alignment import complete_alignment
+    from test_decision import proposal
+    from test_minimal_implementation import _local_decision
+
+    h = make_repo(tmp_path, state="PLANNED", profile="STANDARD")
+    populate_complete_harness(tmp_path, h)
+    (h / "evidence/minimal-implementation.yaml").write_text(yaml.safe_dump(_local_decision()))
+    document = complete_alignment()
+    if authority:
+        controlplane.decision.propose(h, proposal())
+    else:
+        document["goal"]["summary"] = ""
+        document["decision_ids"] = []
+        document["interface_contract_ids"] = []
+    (h / "alignment.yaml").write_text(yaml.safe_dump(document))
+    before = (h / "current-task.yaml").read_bytes()
+    capsys.readouterr()
+
+    assert controlplane.cmd_transition("IMPLEMENTING") == 1
+    output = capsys.readouterr()
+
+    assert (h / "current-task.yaml").read_bytes() == before
+    assert "ALIGNMENT_BLOCKED" in output.err
+    if authority:
+        assert "OPEN_DECISION" in output.err
+        assert "DIRECTIVE: HALT_AND_WAIT" in output.err
+        assert "Next:" not in output.err + output.out
+    else:
+        assert "DIRECTIVE: HALT_AND_WAIT" not in output.err
+        assert "Next: harness check admission" in output.err
+
+
+@pytest.mark.parametrize('same_task', [True, False])
+def test_specifying_admission_checks_only_current_proposed_decisions(tmp_path, capsys, same_task):
+    from fixtures.harness import populate_complete_harness
+    from test_alignment import complete_alignment
+    from test_decision import proposal
+
+    h = make_repo(tmp_path, state='SPECIFYING', profile='STANDARD')
+    populate_complete_harness(tmp_path, h)
+    document = complete_alignment()
+    document['decision_ids'] = []
+    document['interface_contract_ids'] = []
+    (h / 'alignment.yaml').write_text(yaml.safe_dump(document))
+    record = controlplane.decision.propose(h, proposal())
+    if not same_task:
+        record['task_id'] = 'TASK-999'
+        (h / 'decisions' / f"{record['id']}.yaml").write_text(yaml.safe_dump(record))
+    before = (h / 'current-task.yaml').read_bytes()
+    capsys.readouterr()
+
+    result = controlplane.cmd_transition('PLANNED')
+    output = capsys.readouterr()
+
+    if same_task:
+        assert result == 1
+        assert 'OPEN_DECISION' in output.err
+        assert (h / 'current-task.yaml').read_bytes() == before
+    else:
+        assert result == 0, output.err
+        assert yaml.safe_load((h / 'current-task.yaml').read_text())['state'] == 'PLANNED'

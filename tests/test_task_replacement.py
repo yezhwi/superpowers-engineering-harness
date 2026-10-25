@@ -18,8 +18,8 @@ def identity(path):
     return info.st_dev, info.st_ino, info.st_mode
 
 
-def probe_tree(harness):
-    probe = harness / "acceptance-probes"
+def probe_tree(harness, name="acceptance-probes"):
+    probe = harness / name
     nested = probe / "example" / "fifo-input" / ".harness"
     nested.mkdir(parents=True)
     fifo = nested / "artifact.yaml"
@@ -42,9 +42,10 @@ def bare_harness(tmp_path):
     return harness
 
 
-def test_replacement_copy_never_enters_root_opaque_probes(tmp_path, monkeypatch):
+@pytest.mark.parametrize("opaque", ["acceptance-probes", "acceptance-artifacts"])
+def test_replacement_copy_never_enters_root_opaque_probes(tmp_path, monkeypatch, opaque):
     harness = bare_harness(tmp_path)
-    probe, fifo = probe_tree(harness)
+    probe, fifo = probe_tree(harness, opaque)
     before = identity(fifo)
     original_copytree = shutil.copytree
 
@@ -54,13 +55,14 @@ def test_replacement_copy_never_enters_root_opaque_probes(tmp_path, monkeypatch)
 
     monkeypatch.setattr(shutil, "copytree", no_probe_copy)
     staged = task_replacement.replacement_workspace(harness)
-    assert not (staged / "acceptance-probes").exists()
+    assert not (staged / opaque).exists()
     assert (staged / "current-task.yaml").read_text() == "old task\n"
     assert identity(fifo) == before
 
 
 @pytest.mark.parametrize("relative", [
     "requirements.yaml", "evidence/input.pipe", "evidence/acceptance-probes/input.pipe",
+    "evidence/acceptance-artifacts/input.pipe",
 ])
 def test_canonical_and_nested_special_files_still_refuse(tmp_path, relative):
     harness = bare_harness(tmp_path)
@@ -75,28 +77,30 @@ def test_canonical_and_nested_special_files_still_refuse(tmp_path, relative):
     assert not list(tmp_path.glob("..harness.replacement-*"))
 
 
-def test_publish_retains_original_probe_directory_and_child_inodes(tmp_path, capsys):
+@pytest.mark.parametrize("opaque", ["acceptance-probes", "acceptance-artifacts"])
+def test_publish_retains_original_probe_directory_and_child_inodes(tmp_path, capsys, opaque):
     harness = bare_harness(tmp_path)
-    probe, fifo = probe_tree(harness)
+    probe, fifo = probe_tree(harness, opaque)
     relative = fifo.relative_to(probe)
     original = {name: identity(probe / name) for name in (".", str(relative), "regular.txt", "outside-link")}
     staged = task_replacement.replacement_workspace(harness)
     (staged / "current-task.yaml").write_text("new task\n")
     task_replacement._publish_replacement(harness, staged)
     old = retained_root(harness)
-    kept = old / "acceptance-probes"
+    kept = old / opaque
     assert {name: identity(kept / name) for name in original} == original
     assert stat.S_ISFIFO((kept / relative).lstat().st_mode)
     assert (kept / "regular.txt").read_text() == "opaque fixture bytes\n"
     assert (kept / "outside-link").is_symlink()
-    assert not (harness / "acceptance-probes").exists()
+    assert not (harness / opaque).exists()
     assert (harness / "current-task.yaml").read_text() == "new task\n"
     assert str(old.relative_to(harness)) in capsys.readouterr().err
 
 
-def test_failed_install_restores_original_probe_tree(tmp_path, monkeypatch):
+@pytest.mark.parametrize("opaque", ["acceptance-probes", "acceptance-artifacts"])
+def test_failed_install_restores_original_probe_tree(tmp_path, monkeypatch, opaque):
     harness = bare_harness(tmp_path)
-    probe, fifo = probe_tree(harness)
+    probe, fifo = probe_tree(harness, opaque)
     before = identity(fifo)
     staged = task_replacement.replacement_workspace(harness)
     original_replace = Path.replace
@@ -140,8 +144,9 @@ def committed_repo(tmp_path):
     return repo
 
 
+@pytest.mark.parametrize("opaque", ["acceptance-probes", "acceptance-artifacts"])
 @pytest.mark.parametrize("operation", ["new", "recover", "escalate"])
-def test_native_task_commands_preserve_opaque_fifo(tmp_path, operation):
+def test_native_task_commands_preserve_opaque_fifo(tmp_path, operation, opaque):
     repo = committed_repo(tmp_path)
     harness = repo / ".harness"
     if operation == "escalate":
@@ -155,13 +160,13 @@ def test_native_task_commands_preserve_opaque_fifo(tmp_path, operation):
         arguments = ("task", operation, "TASK-005")
         if operation == "recover":
             arguments += ("--reason", "fixture")
-    probe, fifo = probe_tree(harness)
+    probe, fifo = probe_tree(harness, opaque)
     relative = fifo.relative_to(probe)
     before = identity(fifo)
     result = run_cli(repo, *arguments)
     assert result.returncode == 0, result.stdout + result.stderr
     kept = retained_root(harness)
-    assert identity(kept / "acceptance-probes" / relative) == before
+    assert identity(kept / opaque / relative) == before
     assert str(kept.relative_to(harness)) in result.stderr
     task = yaml.safe_load((harness / "current-task.yaml").read_text())
     if operation == "escalate":

@@ -59,15 +59,15 @@ def restore_architecture_mode(
 
 
 def replacement_workspace(harness_dir: Path) -> Path:
-    """Copy task facts; opaque probes stay in the original tree for retention."""
+    """Copy task facts; opaque acceptance data stays in the retained old tree."""
     ignore_storage = shutil.ignore_patterns(".staging", ".publication-retained")
 
     def ignore(directory, names):
         ignored = ignore_storage(directory, names)
         if Path(directory) == harness_dir:
-            # Never traverse probes, including FIFO/symlink fixtures. Publication
-            # retains their original inodes with the whole old Harness root.
-            ignored.add("acceptance-probes")
+            # Never traverse opaque FIFO/symlink fixtures. Publication retains
+            # their original inodes with the whole old Harness root.
+            ignored.update({"acceptance-probes", "acceptance-artifacts"})
         return ignored
 
     parent = harness_dir.parent

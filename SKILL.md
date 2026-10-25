@@ -124,8 +124,8 @@ Validated Context is a derived view, not a new authoritative source. Its Control
   `harness_status.py` — always reached through the `harness` CLI from other
   projects
 
-If `.harness/current-task.yaml` does not exist: create it from
-`templates/current-task.yaml` with `state: CREATED`, then proceed below.
+If `.harness/current-task.yaml` does not exist: run `harness init`, then
+follow task creation and classification below. Do not copy task templates by hand.
 
 ## Request Routing (Risk-Adaptive)
 
@@ -217,8 +217,8 @@ harness gate                                # inspect DECISION: and persisted st
 
 Inside the harness repo, `python scripts/harness_status.py` and
 `python scripts/validate_state.py CUR TGT` remain library wrappers.
-`python scripts/quality_gate.py` is deprecated: it evaluates Gate without
-moving state. Use `harness gate`.
+`python scripts/quality_gate.py` is disabled: it prints a deprecation notice
+and exits with code `2` without evaluating Gate. Use `harness gate`.
 
 Transition example:
 

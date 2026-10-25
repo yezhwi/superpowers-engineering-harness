@@ -19,6 +19,11 @@ USER_AUTHORITY_BLOCKER_CODES = frozenset(
         "SCOPE_DRIFT_PERMISSION",
         "SCOPE_DRIFT_PERSISTENCE",
         "DECISION_UNRESOLVED",
+        "DECISION_CONFLICT",
+        "DECISION_SUPERSEDE_INVALID",
+        "DECISION_REFERENCE_INVALID",
+        "DECISION_REFERENCE_STATUS_INVALID",
+        "INTERFACE_BREAKING_CHANGE_UNAPPROVED",
         "TEST_SCOPE_AUDIT_INVALID",
         "TEST_SCOPE_RETIREMENT_UNAUDITED",
         "TEST_SCOPE_RETIREMENT_UNAUTHORIZED",
@@ -81,6 +86,15 @@ RECOVERY_POLICY = {
     "SCOPE_DRIFT_PERMISSION": "ESCALATED",
     "SCOPE_DRIFT_PERSISTENCE": "ESCALATED",
     "DECISION_UNRESOLVED": "ESCALATED",
+    "DECISION_CONFLICT": "ESCALATED",
+    "DECISION_SUPERSEDE_INVALID": "ESCALATED",
+    "DECISION_REFERENCE_INVALID": "ESCALATED",
+    "DECISION_REFERENCE_STATUS_INVALID": "ESCALATED",
+    "INTERFACE_BREAKING_CHANGE_UNAPPROVED": "ESCALATED",
+    "INTERFACE_CONTRACT_MISSING": "IMPLEMENTING",
+    "INTERFACE_CONTRACT_TASK_MISMATCH": "IMPLEMENTING",
+    "INTERFACE_COMPATIBILITY_UNDECLARED": "IMPLEMENTING",
+    "INTERFACE_VERIFICATION_MISSING": "VERIFYING",
     "TEST_PLAN_INCOMPLETE": "IMPLEMENTING",
     "TEST_BINDING_MISSING": "IMPLEMENTING",
     "TEST_EVIDENCE_MISSING": "VERIFYING",
@@ -150,6 +164,8 @@ def select_recovery(blockers: list[GateBlocker]) -> str | None:
         return None
     if any(is_user_authority_blocker(item.code) for item in blockers):
         return None  # User decisions belong to the Guard or Gate, never resume.
+    if any(item.code not in RECOVERY_POLICY for item in blockers):
+        return None
     blocker = min(blockers, key=lambda item: _PRIORITY[item.category])
     target = RECOVERY_POLICY.get(blocker.code)
     return None if target == "ESCALATED" else target

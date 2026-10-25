@@ -5,8 +5,10 @@ Harness modules. Compatibility wrappers in ``scripts/`` re-export this source.
 """
 
 import datetime
+import os
+from contextlib import suppress
 from dataclasses import replace
-from functools import wraps
+from functools import partial, wraps
 
 from harness import (
     alignment,
@@ -53,27 +55,68 @@ class HarnessStateError(Exception):
     """Invalid harness state (maps to exit code 2)."""
 
 
-def _publication_entry(command):
+def _silence_broken_pipe(stream) -> None:
+    # A failed buffered flush can otherwise change process exit to 120 at shutdown.
+    with suppress(OSError, ValueError, AttributeError):
+        descriptor = os.open(os.devnull, os.O_WRONLY)
+        try:
+            os.dup2(descriptor, stream.fileno())
+        finally:
+            os.close(descriptor)
+
+
+def _post_commit_warning(message: str) -> None:
+    try:
+        print(message, file=sys.stderr, flush=True)
+    except (OSError, ValueError) as exc:
+        if isinstance(exc, BrokenPipeError):
+            _silence_broken_pipe(sys.stderr)
+
+
+def _committed_print(*args, **kwargs) -> None:
+    """Output failure cannot undo a durable task decision."""
+    kwargs.setdefault("flush", True)
+    try:
+        print(*args, **kwargs)
+    except (OSError, ValueError) as exc:
+        if isinstance(exc, BrokenPipeError):
+            _silence_broken_pipe(kwargs.get("file") or sys.stdout)
+        _post_commit_warning(
+            "COMMAND_OUTPUT_FAILED: task committed; inspect persisted state"
+        )
+
+
+def _publication_entry(command=None, *, committed_success=False):
     """Admit before task facts and retain lock through consequential command."""
+    if command is None:
+        return partial(_publication_entry, committed_success=committed_success)
+
     @wraps(command)
     def admitted(*args, **kwargs):
         completed = False
         try:
-            with publication_admission(Path('.harness')):
+            with publication_admission(Path(".harness")):
                 result = command(*args, **kwargs)
                 completed = True
             return result
         except PublicationAdmissionError as exc:
+            if completed and committed_success and result == 0:
+                _post_commit_warning("PUBLICATION_LOCK_TEARDOWN_FAILED: task committed")
+                return result
             print(str(exc), file=sys.stderr)
             return 2
         except OSError:
             if not completed:
                 raise  # Do not relabel or swallow command-body I/O.
+            if committed_success and result == 0:
+                _post_commit_warning("PUBLICATION_LOCK_TEARDOWN_FAILED: task committed")
+                return result
             print(
                 "PUBLICATION_LOCK_TEARDOWN_FAILED: command completed; inspect persisted state",
                 file=sys.stderr,
             )
             return 2
+
     return admitted
 
 
@@ -87,6 +130,17 @@ def load_task(harness_dir: Path) -> dict:
     if not isinstance(data, dict):
         raise HarnessStateError(f"{path} is not a mapping")
     return data
+
+
+def _task_identity_available(harness_dir, task_id, task, *, migration=False, legacy_repair=False):
+    from .task_identity import TaskIdentityError, require_available
+
+    try:
+        require_available(harness_dir, task_id, task, migration=migration, legacy_repair=legacy_repair)
+    except TaskIdentityError as exc:
+        print(str(exc), file=sys.stderr)
+        return False
+    return True
 
 
 def save_task(
@@ -112,12 +166,12 @@ def save_task(
             except (OSError, telemetry.TelemetryError):
                 if not tolerate_post_commit_telemetry:
                     raise
-                print("TELEMETRY_UPDATE_FAILED: task committed", file=sys.stderr)
+                _post_commit_warning("TELEMETRY_UPDATE_FAILED: task committed")
     except OSError:
         if not committed or not tolerate_post_commit_telemetry:
             raise
         # Unlock/close can fail after Gate task commit too.
-        print("TELEMETRY_UPDATE_FAILED: task committed", file=sys.stderr)
+        _post_commit_warning("TELEMETRY_UPDATE_FAILED: task committed")
 
 
 def _print_next_step(code: str, *, stream) -> None:
@@ -1141,17 +1195,7 @@ def _specifying_contract_admission(harness_dir: Path, task: dict) -> list[str]:
     quality_gate.validate_schema(requirements, "requirement.schema.json", requirements_path)
     quality_gate.validate_schema(invariants, "invariant.schema.json", invariants_path)
     document = alignment.load_alignment(harness_dir)
-    requirement_ids = {record["id"] for record in requirements["requirements"]}
-    critical_ids = {
-        record["id"] for record in requirements["requirements"]
-        if record["priority"] == "must"
-    }
-    issues = alignment.check_completeness(
-        document,
-        requirement_ids=requirement_ids,
-        critical_requirement_ids=critical_ids,
-        proposed_decision_ids=set(),
-    )
+    issues = _alignment_completeness_issues(harness_dir, task, document)
     diagnostics = [f"{issue.subject_id or 'ALIGNMENT'}: {issue.code}" for issue in issues]
     for records, key in ((requirements["requirements"], "test_plan"), (invariants["invariants"], "test_plan")):
         for record in records:
@@ -1161,9 +1205,13 @@ def _specifying_contract_admission(harness_dir: Path, task: dict) -> list[str]:
     return diagnostics
 
 
-@_publication_entry
+@_publication_entry(committed_success=True)
 def cmd_transition(target: str, *, reason: str | None = None) -> int:
     harness_dir = Path(".harness")
+    task_source = (
+        source_access.read_regular_bytes_beneath(harness_dir / "current-task.yaml", harness_dir)
+        if target == "SPECIFYING" else None
+    )
     task = load_task(harness_dir)
     current = task.get("state")
     profile = (task.get("risk") or {}).get("profile")
@@ -1463,7 +1511,8 @@ def cmd_transition(target: str, *, reason: str | None = None) -> int:
                 for issue in alignment_issues:
                     subject = issue.subject_id or "ALIGNMENT"
                     print(f"  {subject}: {issue.code}", file=sys.stderr)
-                print("Next: harness check admission", file=sys.stderr)
+                if authority is None:
+                    print("Next: harness check admission", file=sys.stderr)
                 return 1
             try:
                 alignment.validate_freeze(alignment_document)
@@ -1556,27 +1605,59 @@ def cmd_transition(target: str, *, reason: str | None = None) -> int:
     except state_machine.InvalidTransition as exc:
         print(exc)
         return 1
+    task["state"] = target
     if current == "IMPLEMENTING" and target == "SPECIFYING":
+        alignment_path = harness_dir / "alignment.yaml"
+        seal_path = harness_dir / "alignment-freeze.yaml"
+        original_alignment = (
+            source_access.read_regular_bytes_beneath(alignment_path, harness_dir)
+            if source_access.exists(alignment_path) else None
+        )
+        original_seal = (
+            source_access.read_regular_bytes_beneath(seal_path, harness_dir)
+            if source_access.exists(seal_path) else None
+        )
         try:
             document = alignment.load_alignment(harness_dir)
         except alignment.AlignmentError:
             document = None  # SPECIFYING is recovery point for malformed drafts.
+        artifacts = [transaction.StagedArtifact(
+            "current-task.yaml", yaml.safe_dump(task, sort_keys=False).encode(), replace=True
+        )]
+        expected = {"current-task.yaml": task_source, "alignment-freeze.yaml": original_seal}
         if document is not None:
             document["freeze"] = {
                 "frozen": False, "frozen_at": None, "contract_hash": None
             }
-            transaction.atomic_write(
-                harness_dir / "alignment.yaml",
-                yaml.safe_dump(document, sort_keys=False).encode(),
+            artifacts.append(transaction.StagedArtifact(
+                "alignment.yaml", yaml.safe_dump(document, sort_keys=False).encode(), replace=True
+            ))
+            expected["alignment.yaml"] = original_alignment
+        staged = transaction.stage(harness_dir, artifacts)
+        outcome = transaction.PublicationOutcome()
+        try:
+            transaction.publish(
+                harness_dir, staged, durable=True,
+                replace_paths=frozenset(item.relative_path for item in artifacts),
+                delete_paths=frozenset({"alignment-freeze.yaml"}),
+                expected_sources=expected, expected_artifacts=tuple(artifacts),
+                outcome=outcome,
             )
-        (harness_dir / "alignment-freeze.yaml").unlink(missing_ok=True)
-    task["state"] = target
-    save_task(harness_dir, task)
-    print(f"OK: {current} -> {target}")
+        except OSError:
+            if not outcome.committed:
+                raise
+            _post_commit_warning("PUBLICATION_RETENTION_FAILED: task committed")
+        try:
+            telemetry.update_telemetry(harness_dir, task)
+        except (OSError, telemetry.TelemetryError):
+            _post_commit_warning("TELEMETRY_UPDATE_FAILED: task committed")
+    else:
+        save_task(harness_dir, task, tolerate_post_commit_telemetry=True)
+    _committed_print(f"OK: {current} -> {target}")
     return 0
 
 
-@_publication_entry
+@_publication_entry(committed_success=True)
 def cmd_resume() -> int:
     """Recover BLOCKED task using highest-priority typed blocker only."""
     from harness.blockers import GateBlocker, select_recovery
@@ -1600,8 +1681,8 @@ def cmd_resume() -> int:
         print(f"INVALID_HARNESS_STATE: {exc}", file=sys.stderr)
         return 2
     task["state"] = target
-    save_task(harness_dir, task)
-    print(f"OK: BLOCKED -> {target}")
+    save_task(harness_dir, task, tolerate_post_commit_telemetry=True)
+    _committed_print(f"OK: BLOCKED -> {target}")
     return 0
 
 
@@ -2243,9 +2324,8 @@ def cmd_gate() -> int:
         # emission. Only outer teardown remains after that return; never treat
         # a body/admission failure as a completed, committed decision.
         if decision_result == 0:
-            print(
-                "TELEMETRY_UPDATE_FAILED: publication lock teardown after committed Gate decision",
-                file=sys.stderr,
+            _post_commit_warning(
+                "TELEMETRY_UPDATE_FAILED: publication lock teardown after committed Gate decision"
             )
             return 0
         if isinstance(exc, PublicationAdmissionError):
@@ -2373,8 +2453,8 @@ def _cmd_gate_convergence() -> int:
         # PASS deletes convergence tracking; zero count is not persisted.
         task.pop("convergence", None)
         save_task(harness_dir, task, tolerate_post_commit_telemetry=True)
-        print("DECISION: CONVERGED (gate PASS)")
-        print("DIRECTIVE: NONE")
+        _committed_print("DECISION: CONVERGED (gate PASS)")
+        _committed_print("DIRECTIVE: NONE")
         return 0
 
     current_fp = blocker_module.compute_blocker_fingerprint(blockers)
@@ -2401,11 +2481,11 @@ def _cmd_gate_convergence() -> int:
             {"status": "BLOCKED", "blocked_by": blocker_documents}
         )
         save_task(harness_dir, task, tolerate_post_commit_telemetry=True)
-        print("DECISION: ESCALATED")
-        print("REASON: USER_AUTHORITY_REQUIRED")
-        print("DIRECTIVE: NONE")
+        _committed_print("DECISION: ESCALATED")
+        _committed_print("REASON: USER_AUTHORITY_REQUIRED")
+        _committed_print("DIRECTIVE: NONE")
         for blocker in blockers:
-            print(f"  blocker: {blocker.message}")
+            _committed_print(f"  blocker: {blocker.message}")
         return 0
 
     if reopened:
@@ -2418,11 +2498,11 @@ def _cmd_gate_convergence() -> int:
             {"status": "BLOCKED", "blocked_by": blocker_documents}
         )
         save_task(harness_dir, task, tolerate_post_commit_telemetry=True)
-        print("DECISION: ESCALATED")
-        print(f"REASON: REPEATED_REGRESSION ({reopened} was VERIFIED, now open again)")
-        print("DIRECTIVE: NONE")
+        _committed_print("DECISION: ESCALATED")
+        _committed_print(f"REASON: REPEATED_REGRESSION ({reopened} was VERIFIED, now open again)")
+        _committed_print("DIRECTIVE: NONE")
         for blocker in blockers:
-            print(f"  blocker: {blocker.message}")
+            _committed_print(f"  blocker: {blocker.message}")
         return 0
 
     if new_count >= 2:
@@ -2435,12 +2515,12 @@ def _cmd_gate_convergence() -> int:
             {"status": "BLOCKED", "blocked_by": blocker_documents}
         )
         save_task(harness_dir, task, tolerate_post_commit_telemetry=True)
-        print("DECISION: ESCALATED")
-        print("REASON: NO_PROGRESS")
-        print("DIRECTIVE: NONE")
-        print(f"  prior fingerprint: {prev_fp}")
+        _committed_print("DECISION: ESCALATED")
+        _committed_print("REASON: NO_PROGRESS")
+        _committed_print("DIRECTIVE: NONE")
+        _committed_print(f"  prior fingerprint: {prev_fp}")
         for blocker in blockers:
-            print(f"  blocker: {blocker.message}")
+            _committed_print(f"  blocker: {blocker.message}")
         return 0
 
     if iteration >= max_iterations:
@@ -2453,11 +2533,11 @@ def _cmd_gate_convergence() -> int:
             {"status": "BLOCKED", "blocked_by": blocker_documents}
         )
         save_task(harness_dir, task, tolerate_post_commit_telemetry=True)
-        print("DECISION: ESCALATED")
-        print("REASON: MAX_ITERATIONS")
-        print("DIRECTIVE: NONE")
+        _committed_print("DECISION: ESCALATED")
+        _committed_print("REASON: MAX_ITERATIONS")
+        _committed_print("DIRECTIVE: NONE")
         for blocker in blockers:
-            print(f"  blocker: {blocker.message}")
+            _committed_print(f"  blocker: {blocker.message}")
         return 0
 
     state_machine.require_legal("GATING", "BLOCKED")
@@ -2468,10 +2548,10 @@ def _cmd_gate_convergence() -> int:
         {"status": "BLOCKED", "blocked_by": blocker_documents}
     )
     save_task(harness_dir, task, tolerate_post_commit_telemetry=True)
-    print(f"DECISION: CONTINUE (iteration {task['iteration']} / {max_iterations})")
+    _committed_print(f"DECISION: CONTINUE (iteration {task['iteration']} / {max_iterations})")
     for blocker in blockers:
-        print(f"  blocker: {blocker.message}")
-    print("DIRECTIVE: RESUME_TYPED_RECOVERY")
+        _committed_print(f"  blocker: {blocker.message}")
+    _committed_print("DIRECTIVE: RESUME_TYPED_RECOVERY")
     return 0
 
 
@@ -2726,6 +2806,8 @@ def _migrate_task_id_owned(harness_dir: Path, task_id: str) -> int:
     else:
         # Legacy identity-only command does not create or trust scope origin.
         task = load_task(harness_dir)
+        if not _task_identity_available(harness_dir, task_id, task, migration=True, legacy_repair=True):
+            return 2
         task.setdefault("task", {})["id"] = task_id
         save_task(harness_dir, task)
     print(f"OK: task id -> {task_id}")
@@ -3048,6 +3130,8 @@ def cmd_task_new(task_id: str, title: str = "") -> int:
     if old.get("state") not in {"DONE", "ESCALATED"}:
         print("task new requires DONE or ESCALATED task", file=sys.stderr)
         return 1
+    if not _task_identity_available(harness_dir, task_id, old):
+        return 2
     try:
         head = task_git_head_or_error()
     except workspace.WorkspaceError as exc:
@@ -3135,6 +3219,8 @@ def cmd_task_recover(task_id: str, title: str, reason: str) -> int:
     if old.get("state") in {"DONE", "ESCALATED"}:
         print("task recover requires active task", file=sys.stderr)
         return 1
+    if not _task_identity_available(harness_dir, task_id, old):
+        return 2
     old_id = old.get("task", {}).get("id") or "UNKNOWN"
     try:
         head = task_git_head_or_error()

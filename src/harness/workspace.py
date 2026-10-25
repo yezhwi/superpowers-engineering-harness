@@ -1,7 +1,9 @@
 """Shared Git workspace facts for evidence, Gate, status, and review scope."""
 
 import hashlib
+import os
 import re
+import stat
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -133,28 +135,58 @@ def _working_paths(repo_root: Path) -> set[str]:
     return paths | _untracked_paths(repo_root)
 
 
-def _fingerprint(repo_root: Path) -> str:
+MAX_UNTRACKED_FILE_BYTES = 64 * 1024 * 1024
+
+
+def _untracked_digest(path: Path, root: Path) -> bytes:
+    from harness.source_access import _open_beneath, _package_open
+
+    try:
+        with _package_open(path):
+            descriptor = _open_beneath(path, root)
+        try:
+            info = os.fstat(descriptor)
+            if not stat.S_ISREG(info.st_mode):
+                raise WorkspaceError("WORKSPACE_UNTRACKED_FILE_UNSAFE")
+            if info.st_size > MAX_UNTRACKED_FILE_BYTES:
+                raise WorkspaceError("WORKSPACE_UNTRACKED_FILE_TOO_LARGE")
+            digest = hashlib.sha256()
+            total = 0
+            while True:
+                chunk = os.read(
+                    descriptor, min(65536, MAX_UNTRACKED_FILE_BYTES + 1 - total)
+                )
+                if not chunk:
+                    return digest.digest()
+                total += len(chunk)
+                if total > MAX_UNTRACKED_FILE_BYTES:
+                    raise WorkspaceError("WORKSPACE_UNTRACKED_FILE_TOO_LARGE")
+                digest.update(chunk)
+        finally:
+            os.close(descriptor)
+    except OSError as exc:
+        raise WorkspaceError("WORKSPACE_UNTRACKED_FILE_UNSAFE") from exc
+
+
+def _fingerprint(repo_root: Path, *, head: str | None = None) -> str:
     """Product workspace fingerprint; control-plane files are excluded."""
+    reference = head or "HEAD"
     parts = [
-        _run(repo_root, "rev-parse", "HEAD"),
-        _run(repo_root, "diff", "--binary", "HEAD", "--", ".", *_PRODUCT_EXCLUDE),
+        (head + "\n").encode() if head is not None else _run(repo_root, "rev-parse", "HEAD"),
+        _run(repo_root, "diff", "--binary", reference, "--", ".", *_PRODUCT_EXCLUDE),
         _run(
             repo_root,
             "diff",
             "--cached",
             "--binary",
-            "HEAD",
+            reference,
             "--",
             ".",
             *_PRODUCT_EXCLUDE,
         ),
     ]
-    from harness.source_access import _package_open
-
     for name in sorted(_untracked_paths(repo_root)):
-        path = repo_root / name
-        with _package_open(path):
-            parts.extend([name.encode(), hashlib.sha256(path.read_bytes()).digest()])
+        parts.extend([name.encode(), _untracked_digest(repo_root / name, repo_root)])
     return "sha256:" + hashlib.sha256(b"\0".join(parts)).hexdigest()
 
 
@@ -347,6 +379,9 @@ def _protected_path_material(name: str, root: Path) -> bytes:
     parts = [name.encode(), diff]
     if not diff and source_access.is_file(path):
         parts.append(hashlib.sha256(source_access.read_bytes(path)).digest())
+    cached = _run(root, "diff", "--cached", "--binary", "HEAD", "--", name)
+    if cached:
+        parts.extend((b"index", cached))
     return b"\0".join(parts)
 
 
@@ -358,7 +393,11 @@ def protected_path_fingerprints(
     def material(name: str) -> bytes:
         diff = _run(root, "diff", "--binary", "HEAD", "--", name)
         object_id = _run(root, "hash-object", "--", name) if not diff else b""
-        return b"\0".join((name.encode(), diff, object_id))
+        parts = [name.encode(), diff, object_id]
+        cached = _run(root, "diff", "--cached", "--binary", "HEAD", "--", name)
+        if cached:
+            parts.extend((b"index", cached))
+        return b"\0".join(parts)
     return {
         name: "sha256:" + hashlib.sha256(material(name)).hexdigest()
         for name in sorted(paths)
@@ -396,11 +435,15 @@ def protected_user_changes_fingerprint(
 def snapshot(repo_root: Path | None = None) -> WorkspaceSnapshot:
     """Return HEAD plus all current business changes under one ignore policy."""
     root = _root(repo_root)
-    return WorkspaceSnapshot(
-        head=git_head(root),
-        fingerprint=_fingerprint(root),
+    head = git_head(root)
+    result = WorkspaceSnapshot(
+        head=head,
+        fingerprint=_fingerprint(root, head=head),
         changed_paths=tuple(sorted(_working_paths(root))),
     )
+    if git_head(root) != head:
+        raise WorkspaceError("WORKSPACE_HEAD_CHANGED")
+    return result
 
 
 def product_workspace_fingerprint(repo_root: Path | None = None) -> str:

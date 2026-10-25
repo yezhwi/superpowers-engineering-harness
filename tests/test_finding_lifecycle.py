@@ -17,6 +17,7 @@ from pathlib import Path
 
 import pytest
 import yaml
+from evidence_factory import synthetic_execution
 from fixtures.harness import populate_complete_harness
 from test_alignment import complete_alignment
 
@@ -113,6 +114,7 @@ def write_finding(h: Path, **overrides):
                     "timestamp": "t",
                     "command": "false",
                     "exit_code": 1,
+                    "test_execution": synthetic_execution([finding["test"]], exit_code=1),
                     "commit": head,
                     "workspace_fingerprint": fingerprint,
                     "workspace_fingerprint_after": fingerprint,
@@ -138,6 +140,7 @@ def write_finding(h: Path, **overrides):
                     "workspace_fingerprint_after": fingerprint,
                     "subject": {"kind": "finding", "id": finding["id"]},
                     "test": {"node_id": finding["test"]},
+                    "test_execution": synthetic_execution([finding["test"]]),
                 }
             )
         )
@@ -157,6 +160,7 @@ def write_finding(h: Path, **overrides):
                     "workspace_fingerprint_after": fingerprint,
                     "scope": "related",
                     "covered_tests": [finding["test"]],
+                    "test_execution": synthetic_execution([finding["test"]]),
                 }
             )
         )

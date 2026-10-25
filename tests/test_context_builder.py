@@ -770,6 +770,8 @@ def test_core_keeps_must_statement_invariant_scope_and_authorizations(harness):
 
 
 def test_core_includes_complete_accepted_decisions_and_open_findings(harness):
+    from evidence_factory import synthetic_execution, write_evidence
+
     accepted = decision.propose(harness, proposal())
     accepted = decision.accept(
         harness, accepted["id"], "redis", "accepted_recommendation"
@@ -789,8 +791,8 @@ def test_core_includes_complete_accepted_decisions_and_open_findings(harness):
             "status": status,
             "regression_test": {
                 "path": "tests/other.py::test_hidden",
-                "red_evidence": "red.json",
-                "green_evidence": "green.json",
+                "red_evidence": f"FND-{i:03}-red.json",
+                "green_evidence": f"FND-{i:03}-green.json",
             },
             "test": "tests/other.py::test_hidden",
             "fix": "fix description",
@@ -798,6 +800,18 @@ def test_core_includes_complete_accepted_decisions_and_open_findings(harness):
         }
         records.append(record)
         write_yaml(harness / "findings" / f"{record['id']}.yaml", record)
+        for phase, exit_code in (("red", 1), ("green", 0)):
+            path = write_evidence(
+                harness.parent, harness, "unit_test", exit_code=exit_code,
+                name=record["regression_test"][f"{phase}_evidence"],
+            )
+            proof = json.loads(path.read_text())
+            proof.update(
+                subject={"kind": "finding", "id": record["id"]},
+                test={"node_id": record["test"]},
+                test_execution=synthetic_execution([record["test"]], exit_code=exit_code),
+            )
+            path.write_text(json.dumps(proof))
     rejected = {
         **records[0],
         "id": "FND-006",

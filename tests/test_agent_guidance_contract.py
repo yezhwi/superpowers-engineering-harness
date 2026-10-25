@@ -63,6 +63,31 @@ def test_failure_triage_covers_setup_product_and_authority_without_new_states(pa
     assert "HALT_AND_WAIT" in section
 
 
+@pytest.mark.parametrize("path", ["SKILL.md", "skills/engineering-harness/SKILL.md", "skills/task-contract/SKILL.md"])
+def test_missing_task_guidance_uses_public_init_not_template_copy(path):
+    text = (ROOT / path).read_text()
+    section = _guidance_section(path, "## Inputs")
+    assert "harness init" in section
+    assert "templates/current-task.yaml" not in text
+
+
+def test_contract_exit_has_no_unused_task_counter_writes():
+    text = (ROOT / "skills/task-contract/SKILL.md").read_text()
+    for field in ("requirements.total", "invariants.total", "timestamps.updated_at"):
+        assert field not in text
+    assert "counters + state updated" not in text
+    assert "harness transition PLANNED" in text
+
+
+@pytest.mark.parametrize("path", ["SKILL.md", "skills/engineering-harness/SKILL.md"])
+def test_deprecated_gate_wrapper_guidance_describes_refusal(path):
+    text = (ROOT / path).read_text()
+    section = text.split("`python scripts/quality_gate.py`", 1)[1].split("\n\n", 1)[0]
+    assert "exit" in section and "2" in section
+    assert "harness gate" in section
+    assert "evaluates Gate without" not in section
+
+
 def test_doc_verification_reference_resolves_and_mirrors_stay_identical():
     root = (ROOT / "SKILL.md").read_bytes()
     assert root == (ROOT / "skills/engineering-harness/SKILL.md").read_bytes()
@@ -122,7 +147,7 @@ def test_only_gate_emits_convergence_decision():
         if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             continue
         for call in ast.walk(node):
-            if not isinstance(call, ast.Call) or not isinstance(call.func, ast.Name) or call.func.id != "print":
+            if not isinstance(call, ast.Call) or not isinstance(call.func, ast.Name) or call.func.id not in {"print", "_committed_print"}:
                 continue
             if any(
                 isinstance(value, ast.Constant)
@@ -133,6 +158,17 @@ def test_only_gate_emits_convergence_decision():
             ):
                 decision_emitters.add(node.name)
     assert decision_emitters == {"_cmd_gate_convergence"}
+
+
+@pytest.mark.parametrize("emitter", ["print", "_committed_print"])
+def test_convergence_emitter_check_detects_unauthorized_wrapper(monkeypatch, emitter):
+    source = (
+        'def _cmd_gate_convergence():\n    _committed_print("DECISION: CONVERGED")\n'
+        f'def unauthorized():\n    {emitter}("DECISION: CONVERGED")\n'
+    )
+    monkeypatch.setattr(inspect, "getsource", lambda _module: source)
+    with pytest.raises(AssertionError):
+        test_only_gate_emits_convergence_decision()
 
 
 def test_stale_guard_blocker_cannot_override_current_passing_gate(tmp_path):

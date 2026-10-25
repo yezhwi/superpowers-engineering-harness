@@ -412,6 +412,20 @@ harness task escalate --level Q2 --reason "public contract changed"
 
 `docs/`, `tests/`, `test/`, and root Markdown-only changes do not require policy.
 
+<!-- path-identities -->
+**Two path identities:** `workspace_fingerprint` binds product freshness and includes code, tests, docs and configuration; only `.harness/` control data is excluded. Changing a tracked test or guide (or an eligible untracked file) makes prior evidence and Context stale. `business_paths` filters the paths used by FAST risk escalation: it excludes `.harness/`, `docs/`, `tests/`, `test/` and root Markdown such as `README.md`. These risk-policy exclusions do not exempt files from freshness checks and do not grant permission to skip required tests or misclassify public-interface/security changes. Nested Markdown outside those excluded directories remains a business risk path. This distinction describes existing policy, not new semantic risk detection.
+<!-- /path-identities -->
+
+### Task identity reservation
+
+`task new`, `task recover`, and `task migrate-id` reject an ID already reserved by the current task, history archive names/documents, or persistent decision records/index. Leading-zero aliases (`TASK-5` / `TASK-005`) count as the same numeric identity. Refusal is exit 2 with `TASK_ID_ALREADY_USED`, before replacement copying or identity writes under the existing publication lock. Choose an unused ID; never delete history or decisions to bypass the refusal.
+
+When assigning a different identity, unreadable, malformed or symlinked reservation sources refuse with `TASK_ID_RESERVATION_INVALID`; diagnose the source rather than treating it as an empty set. Only the legacy `migrate-id` branch with every scope artifact absent may repair a malformed current ID string; the valid target must still be unused, and history/Decision/index validation is not skipped. A current `task.id: null` remains a valid unassigned identity, not a malformed string; its existing legacy assignment and genesis scope binding remain supported. Other non-string current IDs or missing task structure are still rejected. Reservation checks for `new`/`recover` and the existing scope-binding restrictions are unchanged. Existing historical duplicates are not rewritten and do not prevent a genuinely unused ID. Existing explicit publication recovery still runs before migration admission.
+
+Exception: legacy migration to the exact current ID creates no new identity and does not re-scan reservation sources. It does not validate or repair damaged history/decisions, certify integrity, create scope, accept decisions or grant Gate approval; the task/telemetry may still be rewritten by the existing legacy save path. Use `harness explain TASK_ID_ALREADY_USED` or `harness explain TASK_ID_RESERVATION_INVALID` for read-only guidance; neither command changes state or runs recovery.
+
+The guard reads only current identity, immediate history names/task documents and decision ownership, not probe/acceptance/retained trees. It is not a permanent all-time registry after every authoritative trace has been removed. A surviving decision still reserves its task ID when its archive has been pruned.
+
 ### Evidence reuse
 
 Reuse is explicit and same-task only:
@@ -424,7 +438,7 @@ harness evidence run --type build --command "python -m pip wheel . --no-deps" --
 
 Collection uses short owned preflight and persistence phases; the external command runs **without** the root lock so nested Harness commands can complete. Persistence checks root/task identity, merges budget increments into the latest task, and publishes immutable receipts with task/telemetry as a bounded native bundle. Preflight budgets remain soft: overlapping runs are not hard-cap reservations.
 
-If post-command admission or publication fails, collection returns `2` without rerunning or implicitly recovering. `EVIDENCE_RESULT_RETAINED: <path>` identifies a noncanonical, permission-restricted `result.json` under the system temporary directory (`harness-evidence-attempt-*`); this measured result is **not accepted/reusable proof**. A completed publication followed by output/lock teardown failure reports `EVIDENCE_PERSISTENCE_UNCERTAIN`: inspect canonical state before retrying. Cancellation remains `130`; ordinary command failure/timeout is recorded in `exit_code`, not collection success. Retention failure is explicitly reported. Retained attempts may contain command/output data, consume disk indefinitely, and have no automatic pruning; temporary-directory retention is not a power-loss or OS-cleanup survival guarantee.
+If post-command admission or publication fails without a definite durable commit, collection returns `2` without rerunning or implicitly recovering. A definite `COMMITTED` publication followed by stage archival or publisher-cleanup failure instead emits `PUBLICATION_COMMITTED_CONTEXT` and `EVIDENCE_PUBLICATION_COMMITTED`: canonical receipt and budget already exist, so collection succeeds (cancellation still returns `130`). Do not rerun the command to repair archival; exact eligible proof can be reused with `--reuse-if-valid` without another execution or budget charge. `EVIDENCE_RESULT_RETAINED: <path>` identifies a noncanonical, permission-restricted `result.json` under the system temporary directory (`harness-evidence-attempt-*`); this measured result is **not accepted/reusable proof**. A completed publication followed by output/lock teardown failure reports `EVIDENCE_PERSISTENCE_UNCERTAIN`: inspect canonical state before retrying. Cancellation remains `130`; ordinary command failure/timeout is recorded in `exit_code`, not collection success. Retention failure is explicitly reported. Retained attempts may contain command/output data, consume disk indefinitely, and have no automatic pruning; temporary-directory retention is not a power-loss or OS-cleanup survival guarantee.
 
 ### Actual test execution proof
 

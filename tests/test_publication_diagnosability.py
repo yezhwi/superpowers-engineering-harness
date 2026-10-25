@@ -17,13 +17,13 @@ PREFIX = "PUBLICATION_FAILURE_CONTEXT "
 MAX_RECORD_BYTES = 2048
 
 
-def _context(stderr: str, root: Path) -> dict:
-    records = [line for line in stderr.splitlines() if line.startswith(PREFIX)]
+def _context(stderr: str, root: Path, prefix: str = PREFIX) -> dict:
+    records = [line for line in stderr.splitlines() if line.startswith(prefix)]
     assert len(records) == 1, stderr
     record = records[0]
     assert len(record.encode()) <= MAX_RECORD_BYTES
     assert str(root) not in record
-    value = json.loads(record.removeprefix(PREFIX))
+    value = json.loads(record.removeprefix(prefix))
     assert re.fullmatch(r"[0-9a-f]{32}", value["operation_id"])
     assert value["retained_location"] == f".publication-retained/{value['operation_id']}"
     assert value["observed_state"] in {"ABORTED", "ABORTING", "COMMITTED"}
@@ -199,7 +199,9 @@ def test_post_commit_stage_retention_failure_reports_committed_truth(
     assert raised.value.errno == errno.ENOSPC
     assert (root / "impact.yaml").read_bytes() == b"candidate secret payload"
     assert (root / "impact.yaml").stat().st_ino != original_inode
-    context = _context(capsys.readouterr().err, root)
+    stderr = capsys.readouterr().err
+    assert PREFIX not in stderr
+    context = _context(stderr, root, prefix="PUBLICATION_COMMITTED_CONTEXT ")
     assert context["observed_state"] == "COMMITTED"
     assert "canonical_member" not in context
 

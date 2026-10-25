@@ -335,6 +335,158 @@ def load_findings(findings_dir: Path) -> list:
     return findings
 
 
+def _validate_finding_proofs(harness_dir, findings, impact, head, current_workspace):
+    """All profiles require the same lifecycle proof, including closed findings."""
+    from harness import source_access
+
+    def finding_proof(finding, ref, expected_success, label, test_id=None):
+        try:
+            record = json.loads(
+                source_access.read_text(evidence_path(harness_dir, ref))
+            )
+            validate_evidence(
+                record,
+                current_head=head,
+                current_workspace=current_workspace,
+                expected_success=expected_success,
+                require_current_workspace=expected_success,
+                require_test_execution=True,
+                finding_id=finding["id"] if test_id else None,
+                test_id=test_id,
+            )
+        except (
+            OSError,
+            json.JSONDecodeError,
+            EvidenceValidationError,
+            EvidenceReferenceError,
+        ) as exc:
+            raise InvalidHarnessState(
+                f"{finding['id']} {label} evidence invalid: {exc}"
+            ) from exc
+
+    for finding in findings:
+        state = finding["status"]
+        if finding.get("category") == "alignment":
+            continue  # Audit only: current alignment drift is assessed separately.
+        if finding.get("category") == "diagnosability":
+            if state in {"VERIFIED", "CLOSED"}:
+                try:
+                    record = json.loads(
+                        source_access.read_text(
+                            evidence_path(harness_dir, finding["evidence"])
+                        )
+                    )
+                    from .diagnosability import validate_compliance_closure
+
+                    validate_compliance_closure(
+                        finding,
+                        record,
+                        current_head=head,
+                        current_workspace=current_workspace,
+                    )
+                except (
+                    OSError,
+                    json.JSONDecodeError,
+                    ValueError,
+                    EvidenceReferenceError,
+                ) as exc:
+                    raise InvalidHarnessState(
+                        f"{finding['id']} compliance evidence invalid: {exc}"
+                    ) from exc
+            continue
+        if state in {"CONFIRMED", "FIXING", "FIXED", "VERIFIED", "CLOSED"}:
+            finding_proof(
+                finding,
+                finding["regression_test"]["red_evidence"],
+                False,
+                "red",
+                finding["regression_test"]["path"],
+            )
+        if state in {"FIXED", "VERIFIED", "CLOSED"}:
+            finding_proof(
+                finding,
+                finding["regression_test"]["green_evidence"],
+                True,
+                "green",
+                finding["regression_test"]["path"],
+            )
+        if state in {"VERIFIED", "CLOSED"}:
+            try:
+                record = json.loads(
+                    source_access.read_text(
+                        evidence_path(harness_dir, finding["evidence"])
+                    )
+                )
+                from .evidence_validator import validate_finding_closure_evidence
+
+                validate_finding_closure_evidence(
+                    finding,
+                    record,
+                    impact,
+                    current_head=head,
+                    current_workspace=current_workspace,
+                )
+            except (
+                OSError,
+                json.JSONDecodeError,
+                EvidenceValidationError,
+                EvidenceReferenceError,
+            ) as exc:
+                raise InvalidHarnessState(
+                    f"{finding['id']} related regression evidence invalid: {exc}"
+                ) from exc
+
+
+def _defect_finding_blockers(findings, gate_cfg) -> list[GateBlocker]:
+    blockers = []
+
+    def block(code, category, message, finding):
+        blockers.append(
+            GateBlocker(
+                code,
+                category,
+                message,
+                finding_id=finding["id"],
+                recover_to=RECOVERY_POLICY.get(code),
+            )
+        )
+
+    for severity in ("critical", "major"):
+        allowed = int(gate_cfg.get("findings", {}).get(f"{severity}_allowed", 0))
+        opened = [
+            f
+            for f in findings
+            if f.get("status") in OPEN_FINDING_STATUSES
+            and f.get("severity") == severity
+            and f.get("category") != "alignment"
+        ]
+        for finding in opened[allowed:]:
+            block(
+                "FINDING_OPEN",
+                "defect",
+                f"{severity.title()} finding {finding['id']} is open",
+                finding,
+            )
+    allowed = int(
+        gate_cfg.get("regression", {}).get("confirmed_finding_without_test", 0)
+    )
+    no_test = [
+        f
+        for f in findings
+        if f.get("status") == "CONFIRMED"
+        and f.get("category") not in {"diagnosability", "alignment"}
+        and not (f.get("regression_test") or {}).get("path")
+    ]
+    for finding in no_test[allowed:]:
+        block(
+            "IMPLEMENTATION_INCOMPLETE",
+            "implementation",
+            f"Confirmed finding {finding['id']} has no regression test",
+            finding,
+        )
+    return blockers
+
+
 def fast_verification_policy(harness_dir: Path) -> dict[str, str]:
     try:
         policy = (
@@ -462,6 +614,11 @@ def run_fast_gate(
                 "FAST_REGRESSION_EVIDENCE_MISSING",
                 f"FAST {phase} regression evidence invalid: {exc}",
             )
+    findings = load_findings(harness_dir / "findings")
+    impact_path = harness_dir / "impact.yaml"
+    impact = _load_yaml(impact_path) if source_access.exists(impact_path) else {}
+    _validate_finding_proofs(harness_dir, findings, impact, head, current_workspace)
+    blockers.extend(_defect_finding_blockers(findings, {}))
     _append_fast_authority(task, harness_dir, blockers)
     return ("PASS" if not blockers else "BLOCKED"), blockers
 
@@ -572,103 +729,7 @@ def _evaluate_gate(
     impact_path = harness_dir / "impact.yaml"
     impact = _load_yaml(impact_path) if source_access.exists(impact_path) else {}
 
-    # HEAD alone misses uncommitted edits. Shared snapshot excludes harness
-    # runtime files, so evidence writes do not invalidate business proof.
-    # Terminal/near-terminal findings require real proof records, not only
-    # schema-shaped strings. Fail closed before open-finding policy runs.
-    def finding_proof(finding, ref, expected_success, label, test_id=None):
-        try:
-            path = evidence_path(harness_dir, ref)
-            record = json.loads(source_access.read_text(path))
-            validate_evidence(
-                record,
-                current_head=head,
-                current_workspace=current_workspace,
-                expected_success=expected_success,
-                require_current_workspace=expected_success,
-                require_test_execution=True,
-                finding_id=finding["id"] if test_id else None,
-                test_id=test_id,
-            )
-        except (
-            OSError,
-            json.JSONDecodeError,
-            EvidenceValidationError,
-            EvidenceReferenceError,
-        ) as exc:
-            raise InvalidHarnessState(
-                f"{finding['id']} {label} evidence invalid: {exc}"
-            ) from exc
-
-    for finding in findings:
-        state = finding["status"]
-        if finding.get("category") == "diagnosability":
-            if state in {"VERIFIED", "CLOSED"}:
-                try:
-                    record = json.loads(
-                        source_access.read_text(
-                            evidence_path(harness_dir, finding["evidence"])
-                        )
-                    )
-                    from .diagnosability import validate_compliance_closure
-
-                    validate_compliance_closure(
-                        finding,
-                        record,
-                        current_head=head,
-                        current_workspace=current_workspace,
-                    )
-                except (
-                    OSError,
-                    json.JSONDecodeError,
-                    ValueError,
-                    EvidenceReferenceError,
-                ) as exc:
-                    raise InvalidHarnessState(
-                        f"{finding['id']} compliance evidence invalid: {exc}"
-                    ) from exc
-            continue
-        if state in {"CONFIRMED", "FIXING", "FIXED", "VERIFIED", "CLOSED"}:
-            finding_proof(
-                finding,
-                finding["regression_test"]["red_evidence"],
-                False,
-                "red",
-                finding["regression_test"]["path"],
-            )
-        if state in {"FIXED", "VERIFIED", "CLOSED"}:
-            finding_proof(
-                finding,
-                finding["regression_test"]["green_evidence"],
-                True,
-                "green",
-                finding["regression_test"]["path"],
-            )
-        if state in {"VERIFIED", "CLOSED"}:
-            try:
-                record = json.loads(
-                    source_access.read_text(
-                        evidence_path(harness_dir, finding["evidence"])
-                    )
-                )
-                from .evidence_validator import validate_finding_closure_evidence
-
-                validate_finding_closure_evidence(
-                    finding,
-                    record,
-                    impact,
-                    current_head=head,
-                    current_workspace=current_workspace,
-                )
-            except (
-                OSError,
-                json.JSONDecodeError,
-                EvidenceValidationError,
-                EvidenceReferenceError,
-            ) as exc:
-                raise InvalidHarnessState(
-                    f"{finding['id']} related regression evidence invalid: {exc}"
-                ) from exc
+    _validate_finding_proofs(harness_dir, findings, impact, head, current_workspace)
 
     blockers: list[GateBlocker] = list(architecture_assessment.blockers)
 
@@ -1195,14 +1256,7 @@ def _evaluate_gate(
                     finding_id=finding["id"],
                 )
 
-    # 5. Findings: open critical/major counts, regression debt.
-    find_cfg = gate_cfg.get("findings", {})
-    critical_allowed = int(find_cfg.get("critical_allowed", 0))
-    major_allowed = int(find_cfg.get("major_allowed", 0))
-
-    def is_open(f):
-        return f.get("status") in OPEN_FINDING_STATUSES
-
+    # 5. Findings and live alignment drift.
     _append_live_alignment_drift(harness_dir, task, findings, block)
 
     plan_assessment = None
@@ -1234,52 +1288,7 @@ def _evaluate_gate(
         if plan_assessment is not None:
             blockers.extend(plan_assessment.blockers)
 
-    open_critical = [
-        f
-        for f in findings
-        if is_open(f)
-        and f.get("severity") == "critical"
-        and f.get("category") != "alignment"
-    ]
-    open_major = [
-        f
-        for f in findings
-        if is_open(f)
-        and f.get("severity") == "major"
-        and f.get("category") != "alignment"
-    ]
-    for f in open_critical[critical_allowed:]:
-        block(
-            "FINDING_OPEN",
-            "defect",
-            f"Critical finding {f['id']} is open",
-            finding_id=f["id"],
-        )
-    for f in open_major[major_allowed:]:
-        block(
-            "FINDING_OPEN",
-            "defect",
-            f"Major finding {f['id']} is open",
-            finding_id=f["id"],
-        )
-
-    # Confirmed findings must carry a regression test (LAW 4).
-    confirmed = [
-        finding
-        for finding in findings
-        if finding.get("status") == "CONFIRMED"
-        and finding.get("category") != "diagnosability"
-    ]
-    regression_cfg = gate_cfg.get("regression", {})
-    without_test_allowed = int(regression_cfg.get("confirmed_finding_without_test", 0))
-    no_test = [f for f in confirmed if not (f.get("regression_test") or {}).get("path")]
-    for f in no_test[without_test_allowed:]:
-        block(
-            "IMPLEMENTATION_INCOMPLETE",
-            "implementation",
-            f"Confirmed finding {f['id']} has no regression test",
-            finding_id=f["id"],
-        )
+    blockers.extend(_defect_finding_blockers(findings, gate_cfg))
 
     status = "PASS" if not blockers else "BLOCKED"
     return status, blockers, plan_assessment, architecture_assessment

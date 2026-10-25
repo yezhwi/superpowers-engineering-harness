@@ -402,6 +402,20 @@ harness task escalate --level Q2 --reason "public contract changed"
 
 仅 `docs/`、`tests/`、`test/`、根目录 Markdown 变更无需 policy。
 
+<!-- path-identities -->
+**两套路径身份：**`workspace_fingerprint` 绑定产品新鲜度，包含代码、测试、文档与配置，仅排除 `.harness/` 控制数据。修改已跟踪测试或文档（或符合条件的未跟踪文件）会使旧证据和 Context 变陈旧。`business_paths` 过滤 FAST 风险升级使用的路径，排除 `.harness/`、`docs/`、`tests/`、`test/` 及根目录 Markdown（如 `README.md`）。风险策略排除不等于豁免新鲜度检查，也不授权跳过必需测试或错误分类公共接口/安全变更。上述目录外的嵌套 Markdown 仍属于业务风险路径。此处说明现有策略，不新增语义风险推断。
+<!-- /path-identities -->
+
+### 任务身份保留
+
+`task new`、`task recover`、`task migrate-id` 拒绝复用当前任务、history 归档名／任务文档、持久化 Decision 记录／索引中已有的 ID。前导零别名（`TASK-5`／`TASK-005`）按同一数值身份处理。在现有 publication 锁内、替换复制或身份写入之前，以退出码 2、`TASK_ID_ALREADY_USED` 拒绝。应选未使用 ID，不要删历史或决策绕过守卫。
+
+赋予不同身份时，占用来源不可读、结构非法或含符号链接，以 `TASK_ID_RESERVATION_INVALID` 拒绝；先诊断来源，不能把读取失败当作无占用。仅当所有 scope 工件均不存在时，legacy `migrate-id` 可修复非法的当前 ID 字符串；目标仍须合法且未占用，history／Decision／索引校验不跳过。当前 `task.id: null` 仍是合法的未分配身份，不属于非法字符串；既有 legacy 身份赋值与 genesis scope 绑定继续支持。其他非字符串当前 ID 或缺失任务结构仍拒绝。`new`／`recover` 的占用检查及既有 scope 绑定限制保持不变。历史重号不批量改写，也不妨碍使用真正空闲的 ID。迁移前既有的显式 publication recovery 仍执行。
+
+例外：legacy 迁移到完全相同的当前 ID 不创建新身份，也不重新扫描占用来源。它不验证或修复损坏的历史／决策，不认证完整性、不创建 scope、不接受决策、不授予 Gate 资格；原有 legacy 保存路径仍可能重写任务／telemetry。可运行 `harness explain TASK_ID_ALREADY_USED` 或 `harness explain TASK_ID_RESERVATION_INVALID` 获取只读引导；两者均不改状态、不执行恢复。
+
+守卫仅检查当前身份、history 直属名称／任务文档及 Decision 归属，不遍历探针、验收转储或 retained 树。这不是所有权威痕迹已被移除后的永久身份注册表。归档已裁剪但决策仍在时，决策仍保留其 task ID。
+
 ### 证据复用
 
 复用必须显式请求，且只限当前 task：
@@ -414,7 +428,7 @@ harness evidence run --type build --command "python -m pip wheel . --no-deps" --
 
 收集器只在前置检查与落盘时短暂持锁；外部命令执行期间**不持根锁**，允许子命令再次调用 Harness。落盘时核对根目录/任务身份，向最新任务合并预算增量，并将不可覆盖的 receipt 与任务/telemetry 作为有界 native bundle 发布。预算仍是前置软限制，不承诺并发执行的硬额度预占。
 
-命令执行后准入或发布失败，收集器返回 `2`，不自动重跑或恢复。`EVIDENCE_RESULT_RETAINED: <path>` 指向系统临时目录 `harness-evidence-attempt-*` 下权限受限的非 canonical `result.json`；测量结果**不是已接受、可复用的证明**。若发布已完成但输出/解锁失败，报告 `EVIDENCE_PERSISTENCE_UNCERTAIN`，重试前先核对 canonical 状态。取消仍返回 `130`；普通命令失败/超时记录在 receipt 的 `exit_code`，不等于收集失败。保留失败会明确报告。保留对象可能包含命令/输出数据、持续占用磁盘且无自动清理；临时目录保留不保证断电或 OS 清理后仍存在。
+命令执行后准入或发布失败且未确定持久提交时，收集器返回 `2`，不自动重跑或恢复。若已确定 `COMMITTED`，仅后续 stage 归档或发布器清理失败，则报告 `PUBLICATION_COMMITTED_CONTEXT` 和 `EVIDENCE_PUBLICATION_COMMITTED`：canonical 收据与预算已落盘，采集成功（取消仍返回 `130`）。不要为修复归档重跑命令；精确匹配且有效的证明可通过 `--reuse-if-valid` 复用，不再次执行或计预算。`EVIDENCE_RESULT_RETAINED: <path>` 指向系统临时目录 `harness-evidence-attempt-*` 下权限受限的非 canonical `result.json`；测量结果**不是已接受、可复用的证明**。若发布已完成但输出/解锁失败，报告 `EVIDENCE_PERSISTENCE_UNCERTAIN`，重试前先核对 canonical 状态。取消仍返回 `130`；普通命令失败/超时记录在 receipt 的 `exit_code`，不等于收集失败。保留失败会明确报告。保留对象可能包含命令/输出数据、持续占用磁盘且无自动清理；临时目录保留不保证断电或 OS 清理后仍存在。
 
 ### 实际测试执行证明
 

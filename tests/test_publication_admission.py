@@ -1465,7 +1465,8 @@ def test_ordinary_entry_teardown_is_bounded_without_relabelling_body(harness, mo
         return real(fd, operation)
 
     monkeypatch.setattr(fcntl, 'flock', failed_release)
-    assert controlplane.cmd_transition('IMPLEMENTING') == 2
+    # Transition already committed: teardown is a warning, not a retryable failure.
+    assert controlplane.cmd_transition('IMPLEMENTING') == 0
     captured = capsys.readouterr()
     assert len(injected) == 1
     assert 'PUBLICATION_LOCK_TEARDOWN_FAILED' in captured.err
