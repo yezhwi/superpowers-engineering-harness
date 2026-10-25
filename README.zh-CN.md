@@ -402,6 +402,10 @@ harness task escalate --level Q2 --reason "public contract changed"
 
 仅 `docs/`、`tests/`、`test/`、根目录 Markdown 变更无需 policy。
 
+<!-- path-identities -->
+**两套路径身份：**`workspace_fingerprint` 绑定产品新鲜度，包含代码、测试、文档与配置，仅排除 `.harness/` 控制数据。修改已跟踪测试或文档（或符合条件的未跟踪文件）会使旧证据和 Context 变陈旧。`business_paths` 过滤 FAST 风险升级使用的路径，排除 `.harness/`、`docs/`、`tests/`、`test/` 及根目录 Markdown（如 `README.md`）。风险策略排除不等于豁免新鲜度检查，也不授权跳过必需测试或错误分类公共接口/安全变更。上述目录外的嵌套 Markdown 仍属于业务风险路径。此处说明现有策略，不新增语义风险推断。
+<!-- /path-identities -->
+
 ### 任务身份保留
 
 `task new`、`task recover`、`task migrate-id` 拒绝复用当前任务、history 归档名／任务文档、持久化 Decision 记录／索引中已有的 ID。前导零别名（`TASK-5`／`TASK-005`）按同一数值身份处理。在现有 publication 锁内、替换复制或身份写入之前，以退出码 2、`TASK_ID_ALREADY_USED` 拒绝。应选未使用 ID，不要删历史或决策绕过守卫。
@@ -424,7 +428,7 @@ harness evidence run --type build --command "python -m pip wheel . --no-deps" --
 
 收集器只在前置检查与落盘时短暂持锁；外部命令执行期间**不持根锁**，允许子命令再次调用 Harness。落盘时核对根目录/任务身份，向最新任务合并预算增量，并将不可覆盖的 receipt 与任务/telemetry 作为有界 native bundle 发布。预算仍是前置软限制，不承诺并发执行的硬额度预占。
 
-命令执行后准入或发布失败，收集器返回 `2`，不自动重跑或恢复。`EVIDENCE_RESULT_RETAINED: <path>` 指向系统临时目录 `harness-evidence-attempt-*` 下权限受限的非 canonical `result.json`；测量结果**不是已接受、可复用的证明**。若发布已完成但输出/解锁失败，报告 `EVIDENCE_PERSISTENCE_UNCERTAIN`，重试前先核对 canonical 状态。取消仍返回 `130`；普通命令失败/超时记录在 receipt 的 `exit_code`，不等于收集失败。保留失败会明确报告。保留对象可能包含命令/输出数据、持续占用磁盘且无自动清理；临时目录保留不保证断电或 OS 清理后仍存在。
+命令执行后准入或发布失败且未确定持久提交时，收集器返回 `2`，不自动重跑或恢复。若已确定 `COMMITTED`，仅后续 stage 归档或发布器清理失败，则报告 `PUBLICATION_COMMITTED_CONTEXT` 和 `EVIDENCE_PUBLICATION_COMMITTED`：canonical 收据与预算已落盘，采集成功（取消仍返回 `130`）。不要为修复归档重跑命令；精确匹配且有效的证明可通过 `--reuse-if-valid` 复用，不再次执行或计预算。`EVIDENCE_RESULT_RETAINED: <path>` 指向系统临时目录 `harness-evidence-attempt-*` 下权限受限的非 canonical `result.json`；测量结果**不是已接受、可复用的证明**。若发布已完成但输出/解锁失败，报告 `EVIDENCE_PERSISTENCE_UNCERTAIN`，重试前先核对 canonical 状态。取消仍返回 `130`；普通命令失败/超时记录在 receipt 的 `exit_code`，不等于收集失败。保留失败会明确报告。保留对象可能包含命令/输出数据、持续占用磁盘且无自动清理；临时目录保留不保证断电或 OS 清理后仍存在。
 
 ### 实际测试执行证明
 

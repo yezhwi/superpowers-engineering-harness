@@ -11,6 +11,15 @@ import yaml
 REPO = Path(__file__).resolve().parent.parent
 
 
+@pytest.mark.parametrize('filename', ['README.md', 'README.zh-CN.md'])
+def test_readme_distinguishes_freshness_and_fast_risk_path_interfaces(filename):
+    text = (REPO / filename).read_text()
+    assert '<!-- path-identities -->' in text
+    section = text.split('<!-- path-identities -->', 1)[1].split('<!-- /path-identities -->', 1)[0]
+    for identifier in ('workspace_fingerprint', 'business_paths', '.harness/', 'docs/', 'tests/', 'test/', 'README.md'):
+        assert identifier in section
+
+
 def test_task_contract_writes_alignment_before_planned_admission():
     text = (REPO / "skills/task-contract/SKILL.md").read_text()
     exit_steps = text.split("### 7. Exit PLANNED", 1)[1].split("## Production Diagnosability", 1)[0]

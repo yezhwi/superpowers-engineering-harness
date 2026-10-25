@@ -387,3 +387,26 @@ def test_snapshot_refuses_head_change_during_capture(tmp_path, monkeypatch):
     monkeypatch.setattr(workspace, "_fingerprint", advance_after_fingerprint)
     with pytest.raises(workspace.WorkspaceError, match="WORKSPACE_HEAD_CHANGED"):
         workspace.snapshot(repo)
+
+
+@pytest.mark.parametrize('name,risk_path', [
+    ('docs/guide.md', False), ('tests/test_x.py', False), ('test/fixture.txt', False),
+    ('README.md', False), ('src/config.py', True), ('src/notes.md', True),
+])
+def test_freshness_paths_are_distinct_from_fast_risk_paths(tmp_path, name, risk_path):
+    from harness.risk_boundaries import business_paths
+    from harness.workspace import snapshot
+
+    repo = committed_repo(tmp_path)
+    path = repo / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text('first\n')
+    git(repo, 'add', name)
+    git(repo, 'commit', '-qm', 'track policy example')
+    before = snapshot(repo).fingerprint
+    path.write_text('second\n')
+    after = snapshot(repo)
+
+    assert before != after.fingerprint
+    assert name in after.changed_paths
+    assert (name in business_paths(after.changed_paths)) is risk_path

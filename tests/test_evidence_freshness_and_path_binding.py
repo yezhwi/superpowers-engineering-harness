@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 import yaml
 from evidence_factory import synthetic_execution
 
@@ -376,3 +377,26 @@ def test_requirement_verify_does_not_stale_product_evidence(tmp_path):
         assert str(exc) == "EVIDENCE_WORKSPACE_STALE"
     else:
         raise AssertionError("product edit must stale evidence")
+
+
+@pytest.mark.parametrize('shell', ['sh', 'bash', 'zsh'])
+@pytest.mark.parametrize('flag', ['-c', '-lc'])
+def test_supported_shell_profiles_bind_same_selectors_and_cwd(tmp_path, shell, flag):
+    import shlex
+
+    from harness.collect_evidence import (
+        bind_covered_tests,
+        execution_environment,
+        test_selectors,
+    )
+    from harness.execution_capture import supported_command
+
+    (tmp_path / 'backend/tests').mkdir(parents=True)
+    (tmp_path / 'backend/tests/test_x.py').write_text('def test_ok():\n    assert True\n')
+    payload = 'cd backend && python -m pytest tests/test_x.py'
+    command = f'{shell} {flag} {shlex.quote(payload)}'
+    assert supported_command(command)
+    assert test_selectors(command) == ('tests/test_x.py',)
+    assert bind_covered_tests(('backend/tests/test_x.py',), command, tmp_path) == ('backend/tests/test_x.py',)
+    remote = execution_environment(f'kubectl exec deploy/app -- {command}')
+    assert remote['cwd'] == 'backend'

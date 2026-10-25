@@ -46,9 +46,10 @@ def _report_publication_failure(document: dict, canonical_member: str | None) ->
         }
         if canonical_member is not None:
             context['canonical_member'] = canonical_member
+        prefix = ('PUBLICATION_COMMITTED_CONTEXT ' if document['state'] == 'COMMITTED'
+                  else 'PUBLICATION_FAILURE_CONTEXT ')
         print(
-            'PUBLICATION_FAILURE_CONTEXT '
-            + json.dumps(context, sort_keys=True, separators=(',', ':')),
+            prefix + json.dumps(context, sort_keys=True, separators=(',', ':')),
             file=sys.stderr,
         )
 

@@ -1081,3 +1081,34 @@ def test_planned_admission_next_step_respects_authority_halt(tmp_path, capsys, a
     else:
         assert "DIRECTIVE: HALT_AND_WAIT" not in output.err
         assert "Next: harness check admission" in output.err
+
+
+@pytest.mark.parametrize('same_task', [True, False])
+def test_specifying_admission_checks_only_current_proposed_decisions(tmp_path, capsys, same_task):
+    from fixtures.harness import populate_complete_harness
+    from test_alignment import complete_alignment
+    from test_decision import proposal
+
+    h = make_repo(tmp_path, state='SPECIFYING', profile='STANDARD')
+    populate_complete_harness(tmp_path, h)
+    document = complete_alignment()
+    document['decision_ids'] = []
+    document['interface_contract_ids'] = []
+    (h / 'alignment.yaml').write_text(yaml.safe_dump(document))
+    record = controlplane.decision.propose(h, proposal())
+    if not same_task:
+        record['task_id'] = 'TASK-999'
+        (h / 'decisions' / f"{record['id']}.yaml").write_text(yaml.safe_dump(record))
+    before = (h / 'current-task.yaml').read_bytes()
+    capsys.readouterr()
+
+    result = controlplane.cmd_transition('PLANNED')
+    output = capsys.readouterr()
+
+    if same_task:
+        assert result == 1
+        assert 'OPEN_DECISION' in output.err
+        assert (h / 'current-task.yaml').read_bytes() == before
+    else:
+        assert result == 0, output.err
+        assert yaml.safe_load((h / 'current-task.yaml').read_text())['state'] == 'PLANNED'

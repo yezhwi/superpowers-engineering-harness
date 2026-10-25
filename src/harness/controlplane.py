@@ -1195,17 +1195,7 @@ def _specifying_contract_admission(harness_dir: Path, task: dict) -> list[str]:
     quality_gate.validate_schema(requirements, "requirement.schema.json", requirements_path)
     quality_gate.validate_schema(invariants, "invariant.schema.json", invariants_path)
     document = alignment.load_alignment(harness_dir)
-    requirement_ids = {record["id"] for record in requirements["requirements"]}
-    critical_ids = {
-        record["id"] for record in requirements["requirements"]
-        if record["priority"] == "must"
-    }
-    issues = alignment.check_completeness(
-        document,
-        requirement_ids=requirement_ids,
-        critical_requirement_ids=critical_ids,
-        proposed_decision_ids=set(),
-    )
+    issues = _alignment_completeness_issues(harness_dir, task, document)
     diagnostics = [f"{issue.subject_id or 'ALIGNMENT'}: {issue.code}" for issue in issues]
     for records, key in ((requirements["requirements"], "test_plan"), (invariants["invariants"], "test_plan")):
         for record in records:

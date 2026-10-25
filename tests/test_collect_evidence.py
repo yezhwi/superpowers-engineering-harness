@@ -665,7 +665,8 @@ def test_collector_retention_location_errors_never_write_task(tmp_path, monkeypa
     assert not list((tmp_path / '.harness').iterdir())
 
 
-def test_collector_postcommit_stage_failure_reports_uncertainty(tmp_path, monkeypatch, capsys):
+@pytest.mark.parametrize('broken_warning', [False, True])
+def test_collector_postcommit_stage_failure_is_success_and_reuse_never_reexecutes(tmp_path, monkeypatch, capsys, broken_warning):
     import errno
     import json
 
@@ -675,6 +676,15 @@ def test_collector_postcommit_stage_failure_reports_uncertainty(tmp_path, monkey
 
     root, _, _ = collector_fixture(tmp_path, monkeypatch)
     observed = []
+    if broken_warning:
+        import builtins
+
+        real_print = builtins.print
+        def print_without_warning(*args, **kwargs):
+            if args and str(args[0]).startswith('EVIDENCE_PUBLICATION_COMMITTED'):
+                raise OSError('TEST_WARNING_CLOSED')
+            return real_print(*args, **kwargs)
+        monkeypatch.setattr(builtins, 'print', print_without_warning)
 
     def fail_retention(*args, **kwargs):
         # Real native publication already committed before stage archival.
@@ -686,15 +696,19 @@ def test_collector_postcommit_stage_failure_reports_uncertainty(tmp_path, monkey
         raise OSError(errno.ENOSPC, 'TEST_STAGE_ARCHIVAL_NO_SPACE')
 
     monkeypatch.setattr(transaction, '_retain_stage', fail_retention)
-    assert evidence_module.main(['--type', 'build', '--command', 'printf once']) == 2
+    command = 'printf x >> .harness/command-runs'
+    assert evidence_module.main(['--type', 'build', '--command', command]) == 0
     assert observed == ['committed']
     output = capsys.readouterr()
-    assert 'EVIDENCE_PERSISTENCE_UNCERTAIN' in output.err, 'committed result lacks inspect-before-retry warning'
-    assert 'TEST_STAGE_ARCHIVAL_NO_SPACE' in output.err
-    path = Path(output.err.split('EVIDENCE_RESULT_RETAINED: ', 1)[1].splitlines()[0])
-    document = json.loads(path.read_text())
-    assert document['accepted'] is False
-    assert document['evidence'] == json.loads((root / 'evidence/build.json').read_text())
+    assert ('EVIDENCE_PUBLICATION_COMMITTED' in output.err) is (not broken_warning)
+    assert 'EVIDENCE_PERSISTENCE_UNCERTAIN' not in output.err
+    assert 'PUBLICATION_FAILURE_CONTEXT' not in output.err
+    assert 'EVIDENCE_RESULT_RETAINED' not in output.err
+    assert evidence_module.main(['--type', 'build', '--command', command, '--reuse-if-valid']) == 0
+    assert 'EVIDENCE_REUSED' in capsys.readouterr().out
+    assert (root / 'command-runs').read_text() == 'x'
+    assert yaml.safe_load((root / 'current-task.yaml').read_text())['budget']['build_runs'] == 1
+    assert list((root / 'evidence').glob('build*.json')) == [root / 'evidence/build.json']
 
 
 @pytest.mark.parametrize(

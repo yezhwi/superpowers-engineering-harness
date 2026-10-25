@@ -79,6 +79,15 @@ def test_contract_exit_has_no_unused_task_counter_writes():
     assert "harness transition PLANNED" in text
 
 
+@pytest.mark.parametrize("path", ["SKILL.md", "skills/engineering-harness/SKILL.md"])
+def test_deprecated_gate_wrapper_guidance_describes_refusal(path):
+    text = (ROOT / path).read_text()
+    section = text.split("`python scripts/quality_gate.py`", 1)[1].split("\n\n", 1)[0]
+    assert "exit" in section and "2" in section
+    assert "harness gate" in section
+    assert "evaluates Gate without" not in section
+
+
 def test_doc_verification_reference_resolves_and_mirrors_stay_identical():
     root = (ROOT / "SKILL.md").read_bytes()
     assert root == (ROOT / "skills/engineering-harness/SKILL.md").read_bytes()

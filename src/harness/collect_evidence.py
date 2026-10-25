@@ -112,8 +112,8 @@ def _payload_cwd(tokens: list[str]) -> str | None:
     while index < len(tokens):
         token = tokens[index]
         if (
-            Path(token).name in {"sh", "bash"}
-            and tokens[index + 1 : index + 2] == ["-lc"]
+            Path(token).name in {"sh", "bash", "zsh"}
+            and tokens[index + 1 : index + 2] in (["-c"], ["-lc"])
             and index + 2 < len(tokens)
         ):
             try:
@@ -242,8 +242,8 @@ def test_selectors(command: str) -> tuple[str, ...] | None:
             continue
         for index, token in enumerate(tokens):
             if (
-                Path(token).name in {"sh", "bash"}
-                and tokens[index + 1:index + 2] == ["-lc"]
+                Path(token).name in {"sh", "bash", "zsh"}
+                and tokens[index + 1:index + 2] in (["-c"], ["-lc"])
                 and index + 2 < len(tokens)
             ):
                 pending.append(tokens[index + 2])
@@ -449,8 +449,8 @@ def _iter_test_tokens(
             index += 1
             continue
         if (
-            Path(token).name in {"sh", "bash"}
-            and tokens[index + 1 : index + 2] == ["-lc"]
+            Path(token).name in {"sh", "bash", "zsh"}
+            and tokens[index + 1 : index + 2] in (["-c"], ["-lc"])
             and index + 2 < len(tokens)
         ):
             try:
@@ -1016,12 +1016,19 @@ def _persist(root: Path, args, prepared: _Collection, evidence: dict) -> Path:
         expected['telemetry.json'] = previous_bytes
     exact = tuple(artifacts)
     staged = transaction.stage(root, artifacts)
+    outcome = transaction.PublicationOutcome()
     try:
         transaction.publish(root, staged,
                             replace_paths=frozenset(a.relative_path for a in artifacts if a.replace),
-                            durable=True, expected_sources=expected, expected_artifacts=exact)
+                            durable=True, expected_sources=expected, expected_artifacts=exact,
+                            outcome=outcome)
     except OSError as exc:
-        # Commit may precede failing stage archival; never imply retry is safe.
+        if outcome.committed:
+            try:
+                print('EVIDENCE_PUBLICATION_COMMITTED: post-commit housekeeping failed; do not rerun command', file=sys.stderr)
+            except (OSError, ValueError):
+                pass  # A closed warning sink cannot undo the durable receipt/budget.
+            return output
         raise OSError(
             f'EVIDENCE_PERSISTENCE_UNCERTAIN: publication attempted; inspect canonical state: {exc}'
         ) from exc
