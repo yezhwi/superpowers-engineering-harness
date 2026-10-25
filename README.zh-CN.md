@@ -406,7 +406,9 @@ harness task escalate --level Q2 --reason "public contract changed"
 
 `task new`、`task recover`、`task migrate-id` 拒绝复用当前任务、history 归档名／任务文档、持久化 Decision 记录／索引中已有的 ID。前导零别名（`TASK-5`／`TASK-005`）按同一数值身份处理。在现有 publication 锁内、替换复制或身份写入之前，以退出码 2、`TASK_ID_ALREADY_USED` 拒绝。应选未使用 ID，不要删历史或决策绕过守卫。
 
-身份来源不可读、结构非法或含符号链接时，以 `TASK_ID_RESERVATION_INVALID` 拒绝；先诊断来源，不能把读取失败当作无占用。历史重号不批量改写，也不妨碍使用真正空闲的 ID。已绑定 scope 的迁移限制不变；legacy 迁移到完全相同的当前 ID 不创建新身份。迁移前既有的显式 publication recovery 仍执行。
+赋予不同身份时，占用来源不可读、结构非法或含符号链接，以 `TASK_ID_RESERVATION_INVALID` 拒绝；先诊断来源，不能把读取失败当作无占用。仅当所有 scope 工件均不存在时，legacy `migrate-id` 可修复非法的当前 ID 字符串；目标仍须合法且未占用，history／Decision／索引校验不跳过。当前 `task.id: null` 仍是合法的未分配身份，不属于非法字符串；既有 legacy 身份赋值与 genesis scope 绑定继续支持。其他非字符串当前 ID 或缺失任务结构仍拒绝。`new`／`recover` 的占用检查及既有 scope 绑定限制保持不变。历史重号不批量改写，也不妨碍使用真正空闲的 ID。迁移前既有的显式 publication recovery 仍执行。
+
+例外：legacy 迁移到完全相同的当前 ID 不创建新身份，也不重新扫描占用来源。它不验证或修复损坏的历史／决策，不认证完整性、不创建 scope、不接受决策、不授予 Gate 资格；原有 legacy 保存路径仍可能重写任务／telemetry。可运行 `harness explain TASK_ID_ALREADY_USED` 或 `harness explain TASK_ID_RESERVATION_INVALID` 获取只读引导；两者均不改状态、不执行恢复。
 
 守卫仅检查当前身份、history 直属名称／任务文档及 Decision 归属，不遍历探针、验收转储或 retained 树。这不是所有权威痕迹已被移除后的永久身份注册表。归档已裁剪但决策仍在时，决策仍保留其 task ID。
 

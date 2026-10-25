@@ -7,6 +7,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -52,6 +54,20 @@ def test_execution_proof_failure_has_safe_existing_recovery():
     assert "pytest" in result.stdout
     assert "EVIDENCE_TEST_EXECUTION_INVALID" in result.stdout
     assert select_recovery([GateBlocker("EVIDENCE_TEST_EXECUTION_INVALID", "verification", "fixture")]) == "VERIFYING"
+
+
+@pytest.mark.parametrize("code", ["TASK_ID_ALREADY_USED", "TASK_ID_RESERVATION_INVALID"])
+def test_task_identity_explain_works_without_task_or_state_mutation(tmp_path, code):
+    result = subprocess.run(
+        [sys.executable, "-B", "-m", "harness.cli", "explain", code],
+        cwd=tmp_path, env={**os.environ, "PYTHONPATH": str(ROOT / "src")},
+        capture_output=True, text=True, check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert code in result.stdout
+    assert "UNKNOWN_REMEDIATION_CODE" not in result.stderr
+    assert "harness resume" not in result.stdout
+    assert list(tmp_path.iterdir()) == []
 
 
 def test_explain_unknown_code_returns_invalid_usage():

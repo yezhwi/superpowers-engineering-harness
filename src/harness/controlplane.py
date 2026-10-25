@@ -89,11 +89,11 @@ def load_task(harness_dir: Path) -> dict:
     return data
 
 
-def _task_identity_available(harness_dir, task_id, task, *, migration=False):
+def _task_identity_available(harness_dir, task_id, task, *, migration=False, legacy_repair=False):
     from .task_identity import TaskIdentityError, require_available
 
     try:
-        require_available(harness_dir, task_id, task, migration=migration)
+        require_available(harness_dir, task_id, task, migration=migration, legacy_repair=legacy_repair)
     except TaskIdentityError as exc:
         print(str(exc), file=sys.stderr)
         return False
@@ -2737,7 +2737,7 @@ def _migrate_task_id_owned(harness_dir: Path, task_id: str) -> int:
     else:
         # Legacy identity-only command does not create or trust scope origin.
         task = load_task(harness_dir)
-        if not _task_identity_available(harness_dir, task_id, task, migration=True):
+        if not _task_identity_available(harness_dir, task_id, task, migration=True, legacy_repair=True):
             return 2
         task.setdefault("task", {})["id"] = task_id
         save_task(harness_dir, task)

@@ -15,6 +15,16 @@ class Remediation:
 
 
 _EXACT = {
+    "TASK_ID_ALREADY_USED": Remediation(
+        "TASK_ID_ALREADY_USED",
+        "The requested numeric task identity is reserved by the current task, history or decisions.",
+        "Choose an unused TASK ID and retry the original command. Do not delete history or decisions to bypass the reservation.",
+    ),
+    "TASK_ID_RESERVATION_INVALID": Remediation(
+        "TASK_ID_RESERVATION_INVALID",
+        "A task identity source cannot be read or validated; this is not proof that the ID is unused.",
+        "Inspect the current identity, history task documents and Decision records/index; restore valid sources only with appropriate authority. Do not delete or rewrite history/decisions to bypass validation. Only a no-scope legacy task with a malformed current string can use harness task migrate-id <unused-ID> for identity repair; this does not repair scope or accept decisions.",
+    ),
     "EVIDENCE_TEST_EXECUTION_INVALID": Remediation(
         "EVIDENCE_TEST_EXECUTION_INVALID",
         "Test proof lacks qualifying actual test calls or contains collection/setup/internal or unchecked checker errors.",

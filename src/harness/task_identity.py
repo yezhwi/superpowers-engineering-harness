@@ -38,12 +38,15 @@ def _document(path, root):
     return document
 
 
-def require_available(harness_dir: Path, task_id: str, task: dict, *, migration=False):
+def require_available(harness_dir: Path, task_id: str, task: dict, *, migration=False,
+                      legacy_repair=False):
     """Run under existing publication ownership before any task identity writes.
 
     History names/documents and persistent decisions reserve IDs, including
     leading-zero aliases. This is not an all-time registry after every identity
     trace has been removed. Legacy same-ID migration preserves existing behavior.
+    Only the no-scope legacy caller opts into ignoring its invalid current string;
+    historical and decision identities are always validated on a new identity.
     """
     root = harness_dir.absolute()
     try:
@@ -52,7 +55,10 @@ def require_available(harness_dir: Path, task_id: str, task: dict, *, migration=
         if migration and current == task_id:
             return  # No new identity; existing scope-binding restrictions still run.
         used = set()
-        if current is not None:
+        if current is not None and not (
+            migration and legacy_repair and isinstance(current, str)
+            and not TASK_ID.fullmatch(current)
+        ):
             used.add(_key(current))
         for archive in _members(root / "history"):
             named = ARCHIVE_ID.match(archive.name)
