@@ -1521,7 +1521,8 @@ def cmd_transition(target: str, *, reason: str | None = None) -> int:
                 for issue in alignment_issues:
                     subject = issue.subject_id or "ALIGNMENT"
                     print(f"  {subject}: {issue.code}", file=sys.stderr)
-                print("Next: harness check admission", file=sys.stderr)
+                if authority is None:
+                    print("Next: harness check admission", file=sys.stderr)
                 return 1
             try:
                 alignment.validate_freeze(alignment_document)

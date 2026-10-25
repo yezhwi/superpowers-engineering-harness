@@ -35,8 +35,8 @@ contract downstream.
 ## Inputs
 
 - The user's requirement statement.
-- `.harness/current-task.yaml` (must exist; if not, create it from
-  `templates/current-task.yaml` first).
+- `.harness/current-task.yaml` (must exist; if missing, run `harness init`,
+  then create and classify the task through the CLI before this skill).
 
 ## Process
 
@@ -129,14 +129,10 @@ Every automated case must have a nonempty `tests` list of executable selectors; 
 
 After both YAML files exist and validate against their schemas:
 
-1. Update `.harness/current-task.yaml` counters:
-   - `requirements.total`
-   - `invariants.total`
-   - `timestamps.updated_at`
-2. Write `.harness/alignment.yaml`: complete schema-valid unfrozen v1 envelope for current task. Include goal, scope, non-goals, boundaries, constraints, assumptions, acceptance criteria mapped to `REQ-*`, implementation surfaces for must requirements, verification, and empty optional decision/interface/open lists. Set `freeze: {frozen: false, frozen_at: null, contract_hash: null}`. `harness align init` cannot update an existing alignment.
-3. Run `harness align freeze`, then `harness align check` (check validates the frozen seal).
-4. Transition state `SPECIFYING -> PLANNED` via `harness transition PLANNED` after alignment exists and automated test bindings are nonempty.
-5. Run `harness status` to confirm persistence (raw `python scripts/harness_status.py` only works inside the harness repo root).
+1. Write `.harness/alignment.yaml`: complete schema-valid unfrozen v1 envelope for current task. Include goal, scope, non-goals, boundaries, constraints, assumptions, acceptance criteria mapped to `REQ-*`, implementation surfaces for must requirements, verification, and empty optional decision/interface/open lists. Set `freeze: {frozen: false, frozen_at: null, contract_hash: null}`. `harness align init` cannot update an existing alignment.
+2. Run `harness align freeze`, then `harness align check` (check validates the frozen seal).
+3. Transition state `SPECIFYING -> PLANNED` via `harness transition PLANNED` after alignment exists and automated test bindings are nonempty.
+4. Run `harness status` to confirm persistence (raw `python scripts/harness_status.py` only works inside the harness repo root).
 
 ## Preserve Verification Bindings and Plan Proof
 
@@ -161,7 +157,7 @@ For Q2/Q3, inspect changed paths and direct dependencies for external calls, sta
 |------|--------|
 | `.harness/requirements.yaml` | created/updated |
 | `.harness/invariants.yaml` | created/updated |
-| `.harness/current-task.yaml` | counters + state updated |
+| `.harness/current-task.yaml` | state updated through CLI only |
 | `.harness/alignment.yaml` | complete unfrozen contract, then frozen/sealed |
 | business code | **NEVER touched** |
 

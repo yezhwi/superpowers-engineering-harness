@@ -1046,3 +1046,38 @@ raise SystemExit(controlplane.cmd_gate())
             child.stderr.close()
     assert yaml.safe_load((h / "current-task.yaml").read_text())["state"] == "CONVERGED"
     assert result == 0, errors
+
+
+@pytest.mark.parametrize("authority", [True, False])
+def test_planned_admission_next_step_respects_authority_halt(tmp_path, capsys, authority):
+    from fixtures.harness import populate_complete_harness
+    from test_alignment import complete_alignment
+    from test_decision import proposal
+    from test_minimal_implementation import _local_decision
+
+    h = make_repo(tmp_path, state="PLANNED", profile="STANDARD")
+    populate_complete_harness(tmp_path, h)
+    (h / "evidence/minimal-implementation.yaml").write_text(yaml.safe_dump(_local_decision()))
+    document = complete_alignment()
+    if authority:
+        controlplane.decision.propose(h, proposal())
+    else:
+        document["goal"]["summary"] = ""
+        document["decision_ids"] = []
+        document["interface_contract_ids"] = []
+    (h / "alignment.yaml").write_text(yaml.safe_dump(document))
+    before = (h / "current-task.yaml").read_bytes()
+    capsys.readouterr()
+
+    assert controlplane.cmd_transition("IMPLEMENTING") == 1
+    output = capsys.readouterr()
+
+    assert (h / "current-task.yaml").read_bytes() == before
+    assert "ALIGNMENT_BLOCKED" in output.err
+    if authority:
+        assert "OPEN_DECISION" in output.err
+        assert "DIRECTIVE: HALT_AND_WAIT" in output.err
+        assert "Next:" not in output.err + output.out
+    else:
+        assert "DIRECTIVE: HALT_AND_WAIT" not in output.err
+        assert "Next: harness check admission" in output.err

@@ -124,8 +124,8 @@ Validated Context is a derived view, not a new authoritative source. Its Control
   `harness_status.py` — always reached through the `harness` CLI from other
   projects
 
-If `.harness/current-task.yaml` does not exist: create it from
-`templates/current-task.yaml` with `state: CREATED`, then proceed below.
+If `.harness/current-task.yaml` does not exist: run `harness init`, then
+follow task creation and classification below. Do not copy task templates by hand.
 
 ## Request Routing (Risk-Adaptive)
 
