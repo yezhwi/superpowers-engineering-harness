@@ -238,7 +238,8 @@ def test_enabled_plan_keeps_malformed_decision_in_blocked_gate_domain(
     assert controlplane.cmd_gate() == 0
 
     persisted_task = yaml.safe_load(task_path.read_text())
-    assert persisted_task["state"] == "BLOCKED"
+    assert persisted_task["state"] == "ESCALATED"
+    assert persisted_task["gate"]["status"] == "BLOCKED"
     assert [
         blocker["code"]
         for blocker in persisted_task["gate"]["blocked_by"]
@@ -1401,3 +1402,110 @@ def test_gate_from_reviewing_is_invalid_harness_state(tmp_path):
     result = _gate(h)
     assert result.returncode == 2
     assert "must be GATING" in result.stderr
+
+
+def _fast_finding_harness(tmp_path):
+    from harness.workspace import protected_paths_fingerprint
+
+    h = make_harness(tmp_path)
+    task_path = h / "current-task.yaml"
+    task = yaml.safe_load(task_path.read_text())
+    task["git"]["base_commit"] = HEAD
+    task["risk"] = {
+        "level": "Q1",
+        "profile": "FAST",
+        "dimensions": SAFE_DIMENSIONS,
+        "escalation_history": [],
+        "user_changes": {"paths": [], "fingerprint": protected_paths_fingerprint(())},
+    }
+    task_path.write_text(yaml.safe_dump(task))
+    (h / "risk-boundaries.yaml").write_text(
+        "boundaries:\n  q2: [never/**]\n  q3: [never/**]\n"
+    )
+    write_evidence(REPO, h, "unit_test", exit_code=1, name="fast-red-unit-test.json")
+    write_evidence(REPO, h, "unit_test", name="fast-green-unit-test.json")
+    return h
+
+
+@pytest.mark.parametrize("status", ["PROPOSED", "REPRODUCING"])
+@pytest.mark.parametrize("severity", ["critical", "major"])
+def test_fast_gate_rejects_open_defect_findings(tmp_path, status, severity):
+    h = _fast_finding_harness(tmp_path)
+    finding = finding_doc("FND-0104", severity, status)
+    (h / "findings/FND-0104.yaml").write_text(yaml.safe_dump(finding))
+
+    from harness.quality_gate import run_gate
+
+    gate_status, blockers = run_gate(h)
+
+    assert gate_status == "BLOCKED"
+    assert any(
+        b.code == "FINDING_OPEN" and b.finding_id == "FND-0104" for b in blockers
+    )
+
+
+@pytest.mark.parametrize("path", ["", "tests/test_fix.py::test_regression"])
+def test_fast_gate_rejects_confirmed_finding_without_valid_red_proof(tmp_path, path):
+    h = _fast_finding_harness(tmp_path)
+    finding = finding_doc(
+        "FND-0104",
+        "minor",
+        "CONFIRMED",
+        test=path,
+        confirmed_at="2026-01-01T00:00:00+00:00",
+        regression_test={"path": path, "red_evidence": "missing-red.json"},
+    )
+    (h / "findings/FND-0104.yaml").write_text(yaml.safe_dump(finding))
+
+    result = _gate(h)
+
+    assert result.returncode != 0
+    assert "red evidence invalid" in result.stderr or "regression test" in result.stdout
+
+
+@pytest.mark.parametrize(
+    "severity,status,extra",
+    [
+        ("minor", "PROPOSED", {}),
+        (
+            "major",
+            "REJECTED",
+            {"attempts": ["reproduced"], "rejection_reason": "not a defect"},
+        ),
+    ],
+)
+def test_fast_gate_preserves_nonblocking_finding_policy(
+    tmp_path, severity, status, extra
+):
+    h = _fast_finding_harness(tmp_path)
+    finding = finding_doc("FND-0104", severity, status, **extra)
+    (h / "findings/FND-0104.yaml").write_text(yaml.safe_dump(finding))
+
+    assert _gate(h).returncode == 0
+
+
+@pytest.mark.parametrize("fast", [False, True])
+@pytest.mark.parametrize("audit_status", ["CONFIRMED", "CLOSED"])
+def test_shared_finding_checks_preserve_closed_alignment_audit(
+    tmp_path, fast, audit_status
+):
+    h = _fast_finding_harness(tmp_path) if fast else make_harness(tmp_path)
+    finding = {
+        "id": "FND-0104",
+        "category": "alignment",
+        "task_id": "TASK-001",
+        "type": "contract_changed",
+        "severity": "blocking",
+        "status": audit_status,
+        "detected_during": "IMPLEMENTING",
+        "reason_code": "CONTRACT_CHANGED",
+        "boundary_ref": "alignment.yaml",
+        "expected_hash": "sha256:" + "0" * 64,
+        "actual_hash": "sha256:" + "1" * 64,
+    }
+    (h / "findings/FND-0104.yaml").write_text(yaml.safe_dump(finding))
+    try:
+        result = _gate(h)
+    except KeyError:
+        pytest.fail("alignment audit incorrectly requires defect regression proof")
+    assert result.returncode == 0, result.stderr

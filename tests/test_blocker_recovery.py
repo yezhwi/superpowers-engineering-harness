@@ -87,3 +87,62 @@ def test_unrouteable_harness_blocker_fails_closed():
         )
         is None
     )
+
+
+def test_interface_verification_recovery_is_order_independent():
+    from harness.blockers import GateBlocker, select_recovery
+
+    interface = GateBlocker(
+        "INTERFACE_VERIFICATION_MISSING", "verification", "collect interface proof"
+    )
+    evidence = GateBlocker("EVIDENCE_MISSING", "verification", "collect proof")
+    assert select_recovery([interface, evidence]) == "VERIFYING"
+    assert select_recovery([evidence, interface]) == "VERIFYING"
+
+
+def test_known_decision_conflicts_require_user_authority():
+    from harness.blockers import RECOVERY_POLICY, is_user_authority_blocker
+
+    for code in (
+        "DECISION_CONFLICT",
+        "DECISION_SUPERSEDE_INVALID",
+        "DECISION_REFERENCE_INVALID",
+        "DECISION_REFERENCE_STATUS_INVALID",
+        "INTERFACE_BREAKING_CHANGE_UNAPPROVED",
+    ):
+        assert is_user_authority_blocker(code), code
+        assert RECOVERY_POLICY[code] == "ESCALATED"
+
+
+def test_unknown_blocker_cannot_hide_behind_known_recovery():
+    from harness.blockers import GateBlocker, select_recovery
+
+    unknown = GateBlocker("HARNESS_SCHEMA_INVALID", "harness", "repair schema")
+    known = GateBlocker("EVIDENCE_MISSING", "verification", "collect")
+    assert select_recovery([unknown, known]) is None
+    assert select_recovery([known, unknown]) is None
+
+
+def test_gate_literal_blocker_codes_have_explicit_routes():
+    import ast
+    from pathlib import Path
+
+    from harness import quality_gate
+    from harness.blockers import RECOVERY_POLICY, is_user_authority_blocker
+
+    tree = ast.parse(Path(quality_gate.__file__).read_text())
+    codes = {
+        node.args[0].value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id in {"block", "GateBlocker"}
+        and node.args
+        and isinstance(node.args[0], ast.Constant)
+        and isinstance(node.args[0].value, str)
+    }
+    assert not {
+        code
+        for code in codes
+        if code not in RECOVERY_POLICY and not is_user_authority_blocker(code)
+    }

@@ -702,7 +702,11 @@ def _collect(
     if not isinstance(command, _TrustedLocalCommand):
         raise ValueError("TRUSTED_LOCAL_COMMAND_REQUIRED")
     command_text = command.value
-    before = workspace_fingerprint()
+    head = git_head()
+    before_snapshot = snapshot()
+    before = before_snapshot.fingerprint
+    if before_snapshot.head != head or git_head() != head:
+        raise ValueError('EVIDENCE_HEAD_MISMATCH')
     error = None
     execution = None
     needs_execution = (evidence_type in TEST_EVIDENCE_TYPES or finding_id is not None
@@ -727,13 +731,14 @@ def _collect(
     except KeyboardInterrupt:
         exit_code, stdout, stderr = 130, '', ''
         error = "EVIDENCE_COMMAND_CANCELLED"
-    after = workspace_fingerprint()
+    after_snapshot = snapshot()
+    after = after_snapshot.fingerprint
     evidence = {
         "type": evidence_type,
         "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "command": command_text,
         "exit_code": exit_code,
-        "commit": git_head(),
+        "commit": head,
         "workspace_fingerprint": before,
         "workspace_fingerprint_after": after,
         "runtime": runtime_metadata(),
@@ -769,6 +774,9 @@ def _collect(
     if finding_id is not None:
         evidence["subject"] = {"kind": "finding", "id": finding_id}
         evidence["test"] = {"node_id": test_id}
+    if after_snapshot.head != head or git_head() != head:
+        evidence['error'] = 'EVIDENCE_HEAD_MISMATCH'
+        evidence['error_detail'] = {'code': 'EVIDENCE_HEAD_MISMATCH', 'kind': 'identity'}
     return evidence
 
 
@@ -1081,12 +1089,14 @@ def main(argv=None):
         return _report_failure(exc, root)
 
     # Never retain root owner during child lifetime: child may call Harness.
-    evidence = _collect(args.type, _TrustedLocalCommand(args.command), args.finding,
-                        args.test, args.scope, prepared.covered_tests,
-                        tuple(args.covered_test_case), args.phase)
-    evidence['commit'] = prepared.head
+    evidence = None
     published = False
     try:
+        evidence = _collect(args.type, _TrustedLocalCommand(args.command), args.finding,
+                            args.test, args.scope, prepared.covered_tests,
+                            tuple(args.covered_test_case), args.phase)
+        if evidence['commit'] != prepared.head or evidence.get('error') == 'EVIDENCE_HEAD_MISMATCH':
+            raise ValueError('EVIDENCE_HEAD_MISMATCH')
         with publication_admission(root):
             output = _persist(root, args, prepared, evidence)
             published = True

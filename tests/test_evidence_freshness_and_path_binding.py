@@ -205,7 +205,7 @@ def collect_related(
 ):
     monkeypatch.setattr("harness.collect_evidence.git_head", lambda: "a" * 40)
     monkeypatch.setattr(
-        "harness.collect_evidence.workspace_fingerprint", lambda: "workspace"
+        "harness.collect_evidence.snapshot", lambda: SimpleNamespace(head="a" * 40, fingerprint="workspace")
     )
     monkeypatch.setattr(
         "harness.collect_evidence.subprocess.run",

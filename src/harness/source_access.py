@@ -343,7 +343,7 @@ def _open_beneath(path: Path, root: Path) -> int:
     nofollow = getattr(os, "O_NOFOLLOW", None)
     if nofollow is None:
         raise OSError("O_NOFOLLOW is unavailable")
-    directory = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
+    directory = os.open(root, os.O_RDONLY | os.O_DIRECTORY | nofollow)
     try:
         for part in relative.parts[:-1]:
             child = os.open(

@@ -1,4 +1,5 @@
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -74,7 +75,7 @@ def test_unparseable_kubectl_stores_unknown_transport():
 def test_main_records_kubectl_provenance_without_changing_result(tmp_path, monkeypatch):
     monkeypatch.setattr("harness.collect_evidence.git_head", lambda: "a" * 40)
     monkeypatch.setattr(
-        "harness.collect_evidence.workspace_fingerprint", lambda: "workspace"
+        "harness.collect_evidence.snapshot", lambda: SimpleNamespace(head="a" * 40, fingerprint="workspace")
     )
     monkeypatch.setattr(
         "harness.collect_evidence.subprocess.run",
@@ -121,7 +122,7 @@ def test_npm_run_build_is_not_test_runner_unresolved(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr("harness.collect_evidence.git_head", lambda: "a" * 40)
     monkeypatch.setattr(
-        "harness.collect_evidence.workspace_fingerprint", lambda: "workspace"
+        "harness.collect_evidence.snapshot", lambda: SimpleNamespace(head="a" * 40, fingerprint="workspace")
     )
     monkeypatch.setattr(
         "harness.collect_evidence.subprocess.run",
@@ -166,7 +167,7 @@ def test_main_marks_cli_command_as_trusted_local(tmp_path, monkeypatch):
     """Break caught: CLI passes raw command text past trust boundary."""
     monkeypatch.setattr("harness.collect_evidence.git_head", lambda: "a" * 40)
     monkeypatch.setattr(
-        "harness.collect_evidence.workspace_fingerprint", lambda: "workspace"
+        "harness.collect_evidence.snapshot", lambda: SimpleNamespace(head="a" * 40, fingerprint="workspace")
     )
 
     assert (
@@ -694,3 +695,95 @@ def test_collector_postcommit_stage_failure_reports_uncertainty(tmp_path, monkey
     document = json.loads(path.read_text())
     assert document['accepted'] is False
     assert document['evidence'] == json.loads((root / 'evidence/build.json').read_text())
+
+
+@pytest.mark.parametrize(
+    "window", ["preflight", "before_fingerprint", "after_fingerprint"]
+)
+def test_collector_refuses_head_drift_in_identity_windows(
+    tmp_path, monkeypatch, capsys, window
+):
+    import json
+    import subprocess
+
+    monkeypatch.chdir(tmp_path)
+
+    def git(*args):
+        return subprocess.run(
+            ["git", *args], cwd=tmp_path, check=True, capture_output=True
+        )
+
+    git("init", "-q")
+    git("config", "user.name", "Fixture")
+    git("config", "user.email", "fixture@example.invalid")
+    product = tmp_path / "product.txt"
+    product.write_text("tree A")
+    git("add", "product.txt")
+    git("commit", "-qm", "A")
+
+    def advance():
+        product.write_text("tree B")
+        git("add", "product.txt")
+        git("commit", "-qm", "B")
+
+    if window == "preflight":
+        original = evidence_module._preflight
+
+        def preflight(*args):
+            prepared = original(*args)
+            advance()
+            return prepared
+
+        monkeypatch.setattr(evidence_module, "_preflight", preflight)
+    else:
+        original = evidence_module.snapshot
+        calls = []
+
+        def fingerprint():
+            value = original()
+            calls.append(value)
+            if len(calls) == (1 if window == "before_fingerprint" else 2):
+                advance()
+            return value
+
+        monkeypatch.setattr(evidence_module, "snapshot", fingerprint)
+
+    result = main(["--type", "custom", "--command", "printf measured"])
+
+    assert result == 2
+    assert not list((tmp_path / ".harness/evidence").glob("*.json"))
+    output = capsys.readouterr()
+    assert "EVIDENCE_HEAD_MISMATCH" in output.err
+    if window != "before_fingerprint":
+        retained = Path(
+            output.err.split("EVIDENCE_RESULT_RETAINED: ", 1)[1].splitlines()[0]
+        )
+        record = json.loads(retained.read_text())
+        assert record["accepted"] is False
+        assert record["evidence"]["stdout_tail"] == "measured"
+
+
+def test_collector_rejects_snapshot_head_different_from_preflight(
+    tmp_path, monkeypatch, capsys
+):
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(evidence_module, "git_head", lambda: "a" * 40)
+    monkeypatch.setattr(
+        evidence_module,
+        "snapshot",
+        lambda *_a: SimpleNamespace(head="b" * 40, fingerprint="sha256:" + "1" * 64),
+    )
+    result = main(
+        [
+            "--type",
+            "custom",
+            "--command",
+            "printf measured",
+            "--harness-dir",
+            str(tmp_path / ".harness"),
+        ]
+    )
+    assert result == 2
+    assert "EVIDENCE_HEAD_MISMATCH" in capsys.readouterr().err
+    assert not list((tmp_path / ".harness/evidence").glob("*.json"))
