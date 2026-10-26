@@ -198,7 +198,7 @@ def make_repo(tmp_path: Path, *, declared_test: bool = False, profile: str = "FA
     unclassified_risk = task["risk"]
     task["state"] = "CLASSIFIED"
     task["risk"] = {
-        "level": "Q2" if profile == "STANDARD" else "Q1", "profile": profile,
+        "level": {"FAST": "Q1", "STANDARD": "Q2", "STRICT": "Q3"}[profile], "profile": profile,
         "dimensions": {"scope": "low", "contract": "none", "data": "none", "authorization": "none",
                        "security": "none", "concurrency": "none", "deployment": "none"},
         "escalation_history": [], "user_changes": {"paths": [], "fingerprint": workspace.protected_paths_fingerprint((), tmp_path)},
@@ -222,6 +222,53 @@ def declare_fixture_test(h: Path) -> None:
     source.write_text("def test_fixture():\n    assert True\n")
     added = run_cli(h.parent, "impact", "add-test", "tests/test_control_plane.py")
     assert added.returncode == 0, added.stdout + added.stderr
+
+
+@pytest.mark.parametrize(
+    ("profile", "current", "target", "code"),
+    [
+        ("FAST", "CREATED", "SPECIFYING", "TASK_CLASSIFICATION_REQUIRED"),
+        ("FAST", "CLASSIFIED", "SPECIFYING", "PROFILE_ENTRY_STATE_REQUIRED"),
+        ("STANDARD", "CLASSIFIED", "IMPLEMENTING", "PROFILE_ENTRY_STATE_REQUIRED"),
+        ("STRICT", "CLASSIFIED", "IMPLEMENTING", "PROFILE_ENTRY_STATE_REQUIRED"),
+        ("FAST", "BLOCKED", "IMPLEMENTING", "RESUME_REQUIRED"),
+        ("STANDARD", "BLOCKED", "IMPLEMENTING", "RESUME_REQUIRED"),
+        ("STRICT", "BLOCKED", "IMPLEMENTING", "RESUME_REQUIRED"),
+        ("FAST", "REVIEWING", "VERIFYING", "REVIEW_OUTCOME_REQUIRED"),
+        ("STANDARD", "REVIEWING", "VERIFYING", "REVIEW_OUTCOME_REQUIRED"),
+        ("STRICT", "REVIEWING", "VERIFYING", "REVIEW_OUTCOME_REQUIRED"),
+        ("FAST", "GATING", "BLOCKED", "GATE_DECISION_REQUIRED"),
+        ("STANDARD", "GATING", "BLOCKED", "GATE_DECISION_REQUIRED"),
+        ("STRICT", "GATING", "BLOCKED", "GATE_DECISION_REQUIRED"),
+    ],
+)
+def test_structural_target_does_not_authorize_ordinary_transition(
+    tmp_path, profile, current, target, code
+):
+    from harness.state_machine import legal_targets
+
+    harness = make_repo(tmp_path, profile=profile, state=current)
+    task_path = harness / "current-task.yaml"
+    before = task_path.read_bytes()
+    assert target in legal_targets(current)
+
+    result = run_cli(tmp_path, "transition", target)
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert code in result.stderr
+    assert task_path.read_bytes() == before
+
+
+def test_structural_target_still_allows_admitted_fast_transition(tmp_path):
+    from harness.state_machine import legal_targets
+
+    harness = make_repo(tmp_path, state="IMPLEMENTING")
+    assert "VERIFYING" in legal_targets("IMPLEMENTING")
+
+    result = run_cli(tmp_path, "transition", "VERIFYING")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert yaml.safe_load((harness / "current-task.yaml").read_text())["state"] == "VERIFYING"
 
 
 def test_align_revise_command_is_available(tmp_path):

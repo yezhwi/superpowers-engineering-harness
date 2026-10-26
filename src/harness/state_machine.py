@@ -80,7 +80,15 @@ def require_legal(current: str, target: str) -> None:
 
 
 def legal_targets(current: str) -> Set[str]:
-    """All states legally reachable from current. Raises on unknown state."""
+    """Return structural graph successors, including dedicated-command edges.
+
+    This is not an admission check or a list of ordinary ``harness transition``
+    targets. It does not inspect task profile, command ownership, evidence,
+    authorization, or readiness. Raises InvalidTransition on unknown state.
+
+    Repository guides: [English](../../README.md#transition-graph-and-command-admission),
+    [Chinese](../../README.zh-CN.md#transition-graph-and-command-admission).
+    """
     if current not in STATES:
         raise InvalidTransition(f"unknown state: {current!r}")
     return {t for (c, t) in TRANSITIONS if c == current}

@@ -220,6 +220,25 @@ harness plan refresh-proof P-001 \
 
 风险只能升级，不能降级。Evidence reuse、soft budget、local telemetry、fixture benchmark 已提供；remote telemetry 和外部 agent benchmark 声明不提供。
 
+<a id="transition-graph-and-command-admission"></a>
+
+## 状态图与命令准入的区别
+
+`state_machine.legal_targets(current)` 返回状态图上的后继状态，包含专属命令管理的边。某个目标属于返回集合，只说明状态图存在该边，**不代表**允许执行 `harness transition TARGET`，也不证明已经就绪。函数只接收状态，不读取任务或 profile，不检查证据、授权、publication 准入及其他守卫。普通 CLI status 不使用它展示可执行目标。
+
+应使用负责该操作的命令：
+
+| 状态图边／当前状态 | 实际路径 |
+| --- | --- |
+| `CREATED -> SPECIFYING` | 先执行 `harness task classify`；未分类任务不能绕过分类。 |
+| 从 `CLASSIFIED` 出发 | `FAST` 进入 `IMPLEMENTING`；`STANDARD`／`STRICT` 进入 `SPECIFYING`。其他图后继不是可任选的 profile 入口。 |
+| 从 `REVIEWING` 出发 | 通过 `harness review outcome` 选择评审结果路径，不能直接 transition。 |
+| `GATING -> CONVERGED`／`BLOCKED` | 仅由 `harness gate` 记录 Gate 决策。 |
+| 从 `BLOCKED` 出发 | 使用 `harness resume` 执行有类型的恢复；该命令不豁免授权要求。 |
+| `VERIFYING -> GATING` | FAST 可经 `harness transition` 请求此迁移，但仍需通过检查；STANDARD／STRICT 必须先完成评审路径。 |
+
+即使是普通命令管理的边，也可能因准入条件不足而拒绝。状态图校验、命令归属和动态就绪条件应分开理解；不要为适配某个命令裁剪共用状态图，也不要手改任务状态绕过拒绝。
+
 ## 边界
 
 > **安全边界：** `harness evidence run --command` 以本地 Harness 操作者直接输入、受信任 shell 文本执行（`shell=True`）。

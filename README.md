@@ -229,6 +229,25 @@ harness plan refresh-proof P-001 \
 
 Risk may only escalate, never downgrade. Evidence reuse, soft budgets, local telemetry, and fixture benchmarks are available. Remote telemetry and external-agent benchmark claims are unavailable.
 
+<a id="transition-graph-and-command-admission"></a>
+
+## Transition graph versus command admission
+
+`state_machine.legal_targets(current)` returns structural graph successors, including edges owned by dedicated commands. Membership is necessary for a state-machine edge, but does **not** authorize `harness transition TARGET` or prove readiness. The helper takes only a state, not a task/profile; it does not evaluate evidence, authorization, publication admission or other guards. Ordinary CLI status does not use it to display executable targets.
+
+Use the command that owns the operation:
+
+| Structural edge / state | Actual route |
+| --- | --- |
+| `CREATED -> SPECIFYING` | Run `harness task classify` first; an unclassified task cannot bypass classification. |
+| From `CLASSIFIED` | `FAST` enters `IMPLEMENTING`; `STANDARD` / `STRICT` enter `SPECIFYING`. Other graph successors are not alternative profile entry points. |
+| From `REVIEWING` | Use `harness review outcome`, not direct transition, for its review-result routes. |
+| `GATING -> CONVERGED` / `BLOCKED` | Only `harness gate` records the Gate decision. |
+| From `BLOCKED` | Use `harness resume` for typed recovery; it does not waive authority requirements. |
+| `VERIFYING -> GATING` | FAST may request this through `harness transition` subject to checks; STANDARD/STRICT must complete the review route first. |
+
+Even an ordinary-command edge can still fail admission. Keep graph validation, command ownership and dynamic readiness separate; do not shrink the shared graph to match one command or bypass a refusal by editing task state.
+
 ## Boundaries
 
 > **Security boundary:** `harness evidence run --command` executes shell syntax (`shell=True`) as trusted text entered directly by the local Harness operator.

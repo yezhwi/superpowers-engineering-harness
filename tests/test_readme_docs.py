@@ -20,6 +20,32 @@ def test_readme_distinguishes_freshness_and_fast_risk_path_interfaces(filename):
         assert identifier in section
 
 
+def test_structural_target_helper_links_resolve_to_bilingual_command_guides():
+    import inspect
+
+    from harness.state_machine import legal_targets
+
+    doc = inspect.getdoc(legal_targets) or ""
+    targets = re.findall(r"\]\(([^)]+)\)", doc)
+    assert set(targets) == {
+        "../../README.md#transition-graph-and-command-admission",
+        "../../README.zh-CN.md#transition-graph-and-command-admission",
+    }
+    for target in targets:
+        relative, anchor = target.split("#", 1)
+        guide = (REPO / "src/harness" / relative).resolve()
+        assert guide.is_file()
+        text = guide.read_text()
+        assert f'<a id="{anchor}"></a>' in text
+        # Identifiers/commands are stable references; prose is reviewed semantically.
+        section = text.split(f'<a id="{anchor}"></a>', 1)[1].split("\n## ", 1)[1].split("\n## ", 1)[0]
+        for identifier in (
+            "legal_targets", "harness transition", "harness review outcome",
+            "harness gate", "harness resume", "CLASSIFIED", "FAST", "STANDARD", "STRICT",
+        ):
+            assert identifier in section
+
+
 def test_task_contract_writes_alignment_before_planned_admission():
     text = (REPO / "skills/task-contract/SKILL.md").read_text()
     exit_steps = text.split("### 7. Exit PLANNED", 1)[1].split("## Production Diagnosability", 1)[0]
