@@ -665,50 +665,112 @@ def test_collector_retention_location_errors_never_write_task(tmp_path, monkeypa
     assert not list((tmp_path / '.harness').iterdir())
 
 
-@pytest.mark.parametrize('broken_warning', [False, True])
-def test_collector_postcommit_stage_failure_is_success_and_reuse_never_reexecutes(tmp_path, monkeypatch, capsys, broken_warning):
+@pytest.mark.parametrize("broken_warning", [False, True])
+@pytest.mark.parametrize("failure", ["stage", "cleanup"])
+@pytest.mark.parametrize("cancel", [False, True])
+def test_collector_postcommit_failure_preserves_measured_status_and_budget(
+    tmp_path, monkeypatch, capsys, broken_warning, failure, cancel
+):
     import errno
     import json
+    import os
+    import subprocess
 
     import yaml
 
-    from harness import transaction
+    from harness import publication_journal, transaction
+    from harness.evidence_validator import ReuseRequest, can_reuse_evidence
 
     root, _, _ = collector_fixture(tmp_path, monkeypatch)
+    command = "printf x >> .harness/command-runs"
     observed = []
+    operations = []
     if broken_warning:
         import builtins
 
         real_print = builtins.print
+
         def print_without_warning(*args, **kwargs):
-            if args and str(args[0]).startswith('EVIDENCE_PUBLICATION_COMMITTED'):
-                raise OSError('TEST_WARNING_CLOSED')
+            if args and str(args[0]).startswith("EVIDENCE_PUBLICATION_COMMITTED"):
+                raise OSError("TEST_WARNING_CLOSED")
             return real_print(*args, **kwargs)
-        monkeypatch.setattr(builtins, 'print', print_without_warning)
 
-    def fail_retention(*args, **kwargs):
-        # Real native publication already committed before stage archival.
-        record = json.loads((root / 'evidence/build.json').read_text())
-        assert record['exit_code'] == 0
-        assert yaml.safe_load((root / 'current-task.yaml').read_text())['budget']['build_runs'] == 1
-        assert not list((root / '.transactions').glob('*.json'))
-        observed.append('committed')
-        raise OSError(errno.ENOSPC, 'TEST_STAGE_ARCHIVAL_NO_SPACE')
+        monkeypatch.setattr(builtins, "print", print_without_warning)
+    if cancel:
+        original_run = subprocess.run
 
-    monkeypatch.setattr(transaction, '_retain_stage', fail_retention)
-    command = 'printf x >> .harness/command-runs'
-    assert evidence_module.main(['--type', 'build', '--command', command]) == 0
-    assert observed == ['committed']
+        def cancel_after_child(*args, **kwargs):
+            result = original_run(*args, **kwargs)
+            if args and args[0] == command and kwargs.get("shell"):
+                raise KeyboardInterrupt()
+            return result
+
+        monkeypatch.setattr(subprocess, "run", cancel_after_child)
+
+    def observe_committed():
+        record = json.loads((root / "evidence/build.json").read_text())
+        assert record["exit_code"] == (130 if cancel else 0)
+        assert yaml.safe_load((root / "current-task.yaml").read_text())["budget"]["build_runs"] == 1
+        assert not list((root / ".transactions").glob("*.json"))
+        observed.append(failure)
+
+    if failure == "stage":
+        def fail_retention(*args, **kwargs):
+            observe_committed()
+            raise OSError(errno.ENOSPC, "TEST_STAGE_ARCHIVAL_NO_SPACE")
+
+        monkeypatch.setattr(transaction, "_retain_stage", fail_retention)
+    else:
+        original_prepare, original_close = publication_journal.prepare, os.close
+
+        def prepare(*args, **kwargs):
+            operation = original_prepare(*args, **kwargs)
+            assert operation.root == root.absolute()
+            operations.append(operation)
+            return operation
+
+        def fail_cleanup(fd):
+            operation = operations[-1] if operations else None
+            inject = (
+                operation is not None
+                and fd == operation.fds.get("root")
+                and operation.document["state"] == "COMMITTED"
+                and not observed
+            )
+            original_close(fd)
+            if inject:
+                observe_committed()
+                raise OSError(errno.EIO, "TEST_PUBLISHER_CLEANUP_FAILED")
+
+        monkeypatch.setattr(publication_journal, "prepare", prepare)
+        monkeypatch.setattr(os, "close", fail_cleanup)
+
+    assert evidence_module.main(["--type", "build", "--command", command]) == (130 if cancel else 0)
+    assert observed == [failure], "native postcommit fault was not reached exactly once"
+    if failure == "cleanup":
+        assert len(operations) == 1
+        assert not operations[0].fds
     output = capsys.readouterr()
-    assert ('EVIDENCE_PUBLICATION_COMMITTED' in output.err) is (not broken_warning)
-    assert 'EVIDENCE_PERSISTENCE_UNCERTAIN' not in output.err
-    assert 'PUBLICATION_FAILURE_CONTEXT' not in output.err
-    assert 'EVIDENCE_RESULT_RETAINED' not in output.err
-    assert evidence_module.main(['--type', 'build', '--command', command, '--reuse-if-valid']) == 0
-    assert 'EVIDENCE_REUSED' in capsys.readouterr().out
-    assert (root / 'command-runs').read_text() == 'x'
-    assert yaml.safe_load((root / 'current-task.yaml').read_text())['budget']['build_runs'] == 1
-    assert list((root / 'evidence').glob('build*.json')) == [root / 'evidence/build.json']
+    assert ("EVIDENCE_PUBLICATION_COMMITTED" in output.err) is (not broken_warning)
+    assert "EVIDENCE_PERSISTENCE_UNCERTAIN" not in output.err
+    assert "PUBLICATION_FAILURE_CONTEXT" not in output.err
+    assert "EVIDENCE_RESULT_RETAINED" not in output.err
+    if cancel:
+        record = json.loads((root / "evidence/build.json").read_text())
+        assert record["error"] == "EVIDENCE_COMMAND_CANCELLED"
+        current = evidence_module.snapshot(root.parent)
+        request = ReuseRequest("build", command, "related", (), None, None, None)
+        assert not can_reuse_evidence(
+            record, request, current_head=current.head,
+            current_workspace=current.fingerprint,
+            current_runtime=evidence_module.runtime_metadata(),
+        )
+    else:
+        assert evidence_module.main(["--type", "build", "--command", command, "--reuse-if-valid"]) == 0
+        assert "EVIDENCE_REUSED" in capsys.readouterr().out
+    assert (root / "command-runs").read_text() == "x"
+    assert yaml.safe_load((root / "current-task.yaml").read_text())["budget"]["build_runs"] == 1
+    assert list((root / "evidence").glob("build*.json")) == [root / "evidence/build.json"]
 
 
 @pytest.mark.parametrize(
