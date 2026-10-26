@@ -1192,3 +1192,44 @@ def test_seeded_requirement_subsets_always_preserve_all_must_records(harness):
         source.requirements[:] = records
         core = build_control_core(source)
         assert core["requirements"] == [r for r in records if r["priority"] == "must"]
+
+
+def test_generate_reuses_decision_parsing_and_schema_preparation(harness, monkeypatch):
+    import sys
+
+    from jsonschema import Draft7Validator
+
+    from harness.context.store import generate_context
+    from harness.context.telemetry import ContextTelemetry
+
+    created = decision.propose(harness, proposal())
+    decision.accept(harness, created["id"], "redis", "accepted_recommendation")
+    # Settle automatic expansion before measuring an otherwise identical request.
+    generate_context(harness)
+    body = (harness / f"decisions/{created['id']}.yaml").read_text()
+    counts = {"parses": 0, "schema_preparations": 0}
+    original_parse, original_check = yaml.safe_load, Draft7Validator.check_schema
+
+    def parse(text, *args, **kwargs):
+        if sys._getframe(1).f_globals.get("__name__") == decision.__name__ and text == body:
+            counts["parses"] += 1
+        return original_parse(text, *args, **kwargs)
+
+    def check(cls, schema, *args, **kwargs):
+        if isinstance(schema, dict) and schema.get("$id") == "decision.schema.json":
+            counts["schema_preparations"] += 1
+        return original_check(schema, *args, **kwargs)
+
+    monkeypatch.setattr(yaml, "safe_load", parse)
+    monkeypatch.setattr(Draft7Validator, "check_schema", classmethod(check))
+    timer = ContextTelemetry()
+    with timer.activate():
+        first = generate_context(harness)
+    assert counts == {"parses": 1, "schema_preparations": 1}
+    assert timer.counters["source_loads"] == 2
+    assert timer.counters["gate_assessments"] == 2
+    assert timer.counters["full_context_builds"] == 1
+    assert timer.counters["expansion_events_written"] == 0
+    second = generate_context(harness)
+    assert counts == {"parses": 2, "schema_preparations": 2}
+    assert first == second

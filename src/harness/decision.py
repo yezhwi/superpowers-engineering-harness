@@ -3,11 +3,18 @@
 from __future__ import annotations
 
 import hashlib
+import json
+from contextlib import contextmanager
+from contextvars import ContextVar
+from copy import deepcopy
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
 import yaml
 from jsonschema import ValidationError, validate
+from jsonschema.exceptions import best_match
+from jsonschema.validators import validator_for
 
 from harness import source_access
 from harness.schema_resources import read_schema
@@ -19,6 +26,47 @@ from .transaction_recovery import publication_admission
 
 class DecisionError(ValueError):
     """Stable decision-domain failure."""
+
+
+@dataclass
+class _ReadReuse:
+    parsed: dict = field(default_factory=dict)
+    prepared: set = field(default_factory=set)
+    active: bool = True
+
+
+_READ_REUSE: ContextVar[_ReadReuse | None] = ContextVar("decision_read_reuse", default=None)
+
+
+@contextmanager
+def _read_session():
+    """Reuse pure work for one generation, never source reads or validation results."""
+    state = _ReadReuse()
+    token = _READ_REUSE.set(state)
+    try:
+        yield
+    finally:
+        state.active = False
+        state.parsed.clear()
+        state.prepared.clear()
+        _READ_REUSE.reset(token)
+
+
+def _read_reuse():
+    state = _READ_REUSE.get()
+    return state if state is not None and state.active else None
+
+
+def _read_yaml(path: Path):
+    # Read/observe even on a hit; same-path edits and identity drift stay visible.
+    text = source_access.read_text(path)
+    state = _read_reuse()
+    if state is None:
+        return yaml.safe_load(text)
+    key = (path.absolute(), text)
+    if key not in state.parsed:
+        state.parsed[key] = yaml.safe_load(text)
+    return deepcopy(state.parsed[key])
 
 
 def _now() -> str:
@@ -35,7 +83,20 @@ def _schema() -> dict:
 
 def _validate(record: dict) -> None:
     try:
-        validate(record, _schema())
+        schema = _schema()  # Always observe current schema resource authority.
+        state = _read_reuse()
+        if state is None:
+            validate(record, schema)
+        else:
+            cls = validator_for(schema)
+            key = (cls, json.dumps(schema, sort_keys=True))
+            if key not in state.prepared:
+                cls.check_schema(schema)
+                state.prepared.add(key)
+            # Fresh instance and actual record validation; preserve validate's error choice.
+            error = best_match(cls(schema).iter_errors(record))
+            if error is not None:
+                raise error
     except ValidationError as exc:
         raise DecisionError("DECISION_RECORD_INVALID") from exc
     option_ids = [option["id"] for option in record["options"]]
@@ -143,7 +204,7 @@ def load_decision_index(harness_dir: Path) -> list[dict]:
     if not source_access.exists(path):
         return []
     try:
-        document = yaml.safe_load(source_access.read_text(path))
+        document = _read_yaml(path)
     except (OSError, yaml.YAMLError) as exc:
         raise DecisionError("DECISION_INDEX_INVALID") from exc
     records = document.get("decisions") if isinstance(document, dict) else None
@@ -168,7 +229,7 @@ def load_decisions(harness_dir: Path) -> list[dict]:
     records: list[dict] = []
     for path in source_access.members(directory, "DEC-*.yaml"):
         try:
-            record = yaml.safe_load(source_access.read_text(path))
+            record = _read_yaml(path)
         except (OSError, yaml.YAMLError) as exc:
             raise DecisionError("DECISION_RECORD_INVALID") from exc
         if not isinstance(record, dict):
@@ -183,7 +244,7 @@ def load_decision(harness_dir: Path, decision_id: str) -> dict:
     if not source_access.is_file(path):
         raise DecisionError("DECISION_NOT_FOUND")
     try:
-        record = yaml.safe_load(source_access.read_text(path))
+        record = _read_yaml(path)
     except (OSError, yaml.YAMLError) as exc:
         raise DecisionError("DECISION_RECORD_INVALID") from exc
     if not isinstance(record, dict):
