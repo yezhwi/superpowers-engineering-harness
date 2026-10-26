@@ -6,7 +6,7 @@ from uuid import uuid4
 
 import yaml
 
-from harness import source_access, transaction
+from harness import decision, source_access, transaction
 from harness.telemetry_lock import telemetry_lock
 from harness.transaction_recovery import require_no_pending_publications
 
@@ -78,7 +78,7 @@ def generate_context(harness_dir: Path, *, mode: str = "compact") -> dict:
     task replacement. Unmanaged product/control edits are detected by hashes.
     """
     harness_dir = harness_dir.absolute()
-    with telemetry_lock(harness_dir):
+    with telemetry_lock(harness_dir), decision._read_session():
         transaction.recover_pending_publications(harness_dir)
         _require_task(harness_dir)
         paths = _paths(harness_dir)
