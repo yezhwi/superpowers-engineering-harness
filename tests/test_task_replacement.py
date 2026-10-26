@@ -175,11 +175,142 @@ def test_native_task_commands_preserve_opaque_fifo(tmp_path, operation, opaque):
         assert task["task"]["id"] == "TASK-005"
 
 
-def test_native_new_retention_failure_keeps_original_at_backup(tmp_path, monkeypatch, capsys):
+def test_native_new_retains_behavior_fixtures_without_copying(tmp_path):
     repo = committed_repo(tmp_path)
     set_task_state(repo, "DONE")
     harness = repo / ".harness"
-    probe, fifo = probe_tree(harness)
+    probe, fifo = probe_tree(harness, "behavior-fixtures")
+    relative = fifo.relative_to(probe)
+    before = {name: identity(probe / name) for name in (".", str(relative), "regular.txt", "outside-link")}
+    result = run_cli(repo, "task", "new", "TASK-005")
+    assert result.returncode == 0, result.stdout + result.stderr
+    previous = retained_root(harness)
+    kept = previous / "behavior-fixtures"
+    assert {name: identity(kept / name) for name in before} == before
+    assert (kept / "regular.txt").read_text() == "opaque fixture bytes\n"
+    assert (kept / "outside-link").is_symlink()
+    assert not (harness / "behavior-fixtures").exists()
+    assert not (harness / "behavior-fixtures").is_symlink()
+    assert yaml.safe_load((harness / "current-task.yaml").read_text())["task"]["id"] == "TASK-005"
+    assert str(previous.relative_to(harness)) in result.stderr
+
+
+def test_new_task_copy_never_traverses_root_behavior_fixtures(tmp_path, monkeypatch):
+    harness = bare_harness(tmp_path)
+    probe, fifo = probe_tree(harness, "behavior-fixtures")
+    before = identity(fifo)
+    other = harness / "custom-data/behavior-fixtures/keep.txt"
+    other.parent.mkdir(parents=True)
+    other.write_text("keep unknown and nested data")
+    original_scandir = os.scandir
+
+    def guarded_scandir(path):
+        if isinstance(path, (str, os.PathLike)):
+            assert not Path(path).absolute().is_relative_to(probe), "entered excluded root fixture tree"
+        return original_scandir(path)
+
+    monkeypatch.setattr(os, "scandir", guarded_scandir)
+    staged = task_replacement.replacement_workspace(harness, new_task=True)
+    assert not (staged / "behavior-fixtures").exists()
+    assert (staged / "custom-data/behavior-fixtures/keep.txt").read_text() == "keep unknown and nested data"
+    assert (staged / "current-task.yaml").read_text() == "old task\n"
+    assert identity(fifo) == before
+
+
+@pytest.mark.parametrize("explicit", [False, True])
+def test_default_replacement_still_copies_behavior_fixtures(tmp_path, explicit):
+    harness = bare_harness(tmp_path)
+    fixture = harness / "behavior-fixtures/needed.txt"
+    fixture.parent.mkdir()
+    fixture.write_text("same-task data")
+    kwargs = {"new_task": False} if explicit else {}
+    staged = task_replacement.replacement_workspace(harness, **kwargs)
+    assert (staged / "behavior-fixtures/needed.txt").read_text() == "same-task data"
+    assert fixture.read_text() == "same-task data"
+
+
+@pytest.mark.parametrize("relative", ["requirements.yaml", "evidence/input.pipe", "evidence/behavior-fixtures/input.pipe"])
+def test_new_task_mode_does_not_hide_canonical_or_nested_special_files(tmp_path, relative):
+    harness = bare_harness(tmp_path)
+    pipe = harness / relative
+    pipe.parent.mkdir(parents=True, exist_ok=True)
+    os.mkfifo(pipe)
+    before = identity(pipe)
+    with pytest.raises(shutil.Error, match="named pipe"):
+        task_replacement.replacement_workspace(harness, new_task=True)
+    assert identity(pipe) == before
+    assert (harness / "current-task.yaml").read_text() == "old task\n"
+    assert not list(tmp_path.glob("..harness.replacement-*"))
+
+
+@pytest.mark.parametrize("operation", ["recover", "escalate"])
+def test_native_other_entrypoints_keep_behavior_fixture_copying(tmp_path, operation):
+    repo = committed_repo(tmp_path)
+    harness = repo / ".harness"
+    fixture = harness / "behavior-fixtures/needed.txt"
+    fixture.parent.mkdir()
+    fixture.write_text("still needed by this operation")
+    before = identity(fixture)
+    if operation == "recover":
+        set_task_state(repo, "IMPLEMENTING")
+        args = ("task", "recover", "TASK-005", "--reason", "fixture")
+    else:
+        result = run_cli(repo, "task", "classify", "--level", "Q1", "--scope", "low", "--contract", "none", "--data", "none", "--authorization", "none", "--security", "none", "--concurrency", "none", "--deployment", "none")
+        assert result.returncode == 0, result.stderr
+        args = ("task", "escalate", "--level", "Q2", "--reason", "fixture")
+    result = run_cli(repo, *args)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert fixture.read_text() == "still needed by this operation"
+    previous = retained_root(harness)
+    assert identity(previous / "behavior-fixtures/needed.txt") == before
+    assert identity(fixture) != before
+
+
+def test_new_task_exclusion_install_failure_restores_original_tree(tmp_path, monkeypatch):
+    harness = bare_harness(tmp_path)
+    probe, fifo = probe_tree(harness, "behavior-fixtures")
+    before = identity(fifo)
+    staged = task_replacement.replacement_workspace(harness, new_task=True)
+    original_replace = Path.replace
+
+    def fail_install(source, destination):
+        if source == staged:
+            raise OSError("injected new-task install failure")
+        return original_replace(source, destination)
+
+    monkeypatch.setattr(Path, "replace", fail_install)
+    with pytest.raises(OSError, match="new-task install failure"):
+        task_replacement._publish_replacement(harness, staged)
+    assert identity(fifo) == before
+    assert (harness / "current-task.yaml").read_text() == "old task\n"
+    assert not harness.with_name("..harness.backup").exists()
+
+
+@pytest.mark.parametrize("kind", ["file", "fifo", "symlink"])
+def test_native_new_keeps_root_fixture_entry_without_dereferencing(tmp_path, kind):
+    repo = committed_repo(tmp_path)
+    set_task_state(repo, "DONE")
+    harness = repo / ".harness"
+    entry = harness / "behavior-fixtures"
+    if kind == "file":
+        entry.write_text("task-local payload")
+    elif kind == "fifo":
+        os.mkfifo(entry)
+    else:
+        entry.symlink_to(repo / "unavailable")
+    before = identity(entry)
+    result = run_cli(repo, "task", "new", "TASK-005")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert identity(retained_root(harness) / entry.name) == before
+    assert not entry.exists() and not entry.is_symlink()
+
+
+@pytest.mark.parametrize("opaque", ["acceptance-probes", "behavior-fixtures"])
+def test_native_new_retention_failure_keeps_original_at_backup(tmp_path, monkeypatch, capsys, opaque):
+    repo = committed_repo(tmp_path)
+    set_task_state(repo, "DONE")
+    harness = repo / ".harness"
+    probe, fifo = probe_tree(harness, opaque)
     relative = fifo.relative_to(harness)
     before = identity(fifo)
     monkeypatch.chdir(repo)

@@ -58,8 +58,8 @@ def restore_architecture_mode(
     )
 
 
-def replacement_workspace(harness_dir: Path) -> Path:
-    """Copy task facts; opaque acceptance data stays in the retained old tree."""
+def replacement_workspace(harness_dir: Path, *, new_task: bool = False) -> Path:
+    """Stage facts; task new leaves root behavior fixtures in the old tree."""
     ignore_storage = shutil.ignore_patterns(".staging", ".publication-retained")
 
     def ignore(directory, names):
@@ -68,6 +68,8 @@ def replacement_workspace(harness_dir: Path) -> Path:
             # Never traverse opaque FIFO/symlink fixtures. Publication retains
             # their original inodes with the whole old Harness root.
             ignored.update({"acceptance-probes", "acceptance-artifacts"})
+            if new_task:
+                ignored.add("behavior-fixtures")
         return ignored
 
     parent = harness_dir.parent

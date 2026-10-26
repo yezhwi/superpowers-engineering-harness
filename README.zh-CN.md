@@ -416,6 +416,8 @@ harness task escalate --level Q2 --reason "public contract changed"
 
 `task new`、`task recover`、`task migrate-id` 拒绝复用当前任务、history 归档名／任务文档、持久化 Decision 记录／索引中已有的 ID。前导零别名（`TASK-5`／`TASK-005`）按同一数值身份处理。在现有 publication 锁内、替换复制或身份写入之前，以退出码 2、`TASK_ID_ALREADY_USED` 拒绝。应选未使用 ID，不要删历史或决策绕过守卫。
 
+`task new` 不再继承根 `.harness/behavior-fixtures`，不会遍历或复制该项。原件随旧任务完整保留在命令报告的 `.publication-retained/task-replacement-…/previous/` 目录中，不删除，也不建立可写链接。因此新任务下原规范夹具路径将不存在；需要复用时，应显式将必要数据复制到新任务自有位置。`task recover`、`task escalate` 和其他路径保持原有复制行为；这不是通用清理或迁移命令。此规则仅针对根目录，不排除嵌套的同名 `behavior-fixtures` 目录。
+
 赋予不同身份时，占用来源不可读、结构非法或含符号链接，以 `TASK_ID_RESERVATION_INVALID` 拒绝；先诊断来源，不能把读取失败当作无占用。仅当所有 scope 工件均不存在时，legacy `migrate-id` 可修复非法的当前 ID 字符串；目标仍须合法且未占用，history／Decision／索引校验不跳过。当前 `task.id: null` 仍是合法的未分配身份，不属于非法字符串；既有 legacy 身份赋值与 genesis scope 绑定继续支持。其他非字符串当前 ID 或缺失任务结构仍拒绝。`new`／`recover` 的占用检查及既有 scope 绑定限制保持不变。历史重号不批量改写，也不妨碍使用真正空闲的 ID。迁移前既有的显式 publication recovery 仍执行。
 
 例外：legacy 迁移到完全相同的当前 ID 不创建新身份，也不重新扫描占用来源。它不验证或修复损坏的历史／决策，不认证完整性、不创建 scope、不接受决策、不授予 Gate 资格；原有 legacy 保存路径仍可能重写任务／telemetry。可运行 `harness explain TASK_ID_ALREADY_USED` 或 `harness explain TASK_ID_RESERVATION_INVALID` 获取只读引导；两者均不改状态、不执行恢复。

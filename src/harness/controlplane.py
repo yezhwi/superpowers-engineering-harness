@@ -3139,7 +3139,7 @@ def cmd_task_new(task_id: str, title: str = "") -> int:
         return 2
     try:
         architecture_mode = trusted_architecture_mode(harness_dir, old)
-        staged = replacement_workspace(harness_dir)
+        staged = replacement_workspace(harness_dir, new_task=True)
         archive = (
             staged
             / "history"
