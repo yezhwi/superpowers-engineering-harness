@@ -75,6 +75,19 @@ def test_does_not_overwrite_existing_observability_contract(repo):
     assert target.read_text(encoding="utf-8") == "version: 1\nrequired: false\n"
 
 
+@pytest.mark.parametrize("value", [0, 7])
+def test_init_preserves_existing_regression_policy_bytes(repo, value):
+    init_harness(repo)
+    path = repo / ".harness/gate.yaml"
+    policy = yaml.safe_load(path.read_text())
+    policy["gate"]["regression"]["confirmed_finding_without_test"] = value
+    raw = ("# Existing operator configuration; do not migrate.\n" + yaml.safe_dump(policy)).encode()
+    path.write_bytes(raw)
+    result = init_harness(repo)
+    assert path.read_bytes() == raw
+    assert path in result.skipped
+
+
 def test_files_match_templates(repo):
     init_harness(repo)
     for name in REQUIRED_FILES:

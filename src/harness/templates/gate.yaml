@@ -40,6 +40,7 @@ gate:
     major_allowed: 0
 
   regression:
+    # Compatibility-only: zero or omitted; nonzero is rejected, never auto-migrated.
     confirmed_finding_without_test: 0
 
   convergence:

@@ -467,9 +467,6 @@ def _defect_finding_blockers(findings, gate_cfg) -> list[GateBlocker]:
                 f"{severity.title()} finding {finding['id']} is open",
                 finding,
             )
-    allowed = int(
-        gate_cfg.get("regression", {}).get("confirmed_finding_without_test", 0)
-    )
     no_test = [
         f
         for f in findings
@@ -477,7 +474,7 @@ def _defect_finding_blockers(findings, gate_cfg) -> list[GateBlocker]:
         and f.get("category") not in {"diagnosability", "alignment"}
         and not (f.get("regression_test") or {}).get("path")
     ]
-    for finding in no_test[allowed:]:
+    for finding in no_test:
         block(
             "IMPLEMENTATION_INCOMPLETE",
             "implementation",

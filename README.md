@@ -161,6 +161,12 @@ harness evidence run --type unit_test --scope related --covered-test tests/test_
 
 Related test evidence is append-only (`unit-test-<hash>.json`). Gate unions fresh records' `covered_tests`, so adding one required test needs only that test's command. `VERIFYING → REVIEWING` runs freshness preflight first; stale required evidence blocks entry. STANDARD/STRICT task plans also reject declared test targets whose file path does not exist. Review reasons are controlled: use `REVIEW_CLEAN`, `TEST_COVERAGE_INSUFFICIENT`, `EVIDENCE_INCOMPLETE`, `INVARIANT_UNPROVEN`, `TEST_SCOPE_INSUFFICIENT`, `LOGIC_ERROR`, `REGRESSION`, `CONTRACT_VIOLATION`, or `INVARIANT_VIOLATION` for the matching outcome.
 
+### Regression policy compatibility
+
+`gate.regression.confirmed_finding_without_test` is retained for compatibility, but only numeric zero is supported. Omitting the field or the whole `regression` section keeps the zero-default behavior. It cannot waive finding proof requirements.
+
+Previously schema-valid nonzero values now fail closed before full or FAST Gate evaluation: exit `2`, with `gate.schema.json` and the configuration field path in the diagnostic. The task does not advance and the configuration is not rewritten. Explicitly change the value to `0` in the existing `gate.yaml` before retrying; `harness init` skips existing files and does not migrate this setting. No migration command or silent clamping is provided.
+
 ### Q1 / FAST
 
 A question or explanation is Q0: the Agent answers directly and creates no Harness task. Q1 / FAST is narrow, low-risk work only. Classify explicitly; Q1 is rejected without persisting when current business paths already match `.harness/risk-boundaries.yaml` Q2/Q3. FAST returns before reading Plan, Markdown, or automatic-evidence sources. It still needs task-level failing RED and passing GREEN evidence, then Light Gate. It skips impact, complexity review, requirements, and invariants ceremony. `harness status` Build/Unit/Integration lines use the same live evidence projection as the Evidence list. If the work item is already implemented, `harness task verify-existing` can record a valid existing-verification record without forging RED; an ordinary bugfix still requires RED→GREEN. `requires_reproduction` keeps the task `CLASSIFIED`; create or resume a finding and reproduce normally.

@@ -152,6 +152,12 @@ harness evidence run --type unit_test --scope related --covered-test tests/test_
 
 关联 test evidence 采用 append-only 文件名（`unit-test-<hash>.json`）。Gate 合并所有 fresh record 的 `covered_tests`，新增一个 required test 时只需运行该 test。`VERIFYING → REVIEWING` 先执行 freshness preflight；required evidence stale 时拒绝进入。STANDARD/STRICT task plan 声明的 test target 文件不存在时也会拒绝。Review reason code 为受控集合：匹配的结果使用 `REVIEW_CLEAN`、`TEST_COVERAGE_INSUFFICIENT`、`EVIDENCE_INCOMPLETE`、`INVARIANT_UNPROVEN`、`TEST_SCOPE_INSUFFICIENT`、`LOGIC_ERROR`、`REGRESSION`、`CONTRACT_VIOLATION` 或 `INVARIANT_VIOLATION`。
 
+### 回归策略兼容性
+
+`gate.regression.confirmed_finding_without_test` 仅作为兼容字段保留，只支持数值零。省略该字段或整个 `regression` 段时仍按零处理，不能用它豁免 Finding 证明要求。
+
+此前 Schema 接受的非零值，现在会在完整或 FAST Gate 评估前 fail-closed：退出码 `2`，诊断包含 `gate.schema.json` 和配置字段路径；任务不推进，配置不被改写。请显式将现有 `gate.yaml` 中该值改为 `0` 后重试。`harness init` 跳过已有文件，不负责迁移此配置；不提供迁移命令，也不静默截断为零。
+
 ### Q1 / FAST
 
 提问或解释属于 Q0：Agent 直接回答，不创建 Harness task。Q1 / FAST 仅限范围窄、低风险的工作。必须显式分类；当前业务路径已命中 `.harness/risk-boundaries.yaml` 的 Q2/Q3 时，Q1 分类失败且不落盘。FAST 在读取 Plan、Markdown 或自动 evidence source 之前返回。它仍要求 task 级失败 RED、成功 GREEN 证据和 Light Gate，但跳过 impact、复杂度审查、requirements、invariants ceremony。`harness status` 的 Build/Unit/Integration 摘要与 Evidence 列表使用同一 live projection。若 work item 已在目标分支实现，用 `harness task verify-existing` 记录有效 existing-verification，禁止伪造 RED；普通缺陷修复仍走 RED→GREEN。`requires_reproduction` 保持 task 为 `CLASSIFIED`，创建或恢复 finding 后正常复现。

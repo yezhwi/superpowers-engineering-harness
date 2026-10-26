@@ -986,6 +986,112 @@ def test_closed_findings_do_not_block(tmp_path):
     assert _gate(h).returncode == 0
 
 
+def _regression_policy_fixture(tmp_path, profile):
+    h = make_harness(tmp_path)
+    if profile == "fast":
+        task_path = h / "current-task.yaml"
+        task = yaml.safe_load(task_path.read_text())
+        task["git"]["base_commit"] = HEAD
+        task["risk"] = {
+            "level": "Q1", "profile": "FAST", "dimensions": SAFE_DIMENSIONS,
+            "escalation_history": [],
+            "user_changes": {"paths": [], "fingerprint": "sha256:" + "0" * 64},
+        }
+        task_path.write_text(yaml.safe_dump(task))
+        (h / "risk-boundaries.yaml").write_text("boundaries:\n  q2: [never/**]\n  q3: [never/**]\n")
+    return h
+
+
+@pytest.mark.parametrize("profile", ["full", "fast"])
+@pytest.mark.parametrize("value", [1, 4])
+def test_nonzero_regression_policy_rejected_before_gate_evaluation(tmp_path, profile, value):
+    h = _regression_policy_fixture(tmp_path, profile)
+    assert _gate(h).returncode in (0, 1), "zero-default control must reach Gate evaluation"
+    path = h / "gate.yaml"
+    policy = yaml.safe_load(path.read_text())
+    policy["gate"]["regression"]["confirmed_finding_without_test"] = value
+    path.write_text(yaml.safe_dump(policy))
+    before_task, before_config = (h / "current-task.yaml").read_bytes(), path.read_bytes()
+    result = _gate(h)
+    assert result.returncode == 2, result.stdout + result.stderr
+    assert "gate.schema.json at gate.regression.confirmed_finding_without_test" in result.stderr
+    assert "0 was expected" in result.stderr
+    assert (h / "current-task.yaml").read_bytes() == before_task
+    assert path.read_bytes() == before_config
+
+
+@pytest.mark.parametrize("value", [1, 10])
+def test_missing_regression_blocker_never_uses_legacy_allowance(value):
+    from harness.quality_gate import _defect_finding_blockers
+
+    # Defensive helper subsets, NOT a full-Gate bypass reproduction: schema/proofs
+    # reject these incomplete records before this helper in real Gate evaluation.
+    findings = [
+        {"id": f"FND-{n:03d}", "severity": "minor", "status": "CONFIRMED", "category": "adversarial"}
+        for n in (1, 2)
+    ]
+    blockers = _defect_finding_blockers(findings, {"regression": {"confirmed_finding_without_test": value}})
+    assert [(b.code, b.finding_id) for b in blockers] == [
+        ("IMPLEMENTATION_INCOMPLETE", "FND-001"),
+        ("IMPLEMENTATION_INCOMPLETE", "FND-002"),
+    ]
+
+
+@pytest.mark.parametrize("profile", ["full", "fast"])
+@pytest.mark.parametrize("mode", ["absent", "empty", "zero", "numeric_zero"])
+def test_zero_or_omitted_regression_policy_keeps_gate_behavior(tmp_path, profile, mode):
+    h = _regression_policy_fixture(tmp_path, profile)
+    baseline = _gate(h)
+    assert baseline.returncode in (0, 1)
+    path = h / "gate.yaml"
+    policy = yaml.safe_load(path.read_text())
+    if mode == "absent":
+        policy["gate"].pop("regression")
+    elif mode == "empty":
+        policy["gate"]["regression"] = {}
+    else:
+        policy["gate"]["regression"]["confirmed_finding_without_test"] = 0.0 if mode == "numeric_zero" else 0
+    path.write_text(yaml.safe_dump(policy))
+    current = _gate(h)
+    assert (current.returncode, current.stdout, current.stderr) == (
+        baseline.returncode, baseline.stdout, baseline.stderr
+    )
+
+
+@pytest.mark.parametrize("profile", ["full", "fast"])
+@pytest.mark.parametrize("value", [-1, "0", False, None])
+def test_invalid_regression_policy_types_stay_rejected(tmp_path, profile, value):
+    h = _regression_policy_fixture(tmp_path, profile)
+    path = h / "gate.yaml"
+    policy = yaml.safe_load(path.read_text())
+    policy["gate"]["regression"]["confirmed_finding_without_test"] = value
+    path.write_text(yaml.safe_dump(policy))
+    result = _gate(h)
+    assert result.returncode == 2
+    assert "gate.schema.json at gate.regression.confirmed_finding_without_test" in result.stderr
+
+
+@pytest.mark.parametrize("profile", ["full", "fast"])
+def test_native_gate_nonzero_policy_preserves_task_and_config(tmp_path, monkeypatch, capsys, profile):
+    from harness import controlplane
+
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "--allow-empty", "-qm", "base"], check=True)
+    h = _regression_policy_fixture(tmp_path, profile)
+    path = h / "gate.yaml"
+    policy = yaml.safe_load(path.read_text())
+    policy["gate"]["regression"]["confirmed_finding_without_test"] = 3
+    path.write_text(yaml.safe_dump(policy))
+    before_task, before_config = (h / "current-task.yaml").read_bytes(), path.read_bytes()
+    monkeypatch.chdir(tmp_path)
+    assert controlplane.cmd_gate() == 2
+    output = capsys.readouterr()
+    assert "INVALID_HARNESS_STATE" in output.err
+    assert "gate.schema.json at gate.regression.confirmed_finding_without_test" in output.err
+    assert (h / "current-task.yaml").read_bytes() == before_task
+    assert path.read_bytes() == before_config
+
+
 def test_confirmed_finding_without_regression_test_blocked(tmp_path):
     h = make_harness(tmp_path)
     finding = finding_doc("FND-0004", "minor", "CONFIRMED")
