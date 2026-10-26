@@ -393,10 +393,13 @@ def test_supported_shell_profiles_bind_same_selectors_and_cwd(tmp_path, shell, f
 
     (tmp_path / 'backend/tests').mkdir(parents=True)
     (tmp_path / 'backend/tests/test_x.py').write_text('def test_ok():\n    assert True\n')
+    (tmp_path / 'backend/tests/test_other.py').write_text('def test_other():\n    assert True\n')
     payload = 'cd backend && python -m pytest tests/test_x.py'
     command = f'{shell} {flag} {shlex.quote(payload)}'
     assert supported_command(command)
     assert test_selectors(command) == ('tests/test_x.py',)
     assert bind_covered_tests(('backend/tests/test_x.py',), command, tmp_path) == ('backend/tests/test_x.py',)
+    assert bind_covered_tests(('tests/test_x.py',), command, tmp_path) == ('backend/tests/test_x.py',)
+    assert bind_covered_tests(('backend/tests/test_other.py',), command, tmp_path) == 'COVERED_TEST_NOT_EXECUTED'
     remote = execution_environment(f'kubectl exec deploy/app -- {command}')
     assert remote['cwd'] == 'backend'
