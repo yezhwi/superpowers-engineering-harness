@@ -8,7 +8,7 @@ Engineering Harness 是 [Superpowers](https://github.com/obra/superpowers) 开�
 
 ## v0.3.2 兼容性与测量状态
 
-`v0.3.2 development candidate`：版本元数据已准备，不代表发布或正式 Gate 验收。单独授权发布前，下方固定版本安装示例继续使用 v0.3.1 current release；不能假定 v0.3.2 tag 已存在。
+`v0.3.2 development candidate`：已批准功能及后续限定修复已实现，不代表发布或当前 HEAD 的版本级 Gate 验收。[交付状态及发布验收建议](docs/superpowers/reports/v032-context-efficiency.md#v032-delivery-status)区分历史任务验收和版本发布就绪。单独授权发布前，下方固定版本安装示例继续使用 v0.3.1 current release；不能假定 v0.3.2 tag 已存在。
 
 Context 自动扩展采用批处理：候选资格消失时提交合法 prefix 后停止；真正的发布前错误不写新事件。`harness evidence plan --json`、`harness impact reconcile --file proposal.yaml --dry-run` 是只读诊断，不授予执行权限。共享资源测试保持串行；沿用精确 `--reuse-if-valid`，不跨 HEAD 继承证据，也不跳过 RED/finding 执行。
 
@@ -16,7 +16,7 @@ Profiling 默认关闭，通过 `harness context --compact --profile-json /tmp/c
 
 旧任务缺可信范围来源时以 `TEST_SCOPE_AUDIT_INVALID` 阻断。可信 origin、事务化 add 与 Gate replay 联动保护 required tests；apply 还需精确选定的 RETIRE/REBIND 用户授权。MIGRATE 仅重建来源。不得自动重建范围、freeze/resume、降风险或标记 verified/COMPLETE。激活后的元数据要求 v0.3.2 reader，旧 reader 拒绝 minimum-reader 标记。见[显式范围迁移](docs/test-scope-migration.md)及[已批准效率规范](docs/2026-10-14-context-evidence-collection-efficiency-spec.md)。
 
-[Context 实测报告](docs/superpowers/reports/v032-context-efficiency.md)：按用户新指示仅使用 N=0/1/10/50 共80个样本，剩余 N=100 取消。大量扩展的 cold 场景改善；N=0 与 steady 中位数变慢。不宣称普遍提速或完整矩阵验收。尚无 evidence 专属缓存收益证据，缓存延期；独立审查、agent 行为验证及正式 Gate 验收仍待完成。
+[Context 实测报告](docs/superpowers/reports/v032-context-efficiency.md)：按用户新指示仅使用 N=0/1/10/50 共80个样本，剩余 N=100 取消。大量扩展的 cold 场景改善；N=0 与 steady 中位数变慢。不宣称普遍提速或完整矩阵验收。尚无 evidence 专属缓存收益证据，持久化 evidence 缓存继续延期。后续任务级独立复审和原生 Gate 不追溯验收这批基准，也不证明 Agent 遵从、完整矩阵性能或版本发布就绪。另一次固定源码的原任务回放中，单次调用内复用 Decision 解析／schema 准备后，中位耗时由 21.0835 降至 20.1166 秒，约降低 4.6%；实际读取与校验次数不变，不外推为普遍提速。
 
 ## 平台与可恢复发布（macOS-only）
 

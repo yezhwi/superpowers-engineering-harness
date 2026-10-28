@@ -8,7 +8,7 @@ Engineering Harness is a deterministic control plane around [Superpowers](https:
 
 ## v0.3.2 compatibility and measurement status
 
-`v0.3.2 development candidate`: version metadata is prepared, not a published release or formal Gate acceptance. Pinned installer examples below remain on v0.3.1 current release until separate release authorization; do not assume a v0.3.2 tag exists.
+`v0.3.2 development candidate`: approved feature work and subsequent bounded repairs are implemented, not a published release or current-HEAD version-level Gate acceptance. [Delivery status and release-verification proposal](docs/superpowers/reports/v032-context-efficiency.md#v032-delivery-status) distinguish historical task acceptance from release readiness. Pinned installer examples below remain on v0.3.1 current release until separate release authorization; do not assume a v0.3.2 tag exists.
 
 Context now batches automatic expansion; eligibility loss commits its legal prefix and stops, while genuine prepublication errors write no new events. `harness evidence plan --json` and `harness impact reconcile --file proposal.yaml --dry-run` are read-only diagnostics, not execution authority. Keep shared-resource tests serial; use existing exact `--reuse-if-valid` without cross-HEAD inheritance or skipping RED/finding execution.
 
@@ -16,7 +16,7 @@ Profiling is opt-in via `harness context --compact --profile-json /tmp/context-p
 
 Missing legacy scope origin fails closed with `TEST_SCOPE_AUDIT_INVALID`. Trusted origin plus transactional additions and Gate replay protect required tests; apply additionally requires exact selected RETIRE/REBIND authority. MIGRATE reconstructs provenance only. No automatic scope reconstruction, freeze/resume, risk downgrade or verified/COMPLETE status. Activated metadata requires a v0.3.2 reader; old readers reject the minimum-reader marker. See [explicit scope migration](docs/test-scope-migration.md) and [approved efficiency specification](docs/2026-10-14-context-evidence-collection-efficiency-spec.md).
 
-[Actual Context measurements](docs/superpowers/reports/v032-context-efficiency.md): user-reduced80-sample dataset for N=0/1/10/50; remaining N=100 cancelled. Batch-heavy cold cases improve; N=0 and steady medians regress. No universal speedup or full-matrix acceptance. Evidence-specific cache payoff unproven; cache deferred. Independent review/agent behavior validation and formal Gate acceptance remain pending.
+[Actual Context measurements](docs/superpowers/reports/v032-context-efficiency.md): user-reduced80-sample dataset for N=0/1/10/50; remaining N=100 cancelled. Batch-heavy cold cases improve; N=0 and steady medians regress. No universal speedup or full-matrix acceptance. Evidence-specific cache payoff remains unproven; persistent evidence caching stays deferred. Later task-specific independent reviews and native Gates do not retroactively accept this benchmark or establish Agent obedience, full-matrix performance or version-level release readiness. A separate source-pinned original-task replay measured a median 21.0835 → 20.1166 seconds (about 4.6% lower) after single-call Decision parsing/schema-preparation reuse; actual reads and validations remained unchanged. This is not a universal speedup claim.
 
 ## Platform and recoverable publication (macOS-only)
 
