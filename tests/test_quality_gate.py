@@ -1631,3 +1631,65 @@ def test_shared_finding_checks_preserve_closed_alignment_audit(
     except KeyError:
         pytest.fail("alignment audit incorrectly requires defect regression proof")
     assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize("green_nodes,accepted", [
+    (["tests/fixture.py::test_fixture"], True),
+    (["tests/fixture.py::test_unrelated"], False),
+    (["tests/fixture.py::test_fixture[other]"], False),
+])
+def test_fast_gate_requires_green_for_actual_red_failures(tmp_path, green_nodes, accepted):
+    h = _fast_finding_harness(tmp_path)
+    path = h / "evidence/fast-green-unit-test.json"
+    record = json.loads(path.read_text())
+    record["test_execution"] = synthetic_execution(green_nodes)
+    path.write_text(json.dumps(record))
+
+    result = _gate(h)
+
+    assert (result.returncode == 0) is accepted, result.stdout + result.stderr
+    if not accepted:
+        assert "FAST" in result.stdout and "regression" in result.stdout
+
+
+@pytest.mark.parametrize("red_nodes,green_nodes,accepted", [
+    (["tests/fixture.py::test_fixture[a]"], ["tests/fixture.py::test_fixture[a]"], True),
+    (["tests/fixture.py::test_fixture[a]"], ["tests/fixture.py::test_fixture[b]"], False),
+    (["tests/fixture.py::test_fixture", "tests/fixture.py::test_second"],
+     ["tests/fixture.py::test_fixture"], False),
+])
+def test_fast_gate_pairs_each_red_parameter_and_failure(tmp_path, red_nodes, green_nodes, accepted):
+    h = _fast_finding_harness(tmp_path)
+    for phase, nodes, exit_code in [("red", red_nodes, 1), ("green", green_nodes, 0)]:
+        path = h / f"evidence/fast-{phase}-unit-test.json"
+        record = json.loads(path.read_text())
+        record["test_execution"] = synthetic_execution(nodes, exit_code)
+        path.write_text(json.dumps(record))
+    assert (_gate(h).returncode == 0) is accepted
+
+
+@pytest.mark.parametrize("retry", ["success", "failed", "stale", "malformed", "wrong_type", "unrelated_name"])
+def test_fast_gate_consumes_canonical_latest_build_receipt(tmp_path, retry):
+    h = _fast_finding_harness(tmp_path)
+    first = h / "evidence/build.json"
+    record = json.loads(first.read_text())
+    first.write_text(json.dumps({**record, "exit_code": 1}))
+    if retry == "failed":
+        record["exit_code"] = 1
+    elif retry == "stale":
+        record["workspace_fingerprint"] = "sha256:" + "0" * 64
+    elif retry == "wrong_type":
+        record["type"] = "custom"
+    name = "build-other.json" if retry == "unrelated_name" else "build-2.json"
+    (h / "evidence" / name).write_text("{" if retry == "malformed" else json.dumps(record))
+
+    result = _gate(h)
+
+    assert (result.returncode == 0) is (retry == "success"), result.stdout + result.stderr
+
+
+def test_fast_gate_does_not_ignore_a_later_failed_build(tmp_path):
+    h = _fast_finding_harness(tmp_path)
+    record = json.loads((h / "evidence/build.json").read_text())
+    (h / "evidence/build-2.json").write_text(json.dumps({**record, "exit_code": 1}))
+    assert _gate(h).returncode == 1

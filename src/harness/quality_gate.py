@@ -13,6 +13,7 @@ Exit codes:
 
 import argparse
 import json
+import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -23,7 +24,7 @@ from jsonschema import ValidationError, validate
 from .blockers import RECOVERY_POLICY, GateBlocker, blocker_document
 from .context.telemetry import instrument
 from .evidence_validator import EvidenceValidationError, validate_evidence
-from .execution_proof import TEST_TYPES
+from .execution_proof import TEST_TYPES, runs
 from .existing_verification import (
     green_unit_test_evidence,
     has_existing_verification,
@@ -565,15 +566,27 @@ def run_fast_gate(
     for evidence_type, policy in fast_verification_policy(harness_dir).items():
         if policy != "required":
             continue
-        path = harness_dir / "evidence" / f"{evidence_type.replace('_', '-')}.json"
+        stem = evidence_type.replace('_', '-')
+        candidates = [
+            path for path in source_access.members(harness_dir / "evidence", f"{stem}*.json")
+            if re.fullmatch(rf"{re.escape(stem)}(?:-[0-9]+)?\.json", path.name)
+        ]
+        path = min(
+            candidates,
+            key=lambda candidate: (-evidence_receipt_order(candidate), candidate.name),
+            default=harness_dir / "evidence" / f"{stem}.json",
+        )
         try:
+            record = json.loads(source_access.read_text(path))
             validate_evidence(
-                json.loads(source_access.read_text(path)),
+                record,
                 current_head=head,
                 current_workspace=current_workspace,
                 expected_success=True,
                 require_test_execution=evidence_type in TEST_TYPES,
             )
+            if record.get("type") != evidence_type:
+                raise EvidenceValidationError("EVIDENCE_TYPE_MISMATCH")
         except (OSError, json.JSONDecodeError, EvidenceValidationError) as exc:
             block(
                 "FAST_REPOSITORY_VERIFICATION_MISSING",
@@ -584,6 +597,7 @@ def run_fast_gate(
     phases = [("green", True, True)]
     if not existing:
         phases = [("red", False, False), *phases]
+    red_failures: set[str] = set()
     for phase, expected_success, require_current in phases:
         if phase == "green" and existing:
             if (
@@ -614,6 +628,14 @@ def run_fast_gate(
                 require_current_workspace=require_current,
                 require_test_execution=True,
             )
+            if phase == "red":
+                red_failures = {
+                    node for run in runs(record) for node in run["assertion_failures"]
+                }
+            else:
+                green_passed = {node for run in runs(record) for node in run["passed"]}
+                if not red_failures <= green_passed:
+                    raise EvidenceValidationError("REGRESSION_TEST_MISMATCH")
         except (OSError, json.JSONDecodeError, EvidenceValidationError) as exc:
             block(
                 "FAST_REGRESSION_EVIDENCE_MISSING",

@@ -106,9 +106,9 @@ _PRODUCT_EXCLUDE = (":(exclude).harness", ":(exclude).harness/**")
 def _untracked_paths(repo_root: Path) -> set[str]:
     paths = set()
     for name in (
-        _run(repo_root, "ls-files", "--others", "--exclude-standard")
+        _run(repo_root, "ls-files", "--others", "--exclude-standard", "-z")
         .decode()
-        .splitlines()
+        .split("\0")
     ):
         candidate = Path(name)
         # Git owns discovery. Avoid a pre-scope Path.is_file metadata probe;
@@ -126,11 +126,11 @@ def _untracked_paths(repo_root: Path) -> set[str]:
 def _working_paths(repo_root: Path) -> set[str]:
     paths = set()
     for args in (
-        ("diff", "--name-only", "HEAD", "--", ".", *_PRODUCT_EXCLUDE),
-        ("diff", "--cached", "--name-only", "HEAD", "--", ".", *_PRODUCT_EXCLUDE),
+        ("diff", "--name-only", "-z", "HEAD", "--", ".", *_PRODUCT_EXCLUDE),
+        ("diff", "--cached", "--name-only", "-z", "HEAD", "--", ".", *_PRODUCT_EXCLUDE),
     ):
         paths.update(
-            name for name in _run(repo_root, *args).decode().splitlines() if name
+            name for name in _run(repo_root, *args).decode().split("\0") if name
         )
     return paths | _untracked_paths(repo_root)
 
@@ -207,9 +207,9 @@ def name_only_diff(
         raise WorkspaceError("EXISTING_VERIFICATION_PATH_INVALID")
     verify_git_ref(reference, repo_root)
     names = (
-        _run(_root(repo_root), "diff", "--name-only", reference, "--", *paths)
+        _run(_root(repo_root), "diff", "--name-only", "-z", reference, "--", *paths)
         .decode()
-        .splitlines()
+        .split("\0")
     )
     return tuple(sorted(name for name in names if name))
 
@@ -253,12 +253,13 @@ def changed_paths_since(
         root,
         "diff",
         "--name-only",
+        "-z",
         f"{base_commit}..HEAD",
         "--",
         ".",
         *_PRODUCT_EXCLUDE,
     )
-    paths = set(name for name in committed.decode().splitlines() if name)
+    paths = {name for name in committed.decode().split("\0") if name}
     paths.update(snapshot(root).changed_paths if working_paths is None else working_paths)
     return tuple(sorted(paths))
 
@@ -605,13 +606,14 @@ def review_scope(base_ref: str, repo_root: Path | None = None) -> ReviewScope:
             root,
             "diff",
             "--name-only",
+            "-z",
             f"{base_commit}..{current.head}",
             "--",
             ".",
             *_PRODUCT_EXCLUDE,
         )
         .decode()
-        .splitlines()
+        .split("\0")
     )
     files = tuple(
         sorted(set(name for name in committed if name) | set(current.changed_paths))

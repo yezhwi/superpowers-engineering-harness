@@ -410,3 +410,63 @@ def test_freshness_paths_are_distinct_from_fast_risk_paths(tmp_path, name, risk_
     assert before != after.fingerprint
     assert name in after.changed_paths
     assert (name in business_paths(after.changed_paths)) is risk_path
+
+
+@pytest.mark.parametrize("name", ["客户.py", 'quote"name.py', "tab\tname.py", "line\nname.py"])
+@pytest.mark.parametrize("state", ["untracked", "modified", "staged"])
+def test_snapshot_preserves_git_quoted_path_identity(tmp_path, name, state):
+    from harness.workspace import name_only_diff, review_scope, snapshot
+
+    repo = committed_repo(tmp_path)
+    git(repo, "config", "core.quotepath", "true")
+    path = repo / name
+    path.write_text("before\n")
+    if state == "modified":
+        git(repo, "add", "--", name)
+        git(repo, "commit", "-qm", "track unusual filename")
+        path.write_text("after\n")
+    elif state == "staged":
+        git(repo, "add", "--", name)
+
+    current = snapshot(repo)
+    assert current.changed_paths == (name,)
+    assert review_scope("HEAD", repo).files == (name,)
+    if state != "untracked":
+        assert name_only_diff("HEAD", (name,), repo) == (name,)
+    path.write_text("changed again\n")
+    assert snapshot(repo).fingerprint != current.fingerprint
+
+
+@pytest.mark.parametrize("name", ["客户.py", 'quote"name.py', "line\nname.py"])
+def test_committed_change_consumers_preserve_git_path_identity(tmp_path, name):
+    from harness.workspace import changed_paths_since, review_scope
+
+    repo = committed_repo(tmp_path)
+    git(repo, "config", "core.quotepath", "true")
+    base = git(repo, "rev-parse", "HEAD")
+    (repo / name).write_text("new\n")
+    git(repo, "add", "--", name)
+    git(repo, "commit", "-qm", "commit unusual filename")
+    assert changed_paths_since(base, repo) == (name,)
+    assert review_scope(base, repo).files == (name,)
+
+
+def test_ascii_workspace_fingerprint_stays_compatible_with_existing_material(tmp_path):
+    import hashlib
+
+    from harness.workspace import snapshot
+
+    repo = committed_repo(tmp_path)
+    (repo / "tracked.py").write_text("changed\n")
+    (repo / "added.py").write_text("new\n")
+    head = git(repo, "rev-parse", "HEAD")
+    exclude = ["--", ".", ":(exclude).harness", ":(exclude).harness/**"]
+    parts = [(head + "\n").encode()]
+    for prefix in ([], ["--cached"]):
+        parts.append(subprocess.run(
+            ["git", "diff", *prefix, "--binary", head, *exclude],
+            cwd=repo, capture_output=True, check=True,
+        ).stdout)
+    parts.extend([b"added.py", hashlib.sha256(b"new\n").digest()])
+    expected = "sha256:" + hashlib.sha256(b"\0".join(parts)).hexdigest()
+    assert snapshot(repo).fingerprint == expected

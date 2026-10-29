@@ -380,3 +380,41 @@ def test_task_classify_persists_fast_profile_and_enters_classified(tmp_path):
         "path_fingerprints": {},
         "fingerprint": task["risk"]["user_changes"]["fingerprint"],
     }
+
+
+@pytest.mark.parametrize("scenario", ["unpaired", "build_retry"])
+def test_native_fast_gate_review_regressions(tmp_path, scenario):
+    covered = "tests/test_case.py::test_required"
+    commands = _phase_commands(tmp_path, covered)
+    if scenario == "unpaired":
+        target = tmp_path / "tests/test_case.py"
+        target.write_text(target.read_text() + "\ndef test_unrelated():\n    assert True\n")
+        commands["green"] = f"{sys.executable} -B -m pytest -q -p no:cacheprovider tests/test_case.py::test_unrelated"
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    assert run_cli(tmp_path, "init").returncode == 0
+    assert run_cli(tmp_path, "task", "migrate-id", "TASK-004").returncode == 0
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-qm", "base"], cwd=tmp_path, check=True)
+    flags = [item for pair in SAFE.items() for item in (f"--{pair[0]}", pair[1])]
+    assert run_cli(tmp_path, "task", "classify", "--level", "Q1", *flags).returncode == 0
+    assert run_cli(tmp_path, "transition", "IMPLEMENTING").returncode == 0
+    if scenario == "build_retry":
+        assert run_cli(tmp_path, "evidence", "run", "--type", "build", "--command", "false").returncode == 0
+    override = ["--budget-override-reason", "retry failed build", "--budget-override-evidence", "build.json",
+                "--budget-override-hypothesis", "corrected command succeeds"] if scenario == "build_retry" else []
+    assert run_cli(tmp_path, "evidence", "run", "--type", "build", "--command", "true", *override).returncode == 0
+    for phase, command in commands.items():
+        selector = "tests/test_case.py::test_unrelated" if scenario == "unpaired" and phase == "green" else covered
+        result = run_cli(tmp_path, "evidence", "run", "--type", "unit_test", "--phase", phase,
+                         "--covered-test", selector, "--command", command)
+        assert result.returncode == 0, result.stdout + result.stderr
+    assert run_cli(tmp_path, "transition", "VERIFYING").returncode == 0
+    result = run_cli(tmp_path, "transition", "GATING")
+    if scenario == "unpaired":
+        assert result.returncode == 1
+        assert "REGRESSION_TEST_MISMATCH" in result.stderr
+        assert yaml.safe_load((tmp_path / ".harness/current-task.yaml").read_text())["state"] == "VERIFYING"
+    else:
+        assert (tmp_path / ".harness/evidence/build-2.json").is_file()
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert "DECISION: CONVERGED" in run_cli(tmp_path, "gate").stdout

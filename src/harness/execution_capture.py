@@ -3,15 +3,60 @@ import json
 import os
 import re
 import shlex
+import signal
 import stat
 import subprocess
 import tempfile
 import uuid
+from contextlib import suppress
 from pathlib import Path
 
 from .execution_proof import FIELDS, runs
 
 LIMIT = 16 * 1024 * 1024
+_CLEANUP_SECONDS = 1.0
+
+
+def _stop_command(process):
+    """Bounded cleanup of our own group, not a sandbox for escaped descendants."""
+    def send(sig):
+        with suppress(ProcessLookupError):
+            if os.name == "posix":
+                os.killpg(process.pid, sig)
+            else:
+                process.terminate()
+
+    try:
+        send(signal.SIGTERM)
+        with suppress(subprocess.TimeoutExpired):
+            process.wait(timeout=_CLEANUP_SECONDS)
+    finally:
+        # Shell exit does not imply its descendants exited or honored TERM.
+        if os.name == "posix":
+            send(signal.SIGKILL)
+        else:
+            process.kill()
+        process.wait(timeout=_CLEANUP_SECONDS)
+
+
+def run_command(command, *, timeout, env=None):
+    """Run trusted shell text; preserve primary failure after bounded cleanup."""
+    process = subprocess.Popen(
+        command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        text=True, env=env, start_new_session=os.name == "posix",
+    )
+    try:
+        try:
+            stdout, stderr = process.communicate(timeout=timeout)
+        except BaseException:
+            with suppress(OSError, subprocess.TimeoutExpired):
+                _stop_command(process)
+            raise
+        return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
+    finally:
+        for stream in (process.stdout, process.stderr):
+            with suppress(OSError):
+                stream.close()
 
 
 def _node(node, root, repository):
@@ -84,8 +129,7 @@ def run(command, timeout, repository):
         # Add only a private, uniquely named reporter, never the Harness source
         # tree: installed-package tests must still import their actual subject.
         environment["PYTHONPATH"] = os.pathsep.join([str(loader), environment.get("PYTHONPATH", "")])
-        result = subprocess.run(command, shell=True, capture_output=True, text=True,
-                                timeout=timeout, env=environment, check=False)
+        result = run_command(command, timeout=timeout, env=environment)
         if not supported_command(command):
             return result, None
         observations = []

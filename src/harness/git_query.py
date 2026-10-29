@@ -25,6 +25,7 @@ def _validate(args: tuple[str, ...]) -> None:
         ("rev-parse", "HEAD"),
         ("rev-parse", "--abbrev-ref", "HEAD"),
         ("ls-files", "--others", "--exclude-standard"),
+        ("ls-files", "--others", "--exclude-standard", "-z"),
         ("ls-files", "-z", *architecture_pathspec),
         ("ls-files", "--deleted", "-z", *architecture_pathspec),
         (
@@ -78,6 +79,13 @@ def _validate(args: tuple[str, ...]) -> None:
             and rest[0] in {"--binary", "--name-only"}
             and not rest[1].startswith("-")
             and rest[2] == "--"
+        ):
+            return
+        if (
+            len(rest) >= 5
+            and rest[:2] == ("--name-only", "-z")
+            and not rest[2].startswith("-")
+            and rest[3] == "--"
         ):
             return
         if (

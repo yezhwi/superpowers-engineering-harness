@@ -78,7 +78,7 @@ def test_main_records_kubectl_provenance_without_changing_result(tmp_path, monke
         "harness.collect_evidence.snapshot", lambda: SimpleNamespace(head="a" * 40, fingerprint="workspace")
     )
     monkeypatch.setattr(
-        "harness.collect_evidence.subprocess.run",
+        "harness.execution_capture.run_command",
         lambda *args, **kwargs: type(
             "R", (), {"returncode": 0, "stdout": "", "stderr": ""}
         )(),
@@ -125,7 +125,7 @@ def test_npm_run_build_is_not_test_runner_unresolved(tmp_path, monkeypatch):
         "harness.collect_evidence.snapshot", lambda: SimpleNamespace(head="a" * 40, fingerprint="workspace")
     )
     monkeypatch.setattr(
-        "harness.collect_evidence.subprocess.run",
+        "harness.execution_capture.run_command",
         lambda *args, **kwargs: type(
             "R", (), {"returncode": 0, "stdout": "", "stderr": ""}
         )(),
@@ -367,7 +367,6 @@ root=Path('.harness')
 def test_collector_measured_failure_and_native_rollback(tmp_path, monkeypatch, capsys, failure):
     import json
     import shlex
-    import subprocess
     import sys
     from types import SimpleNamespace
 
@@ -391,13 +390,9 @@ def test_collector_measured_failure_and_native_rollback(tmp_path, monkeypatch, c
         monkeypatch.setattr(evidence_module, '_collect', short_timeout)
         command = shlex.join([sys.executable, '-u', '-c', "import time; print('partial'); time.sleep(2)"])
     if failure.startswith('cancel'):
-        original_run = subprocess.run
-
         def cancelled(*args, **kwargs):
-            if kwargs.get('shell'):
-                raise KeyboardInterrupt()
-            return original_run(*args, **kwargs)
-        monkeypatch.setattr(subprocess, 'run', cancelled)
+            raise KeyboardInterrupt()
+        monkeypatch.setattr(evidence_module.execution_capture, 'run_command', cancelled)
     observed = []
     if failure in {'publish', 'cancel-publish'}:
         original_exchange = publication_fs.exchange
@@ -446,6 +441,7 @@ def test_collector_owner_segments_and_unlocked_child(tmp_path, monkeypatch, caps
     if reuse:
         assert cli('evidence', 'run', '--type', 'build', '--command', 'printf measured').returncode == 0
     original_run, original_task = subprocess.run, evidence_module._current_task
+    original_command = evidence_module.execution_capture.run_command
     original_publish, original_print = transaction.publish, builtins.print
     observed = []
 
@@ -455,15 +451,14 @@ def test_collector_owner_segments_and_unlocked_child(tmp_path, monkeypatch, caps
         return original_task(*args)
 
     def run(*args, **kwargs):
-        if kwargs.get('shell'):
-            program = ('from pathlib import Path; from harness.telemetry_lock import telemetry_lock; '
-                       f'\nwith telemetry_lock(Path({str(root)!r})): pass')
-            probe = original_run([sys.executable, '-c', program],
-                                 env={**__import__('os').environ, 'PYTHONPATH': str(Path(evidence_module.__file__).resolve().parents[1])},
-                                 capture_output=True, text=True, timeout=5, check=False)
-            assert probe.returncode == 0, probe.stdout + probe.stderr
-            observed.append('child-unlocked')
-        return original_run(*args, **kwargs)
+        program = ('from pathlib import Path; from harness.telemetry_lock import telemetry_lock; '
+                   f'\nwith telemetry_lock(Path({str(root)!r})): pass')
+        probe = original_run([sys.executable, '-c', program],
+                             env={**__import__('os').environ, 'PYTHONPATH': str(Path(evidence_module.__file__).resolve().parents[1])},
+                             capture_output=True, text=True, timeout=5, check=False)
+        assert probe.returncode == 0, probe.stdout + probe.stderr
+        observed.append('child-unlocked')
+        return original_command(*args, **kwargs)
 
     def publish(*args, **kwargs):
         assert_review_owner(root)
@@ -480,7 +475,7 @@ def test_collector_owner_segments_and_unlocked_child(tmp_path, monkeypatch, caps
         return original_print(*args, **kwargs)
 
     monkeypatch.setattr(evidence_module, '_current_task', task)
-    monkeypatch.setattr(subprocess, 'run', run)
+    monkeypatch.setattr(evidence_module.execution_capture, 'run_command', run)
     monkeypatch.setattr(transaction, 'publish', publish)
     monkeypatch.setattr(builtins, 'print', render)
     assert evidence_module.main(['--type', 'build', '--command', 'printf measured', *(['--reuse-if-valid'] if reuse else [])]) == 0
@@ -553,16 +548,15 @@ def test_collector_owner_teardown_reports_real_commit_state(tmp_path, monkeypatc
 ])
 def test_collector_retention_warning_errors_preserve_refusal_or_cancel(tmp_path, monkeypatch, capsys, cancel, broken_warning, broken_retention):
     import builtins
-    import subprocess
 
     from test_test_scope import tree_bytes
 
     root, _, _ = collector_fixture(tmp_path, monkeypatch)
     before = tree_bytes(root)
-    original_run, original_print = subprocess.run, builtins.print
+    original_run, original_print = evidence_module.execution_capture.run_command, builtins.print
 
     def run(*args, **kwargs):
-        if cancel and kwargs.get('shell'):
+        if cancel:
             raise KeyboardInterrupt()
         return original_run(*args, **kwargs)
 
@@ -579,7 +573,7 @@ def test_collector_retention_warning_errors_preserve_refusal_or_cancel(tmp_path,
             raise OSError('TEST_RETENTION_FAILURE')
         monkeypatch.setattr(evidence_module, '_retain_result', retain)
     monkeypatch.setattr(evidence_module, '_persist', refused)
-    monkeypatch.setattr(subprocess, 'run', run)
+    monkeypatch.setattr(evidence_module.execution_capture, 'run_command', run)
     monkeypatch.setattr(builtins, 'print', warning)
     assert evidence_module.main(['--type', 'build', '--command', 'printf measured']) == (130 if cancel else 2)
     assert tree_bytes(root) == before
@@ -594,14 +588,13 @@ def test_collector_retention_warning_errors_preserve_refusal_or_cancel(tmp_path,
 @pytest.mark.parametrize('cancel', [False, True])
 def test_collector_closed_warning_stream_keeps_primary_result(tmp_path, monkeypatch, cancel):
     import io
-    import subprocess
     import sys
 
     collector_fixture(tmp_path, monkeypatch)
-    original = subprocess.run
+    original = evidence_module.execution_capture.run_command
 
     def run(*args, **kwargs):
-        if cancel and kwargs.get('shell'):
+        if cancel:
             raise KeyboardInterrupt()
         return original(*args, **kwargs)
 
@@ -610,7 +603,7 @@ def test_collector_closed_warning_stream_keeps_primary_result(tmp_path, monkeypa
 
     closed = io.StringIO()
     closed.close()
-    monkeypatch.setattr(subprocess, 'run', run)
+    monkeypatch.setattr(evidence_module.execution_capture, 'run_command', run)
     monkeypatch.setattr(evidence_module, '_persist', refused)
     with monkeypatch.context() as stream:
         stream.setattr(sys, 'stderr', closed)
@@ -674,7 +667,6 @@ def test_collector_postcommit_failure_preserves_measured_status_and_budget(
     import errno
     import json
     import os
-    import subprocess
 
     import yaml
 
@@ -697,15 +689,15 @@ def test_collector_postcommit_failure_preserves_measured_status_and_budget(
 
         monkeypatch.setattr(builtins, "print", print_without_warning)
     if cancel:
-        original_run = subprocess.run
+        original_run = evidence_module.execution_capture.run_command
 
         def cancel_after_child(*args, **kwargs):
             result = original_run(*args, **kwargs)
-            if args and args[0] == command and kwargs.get("shell"):
+            if args and args[0] == command:
                 raise KeyboardInterrupt()
             return result
 
-        monkeypatch.setattr(subprocess, "run", cancel_after_child)
+        monkeypatch.setattr(evidence_module.execution_capture, "run_command", cancel_after_child)
 
     def observe_committed():
         record = json.loads((root / "evidence/build.json").read_text())

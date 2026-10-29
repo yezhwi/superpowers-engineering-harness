@@ -746,13 +746,7 @@ def _collect(
             run, execution = execution_capture.run(command_text, timeout_seconds, _repo_root(None))
             exit_code, stdout, stderr = run.returncode, run.stdout, run.stderr
         else:
-            run = subprocess.run(
-                command_text,
-                shell=True,
-                capture_output=True,
-                text=True,
-                timeout=timeout_seconds,
-            )
+            run = execution_capture.run_command(command_text, timeout=timeout_seconds)
             exit_code, stdout, stderr = run.returncode, run.stdout, run.stderr
     except subprocess.TimeoutExpired as exc:
         exit_code = 124

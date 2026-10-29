@@ -350,10 +350,15 @@ def test_read_sessions_in_crossing_threads_keep_private_lifetimes(decision_read_
 
 @pytest.mark.parametrize("failure", [ValueError, KeyboardInterrupt])
 def test_generate_failure_does_not_leave_decision_reuse_active(decision_read_case, monkeypatch, failure):
+    import subprocess
+
     from harness import decision
     from harness.context import store
 
     root, record = decision_read_case
+    for args in (["init", "-q"], ["add", "."],
+                 ["-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "baseline"]):
+        subprocess.run(["git", *args], cwd=root.parent, check=True, capture_output=True)
     body = (root / f"decisions/{record['id']}.yaml").read_text()
     parses = []
     original = yaml.safe_load
@@ -363,7 +368,10 @@ def test_generate_failure_does_not_leave_decision_reuse_active(decision_read_cas
             parses.append(True)
         return original(text, *args, **kwargs)
 
+    injected = []
+
     def fail(*args, **kwargs):
+        injected.append(True)
         decision.load_decision(root, record["id"])
         raise failure()
 
@@ -371,6 +379,7 @@ def test_generate_failure_does_not_leave_decision_reuse_active(decision_read_cas
     monkeypatch.setattr(store, "build_context", fail)
     with pytest.raises(failure):
         store.generate_context(root)
+    assert injected == [True]
     decision.load_decision(root, record["id"])
     decision.load_decision(root, record["id"])
     assert len(parses) == 3
