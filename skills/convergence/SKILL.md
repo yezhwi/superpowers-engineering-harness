@@ -98,7 +98,7 @@ For the others YOU must declare them explicitly to the user with evidence — ne
 3. When `DECISION: CONTINUE` and `DIRECTIVE: RESUME_TYPED_RECOVERY` both appear on a successful Gate call, resume and rerun `harness gate` autonomously. Otherwise stop and inspect persisted task; never infer permission from `DECISION:` alone.
 4. Autonomous operations must NEVER execute:
    - git commit, git tag, or git push
-   - package publishing or release deployment
+   - PyPI or npm publication (`npm publish`, `twine upload`, `uv publish`, registry release). The user publishes those registries manually. Local `python -m build` and `npm pack --dry-run` are packaging checks. Control-plane publication stays.
    - granting Harness authorizations (`harness auth grant ...`)
    - accepting Decision records on behalf of user
 5. Never reset `iteration` to dodge `max_iterations`.

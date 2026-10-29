@@ -149,7 +149,7 @@ class FileContextSource:
             )
 
     @instrument('source_load', 'source_loads')
-    def load(self) -> AuthoritativeContext:
+    def load(self, product=None) -> AuthoritativeContext:
         try:
             root = find_git_root(Path.cwd())
         except RepositoryNotFoundError as exc:
@@ -348,6 +348,7 @@ class FileContextSource:
                 raise ContextBuildError(
                     "CONTEXT_SCHEMA_INVALID",
                     "alignment sealed mismatch: CONTRACT_CHANGED",
+                    drift_codes=("CONTRACT_CHANGED",),
                 )
             impact_body = value if isinstance(value, dict) else {}
             boundary_refs = {
@@ -397,6 +398,7 @@ class FileContextSource:
                 raise ContextBuildError(
                     "CONTEXT_SCHEMA_INVALID",
                     f"alignment sealed mismatch: {drift[0].code}",
+                    drift_codes=tuple(item.code for item in drift),
                 )
         observability = self._document("observability.yaml", optional=True)
         if observability is not None:
@@ -407,7 +409,7 @@ class FileContextSource:
             except ValueError as exc:
                 raise ContextBuildError("CONTEXT_SCHEMA_INVALID", str(exc)) from exc
         try:
-            current = workspace.snapshot(self.repo_root)
+            current = product if product is not None else workspace.snapshot(self.repo_root)
             evidence = []
             for path in self._artifact_paths("evidence", ARTIFACT_PATTERNS["evidence"]):
                 reference = self._reference(f"evidence/{path.name}")
@@ -449,9 +451,9 @@ class FileContextSource:
                     ) from exc
             gate = quality_gate.assess_gate(
                 self.harness_dir,
-                head=current.head,
                 allow_preflight=True,
                 architecture_assessment=architecture_assessment,
+                workspace=current,
             )
             architecture_assessment = gate.architecture_assessment
         except (

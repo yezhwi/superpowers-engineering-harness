@@ -129,46 +129,52 @@ def environment_report(source) -> dict:
 def plan_evidence(harness_dir: Path) -> dict:
     root = harness_dir.absolute()
     with diagnostic_sources(root) as (source, before, versions):
-        diagnostics = []
-        references = test_references(source)
-        executable = set()
-        for test, refs in sorted(references.items()):
-            problem = inspect_declared_test(root.parent, test, versions)
-            if problem:
-                diagnostics.append({'code': 'MISSING_DECLARED_TEST' if problem != 'SELECTOR_UNVERIFIED' else problem,
-                                    'test': test, 'reason': problem, 'references': refs})
-            else:
-                executable.add(test)
-        for _kind, owner, case in case_records(source):
-            if case['strategy'] != 'manual' and not case.get('tests'):
-                diagnostics.append({'code': 'UNBOUND_TEST_CASE', 'owner': owner['id'], 'case': case['id']})
-        fresh = []
-        for evidence in source.evidence:
-            path = contained_path(root.parent, evidence['ref'])
-            projection = project_evidence(path, source.workspace.head, source.workspace.fingerprint, expected_success=None)
-            if projection.status is not EvidenceStatus.FRESH:
-                diagnostics.append({'code': projection.code, 'evidence': evidence['ref']})
-            record = projection.record
-            if (projection.status is EvidenceStatus.FRESH and record['exit_code'] == 0 and record['type'] in TEST_EVIDENCE_TYPES
-                    and record.get('scope') in {None, 'related'} and record.get('phase') != 'red'):
-                fresh.append(record)
-        uncovered = []
-        for test in sorted(executable):
-            if not any(record_covers_test(record, test, root.parent) and command_covers_test(record.get('command', ''), test, root.parent) for record in fresh):
-                uncovered.append(test)
-                diagnostics.append({'code': 'NO_FRESH_COVERAGE', 'test': test, 'references': references[test]})
-        if source.plan_assessment is not None:
-            for blocker in source.plan_assessment.final_blockers:
-                if blocker.code.startswith('PLAN_'):
-                    diagnostics.append({'code': blocker.code, 'plan_item': blocker.source})
-        # Whole-file targets already subsume their explicitly declared selectors.
-        minimal = [test for test in uncovered if '::' not in test or test.split('::', 1)[0] not in uncovered]
-        report = {
-            'version': 1, 'task_id': source.task['task']['id'], 'advisory': True,
-            'execution_authority': False, 'source_versions': before,
-            'diagnostics': diagnostics,
-            'execution_counts': {'tests': 0, 'business': 0, 'environment': 0},
-            'execution_plan': {'scope': 'related', 'tests': minimal},
-            'environment': environment_report(source),
-        }
+        report = _plan_from_sources(root, source, before, versions)
     return report
+
+
+def _plan_from_sources(harness_dir: Path, source, before: dict, versions: dict) -> dict:
+    """Same v1 projection; caller owns admission and the mutable versions map."""
+    root = harness_dir.absolute()
+    diagnostics = []
+    references = test_references(source)
+    executable = set()
+    for test, refs in sorted(references.items()):
+        problem = inspect_declared_test(root.parent, test, versions)
+        if problem:
+            diagnostics.append({'code': 'MISSING_DECLARED_TEST' if problem != 'SELECTOR_UNVERIFIED' else problem,
+                                'test': test, 'reason': problem, 'references': refs})
+        else:
+            executable.add(test)
+    for _kind, owner, case in case_records(source):
+        if case['strategy'] != 'manual' and not case.get('tests'):
+            diagnostics.append({'code': 'UNBOUND_TEST_CASE', 'owner': owner['id'], 'case': case['id']})
+    fresh = []
+    for evidence in source.evidence:
+        path = contained_path(root.parent, evidence['ref'])
+        projection = project_evidence(path, source.workspace.head, source.workspace.fingerprint, expected_success=None)
+        if projection.status is not EvidenceStatus.FRESH:
+            diagnostics.append({'code': projection.code, 'evidence': evidence['ref']})
+        record = projection.record
+        if (projection.status is EvidenceStatus.FRESH and record['exit_code'] == 0 and record['type'] in TEST_EVIDENCE_TYPES
+                and record.get('scope') in {None, 'related'} and record.get('phase') != 'red'):
+            fresh.append(record)
+    uncovered = []
+    for test in sorted(executable):
+        if not any(record_covers_test(record, test, root.parent) and command_covers_test(record.get('command', ''), test, root.parent) for record in fresh):
+            uncovered.append(test)
+            diagnostics.append({'code': 'NO_FRESH_COVERAGE', 'test': test, 'references': references[test]})
+    if source.plan_assessment is not None:
+        for blocker in source.plan_assessment.final_blockers:
+            if blocker.code.startswith('PLAN_'):
+                diagnostics.append({'code': blocker.code, 'plan_item': blocker.source})
+    # Whole-file targets already subsume their explicitly declared selectors.
+    minimal = [test for test in uncovered if '::' not in test or test.split('::', 1)[0] not in uncovered]
+    return {
+        'version': 1, 'task_id': source.task['task']['id'], 'advisory': True,
+        'execution_authority': False, 'source_versions': before,
+        'diagnostics': diagnostics,
+        'execution_counts': {'tests': 0, 'business': 0, 'environment': 0},
+        'execution_plan': {'scope': 'related', 'tests': minimal},
+        'environment': environment_report(source),
+    }

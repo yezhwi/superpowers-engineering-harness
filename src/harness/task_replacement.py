@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import stat
 import sys
 import tempfile
 from contextlib import suppress
@@ -58,27 +59,91 @@ def restore_architecture_mode(
     )
 
 
+# Names replacement still archives, resets, or must carry forward.
+# Anything else, including probe trees, stays in the retained old root.
+_ALLOWED_FILES = frozenset({
+    "current-task.yaml",
+    "requirements.yaml",
+    "invariants.yaml",
+    "impact.yaml",
+    "observability.yaml",
+    "gate.yaml",
+    "config.yaml",
+    "risk-boundaries.yaml",
+    "plan.yaml",
+    "plan-execution.yaml",
+    "alignment.yaml",
+    "alignment-freeze.yaml",
+    "architecture.yaml",
+    "telemetry.json",
+    "test-scope-baseline.yaml",
+    "test-scope-audit.yaml",
+    "test-scope-seal.yaml",
+})
+_ALLOWED_DIRECTORIES = frozenset({
+    "findings",
+    "evidence",
+    "decisions",
+    "history",
+    "interface-contracts",
+    "context",
+    "behavior-fixtures",
+})
+
+
+class TaskReplacementError(OSError):
+    """Replacement could not stage a complete tree."""
+
+
+def _selected_members(harness_dir: Path, *, new_task: bool) -> tuple[str, ...]:
+    directories = set(_ALLOWED_DIRECTORIES)
+    if new_task:
+        directories.discard("behavior-fixtures")
+    allowed = directories | _ALLOWED_FILES
+    return tuple(sorted(name for name in os.listdir(harness_dir) if name in allowed))
+
+
+def _reject_unsupported(path: Path, root: Path) -> None:
+    """Fail closed on special nodes without reading or following them."""
+    info = path.lstat()
+    if stat.S_ISLNK(info.st_mode):
+        return
+    if (
+        stat.S_ISFIFO(info.st_mode)
+        or stat.S_ISSOCK(info.st_mode)
+        or stat.S_ISCHR(info.st_mode)
+        or stat.S_ISBLK(info.st_mode)
+    ):
+        raise TaskReplacementError(
+            f"TASK_REPLACEMENT_UNSUPPORTED_NODE: {path.relative_to(root).as_posix()}"
+        )
+    if not stat.S_ISDIR(info.st_mode):
+        return
+    for child in os.scandir(path):
+        _reject_unsupported(Path(child.path), root)
+
+
 def replacement_workspace(harness_dir: Path, *, new_task: bool = False) -> Path:
-    """Stage facts; task new leaves root behavior fixtures in the old tree."""
-    ignore_storage = shutil.ignore_patterns(".staging", ".publication-retained")
+    """Stage the allowlisted tree. Task new leaves behavior fixtures behind.
 
-    def ignore(directory, names):
-        ignored = ignore_storage(directory, names)
-        if Path(directory) == harness_dir:
-            # Never traverse opaque FIFO/symlink fixtures. Publication retains
-            # their original inodes with the whole old Harness root.
-            ignored.update({"acceptance-probes", "acceptance-artifacts"})
-            if new_task:
-                ignored.add("behavior-fixtures")
-        return ignored
-
+    Fifo, socket, and device nodes inside the allowlist fail before publication.
+    Excluded probe directories are not opened.
+    """
     parent = harness_dir.parent
     staged = Path(
         tempfile.mkdtemp(prefix=f".{harness_dir.name}.replacement-", dir=parent)
     )
     try:
         shutil.rmtree(staged)
-        shutil.copytree(harness_dir, staged, ignore=ignore)
+        staged.mkdir()
+        for name in _selected_members(harness_dir, new_task=new_task):
+            source = harness_dir / name
+            _reject_unsupported(source, harness_dir)
+            destination = staged / name
+            if stat.S_ISDIR(source.lstat().st_mode):
+                shutil.copytree(source, destination)
+            else:
+                shutil.copy2(source, destination)
     except Exception:
         shutil.rmtree(staged, ignore_errors=True)
         raise

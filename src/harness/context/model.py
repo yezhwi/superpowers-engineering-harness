@@ -15,8 +15,9 @@ if TYPE_CHECKING:
 class ContextBuildError(ValueError):
     """Stable error category plus source detail; never a fallback Context."""
 
-    def __init__(self, code: str, detail: str):
+    def __init__(self, code: str, detail: str, *, drift_codes: tuple[str, ...] | None = None):
         self.code = code
+        self.drift_codes = drift_codes
         super().__init__(f"{code}: {detail}")
 
 

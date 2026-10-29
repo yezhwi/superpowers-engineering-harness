@@ -1233,3 +1233,130 @@ def test_generate_reuses_decision_parsing_and_schema_preparation(harness, monkey
     second = generate_context(harness)
     assert counts == {"parses": 2, "schema_preparations": 2}
     assert first == second
+
+
+def _count_product_snapshots(monkeypatch):
+    from harness import quality_gate
+    from harness.context import freshness, store
+
+    calls = {"n": 0}
+    real = workspace.snapshot
+
+    def count(*args, **kwargs):
+        calls["n"] += 1
+        return real(*args, **kwargs)
+
+    for target, name in (
+        (workspace, "snapshot"),
+        (freshness, "snapshot"),
+        (store, "product_snapshot"),
+        (quality_gate, "snapshot"),
+    ):
+        monkeypatch.setattr(target, name, count)
+    return calls
+
+
+def test_generate_context_fingerprints_the_product_tree_twice(harness, monkeypatch):
+    """Break caught: one generation walks the product tree between build and publish."""
+    from harness.context.store import generate_context
+
+    generate_context(harness)
+    calls = _count_product_snapshots(monkeypatch)
+    generate_context(harness)
+    assert calls["n"] == 2
+
+
+def test_expansion_publish_reuses_the_open_product_snapshot(harness, monkeypatch):
+    """Break caught: publishing expansion events walks the product tree again."""
+    from test_context_automatic import outside_finding
+
+    from harness.context.store import generate_context
+
+    outside_finding(harness)
+    calls = _count_product_snapshots(monkeypatch)
+    document = generate_context(harness)
+    assert document["expansions"]
+    assert calls["n"] == 2
+
+
+def test_standalone_expansion_publish_still_walks_the_product_tree(harness, monkeypatch):
+    """A publish outside generate_context has no open snapshot to reuse."""
+    from test_context_automatic import outside_finding
+
+    from harness.context import escalation
+    from harness.context.integrity import build_context
+
+    outside_finding(harness)
+    context = build_context(harness, mode="compact")
+    candidate = escalation.automatic_candidates(context)[0]
+    task = yaml.safe_load((harness / "current-task.yaml").read_text())
+    event = escalation._make_expansion_event(
+        task, context, candidate["trigger"], candidate["reason"], candidate,
+    )
+    calls = _count_product_snapshots(monkeypatch)
+    escalation._publish_expansion_events(harness, context["generated_from"], [event])
+    assert calls["n"] == 4
+
+
+def test_product_drift_before_publish_keeps_the_previous_context(harness, monkeypatch):
+    """Break caught: a product edit during generation is published against the old fingerprint."""
+    from harness.context.model import ContextBuildError
+    from harness.context.store import generate_context
+    from harness.workspace import WorkspaceSnapshot
+
+    generate_context(harness)
+    saved = (harness / "context" / "current.yaml").read_bytes()
+    from harness.context import store
+
+    calls = {"n": 0}
+    real = workspace.snapshot
+
+    def drift(*args, **kwargs):
+        calls["n"] += 1
+        current = real(*args, **kwargs)
+        if calls["n"] >= 2:
+            return WorkspaceSnapshot(
+                current.head, current.fingerprint + "drift", current.changed_paths
+            )
+        return current
+
+    monkeypatch.setattr(workspace, "snapshot", drift)
+    monkeypatch.setattr(store, "product_snapshot", drift)
+    monkeypatch.setattr("harness.context.freshness.snapshot", drift)
+    with pytest.raises(ContextBuildError, match="CONTEXT_STALE"):
+        generate_context(harness)
+    assert (harness / "context" / "current.yaml").read_bytes() == saved
+
+
+def test_product_drift_after_expansion_keeps_the_previous_context(harness, monkeypatch):
+    """Closing fingerprint still rejects publication after expansion events reuse the open snapshot."""
+    from test_context_automatic import outside_finding
+
+    from harness.context.model import ContextBuildError
+    from harness.context.store import generate_context
+    from harness.workspace import WorkspaceSnapshot
+
+    generate_context(harness)
+    saved = (harness / "context" / "current.yaml").read_bytes()
+    outside_finding(harness)
+    from harness.context import store
+
+    calls = {"n": 0}
+    real = workspace.snapshot
+
+    def drift(*args, **kwargs):
+        calls["n"] += 1
+        current = real(*args, **kwargs)
+        if calls["n"] >= 2:
+            return WorkspaceSnapshot(
+                current.head, current.fingerprint + "drift", current.changed_paths
+            )
+        return current
+
+    monkeypatch.setattr(workspace, "snapshot", drift)
+    monkeypatch.setattr(store, "product_snapshot", drift)
+    monkeypatch.setattr("harness.context.freshness.snapshot", drift)
+    with pytest.raises(ContextBuildError, match="CONTEXT_STALE"):
+        generate_context(harness)
+    assert (harness / "context" / "current.yaml").read_bytes() == saved
+    assert calls["n"] == 2

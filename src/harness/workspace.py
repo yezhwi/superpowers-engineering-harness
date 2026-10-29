@@ -238,9 +238,16 @@ def introducing_commit(
 
 
 def changed_paths_since(
-    base_commit: str, repo_root: Path | None = None
+    base_commit: str,
+    repo_root: Path | None = None,
+    *,
+    working_paths: tuple[str, ...] | None = None,
 ) -> tuple[str, ...]:
-    """Changed business paths from immutable baseline through current workspace."""
+    """Changed business paths from immutable baseline through current workspace.
+
+    ``working_paths`` is the unstaged set from a snapshot the caller already
+    took. Omitting it walks the product tree again.
+    """
     root = _root(repo_root)
     committed = _run(
         root,
@@ -252,7 +259,7 @@ def changed_paths_since(
         *_PRODUCT_EXCLUDE,
     )
     paths = set(name for name in committed.decode().splitlines() if name)
-    paths.update(snapshot(root).changed_paths)
+    paths.update(snapshot(root).changed_paths if working_paths is None else working_paths)
     return tuple(sorted(paths))
 
 

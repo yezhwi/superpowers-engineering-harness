@@ -453,6 +453,45 @@ def test_standard_entry_rejects_persisted_proposed_decision_not_listed_in_alignm
     assert "BLOCKER:" not in result.stderr
 
 
+def test_specifying_and_planned_report_the_same_proposed_decision(tmp_path):
+    """Break caught: one entry sees a PROPOSED Decision the other entry ignores."""
+    repo = standard_repo_in_state(tmp_path)
+    write_documents(repo, valid=True)
+    write_alignment(repo, frozen=True)
+    assert cli(
+        repo, "decision", "propose", "--topic", "scope", "--question", "choose",
+        "--context", "x", "--option", "a=A", "--recommend", "a", "--reason", "x",
+    ).returncode == 0
+    from harness import alignment
+    from harness.controlplane import _alignment_completeness_issues
+
+    harness = repo / ".harness"
+    task = yaml.safe_load((harness / "current-task.yaml").read_text())
+    requirements = yaml.safe_load((harness / "requirements.yaml").read_text())
+    issues = _alignment_completeness_issues(
+        harness, task, alignment.load_alignment(harness), requirements
+    )
+    lines = [f"{issue.subject_id or 'ALIGNMENT'}: {issue.code}" for issue in issues]
+    assert any(line.endswith(": OPEN_DECISION") for line in lines)
+
+    task["state"] = "SPECIFYING"
+    (harness / "current-task.yaml").write_text(yaml.safe_dump(task, sort_keys=False))
+    specifying = cli(repo, "transition", "PLANNED")
+    assert specifying.returncode == 1
+    for line in lines:
+        assert line in specifying.stderr
+    assert yaml.safe_load((harness / "current-task.yaml").read_text())["state"] == "SPECIFYING"
+
+    task["state"] = "PLANNED"
+    (harness / "current-task.yaml").write_text(yaml.safe_dump(task, sort_keys=False))
+    write_minimal_decision(repo)
+    planned = cli(repo, "transition", "IMPLEMENTING")
+    assert planned.returncode == 1
+    for line in lines:
+        assert line in planned.stderr
+    assert yaml.safe_load((harness / "current-task.yaml").read_text())["state"] == "PLANNED"
+
+
 def test_standard_planned_to_implementing_rejects_open_alignment_decision(tmp_path):
     repo = standard_repo_in_state(tmp_path)
     write_minimal_decision(repo)

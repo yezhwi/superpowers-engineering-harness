@@ -498,6 +498,23 @@ def test_status_projects_stale_evidence_without_mutating_task(tmp_path: Path):
     assert task_path.read_bytes() == before
 
 
+def test_status_reuses_one_workspace_for_gate(harness, monkeypatch, capsys):
+    from harness import harness_status, quality_gate
+
+    walks = 0
+    real = quality_gate.snapshot
+
+    def counting(*args, **kwargs):
+        nonlocal walks
+        walks += 1
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(quality_gate, "snapshot", counting)
+    assert harness_status.main(["--harness-dir", str(harness)]) == 0
+    assert walks == 0
+    assert capsys.readouterr().out
+
+
 def test_status_rejects_done_with_cached_pass_and_open_canonical_finding(tmp_path):
     repo = make_repo(tmp_path)
     subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo, check=True)

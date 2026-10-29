@@ -67,7 +67,11 @@ curl -fsSL https://raw.githubusercontent.com/yezhwi/superpowers-engineering-harn
 curl -fsSL https://raw.githubusercontent.com/yezhwi/superpowers-engineering-harness/main/scripts/install-pi.sh | bash -s -- v0.3.1
 ```
 
-安装器检查是否已配置 Superpowers，仅在缺失时安装；同时协调固定版本的 Harness Pi skills，把匹配 Python CLI 安装到隔离用户环境，并暴露 `~/.local/bin/harness`。如果 `~/.local/bin` 不在 `PATH`，安装器会给出提示。重复安装相同版本保持幂等。若本地安全策略要求，请先审查下载脚本再执行。
+安装器检查是否已配置 Superpowers，仅在缺失时安装；同时协调固定版本的 Harness Pi skills，把匹配 Python CLI 安装到隔离用户环境，并暴露 `~/.local/bin/harness`。如果 `~/.local/bin` 不在 `PATH`，安装器会给出提示。重复安装相同版本会复用健康 CLI，并修复失效入口。若本地安全策略要求，请先审查下载脚本再执行。
+
+候选 venv 固定保留在 `~/.local/share/superpowers-engineering-harness/versions/` 下，安装后不搬迁。安装器核对目标 CLI 包版本，并实际执行候选和最终入口的 `--help` 后才报告成功；通过原子替换公共入口符号链接激活新版本。旧环境（包括旧版 `venv/`）保留，不自动清理。激活失败时，仅在仍持有入口所有权时恢复旧链接；回滚失败会报告保留的恢复链接。Pi skills 更新与 CLI 激活不是同一事务：部分更新会非零退出并提示 CLI/skills 可能不一致，可重新运行协调。
+
+使用同一安装根目录的协作安装器通过 `.install.lock` 串行运行。已处理的中断会释放锁；进程被强制终止后可能留下锁和候选环境。不自动抢占旧锁或执行崩溃恢复：先确认旧安装器及其子进程全部停止，检查报告的入口、环境与恢复路径，再仅删除已确认失效且为空的锁目录后重试。不同安装根目录及任意外部文件系统写入不受该锁协调。
 
 源码开发时，另行使用 `python -m pip install -e /path/to/superpowers-engineering-harness` 安装可编辑环境。
 
@@ -87,6 +91,10 @@ Use Engineering Harness to fix this bug: cancelling an order twice issues two re
 ```
 
 工作中断后，新开一个会话，让 Agent 继续当前任务。Pi 安装 Skills 后需新开会话。Skills 在会话启动时加载。
+
+可选兼容预检：`harness evidence plan --preflight --json --command "python -m pytest tests/example.py"`。命令字符串仅分类、不执行；`NATIVE_PROFILE_SUPPORTED` 不等于实际测试证明。可用 `--skills-package /absolute/path/to/package.json` 对照显式指定的 skills manifest 与已验证 CLI 身份。来源缺失或漂移会阻断产品建议，不自动迁移；非 Git 目录仍退出 1、仅 stderr。v2 的 0/1/2 表示诊断清楚/阻断/错误，不是 Gate PASS。原 `harness evidence plan --json` 保持 v1。
+
+显式 `--probe-launcher /absolute/path/to/harness` 会执行一次**无沙箱本地 `--help` 进程**，继承环境与原始 cwd，可能写文件或访问网络；成功也不证明其版本。每个输出流最多保留 64KiB，主期限 10 秒，进程组清理有界。启动时只消费现有 admission 输出，不自动运行探测、第二次预检或额外 Context 构建。
 
 ### Antigravity CLI（agy）
 

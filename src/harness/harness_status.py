@@ -57,7 +57,7 @@ def _load(harness_dir: Path):
     return data
 
 
-def _validate(data, harness_dir: Path) -> bool:
+def _validate(data, harness_dir: Path, view=None) -> bool:
     state = data.get("state")
     if state not in STATES:
         print(f"INVALID_HARNESS_STATE: unknown state {state!r}", file=sys.stderr)
@@ -74,12 +74,9 @@ def _validate(data, harness_dir: Path) -> bool:
             return False
         if not (harness_dir / "gate.yaml").is_file():
             return True
-        try:
-            from .quality_gate import assess_gate
-
-            assessment = assess_gate(harness_dir, allow_preflight=True)
-        except Exception as exc:
-            print(f"INVALID_HARNESS_STATE: DONE gate invalid: {exc}", file=sys.stderr)
+        _workspace, assessment, error = view
+        if error is not None or assessment is None:
+            print(f"INVALID_HARNESS_STATE: DONE gate invalid: {error}", file=sys.stderr)
             return False
         if assessment.status != "PASS":
             print(
@@ -103,14 +100,30 @@ def _validate(data, harness_dir: Path) -> bool:
     return True
 
 
-def _evidence_rows(harness_dir: Path):
-    """Read-only current Evidence projection; never write task or gate state."""
-    evidence_dir = harness_dir / "evidence"
-    if not evidence_dir.is_dir():
-        return []
+def _current_view(harness_dir: Path):
+    """One workspace walk and one Gate admission for this status render."""
+    from .quality_gate import assess_gate
+
+    workspace = None
     try:
         workspace = snapshot()
     except WorkspaceError:
+        workspace = None
+    try:
+        assessment = assess_gate(
+            harness_dir,
+            allow_preflight=True,
+            workspace=workspace,
+        )
+    except Exception as exc:
+        return workspace, None, exc
+    return workspace, assessment, None
+
+
+def _evidence_rows(harness_dir: Path, workspace):
+    """Read-only current Evidence projection; never write task or gate state."""
+    evidence_dir = harness_dir / "evidence"
+    if not evidence_dir.is_dir() or workspace is None:
         return []
     rows = []
     for path in sorted(evidence_dir.glob("*.json")):
@@ -184,26 +197,24 @@ def _live_findings(data, harness_dir: Path) -> dict:
         return data["findings"]
 
 
-def _live_gate(data, harness_dir: Path) -> dict:
-    try:
-        from .blockers import blocker_document
-        from .quality_gate import assess_gate
+def _live_gate(data, view) -> dict:
+    from .blockers import blocker_document
 
-        assessment = assess_gate(harness_dir, allow_preflight=True)
-        return {
-            "status": assessment.status,
-            "blocked_by": [
-                blocker_document(blocker) for blocker in assessment.blockers
-            ],
-        }
-    except Exception:
+    _workspace, assessment, error = view
+    if error is not None or assessment is None:
         return data["gate"]
+    return {
+        "status": assessment.status,
+        "blocked_by": [
+            blocker_document(blocker) for blocker in assessment.blockers
+        ],
+    }
 
 
-def _render(data, harness_dir: Path) -> str:
+def _render(data, harness_dir: Path, view) -> str:
     find = _live_findings(data, harness_dir)
-    gate = _live_gate(data, harness_dir)
-    rows = _evidence_rows(harness_dir)
+    gate = _live_gate(data, view)
+    rows = _evidence_rows(harness_dir, view[0])
     summary = _verification_summary(rows, harness_dir)
     lines = [
         f"{data['task']['id']}  {data['task'].get('title', '')}",
@@ -304,8 +315,9 @@ def main(argv=None):
     try:
         with publication_admission(root):
             data = _load(root)
-            if data is not None and _validate(data, root):
-                report = _render(data, root)
+            view = _current_view(root) if data is not None else None
+            if data is not None and _validate(data, root, view):
+                report = _render(data, root, view)
             completed = True
     except PublicationAdmissionError as exc:
         print(str(exc), file=sys.stderr)

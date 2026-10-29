@@ -24,7 +24,9 @@ matching type, that is a spec problem — surface it, do not silently skip.
 
 ## Plan and Reuse Before Execution
 
-Run `harness evidence plan --json` before scheduling proof. It inspects declared targets, case/Plan links, and evidence gaps without running tests or collecting pytest. It is advice, not execution authority or a valid Context. Missing selectors or binding conflicts need explicit repair; never guess repository-wide coverage or widen to a full suite.
+Consume existing startup admission and blockers without automatically issuing a second preflight or rebuilding Context. When separate planning is needed before scheduling proof, use `harness evidence plan --json` for the unchanged v1 view, or explicitly request `harness evidence plan --preflight --json --command "python -m pytest tests/example.py"` for v2 capability/identity/integrity diagnosis. These command strings are classified without running tests or collecting pytest; NATIVE_PROFILE_SUPPORTED does not prove actual test_execution, and no diagnostic grants execution authority or Gate PASS. Missing selectors or binding conflicts need explicit repair; never guess repository-wide coverage or widen to a full suite.
+
+An explicitly requested `--probe-launcher /absolute/path/to/harness` with `--preflight --json` is different: one unsandboxed local `--help` execution, inheriting environment/cwd, potentially writing files or using network. It is not a read-only/safe sandbox, does not attest the CLI version, and must not run implicitly at startup. Its 10-second deadline and 64KiB-per-stream capture have bounded cleanup; environment execution count records attempted spawns, including failures.
 
 For eligible generic GREEN proof, use the shipped reuse flag rather than a new skip predicate:
 

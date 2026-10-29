@@ -104,12 +104,39 @@ def _main(argv=None) -> int:
     if argv[:2] == ["evidence", "plan"]:
         diagnostic = _HarnessArgumentParser(prog="harness evidence plan")
         diagnostic.add_argument("--json", dest="json_output", action="store_true")
+        diagnostic.add_argument("--preflight", action="store_true", help="explicit v2 JSON diagnosis, not execution authority")
+        diagnostic.add_argument("--command", action="append", default=[], help="literal proposed command; never executed")
+        diagnostic.add_argument("--skills-package", action="append", default=[], type=Path, help="explicit absolute skills package.json")
+        diagnostic.add_argument("--probe-launcher", action="append", default=[], type=Path,
+                                help="UNSAFE: one unsandboxed local --help execution with inherited environment/cwd")
         options = diagnostic.parse_args(argv[2:])
+        new_inputs = options.command or options.skills_package or options.probe_launcher
+        if new_inputs and not options.preflight:
+            diagnostic.error("new preflight inputs require --preflight --json")
+        if options.preflight and not options.json_output:
+            diagnostic.error("--preflight requires --json")
+        for values in (options.skills_package, options.probe_launcher):
+            if len(values) > 1:
+                diagnostic.error("skills-package and probe-launcher may each appear only once")
+            if any(not path.is_absolute() or '\x00' in str(path) for path in values):
+                diagnostic.error("preflight tool paths must be absolute and contain no NUL")
+        if any(not command.strip() for command in options.command):
+            diagnostic.error("preflight commands must not be empty")
+        original_cwd = Path.cwd()
         try:
-            os.chdir(find_git_root(Path.cwd()))
+            os.chdir(find_git_root(original_cwd))
         except RepositoryNotFoundError as exc:
             print(f"ERROR: {exc}", file=sys.stderr)
             return 1
+        if options.preflight:
+            from .preflight import PreflightRequest
+
+            request = PreflightRequest(
+                probe_cwd=original_cwd, commands=tuple(options.command),
+                skills_package=options.skills_package[0] if options.skills_package else None,
+                probe_launcher=options.probe_launcher[0] if options.probe_launcher else None,
+            )
+            return controlplane.cmd_evidence_plan(True, preflight_request=request)
         return controlplane.cmd_evidence_plan(options.json_output)
     legacy_evidence = bool(
         argv
@@ -264,6 +291,10 @@ def _main(argv=None) -> int:
     p_outcome.add_argument("outcome", choices=["PASS", "VERIFICATION_GAP", "DEFECT"])
     p_outcome.add_argument("--reason-code", required=True)
     p_outcome.add_argument("--finding", action="append", default=[])
+    p_session = review_sub.add_parser("session", help="meter one review session and refuse an unearned PASS")
+    p_session.add_argument("--file", required=True, dest="source_file")
+    p_batches = review_sub.add_parser("batches", help="select failed and affected verification batches")
+    p_batches.add_argument("--file", required=True, dest="source_file")
     p_ev = sub.add_parser("evidence", help="run/attach HEAD-bound evidence, or inspect with evidence plan --json")
     p_ev.add_argument("--type", required=True, choices=sorted(VALID_TYPES))
     p_ev.add_argument("--scope", default="related")
@@ -279,6 +310,8 @@ def _main(argv=None) -> int:
     p_ev.add_argument("--budget-override-reason")
     p_ev.add_argument("--budget-override-evidence")
     p_ev.add_argument("--budget-override-hypothesis")
+    p_ev.add_argument("--container-map", action="append", default=[],
+                      help="container directory=repo directory; required for container pytest proof")
     p_imp = sub.add_parser("impact")
     ims = p_imp.add_subparsers(dest="impact_action")
     ims.add_parser("show")
@@ -319,9 +352,6 @@ def _main(argv=None) -> int:
         "--compatibility", choices=["compatible", "breaking"], required=True
     )
     iinterface.add_argument("--contract-id")
-    p_mr = sub.add_parser("mr")
-    mr_sub = p_mr.add_subparsers(dest="mr_command")
-    mr_sub.add_parser("describe")
     p_auth = sub.add_parser("authorize")
     p_auth.add_argument(
         "action",
@@ -598,6 +628,10 @@ def _main(argv=None) -> int:
         return controlplane.cmd_review_outcome(
             args.outcome, args.reason_code, args.finding
         )
+    if args.subcommand == "review" and args.review_command == "session":
+        return _review_session(Path(args.source_file))
+    if args.subcommand == "review" and args.review_command == "batches":
+        return _review_batches(Path(args.source_file))
     if args.subcommand == "evidence":
         if args.scope == "full_suite":
             print("FULL_SUITE_FORBIDDEN", file=sys.stderr)
@@ -627,6 +661,7 @@ def _main(argv=None) -> int:
             args.budget_override_reason,
             args.budget_override_evidence,
             args.budget_override_hypothesis,
+            args.container_map,
         )
     if args.subcommand == "impact":
         if args.impact_action is None:
@@ -638,8 +673,6 @@ def _main(argv=None) -> int:
             getattr(args, "reason", None),
             args,
         )
-    if args.subcommand == "mr" and args.mr_command == "describe":
-        return controlplane.cmd_mr_describe()
     if args.subcommand == "authorize":
         granted = not args.action.startswith("revoke-")
         return controlplane.cmd_authorize(
@@ -761,6 +794,47 @@ def _main(argv=None) -> int:
 
     parser.print_usage(sys.stderr)
     return 2
+
+
+def _review_session(path: Path) -> int:
+    from harness.review_session import ReviewSessionError, conclude_document
+
+    try:
+        document = json.loads(path.read_text())
+        result = conclude_document(document)
+    except (OSError, json.JSONDecodeError, ReviewSessionError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    print(json.dumps(result, sort_keys=True))
+    return 1 if document.get("verdict") == "PASS" and not result["accepted_pass"] else 0
+
+
+def _review_batches(path: Path) -> int:
+    from harness.verification_batch import Batch, BatchPlanError, plan_batches, progress, rerun
+
+    try:
+        document = json.loads(path.read_text())
+        batches = tuple(
+            Batch(item["id"], item["selector"], item["report"], tuple(item["tests"]),
+                  frozenset(item.get("resources", ())))
+            for item in document["batches"]
+        )
+        planned = plan_batches(batches, historical_obligations=tuple(document.get("historical_obligations", ())))
+        selected = rerun(
+            planned, failed=tuple(document.get("failed", ())), changed=tuple(document.get("changed", ())),
+            owners=document.get("owners", {}), receipts=document.get("receipts", {}),
+        )
+        body = {
+            "required_tests": list(planned.required_tests),
+            "serial_groups": [list(group) for group in planned.serial_groups],
+            "rerun": list(selected),
+            **progress(planned, passed_batches=tuple(document.get("passed", ()))),
+        }
+    except (OSError, json.JSONDecodeError, KeyError, TypeError, BatchPlanError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    print(json.dumps(body, sort_keys=True))
+    return 0
 
 
 def main(argv=None) -> int:

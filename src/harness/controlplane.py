@@ -9,6 +9,10 @@ import os
 from contextlib import suppress
 from dataclasses import replace
 from functools import partial, wraps
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .preflight import PreflightRequest
 
 from harness import (
     alignment,
@@ -506,10 +510,18 @@ def cmd_architecture(args) -> int:
 
 
 def _alignment_completeness_issues(
-    harness_dir: Path, task: dict, document: dict
+    harness_dir: Path, task: dict, document: dict, requirements: dict | None = None,
 ) -> list[alignment.AlignmentIssue]:
-    """Return closure diagnostics from canonical task, requirement, and Decision facts."""
-    requirements = yaml.safe_load(source_access.read_text(harness_dir / "requirements.yaml"))
+    """Return closure diagnostics from canonical task, requirement, and Decision facts.
+
+    ``requirements`` is the document this admission already schema-checked.
+    Omitting it reads ``requirements.yaml`` once.
+    """
+    if requirements is None:
+        requirements = yaml.safe_load(
+            source_access.read_text(harness_dir / "requirements.yaml")
+        )
+    records = requirements.get("requirements", []) if isinstance(requirements, dict) else []
     decisions = decision.load_decisions(harness_dir)
     proposed = {
         record["id"]
@@ -518,11 +530,9 @@ def _alignment_completeness_issues(
     }
     return alignment.check_completeness(
         document,
-        requirement_ids={record["id"] for record in requirements["requirements"]},
+        requirement_ids={record["id"] for record in records},
         critical_requirement_ids={
-            record["id"]
-            for record in requirements["requirements"]
-            if record["priority"] == "must"
+            record["id"] for record in records if record.get("priority") == "must"
         },
         proposed_decision_ids=proposed,
     )
@@ -1195,7 +1205,7 @@ def _specifying_contract_admission(harness_dir: Path, task: dict) -> list[str]:
     quality_gate.validate_schema(requirements, "requirement.schema.json", requirements_path)
     quality_gate.validate_schema(invariants, "invariant.schema.json", invariants_path)
     document = alignment.load_alignment(harness_dir)
-    issues = _alignment_completeness_issues(harness_dir, task, document)
+    issues = _alignment_completeness_issues(harness_dir, task, document, requirements)
     diagnostics = [f"{issue.subject_id or 'ALIGNMENT'}: {issue.code}" for issue in issues]
     for records, key in ((requirements["requirements"], "test_plan"), (invariants["invariants"], "test_plan")):
         for record in records:
@@ -1471,25 +1481,8 @@ def cmd_transition(target: str, *, reason: str | None = None) -> int:
                 return 1
             try:
                 alignment_document = alignment.load_alignment(harness_dir)
-                requirement_ids = {
-                    record["id"] for record in requirements["requirements"]
-                }
-                critical_requirement_ids = {
-                    record["id"]
-                    for record in requirements["requirements"]
-                    if record["priority"] == "must"
-                }
-                proposed_decision_ids = {
-                    record["id"]
-                    for record in decision.load_decisions(harness_dir)
-                    if record["task_id"] == task["task"]["id"]
-                    and record["status"] == "PROPOSED"
-                }
-                alignment_issues = alignment.check_completeness(
-                    alignment_document,
-                    requirement_ids=requirement_ids,
-                    critical_requirement_ids=critical_requirement_ids,
-                    proposed_decision_ids=proposed_decision_ids,
+                alignment_issues = _alignment_completeness_issues(
+                    harness_dir, task, alignment_document, requirements
                 )
             except (alignment.AlignmentError, decision.DecisionError) as exc:
                 print("ALIGNMENT_BLOCKED", file=sys.stderr)
@@ -1723,20 +1716,8 @@ def cmd_check_admission() -> int:
             diagnostics.append(f"{subject}: {issue.code}")
     try:
         document = alignment.load_alignment(harness_dir)
-        requirement_ids = {record["id"] for record in (requirements or {}).get("requirements", [])}
-        critical_ids = {
-            record["id"] for record in (requirements or {}).get("requirements", [])
-            if record.get("priority") == "must"
-        }
-        proposed = {
-            record["id"] for record in decision.load_decisions(harness_dir)
-            if record["task_id"] == task["task"]["id"] and record["status"] == "PROPOSED"
-        }
-        for issue in alignment.check_completeness(
-            document,
-            requirement_ids=requirement_ids,
-            critical_requirement_ids=critical_ids,
-            proposed_decision_ids=proposed,
+        for issue in _alignment_completeness_issues(
+            harness_dir, task, document, requirements or {"requirements": []},
         ):
             diagnostics.append(
                 f"ALIGNMENT_INVALID: {issue.subject_id or 'ALIGNMENT'}: {issue.code}"
@@ -2037,6 +2018,7 @@ def cmd_evidence(
     budget_override_reason=None,
     budget_override_evidence=None,
     budget_override_hypothesis=None,
+    container_maps=(),
 ) -> int:
     args = ["--type", evidence_type, "--command", command, "--scope", scope]
     for covered_test in covered_tests:
@@ -2056,6 +2038,8 @@ def cmd_evidence(
     ):
         if value is not None:
             args.extend([flag, value])
+    for container_map in container_maps or ():
+        args.extend(["--container-map", container_map])
     return collect_evidence.main(args)
 
 
@@ -2155,6 +2139,19 @@ def cmd_benchmark_run(fixtures: Path) -> int:
     return 0
 
 
+def _agent_context_view(document: dict) -> dict:
+    """Stdout for compact generation. The published file stays the full document."""
+    return {
+        "context_hash": document["context_hash"],
+        "mode": document["mode"],
+        "head": document["generated_from"]["head"],
+        "control": document["control"],
+        "working": document["working"],
+        "omitted_count": len(document["omitted"]),
+        "blocker_count": len(document["control"]["blockers"]),
+    }
+
+
 def cmd_context(action: str | None, mode: str, json_output: bool, *, trigger: str | None = None, reason: str | None = None, profile_json: Path | None = None, progress: bool = False) -> int:
     from contextlib import nullcontext
     from .context.model import ContextBuildError
@@ -2189,9 +2186,14 @@ def cmd_context(action: str | None, mode: str, json_output: bool, *, trigger: st
                     explain_context(document) if action == "explain"
                     else {"context_hash": document["context_hash"], "integrity": integrity}
                 )
+            payload = (
+                _agent_context_view(result)
+                if action is None and mode == "compact" and not json_output
+                else result
+            )
             rendered = (
-                json.dumps(result, indent=2, ensure_ascii=False, allow_nan=False) + "\n"
-                if json_output else yaml.safe_dump(result, sort_keys=False, allow_unicode=True)
+                json.dumps(payload, indent=2, ensure_ascii=False, allow_nan=False) + "\n"
+                if json_output else yaml.safe_dump(payload, sort_keys=False, allow_unicode=True)
             )
             try:
                 print(rendered, end="")
@@ -2254,21 +2256,6 @@ def cmd_telemetry_show() -> int:
         print("TELEMETRY_MISSING", file=sys.stderr)
         return 1
     print(path.read_text(), end="")
-    return 0
-
-
-def cmd_mr_describe() -> int:
-    try:
-        assessment = quality_gate.assess_gate(Path(".harness"), allow_preflight=True)
-    except Exception as exc:
-        print(f"MR_ASSESSMENT_INVALID: {exc}", file=sys.stderr)
-        return 2
-    quality = assessment.quality["status"]
-    readiness = assessment.release_readiness["status"]
-    print(f"Quality Gate: {quality}")
-    print(f"MR Readiness: {'DRAFT ONLY' if readiness == 'DRAFT_ONLY' else readiness}")
-    if readiness == "READY" and quality == "PASS":
-        print("Ready for MR")
     return 0
 
 
@@ -3480,7 +3467,13 @@ def _impact():
     return path, document
 
 
-def cmd_evidence_plan(json_output: bool) -> int:
+def cmd_evidence_plan(json_output: bool, *, preflight_request: 'PreflightRequest | None' = None) -> int:
+    if preflight_request is not None:
+        from .preflight import run_preflight
+
+        report = run_preflight(Path('.harness'), preflight_request)
+        print(json.dumps(report, indent=2, ensure_ascii=False, allow_nan=False))
+        return report['exit_code']
     from .context.model import ContextBuildError
     from .evidence_plan import plan_evidence
 

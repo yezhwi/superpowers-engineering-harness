@@ -70,11 +70,42 @@ def test_canonical_and_nested_special_files_still_refuse(tmp_path, relative):
     fifo.parent.mkdir(parents=True, exist_ok=True)
     os.mkfifo(fifo)
     before = identity(fifo)
-    with pytest.raises(shutil.Error, match="named pipe"):
+    with pytest.raises(task_replacement.TaskReplacementError, match="TASK_REPLACEMENT_UNSUPPORTED_NODE"):
         task_replacement.replacement_workspace(harness)
     assert identity(fifo) == before
     assert (harness / "current-task.yaml").read_text() == "old task\n"
     assert not list(tmp_path.glob("..harness.replacement-*"))
+
+
+def test_socket_in_allowlist_refuses_before_publish():
+    import tempfile
+
+    # AF_UNIX paths on macOS are limited to about 104 bytes.
+    with tempfile.TemporaryDirectory(prefix="seh", dir="/tmp") as raw:
+        _assert_socket_refused(Path(raw))
+
+
+def _assert_socket_refused(root: Path) -> None:
+    import socket
+
+    harness = root / ".harness"
+    harness.mkdir()
+    (harness / "current-task.yaml").write_text("old task\n")
+    (harness / "evidence").mkdir()
+    path = harness / "evidence" / "c.sock"
+    sock = socket.socket(socket.AF_UNIX)
+    sock.bind(os.fspath(path))
+    before = identity(path)
+    try:
+        with pytest.raises(
+            task_replacement.TaskReplacementError, match="TASK_REPLACEMENT_UNSUPPORTED_NODE"
+        ):
+            task_replacement.replacement_workspace(harness)
+    finally:
+        sock.close()
+    assert identity(path) == before
+    assert (harness / "current-task.yaml").read_text() == "old task\n"
+    assert not list(root.glob("..harness.replacement-*"))
 
 
 @pytest.mark.parametrize("opaque", ["acceptance-probes", "acceptance-artifacts"])
@@ -202,6 +233,12 @@ def test_new_task_copy_never_traverses_root_behavior_fixtures(tmp_path, monkeypa
     other = harness / "custom-data/behavior-fixtures/keep.txt"
     other.parent.mkdir(parents=True)
     other.write_text("keep unknown and nested data")
+    (harness / "decisions").mkdir()
+    (harness / "decisions/DEC-001.yaml").write_text("id: DEC-001\n")
+    (harness / "history").mkdir()
+    (harness / "history/note.txt").write_text("kept\n")
+    (harness / "acceptance-scripts").mkdir()
+    (harness / "acceptance-scripts/run.sh").write_text("echo probe\n")
     original_scandir = os.scandir
 
     def guarded_scandir(path):
@@ -212,7 +249,10 @@ def test_new_task_copy_never_traverses_root_behavior_fixtures(tmp_path, monkeypa
     monkeypatch.setattr(os, "scandir", guarded_scandir)
     staged = task_replacement.replacement_workspace(harness, new_task=True)
     assert not (staged / "behavior-fixtures").exists()
-    assert (staged / "custom-data/behavior-fixtures/keep.txt").read_text() == "keep unknown and nested data"
+    assert not (staged / "custom-data").exists()
+    assert not (staged / "acceptance-scripts").exists()
+    assert (staged / "decisions/DEC-001.yaml").read_text() == "id: DEC-001\n"
+    assert (staged / "history/note.txt").read_text() == "kept\n"
     assert (staged / "current-task.yaml").read_text() == "old task\n"
     assert identity(fifo) == before
 
@@ -236,7 +276,7 @@ def test_new_task_mode_does_not_hide_canonical_or_nested_special_files(tmp_path,
     pipe.parent.mkdir(parents=True, exist_ok=True)
     os.mkfifo(pipe)
     before = identity(pipe)
-    with pytest.raises(shutil.Error, match="named pipe"):
+    with pytest.raises(task_replacement.TaskReplacementError, match="TASK_REPLACEMENT_UNSUPPORTED_NODE"):
         task_replacement.replacement_workspace(harness, new_task=True)
     assert identity(pipe) == before
     assert (harness / "current-task.yaml").read_text() == "old task\n"

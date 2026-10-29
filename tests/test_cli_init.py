@@ -85,7 +85,7 @@ def test_outside_repo_returns_one(tmp_path):
     assert not (tmp_path / ".git").exists()
 
 
-def test_mr_describe_assesses_current_state_not_stale_gate(tmp_path):
+def test_gate_preflight_assesses_current_state_not_stale_gate(tmp_path):
     repo = make_repo(tmp_path)
     run_cli(repo, "init")
     subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
@@ -99,10 +99,12 @@ def test_mr_describe_assesses_current_state_not_stale_gate(tmp_path):
         "release_readiness": {"status": "READY", "reasons": []},
     }
     path.write_text(yaml.safe_dump(task))
-    result = run_cli(repo, "mr", "describe")
-    assert result.returncode == 0
-    assert "Quality Gate: BLOCKED" in result.stdout
+    before = path.read_bytes()
+    result = run_cli(repo, "gate", "preflight")
+    assert result.returncode == 1
+    assert "READY: no" in result.stdout
     assert "Ready for MR" not in result.stdout
+    assert path.read_bytes() == before
 
 
 def test_unknown_command_is_invalid_usage(tmp_path):

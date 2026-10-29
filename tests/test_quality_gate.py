@@ -946,6 +946,22 @@ def test_critical_finding_blocked(tmp_path):
     assert "Critical finding FND-0002" in result.stdout
 
 
+def test_supplied_workspace_is_the_only_fingerprint(tmp_path, monkeypatch):
+    from harness import quality_gate
+    from harness.workspace import snapshot
+
+    h = make_harness(tmp_path)
+    current = snapshot()
+
+    def fail(*_args, **_kwargs):
+        raise AssertionError("gate walked the product tree again")
+
+    monkeypatch.setattr(quality_gate, "snapshot", fail)
+    assessment = quality_gate.assess_gate(h, allow_preflight=True, workspace=current)
+
+    assert assessment.status in {"PASS", "BLOCKED"}
+
+
 def test_assess_gate_is_side_effect_free_and_matches_run_gate(tmp_path):
     from harness.quality_gate import assess_gate, run_gate
 

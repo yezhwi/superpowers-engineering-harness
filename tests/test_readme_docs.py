@@ -445,6 +445,23 @@ def test_operational_docs_do_not_instruct_manual_state_mutation_or_preclassify_c
     assert "CREATED\n  → classify" in example
 
 
+def _has_exit_zero_completion_shortcut(text):
+    # Guard an unsafe routing instruction, not harmless diagnostic exit docs.
+    return bool(re.search(
+        r'exit(?:s)?\s+0[^\n]{0,80}(?:transition|mark|->|→)\s+`?(?:done|converged)\b',
+        text, re.IGNORECASE,
+    ))
+
+
+@pytest.mark.parametrize('text,unsafe', [
+    ('v2 exits 0/1/2 for clear/blocked/error diagnosis, never Gate PASS.', False),
+    ('If harness gate exits 0, transition DONE.', True),
+    ('On exit 0 -> CONVERGED', True),
+])
+def test_completion_routing_oracle_distinguishes_diagnosis_from_shortcut(text, unsafe):
+    assert _has_exit_zero_completion_shortcut(text) is unsafe
+
+
 def test_gate_skills_route_on_persisted_decision_not_exit_code():
     for path in (
         REPO / "SKILL.md",
@@ -452,8 +469,7 @@ def test_gate_skills_route_on_persisted_decision_not_exit_code():
         REPO / "skills/convergence/SKILL.md",
     ):
         text = path.read_text().lower()
-        assert "exit 0" not in text
-        assert "exits 0" not in text
+        assert not _has_exit_zero_completion_shortcut(text)
         assert "decision:" in text or "converged" in text
 
 

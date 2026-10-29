@@ -289,7 +289,7 @@ def version_scope(
 
 
 @instrument('capture')
-def capture(harness_dir: Path) -> dict:
+def capture(harness_dir: Path, *, workspace=None) -> dict:
     """No derived outputs, staging, history or telemetry enter control hash.
 
     This registry covers current Gate's canonical file reads. Changes to Gate's
@@ -323,6 +323,7 @@ def capture(harness_dir: Path) -> dict:
                 protected,
                 plan_sources,
                 architecture_sources,
+                workspace=workspace,
             )
     except (OSError, ValueError, yaml.YAMLError, WorkspaceError) as exc:
         if isinstance(exc, ContextBuildError):
@@ -339,6 +340,7 @@ def _capture_versions(
     protected: set[str],
     plan_sources: tuple[str, ...],
     architecture_sources: tuple[str, ...],
+    workspace=None,
 ) -> dict:
     files = {}
     try:
@@ -378,7 +380,7 @@ def _capture_versions(
         } | protected
         for name in sorted(declared_paths | discovered):
             declared[name] = file_version(contained_path(root, name))
-        current = snapshot(root)
+        current = workspace if workspace is not None else snapshot(root)
         resource_versions = schema_versions(
             exclude=(
                 frozenset()

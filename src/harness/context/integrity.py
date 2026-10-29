@@ -264,12 +264,12 @@ def _check_document(source: AuthoritativeContext, document: dict, root: Path) ->
     }
 
 
-def _load_stable(harness_dir: Path, before: dict) -> AuthoritativeContext:
+def _load_stable(harness_dir: Path, before: dict, workspace=None) -> AuthoritativeContext:
     from .read_scope import context_read_scope
 
     with context_read_scope(harness_dir, before):
-        source = FileContextSource(harness_dir).load()
-    require_fresh(before, capture(harness_dir))
+        source = FileContextSource(harness_dir).load(product=workspace)
+    require_fresh(before, capture(harness_dir, workspace=workspace))
     return source
 
 
@@ -277,16 +277,17 @@ def _load_stable(harness_dir: Path, before: dict) -> AuthoritativeContext:
 def build_context(
     harness_dir: Path, *, mode: str = "full", selector: ContextSelector | None = None,
     _retain_source: Callable[[AuthoritativeContext], None] | None = None,
+    workspace=None,
 ) -> dict:
     from harness.decision import ensure_decision_index
 
     ensure_decision_index(harness_dir)
-    before = capture(harness_dir)
-    source = _load_stable(harness_dir, before)
+    before = capture(harness_dir, workspace=workspace)
+    source = _load_stable(harness_dir, before, workspace)
     document = _project_context(harness_dir, source, before, mode=mode, selector=selector)
     _schema(document)
     _check(source, document, harness_dir.absolute().parent)
-    require_fresh(before, capture(harness_dir))
+    require_fresh(before, capture(harness_dir, workspace=workspace))
     if _retain_source is not None:
         _retain_source(source)
     return document
@@ -324,12 +325,16 @@ def _project_context(
 
 
 @instrument('integrity_validate')
-def validate_context(harness_dir: Path, document: dict) -> dict[str, bool]:
-    """Read-only: validate the supplied old view, never regenerate over it."""
+def validate_context(harness_dir: Path, document: dict, workspace=None) -> dict[str, bool]:
+    """Read-only: validate the supplied old view, never regenerate over it.
+
+    ``workspace`` is the product snapshot already taken for this generation.
+    The read path omits it and walks the tree itself.
+    """
     _schema(document)
-    before = capture(harness_dir)
+    before = capture(harness_dir, workspace=workspace)
     require_fresh(document["generated_from"], before)
-    source = _load_stable(harness_dir, before)
+    source = _load_stable(harness_dir, before, workspace)
     result = _check(source, document, harness_dir.absolute().parent)
-    require_fresh(before, capture(harness_dir))
+    require_fresh(before, capture(harness_dir, workspace=workspace))
     return result

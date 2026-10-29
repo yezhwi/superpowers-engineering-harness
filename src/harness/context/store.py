@@ -7,6 +7,7 @@ from uuid import uuid4
 import yaml
 
 from harness import decision, source_access, transaction
+from harness.workspace import snapshot as product_snapshot
 from harness.telemetry_lock import telemetry_lock
 from harness.transaction_recovery import require_no_pending_publications
 
@@ -94,10 +95,17 @@ def generate_context(harness_dir: Path, *, mode: str = "compact") -> dict:
             )
         from .escalation import apply_automatic_expansions
 
+        # One product-tree fingerprint for the build. The closing fingerprint
+        # is taken once, immediately before publication.
+        opened = product_snapshot(harness_dir.parent)
         sources = []
-        document = build_context(harness_dir, mode=mode, _retain_source=sources.append)
-        document = apply_automatic_expansions(harness_dir, document, source=sources[0])
-        integrity = validate_context(harness_dir, document)
+        document = build_context(
+            harness_dir, mode=mode, _retain_source=sources.append, workspace=opened,
+        )
+        document = apply_automatic_expansions(
+            harness_dir, document, source=sources[0], workspace=opened,
+        )
+        integrity = validate_context(harness_dir, document, workspace=opened)
         evidence = context_evidence(document, integrity, datetime.now(UTC).isoformat())
         bundle = {
             "current.yaml": document,
@@ -108,11 +116,13 @@ def generate_context(harness_dir: Path, *, mode: str = "compact") -> dict:
             name: yaml.safe_dump(value, sort_keys=False, allow_unicode=True).encode()
             for name, value in bundle.items()
         }
+        closing = product_snapshot(harness_dir.parent)
+
         def validate_published():
             _paths(harness_dir)
             for name, path in paths.items():
                 _equal(_read(path), bundle[name], name)
-            require_fresh(document["generated_from"], capture(harness_dir))
+            require_fresh(document["generated_from"], capture(harness_dir, workspace=closing))
 
         def finalize():
             validate_published()
@@ -121,7 +131,7 @@ def generate_context(harness_dir: Path, *, mode: str = "compact") -> dict:
         artifacts = tuple(transaction.StagedArtifact(f"context/{name}", value)
                           for name, value in payloads.items())
         staged = transaction.stage(harness_dir, artifacts, operation_id=f"context-{uuid4().hex}")
-        require_fresh(document["generated_from"], capture(harness_dir))
+        require_fresh(document["generated_from"], capture(harness_dir, workspace=closing))
         _paths(harness_dir)
         outcome = transaction.PublicationOutcome()
         try:

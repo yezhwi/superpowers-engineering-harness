@@ -163,19 +163,33 @@ def test_cli_generation_saves_matching_bundle_and_prints_only_document(
     products_before = {p.name: p.read_bytes() for p in (harness / "evidence").iterdir()}
     result = run_cli(harness.parent, *flags)
     assert result.returncode == 0, result.stderr
-    document = (
+    printed = (
         json.loads(result.stdout)
         if "--json" in flags
         else yaml.safe_load(result.stdout)
     )
-    assert document["mode"] == mode
     current = yaml.safe_load((harness / "context/current.yaml").read_text())
     manifest = yaml.safe_load((harness / "context/manifest.yaml").read_text())
     evidence = yaml.safe_load((harness / "context/evidence.yaml").read_text())
-    assert current == document
+    assert current["mode"] == mode
+    assert "generated_from" in current and "omitted" in current and "references" in current
+    if "--json" in flags or "--full" in flags:
+        assert printed == current
+    else:
+        assert printed == {
+            "context_hash": current["context_hash"],
+            "mode": mode,
+            "head": current["generated_from"]["head"],
+            "control": current["control"],
+            "working": current["working"],
+            "omitted_count": len(current["omitted"]),
+            "blocker_count": len(current["control"]["blockers"]),
+        }
+        assert "generated_from" not in result.stdout
+        assert "\nomitted:" not in result.stdout
     assert manifest == {
-        "context_hash": document["context_hash"],
-        **document["manifest"],
+        "context_hash": current["context_hash"],
+        **current["manifest"],
     }
     assert evidence["context_hash"] == current["context_hash"]
     assert evidence["task_id"] == "TASK-028"
@@ -189,8 +203,8 @@ def test_cli_generation_saves_matching_bundle_and_prints_only_document(
     assert evidence["included"]["requirements"] == (
         ["REQ-001", "REQ-002"] if mode == "full" else ["REQ-001"]
     )
-    assert evidence["generated_from"] == document["generated_from"]
-    assert evidence["omitted"] == document["omitted"]
+    assert evidence["generated_from"] == current["generated_from"]
+    assert evidence["omitted"] == current["omitted"]
     assert evidence["expansions"] == []
     assert evidence["generated_at"]
     assert (harness / "current-task.yaml").read_bytes() == task_before

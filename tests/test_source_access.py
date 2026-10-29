@@ -156,3 +156,76 @@ def test_parallel_scope_permissions_are_isolated(tmp_path):
         yes, no = pool.submit(read, True), pool.submit(read, False)
         assert yes.result(timeout=10) == "value"
         assert no.result(timeout=10) == "denied"
+
+
+@pytest.mark.parametrize('size,accepted', [(16 * 1024 * 1024, True), (16 * 1024 * 1024 + 1, False)])
+def test_bounded_snapshot_inclusive_raw_limit(tmp_path, size, accepted):
+    from harness import source_access
+    file = tmp_path / 'metadata'
+    file.write_bytes(b'x' * size)
+    if accepted:
+        result = source_access.read_regular_snapshot_beneath(file, tmp_path, max_bytes=16 * 1024 * 1024)
+        assert len(result.content) == size
+        assert (result.device, result.inode) == (file.stat().st_dev, file.stat().st_ino)
+    else:
+        with pytest.raises(source_access.RegularFileTooLargeError):
+            source_access.read_regular_snapshot_beneath(file, tmp_path, max_bytes=16 * 1024 * 1024)
+
+
+@pytest.mark.parametrize('kind', ['file_symlink', 'parent_symlink', 'directory', 'fifo', 'outside', 'parent_escape'])
+def test_bounded_snapshot_rejects_non_regular_and_escape(tmp_path, kind):
+    import os
+
+    from harness import source_access
+    root = tmp_path / 'root'
+    root.mkdir()
+    file = root / 'data'
+    if kind == 'file_symlink':
+        (root / 'actual').write_text('value')
+        file.symlink_to('actual')
+    elif kind == 'parent_symlink':
+        (tmp_path / 'actual').mkdir()
+        (tmp_path / 'actual/data').write_text('value')
+        (root / 'link').symlink_to(tmp_path / 'actual', target_is_directory=True)
+        file = root / 'link/data'
+    elif kind == 'directory':
+        file.mkdir()
+    elif kind == 'fifo':
+        os.mkfifo(file)
+    elif kind == 'outside':
+        file = tmp_path / 'outside'
+        file.write_text('value')
+    else:
+        (tmp_path / 'outside').write_text('value')
+        file = root / '../outside'
+    with pytest.raises((OSError, ValueError)):
+        source_access.read_regular_snapshot_beneath(file, root, max_bytes=8)
+
+
+def test_bounded_snapshot_preserves_scope_authority_and_observation(tmp_path):
+    from harness import source_access
+    from harness.context.model import ContextBuildError
+    file = tmp_path / 'data'
+    file.write_bytes(b'abc')
+    with source_access.source_scope(tmp_path, allowed=[file]):
+        assert source_access.read_regular_snapshot_beneath(file, tmp_path, max_bytes=3).content == b'abc'
+    with pytest.raises(ContextBuildError, match='CONTEXT_REFERENCE_BROKEN'):
+        with source_access.source_scope(tmp_path, allowed=[]):
+            source_access.read_regular_snapshot_beneath(file, tmp_path, max_bytes=3)
+
+
+def test_bounded_snapshot_never_reads_beyond_limit_plus_one(tmp_path, monkeypatch):
+    from harness import source_access
+    file = tmp_path / 'data'
+    file.write_bytes(b'x' * 1000)
+    original = source_access.os.read
+    total = []
+    def observed(fd, amount):
+        assert amount <= 4 - sum(total)
+        data = original(fd, amount)
+        total.append(len(data))
+        return data
+    monkeypatch.setattr(source_access.os, 'read', observed)
+    with pytest.raises(source_access.RegularFileTooLargeError):
+        source_access.read_regular_snapshot_beneath(file, tmp_path, max_bytes=3)
+    assert sum(total) <= 4

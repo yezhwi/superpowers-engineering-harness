@@ -688,6 +688,28 @@ def _tail(text: str | bytes | None) -> str:
     return _text_output(text)[-TAIL_CHARS:]
 
 
+def _container_execution(command_text, path_map, before, after, spawn):
+    from .container_pytest import Attempt, ContainerRefusal, parse_maps, payload_command, run_report
+    import uuid
+
+    try:
+        payload, target, _cwd = payload_command(command_text)
+        attempt = Attempt(
+            uuid.uuid4().hex, uuid.uuid4().hex, payload, target, before, after, parse_maps(path_map),
+        )
+        if spawn is None:
+            def spawn(argv, reporter):
+                completed = subprocess.run(
+                    argv, input=reporter, capture_output=True, timeout=COMMAND_TIMEOUT_SECONDS, check=False,
+                )
+                return completed.returncode, completed.stdout, completed.stderr
+        proof, error, exit_code, stdout, stderr = run_report(command_text, attempt, attempt.path_map, spawn)
+    except ContainerRefusal as exc:
+        return 2, "", "", None, exc.code, None
+    receipt = {"run_id": attempt.run_id, "attempt": attempt.attempt, "command": payload, "target": target}
+    return exit_code, stdout, stderr, proof, error, receipt
+
+
 def _collect(
     evidence_type: str,
     command: _TrustedLocalCommand,
@@ -698,6 +720,8 @@ def _collect(
     covered_test_cases: tuple[str, ...] = (),
     phase: str | None = None,
     timeout_seconds: float = COMMAND_TIMEOUT_SECONDS,
+    container_maps: tuple[str, ...] = (),
+    container_spawn=None,
 ) -> dict:
     if not isinstance(command, _TrustedLocalCommand):
         raise ValueError("TRUSTED_LOCAL_COMMAND_REQUIRED")
@@ -709,11 +733,18 @@ def _collect(
         raise ValueError('EVIDENCE_HEAD_MISMATCH')
     error = None
     execution = None
+    container_receipt = None
     needs_execution = (evidence_type in TEST_EVIDENCE_TYPES or finding_id is not None
                        or test_id is not None or bool(covered_tests) or phase in {"red", "green"})
     try:
-        if needs_execution:
+        if container_maps:
+            # Explicit container proof never falls back to a host pytest or shell command.
+            exit_code, stdout, stderr, execution, error, container_receipt = _container_execution(
+                command_text, container_maps, before, before, container_spawn,
+            )
+        elif needs_execution:
             run, execution = execution_capture.run(command_text, timeout_seconds, _repo_root(None))
+            exit_code, stdout, stderr = run.returncode, run.stdout, run.stderr
         else:
             run = subprocess.run(
                 command_text,
@@ -722,7 +753,7 @@ def _collect(
                 text=True,
                 timeout=timeout_seconds,
             )
-        exit_code, stdout, stderr = run.returncode, run.stdout, run.stderr
+            exit_code, stdout, stderr = run.returncode, run.stdout, run.stderr
     except subprocess.TimeoutExpired as exc:
         exit_code = 124
         stdout = exc.stdout
@@ -748,14 +779,14 @@ def _collect(
     environment = execution_environment(command_text)
     if environment is not None:
         evidence["execution_environment"] = environment
+    if container_receipt is not None:
+        evidence["container_receipt"] = container_receipt
     if error is not None:
         evidence["error"] = error
-        evidence["error_detail"] = {
-            "code": error,
-            "kind": "timeout" if exit_code == 124 else "cancelled",
-        }
-        if exit_code == 124:
-            evidence["error_detail"]["timeout_seconds"] = timeout_seconds
+        if error == "EVIDENCE_COMMAND_TIMEOUT":
+            evidence["error_detail"] = {"code": error, "kind": "timeout", "timeout_seconds": timeout_seconds}
+        elif error == "EVIDENCE_COMMAND_CANCELLED":
+            evidence["error_detail"] = {"code": error, "kind": "cancelled"}
     if finding_id is not None or (
         evidence_type in TEST_EVIDENCE_TYPES and scope == "related"
     ):
@@ -764,11 +795,13 @@ def _collect(
         evidence["covered_tests"] = list(covered_tests)
     if covered_test_cases:
         evidence["covered_test_cases"] = list(covered_test_cases)
-    if needs_execution:
-        if execution is not None:
+    if needs_execution or container_maps:
+        if execution is not None and error is None and after == before:
             evidence["test_execution"] = execution
         else:
             evidence["test_execution_error"] = "TEST_EXECUTION_REPORT_MISSING_OR_INVALID"
+            if container_maps and after != before and error is None:
+                evidence["error"] = "CONTAINER_SOURCE_DRIFT"
     if finding_id is None and phase is not None:
         evidence["phase"] = phase
     if finding_id is not None:
@@ -843,6 +876,7 @@ def _parse_arguments(argv):
     parser.add_argument("--budget-override-reason")
     parser.add_argument("--budget-override-evidence")
     parser.add_argument("--budget-override-hypothesis")
+    parser.add_argument("--container-map", action="append", default=[])
     return parser.parse_args(argv)
 
 
@@ -1101,7 +1135,8 @@ def main(argv=None):
     try:
         evidence = _collect(args.type, _TrustedLocalCommand(args.command), args.finding,
                             args.test, args.scope, prepared.covered_tests,
-                            tuple(args.covered_test_case), args.phase)
+                            tuple(args.covered_test_case), args.phase,
+                            container_maps=tuple(args.container_map))
         if evidence['commit'] != prepared.head or evidence.get('error') == 'EVIDENCE_HEAD_MISMATCH':
             raise ValueError('EVIDENCE_HEAD_MISMATCH')
         with publication_admission(root):

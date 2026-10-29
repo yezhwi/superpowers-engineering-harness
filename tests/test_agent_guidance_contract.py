@@ -34,6 +34,13 @@ def test_evidence_scheduling_preplans_complete_bounded_batches(path):
 
 
 @pytest.mark.parametrize("path", ["SKILL.md", "skills/engineering-harness/SKILL.md"])
+def test_registry_publication_stays_with_the_user(path):
+    section = _guidance_section(path, "## Hard Boundaries")
+    for identifier in ("npm publish", "twine upload", "uv publish", "transaction.publish"):
+        assert identifier in section
+
+
+@pytest.mark.parametrize("path", ["SKILL.md", "skills/engineering-harness/SKILL.md"])
 def test_execution_guidance_has_inline_route_and_no_orchestrator_only_rule(path):
     """Static routing regression, not an Agent compliance experiment."""
     text = (ROOT / path).read_text()
@@ -45,7 +52,12 @@ def test_execution_guidance_has_inline_route_and_no_orchestrator_only_rule(path)
     section = _guidance_section(path, "## Executor Continuity")
     assert "executing-plans" in section
     assert "subagent-driven-development" in section
+    assert "Do not start Codex" in section
+    assert "pi --provider openai-codex" in section
+    assert "fresh-context review" not in section
     assert "## Verification Failure Triage" in text
+    reviewing = [line for line in text.splitlines() if line.startswith("| `REVIEWING` |")]
+    assert reviewing and "Do not call Codex" in reviewing[0]
 
 
 @pytest.mark.parametrize("path", ["SKILL.md", "skills/engineering-harness/SKILL.md"])
@@ -77,6 +89,27 @@ def test_contract_exit_has_no_unused_task_counter_writes():
         assert field not in text
     assert "counters + state updated" not in text
     assert "harness transition PLANNED" in text
+
+
+@pytest.mark.parametrize("path", ["SKILL.md", "skills/engineering-harness/SKILL.md"])
+def test_loop_skips_measurement_and_deprecated_commands(path):
+    startup = _guidance_section(path, "## Session Startup")
+    assert "scans the product tree" in startup
+    commands = _guidance_section(path, "## Deterministic Commands")
+    for identifier in (
+        "harness converge",
+        "harness benchmark",
+        "harness review session",
+        "harness review batches",
+        "harness plan sync-markdown",
+        "harness evidence plan --probe-launcher",
+        "harness telemetry report",
+        "token_estimate",
+    ):
+        assert identifier in commands
+    routing = _guidance_section(path, "## Request Routing")
+    assert "CLASSIFIED → IMPLEMENTING" in routing
+    assert "Do not invoke task contract, minimal implementation, impact, or complexity ceremony." in routing
 
 
 @pytest.mark.parametrize("path", ["SKILL.md", "skills/engineering-harness/SKILL.md"])

@@ -504,7 +504,11 @@ def fast_verification_policy(harness_dir: Path) -> dict[str, str]:
 
 
 def run_fast_gate(
-    task: dict, harness_dir: Path, head: str, current_workspace: str
+    task: dict,
+    harness_dir: Path,
+    head: str,
+    current_workspace: str,
+    working_paths: tuple[str, ...] | None = None,
 ) -> tuple[str, list[GateBlocker]]:
     """Run Q1 Light Gate without STANDARD/STRICT ceremony artifacts."""
     from harness import source_access
@@ -529,7 +533,11 @@ def run_fast_gate(
         block("FAST_USER_CHANGE_MODIFIED", "pre-existing user changes were modified")
 
     try:
-        paths = business_paths(changed_paths_since(task["git"]["base_commit"]))
+        paths = business_paths(
+            changed_paths_since(
+                task["git"]["base_commit"], working_paths=working_paths
+            )
+        )
     except (KeyError, WorkspaceError) as exc:
         raise InvalidHarnessState(f"cannot revalidate FAST risk: {exc}") from exc
     if paths:
@@ -662,6 +670,7 @@ def _evaluate_gate(
     allow_converged: bool = False,
     allow_preflight: bool = False,
     architecture_assessment=None,
+    workspace=None,
 ) -> tuple[str, list, PlanAssessment | None, object | None]:
     """Return status, blockers, optional Plan and Architecture assessments."""
     from harness import source_access
@@ -691,15 +700,23 @@ def _evaluate_gate(
         if expected_profile is None or risk.get("profile") != expected_profile:
             raise InvalidHarnessState("RISK_PROFILE_INVALID")
 
-    head = head if head is not None else git_head()
-    try:
-        current_workspace = snapshot().fingerprint
-    except WorkspaceError as exc:
-        raise InvalidHarnessState(f"cannot fingerprint workspace: {exc}") from exc
+    if workspace is None:
+        head = head if head is not None else git_head()
+        try:
+            current_workspace = snapshot().fingerprint
+        except WorkspaceError as exc:
+            raise InvalidHarnessState(f"cannot fingerprint workspace: {exc}") from exc
+        working_paths = None
+    else:
+        head = workspace.head
+        current_workspace = workspace.fingerprint
+        working_paths = workspace.changed_paths
     gate_doc = _load_yaml(harness_dir / "gate.yaml")
     validate_schema(gate_doc, "gate.schema.json", harness_dir / "gate.yaml")
     if (task.get("risk") or {}).get("profile") == "FAST":
-        status, blockers = run_fast_gate(task, harness_dir, head, current_workspace)
+        status, blockers = run_fast_gate(
+            task, harness_dir, head, current_workspace, working_paths=working_paths
+        )
         return status, blockers, None, None
 
     gate_cfg = gate_doc["gate"]
@@ -1308,12 +1325,18 @@ def assess_gate(
     allow_converged: bool = False,
     allow_preflight: bool = False,
     architecture_assessment=None,
+    workspace=None,
 ) -> GateAssessment:
-    """Admit before first canonical fact; hold lock through pure assessment."""
+    """Admit before first canonical fact; hold lock through pure assessment.
+
+    ``workspace`` is one snapshot the caller just took. Gate then uses that
+    head and fingerprint instead of walking the product tree again.
+    """
     with publication_admission(harness_dir):
         return _assess_gate_locked(
             harness_dir, head=head, allow_converged=allow_converged,
             allow_preflight=allow_preflight, architecture_assessment=architecture_assessment,
+            workspace=workspace,
         )
 
 
@@ -1323,6 +1346,7 @@ def _assess_gate_locked(
     allow_converged: bool = False,
     allow_preflight: bool = False,
     architecture_assessment=None,
+    workspace=None,
 ) -> GateAssessment:
     """Internal evaluation; public caller owns admission and continuous lock."""
     status, blockers, plan_assessment, architecture_assessment = _evaluate_gate(
@@ -1331,6 +1355,7 @@ def _assess_gate_locked(
         allow_converged=allow_converged,
         allow_preflight=allow_preflight,
         architecture_assessment=architecture_assessment,
+        workspace=workspace,
     )
     from ._scope_replay import assess_test_scope_retirements
 

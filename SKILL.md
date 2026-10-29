@@ -29,7 +29,9 @@ run gate
 1. **Separate workflow roles, not mandatory processes.** Use the appropriate
    implementation/contract skill to do that work, inline or delegated. Choosing
    an executor does not grant permission or waive classification, verification,
-   independent-review requirements, or native state admission.
+   or native state admission. Review after implementation belongs to the user,
+   a model the user names, or the dedicated Reviewer bot. Do not launch Codex
+   to satisfy it.
 2. **No state in context only.** Task state lives ONLY in
    `.harness/current-task.yaml`. Always read it from disk before deciding.
 3. **No ad-hoc transitions.** Persist state only through harness CLI
@@ -42,6 +44,12 @@ run gate
    ends a task. `DECISION:` is command output, not a field in
    `current-task.yaml`. The persisted authority is `state: CONVERGED` and
    gate metadata.
+5. **No PyPI or npm publication.** The user publishes the Python package and
+   the skills package manually. Do not run `npm publish`, `twine upload`,
+   `uv publish`, or create a registry release. Local `python -m build` and
+   `npm pack --dry-run` are packaging checks. Control-plane publication
+   (`transaction.publish`, Context publication, `harness architecture publish`)
+   stays. Reading an already published npm version during install is not a publish.
 
 ## Q0 Decision Table
 
@@ -62,7 +70,7 @@ Only enter after the Q0 Decision Table confirms mutating work.
 1. Detect whether `.harness/` exists. Read task identity, state, and risk fields only from `.harness/current-task.yaml` to route startup; do not load every control artifact.
 2. If no active task exists, follow existing task creation and classification routing below. Do not reuse a previous task's Context or expansion policy. Do not replace an unrelated active task without explicit user direction.
 3. For `CREATED`, or missing/null risk, use the existing `harness task classify` path before requesting Context. Do not infer a risk/profile. Malformed classification requires correction, not guessed defaults.
-4. For a classified active mutating task, run `harness context --compact` first. Do not eagerly read all control files or run status as a prerequisite. Resume using the validated task state/profile, accepted decisions, global constraints, and typed blockers in that view.
+4. For a classified active mutating task, run `harness context --compact` first. Do not eagerly read all control files or run status as a prerequisite. Resume from that command's short stdout (`context_hash`, `mode`, `head`, `control`, `working`, `omitted_count`, `blocker_count`). `harness status` scans the product tree and is not a substitute for this short stdout. The dispatch table still reads it after `harness gate`. Do not pass `--json` or `--full` for session resume, and do not paste `.harness/context/current.yaml` into the session; that file stays the full validated snapshot. To see one omitted object, read that canonical source by id.
 5. On Integrity failure, stop relying on compact. Do not fall back to stale Context or persisted Gate summaries, and do not use `--full` to bypass validation. Follow the error code; resolve invalid inputs through existing harness CLI. `harness context validate` checks the saved snapshot without rewriting it; after source changes, regenerate with `harness context --compact` before relying on it again.
 6. Write authoritative facts only through existing harness CLI; advisory `next_action` does not authorize execution or transition state. A blocked product Gate is not itself an Integrity failure: retain its blockers and use the normal recovery route. If a Guard command prints `POLICY: USER_AUTHORITY_REQUIRED` and `DIRECTIVE: HALT_AND_WAIT`, stop autonomous work and request user decision. This is not Gate `DECISION: ESCALATED`; do not run `harness resume`, `harness gate`, or rewrite state to bypass it. Text directive alone does not authenticate user approval. An unrecognized `DIRECTIVE` is not permission to resume, and a free-text `Next:` line is not a command.
 
@@ -72,9 +80,9 @@ Only enter after the Q0 Decision Table confirms mutating work.
 
 ## Executor Continuity
 
-Default to one implementation executor for the agreed scope. Use **executing-plans** in this session when the user chooses inline execution or no subagent tool is available; use **subagent-driven-development** when per-task delegation/review is explicitly chosen. Neither route requires Codex. Existing user restrictions on delegation still apply.
+Default to one implementation executor for the agreed scope. Use **executing-plans** in this session when the user chooses inline execution or no subagent tool is available; use **subagent-driven-development** when per-task delegation/review is explicitly chosen. Do not start Codex, `pi --provider openai-codex`, or a Codex review subagent from either route. Existing user restrictions on delegation still apply.
 
-Keep the same executor for checker repairs, wording edits and diagnosed retries. Stop scheduling invalid proof, not the executor: retain failures, fix the diagnosed cause, then continue within existing authority and budgets. Change executors only for an explicit user handoff, an unavailable/exhausted or unrecoverable context, a demonstrated independent parallel scope, or a required fresh-context review. Record the reason and hand off only current source identity, completed work, remaining work and exact evidence references; do not restart completed work or add nested reviewers.
+Keep the same executor for checker repairs, wording edits and diagnosed retries. Stop scheduling invalid proof, not the executor: retain failures, fix the diagnosed cause, then continue within existing authority and budgets. Change executors only for an explicit user handoff, an unavailable/exhausted or unrecoverable context, or a demonstrated independent parallel scope. Do not switch executors to obtain a Codex review. Code review after implementation is done by the user, a model the user names, or the dedicated Reviewer bot. A Codex quota or billing failure is not a workflow blocker and must not be retried. Record an executor handoff reason and pass only current source identity, completed work, remaining work and exact evidence references; do not restart completed work or add nested reviewers.
 
 Before execution, record changed paths, verification commands/selectors, required build/review/Gate obligations and the conditions that require stopping. Reuse the existing plan or one brief task note, not another planning framework. If a mandatory workflow conflicts with the scope, explain it before adding work and obtain the required decision; do not silently bypass it. After content stabilizes, perform the required closeout. Later changes require affected verification under existing freshness rules, not unconditional full workflow replay.
 
@@ -100,7 +108,11 @@ Use only required related tests and builds; a prose edit does not justify Core c
 
 ## Efficient Evidence Scheduling
 
-After validated startup, use `harness evidence plan --json` to inspect declared selectors, contract/Plan links, and evidence gaps before scheduling tests. For a proposed binding/scope repair, inspect `harness impact reconcile --file proposal.yaml --dry-run` first. Both diagnostics are read-only advice, not execution authority, valid Context, or Gate acceptance; malformed inputs fail closed. Pending transaction recovery must follow its explicit route, not an implicit diagnostic repair.
+At startup, consume the existing validated admission output and blockers; do not automatically call another preflight, regenerate Context or add a renderer. When a separate evidence-planning diagnosis is needed before scheduling tests, use `harness evidence plan --json` for the unchanged v1 view. Explicit `harness evidence plan --preflight --json --command "python -m pytest tests/example.py"` adds v2 integrity/tool/capability diagnostics; the command string is classified, not executed. NATIVE_PROFILE_SUPPORTED is only reporter syntax qualification, not actual test_execution or execution authority. v2 exits 0/1/2 for clear/blocked/error diagnosis, never Gate PASS. An explicit `--skills-package /absolute/path/to/package.json` compares that manifest, not the Agent's loaded skills.
+
+Only on explicit user request, `harness evidence plan --preflight --json --probe-launcher /absolute/path/to/harness` runs one unsandboxed local `--help` process with inherited environment/cwd. It may write files or access network; it is not a safe/read-only sandbox or version attestation. Capture is limited to 64KiB per stream and execution to 10 seconds plus bounded cleanup. Do not add this probe to normal startup or task-contract guidance. A non-Git invocation remains stderr-only and does not probe.
+
+For a proposed binding/scope repair, inspect `harness impact reconcile --file proposal.yaml --dry-run` first. Static diagnostics are read-only advice, not execution authority, valid Context, or Gate acceptance; malformed inputs fail closed. Pending transaction recovery must follow its explicit route, not an implicit diagnostic repair.
 
 Apply requires a trusted scope origin and the exact selected user grant for the proposed change. MIGRATE does not authorize RETIRE or REBIND. Missing origin/authority requires the user-authority route; do not remove required tests, freeze, accept a Decision, or resume to bypass blockers.
 
@@ -114,7 +126,7 @@ Record a planned batch manifest with exact commands and repository-root `--cover
 
 ## Inputs
 
-Validated Context is a derived view, not a new authoritative source. Its Control Core retains global constraints; Layer 2 references allow reading a specific source file on demand. The following are canonical sources, not an eager startup reading checklist:
+Validated Context is a derived view, not a new authoritative source. Its Control Core retains global constraints; Layer 2 references allow reading a specific source file on demand. Open a file under `docs/` only when the task names that file. Do not search or open `.harness/history/`, `.harness/.publication-retained/`, `.harness/context-reuse-benchmark*`, `.harness/context-original-replay*`, `.harness/release-assets-v032/`, or `.superpowers/sdd/`, including with `--no-ignore`. Do not delete those trees. The following are canonical sources, not an eager startup reading checklist:
 
 - `.harness/current-task.yaml` — persisted task state (`state:` field).
 - `.harness/requirements.yaml`, `.harness/invariants.yaml`, `.harness/gate.yaml`
@@ -183,7 +195,7 @@ Read persisted `state` and `risk.profile` from `.harness/current-task.yaml`, the
 | `PLANNED` | Invoke **minimal-implementation** before any implementation. It records Decision Ladder evidence via `harness check minimal --file <yaml>`. Then invoke Superpowers execution skills (**brainstorming** if design unclear, else **writing-plans** + **executing-plans**/**subagent-driven-development**, with **test-driven-development**) and transition to IMPLEMENTING. |
 | `IMPLEMENTING` | Continue execution skill. If the transition to VERIFYING prints `POLICY: USER_AUTHORITY_REQUIRED` and `DIRECTIVE: HALT_AND_WAIT`, stop and report to the user. Do not repair the contract, call `harness gate`, or realign on your own. Otherwise, before requesting VERIFYING, record impacted files, dependents, contracts, risks, and required related tests with `harness impact add-*`. Full-suite execution is forbidden, including when AGENTS.md or user instructions request it. Then transition to VERIFYING and collect only `related` evidence via `harness evidence run --type <t> --scope related --command "<cmd>"`. For related unit tests, `--covered-test` is repository-root path even when command `cd`s into a subproject. Record effective review scope with `harness impact scope --format yaml`. |
 | `VERIFYING` | Run deterministic Verification Plan commands/tests. Classify failed verification using Verification Failure Triage; a genuine product regression -> IMPLEMENTING (TDD), then re-verify. For Q3, and Q2 when `observability.required: true`, invoke **diagnosability-review** and persist evidence before `VERIFYING -> REVIEWING`; Gate freshness preflight must pass; stale required evidence blocks entry. All green -> invoke **complexity-reviewer** and transition to REVIEWING. Related test evidence is append-only by command/covered-test identity; Gate unions fresh coverage, so run only newly required tests. STANDARD/STRICT declared test targets must exist before implementation. Control-plane writes under `.harness/` do not stale product evidence. |
-| `REVIEWING` | Invoke Superpowers review and route only with review outcome. |
+| `REVIEWING` | Wait for the user, a user-named model, or the dedicated Reviewer bot. Do not call Codex. Route only with `harness review outcome` after that review. Native `harness review complexity` and `harness review diagnosability` stay local and do not call Codex. |
 | `REPRODUCING` | Invoke **reproduce-finding** skill. CONFIRMED finding -> FIXING (fix with TDD) -> VERIFYING. REJECTED finding -> close it, return to REVIEWING. |
 | `GATING` | Run `harness gate`; inspect stdout `DECISION:` and `harness status`. `DECISION: CONVERGED` with `DIRECTIVE: NONE` -> `harness transition DONE`; `CONTINUE` with `DIRECTIVE: RESUME_TYPED_RECOVERY` -> `harness resume`; `ESCALATED` with `DIRECTIVE: NONE` ends autonomous work. |
 
@@ -219,6 +231,8 @@ Inside the harness repo, `python scripts/harness_status.py` and
 `python scripts/validate_state.py CUR TGT` remain library wrappers.
 `python scripts/quality_gate.py` is disabled: it prints a deprecation notice
 and exits with code `2` without evaluating Gate. Use `harness gate`.
+
+The task loop does not run `harness converge`, `harness benchmark`, `harness review session`, `harness review batches`, or `harness plan sync-markdown`. Do not start `harness evidence plan --probe-launcher` during the task loop; its explicit-request hazards stay in Efficient Evidence Scheduling. Do not use `harness telemetry report` as a speed result: an empty `token_estimate` is not a measurement.
 
 Transition example:
 

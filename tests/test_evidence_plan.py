@@ -237,6 +237,18 @@ def test_empty_optional_decision_index_is_not_initialized(harness):
     assert tree_bytes(harness) == before
 
 
+def test_preflight_opt_in_reports_version_two(harness):
+    result = subprocess.run(
+        [sys.executable, '-m', 'harness.cli', 'evidence', 'plan', '--preflight', '--json'],
+        cwd=harness.parent, env={**os.environ, 'PYTHONPATH': str(REPO / 'src')},
+        capture_output=True, text=True, check=False, timeout=30,
+    )
+    assert result.returncode in {0, 1}, result.stderr
+    report = json.loads(result.stdout)
+    assert report['version'] == 2
+    assert report['execution_authority'] is False
+
+
 def test_evidence_plan_cli_outputs_json_without_legacy_execution(harness):
     before = tree_bytes(harness)
     result = subprocess.run([sys.executable, '-m', 'harness.cli', 'evidence', 'plan', '--json'],

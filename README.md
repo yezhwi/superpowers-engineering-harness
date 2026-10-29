@@ -76,7 +76,11 @@ Pin a release when needed:
 curl -fsSL https://raw.githubusercontent.com/yezhwi/superpowers-engineering-harness/main/scripts/install-pi.sh | bash -s -- v0.3.1
 ```
 
-Installer checks whether Superpowers is configured and installs it only when missing. It reconciles pinned Harness Pi skills, installs matching Python CLI into isolated user environment, and exposes `~/.local/bin/harness`. Add `~/.local/bin` to `PATH` if installer reports it missing. Re-running same version is idempotent. Review downloaded script before execution when required by local security policy.
+Installer checks whether Superpowers is configured and installs it only when missing. It reconciles pinned Harness Pi skills, installs matching Python CLI into isolated user environment, and exposes `~/.local/bin/harness`. Add `~/.local/bin` to `PATH` if installer reports it missing. Re-running same version reuses a healthy CLI and repairs a broken launcher. Review downloaded script before execution when required by local security policy.
+
+Candidate venvs stay at permanent paths under `~/.local/share/superpowers-engineering-harness/versions/`; installer checks the requested CLI distribution version and runs candidate and final launcher `--help` before reporting success. It atomically switches the public launcher symlink and retains previous environments, including legacy `venv/`, without automatic pruning. Failed activation restores the previous entry when still owned; failed rollback reports retained recovery links. Pi skills updates are not transactional with CLI activation: a partial update exits nonzero and warns that CLI/skills may differ; rerun to reconcile.
+
+Cooperating installers using the same install root are serialized by `.install.lock`. Handled interruptions release the lock; abrupt death can retain it and candidate environments. No stale-lock stealing or automatic crash recovery: first confirm the previous installer and its children have stopped, inspect the reported entry/environment/recovery paths, then remove only the confirmed stale empty lock directory before rerunning. Different install roots and arbitrary external filesystem writers are not coordinated.
 
 For source development, install repository editable environment separately with `python -m pip install -e /path/to/superpowers-engineering-harness`.
 
@@ -96,6 +100,10 @@ Use Engineering Harness to fix this bug: cancelling an order twice issues two re
 ```
 
 To continue interrupted work, open a new session and ask the Agent to resume the current task. For Pi, open a new session after installing skills. Skills load at session start.
+
+Optional compatibility diagnosis uses `harness evidence plan --preflight --json --command "python -m pytest tests/example.py"`. The literal command is classified, not executed; `NATIVE_PROFILE_SUPPORTED` is not actual test proof. Add `--skills-package /absolute/path/to/package.json` only to compare that explicit manifest with verified CLI identity. Missing provenance or drift blocks product advice without automatic migration; non-Git calls retain exit 1/stderr-only. v2 exits 0/1/2 mean clear/blocked/error diagnosis, never Gate PASS. The original `harness evidence plan --json` stays v1.
+
+An explicitly requested `--probe-launcher /absolute/path/to/harness` is **unsandboxed local execution** of `--help`, inheriting environment and original cwd. It can write files or access network; success does not attest its version. Capture is limited to 64KiB per stream, with a 10-second deadline and bounded process-group cleanup. Do not run this probe, another preflight, or another Context build automatically at startup; consume the existing admitted output.
 
 ### Antigravity CLI (agy)
 

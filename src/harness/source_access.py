@@ -362,6 +362,51 @@ def _open_beneath(path: Path, root: Path) -> int:
         os.close(directory)
 
 
+@dataclass(frozen=True)
+class RegularFileSnapshot:
+    content: bytes
+    device: int
+    inode: int
+
+
+class RegularFileTooLargeError(ValueError):
+    """Declared regular-file input exceeds its explicit byte budget."""
+
+
+def read_regular_snapshot_beneath(path: Path, root: Path, *, max_bytes: int) -> RegularFileSnapshot:
+    """Bounded no-follow read; no new fdopen exemption or source authority."""
+    if not isinstance(max_bytes, int) or max_bytes < 0:
+        raise ValueError('invalid regular-file byte limit')
+    path, root = Path(path), Path(root)
+    if '..' in path.parts or '..' in root.parts:
+        raise ValueError('noncanonical regular-file path')
+    _check(path, explicit=True)
+    descriptor = _open_beneath(path, root)
+    try:
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode):
+            raise OSError('source is not a regular file')
+        chunks = []
+        remaining = max_bytes + 1
+        while remaining:
+            chunk = os.read(descriptor, min(remaining, 65536))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        content = b''.join(chunks)
+        if len(content) > max_bytes:
+            raise RegularFileTooLargeError('regular file exceeds byte limit')
+        after = os.fstat(descriptor)
+        fields = ('st_dev', 'st_ino', 'st_size', 'st_mtime_ns', 'st_ctime_ns')
+        if any(getattr(before, key) != getattr(after, key) for key in fields):
+            _stale()
+    finally:
+        os.close(descriptor)
+    _observe(path, 'bytes', _hash(content))
+    return RegularFileSnapshot(content, before.st_dev, before.st_ino)
+
+
 def read_regular_bytes_beneath(path: Path, root: Path) -> bytes:
     """Read one regular file beneath root without following symlinks."""
     _check(path, explicit=True)

@@ -80,6 +80,21 @@ def test_efficiency_routing_declares_guidance_only_batch_manifest(path):
         assert required in section
 
 
+def _denies_diagnostic_authority(text):
+    return any(phrase in text for phrase in (
+        'not execution authority', 'no diagnostic grants execution authority',
+    ))
+
+
+@pytest.mark.parametrize('text,denied', [
+    ('It is advice, not execution authority.', True),
+    ('No diagnostic grants execution authority.'.lower(), True),
+    ('A diagnostic grants execution authority.', False),
+])
+def test_diagnostic_authority_oracle_retains_negative_counterexample(text, denied):
+    assert _denies_diagnostic_authority(text) is denied
+
+
 def test_collection_guidance_uses_exact_reuse_and_preserves_red():
     text = (ROOT / "skills/collect-evidence/SKILL.md").read_text()
     section = text.split("## Plan and Reuse Before Execution", 1)[1].split("\n## ", 1)[0]
@@ -90,9 +105,9 @@ def test_collection_guidance_uses_exact_reuse_and_preserves_red():
         "RED and finding",
         "cross-HEAD",
         "serial",
-        "not execution authority",
     ):
         assert required in section
+    assert _denies_diagnostic_authority(section)
     assert '--scope related' in section and '--covered-test tests/example.py' in section
 
 

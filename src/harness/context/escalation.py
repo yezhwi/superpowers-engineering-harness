@@ -172,7 +172,7 @@ def plan_automatic_expansions(
                           tuple(planned), len(planned), context['policy'])
 
 
-def publish_expansion_batch(harness_dir: Path, batch: ExpansionBatch, expected_sources: dict) -> dict:
+def publish_expansion_batch(harness_dir: Path, batch: ExpansionBatch, expected_sources: dict, *, workspace=None) -> dict:
     if batch.original_versions != expected_sources or batch.budget_delta != len(batch.events):
         raise ContextBuildError('CONTEXT_POLICY_MISMATCH', 'invalid expansion batch')
     if any(event['task_id'] != batch.task_id for event in batch.events):
@@ -180,18 +180,25 @@ def publish_expansion_batch(harness_dir: Path, batch: ExpansionBatch, expected_s
     if batch.original_tail_digest != expected_sources['files'].get('context/expansions.yaml'):
         raise ContextBuildError('CONTEXT_STALE', 'expansion log basis changed')
     if batch.events:
-        _publish_expansion_events(harness_dir, expected_sources, list(batch.events), final_policy=batch.final_policy)
+        _publish_expansion_events(
+            harness_dir, expected_sources, list(batch.events),
+            final_policy=batch.final_policy, workspace=workspace,
+        )
     return {'events': list(batch.events), 'policy': batch.final_policy}
 
 
-def apply_automatic_expansions(harness_dir: Path, context: dict, *, source: AuthoritativeContext) -> dict:
+def apply_automatic_expansions(
+    harness_dir: Path, context: dict, *, source: AuthoritativeContext, workspace=None,
+) -> dict:
     from .integrity import build_context
 
     batch = plan_automatic_expansions(source, context)
     if not batch.events:
         return context
-    publish_expansion_batch(harness_dir, batch, context['generated_from'])
-    return build_context(harness_dir, mode=context['mode'])
+    publish_expansion_batch(
+        harness_dir, batch, context['generated_from'], workspace=workspace,
+    )
+    return build_context(harness_dir, mode=context['mode'], workspace=workspace)
 
 
 def active_expansions(task: dict, document: dict | None) -> list[dict]:
@@ -305,7 +312,10 @@ def _make_expansion_event(task: dict, context: dict, trigger: str, reason: str, 
     return event
 
 
-def _publish_expansion_events(harness_dir: Path, versions: dict, events: list[dict], *, final_policy: str | None = None):
+def _publish_expansion_events(
+    harness_dir: Path, versions: dict, events: list[dict], *,
+    final_policy: str | None = None, workspace=None,
+):
     import hashlib
 
     from harness import source_access
@@ -321,7 +331,7 @@ def _publish_expansion_events(harness_dir: Path, versions: dict, events: list[di
         staging_root = harness_dir / '.staging'
         if any(path.is_symlink() for path in (task_path, log_path, staging_root)):
             raise ContextBuildError('CONTEXT_REFERENCE_BROKEN', 'expansion storage cannot be a symlink')
-        require_fresh(versions, capture(harness_dir))
+        require_fresh(versions, capture(harness_dir, workspace=workspace))
         task_bytes = source_access.read_regular_bytes_beneath(task_path, harness_dir)
         old_log = source_access.read_regular_bytes_beneath(log_path, harness_dir) if log_path.exists() else None
         for name, content in (('current-task.yaml', task_bytes), ('context/expansions.yaml', old_log)):
@@ -352,12 +362,12 @@ def _publish_expansion_events(harness_dir: Path, versions: dict, events: list[di
         expected['control_plane_hash'] = digest(expected['files'])
         expected['task_hash'] = digest({'current-task.yaml': expected['files']['current-task.yaml']})
         def finalize():
-            require_fresh(expected, capture(harness_dir))
-            require_fresh(expected, capture(harness_dir))
+            require_fresh(expected, capture(harness_dir, workspace=workspace))
+            require_fresh(expected, capture(harness_dir, workspace=workspace))
 
         artifacts = tuple(transaction.StagedArtifact(n, b) for n, b in payloads.items())
         staged = transaction.stage(harness_dir, artifacts, operation_id=f'context-expand-{uuid4().hex}')
-        require_fresh(versions, capture(harness_dir))
+        require_fresh(versions, capture(harness_dir, workspace=workspace))
         transaction.publish(harness_dir, staged, replace_paths=frozenset(payloads),
                             after_publish=finalize, durable=True,
                             expected_sources=before, expected_artifacts=artifacts)
