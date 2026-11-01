@@ -4,7 +4,7 @@
 
 Engineering Harness is a deterministic control plane around [Superpowers](https://github.com/obra/superpowers) development workflows. It does not replace agent or worker skills. It persists task state, requires proof, and prevents an agent from declaring work done without gate approval.
 
-[Architecture: big picture](docs/architecture.md)
+[Architecture: big picture](docs/architecture.md) · [Opt-in stable storage](docs/stable-storage.md)
 
 ## v0.3.2 compatibility and measurement status
 
@@ -39,7 +39,7 @@ task-directory replacement or arbitrary external readers/writers.
   block admitted Gate/transitions before canonical facts, without implicit repair.
 - `.harness/.publication-retained/`: displaced objects, capability probes, journal
   frames and terminal recovery data. Terminal retention alone is not pending work.
-  Task new/recover keeps the actual previous Harness tree at
+  In unbound legacy layout, task new/recover keeps the actual previous Harness tree at
   `task-replacement-*/previous` beneath this directory, preserving original inodes
   and held-FD writes rather than cloning old retention into each prepared task.
   On turnover error, inspect the current task before retry: the old tree may remain
@@ -48,9 +48,24 @@ task-directory replacement or arbitrary external readers/writers.
 - Storage contains actual metadata bytes, not evidence-cache or execution authority.
   New private directories request `0700`, new files `0600`; displaced objects keep
   their inode/mode. Existing storage is not retroactively hardened. Treat it as
-  sensitive. Retention grows indefinitely and can cause `ENOSPC`; no pruning command
-  or age-based cleanup exists. Cleanup needs separate design and explicit authority;
+  sensitive. Retention grows indefinitely and can cause `ENOSPC`; no destructive
+  retained/runtime GC or age-based cleanup exists. Cleanup needs separate design and explicit authority;
   deleting recovery data is not a supported repair.
+
+## Opt-in stable storage (development candidate)
+
+A separately authorized activation binds `.harness` to workspace-owned
+`.harness-store` with capability `harness-storage-layout/v1`. Bound task turnover
+stops history copying and retains old roots flat, preserving original inodes.
+Inspection/planning is read-only; apply requires an exact selected user Decision
+and explicit compatible-writer maintenance declaration. Arbitrary old writers
+are not isolated. Logical origin-qualified references do not guarantee raw old
+shell paths. Pending directory operations require explicit recovery, not init.
+
+`harness storage prune --dry-run --json` reports classifications only; bound
+`task prune --apply` refuses. No archive/runtime/retained GC apply exists. This
+project's real store has not been activated by implementation work. See
+[commands, layout, limitations and separate production approval](docs/stable-storage.md).
 
 ## Why Harness
 
@@ -280,6 +295,36 @@ Before `PLANNED → IMPLEMENTING`, use the read-only aggregate checker to report
 ```bash
 harness check admission
 ```
+
+### Related batch Finding closure
+
+Adversarial Findings can use multiple genuine related receipts for `VERIFIED`:
+
+```bash
+harness finding transition FND-nnn VERIFIED --evidence batch-a.json --evidence batch-b.json
+harness finding transition FND-nnn CLOSED
+```
+
+Every member must independently prove successful actual test execution at current
+HEAD/workspace; their union must cover current nonempty `impact.required_tests`.
+One invalid/stale member fails the whole batch. No synthetic aggregate execution
+or historical receipt rewrite. New batch format stores references plus raw-byte
+digests; Gate rereads them at VERIFIED/CLOSED, including current coverage policy.
+The limits are 2–64 receipts, at most 4 MiB each and 16 MiB total. Mixed single/batch
+metadata is refused; older schemas reject pure batch format. CLOSED needs no new
+receipt list and retains its proof; multi-evidence arguments at other lifecycle
+steps or for diagnosability are unsupported.
+
+Only critical batches require the existing Finding-level related approval:
+`--critical-related-approved` writes it to the candidate before validation.
+Major batches do not require/read that approval. Approval time must be nonempty,
+not newly recent or tied to this set of digests. Old single-receipt I/O and policy
+behavior remain unchanged, including the known legacy lack of enforced critical
+related approval; this is not permission for agents to skip required user consent.
+Batch regression proof never replaces the separate RED/GREEN chain, independent
+review, native lifecycle or final Gate. Q3 re-entry after frozen realignment may
+resume a replay-valid terminal prefix plus pending suffix; it never clears history
+or permits arbitrary nonempty Plan fingerprint updates.
 
 **Gate and Finding contract:** Only `harness gate` evaluates or persists product Gate results; direct `python scripts/quality_gate.py` is disabled. Persisted Findings require an explicit category (`adversarial`, `diagnosability`, `complexity`, or `interface`); category-less legacy records fail with `MIGRATION_REQUIRED`. `finding.schema.json` was removed; use category-specific schemas.
 

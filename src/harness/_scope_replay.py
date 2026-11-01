@@ -87,6 +87,19 @@ def new_scope_artifacts(harness_dir: Path) -> list[transaction.StagedArtifact]:
             raise TestScopeError()
         tests = impact['impact']['required_tests']
         _tests(root, tests)
+        return _genesis_artifacts(task, task_bytes, impact_bytes, gate, tests)
+    except (OSError, KeyError, TypeError, yaml.YAMLError, ValidationError, ContextBuildError) as exc:
+        raise TestScopeError() from exc
+
+
+def _genesis_artifacts(task, task_bytes, impact_bytes, gate, tests):
+    """Pure creation-only projection, shared by ordinary init and owned turnover."""
+    try:
+        validate(task, read_schema('task.schema.json'))
+        validate(gate, read_schema('gate.schema.json'))
+        if task['state'] != 'CREATED' or yaml.safe_load(task_bytes) != task:
+            raise TestScopeError()
+        gate = copy.deepcopy(gate)
         task_id = task['task']['id']
         baseline = {'version': 1, 'task_id': task_id, 'required_tests': tests,
                     'origin': {'kind': 'new_task', 'timestamp': datetime.datetime.now(datetime.UTC).isoformat(),

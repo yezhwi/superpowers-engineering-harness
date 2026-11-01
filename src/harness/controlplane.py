@@ -2614,11 +2614,17 @@ def cmd_finding_transition(
 ):
     import yaml
 
+    references = evidence if isinstance(evidence, (list, tuple)) else ([evidence] if evidence else [])
+    batch = len(references) > 1
+    evidence = references[0] if references else None
     path = None
     finding = None
     for candidate in Path(".harness/findings").glob("*.yaml"):
         try:
-            document = yaml.safe_load(candidate.read_text())
+            content = (source_access.read_regular_snapshot_beneath(
+                candidate, Path('.harness'), max_bytes=4 * 1024 * 1024).content
+                if batch else candidate.read_text())
+            document = yaml.safe_load(content)
         except (OSError, yaml.YAMLError):
             print("FINDING_STATE_INVALID", file=sys.stderr)
             return 2
@@ -2631,10 +2637,34 @@ def cmd_finding_transition(
     if not path:
         print(f"finding not found: {fid}", file=sys.stderr)
         return 1
+    if 'closure_evidence' in finding:
+        from .finding_closure import closure_proof_kind
+        try:
+            closure_proof_kind(finding)
+        except evidence_validator.EvidenceValidationError:
+            print('INVALID FINDING PROOF: FINDING_CLOSURE_FORMAT_INVALID', file=sys.stderr)
+            return 2
+        if target == 'VERIFIED' and not batch:
+            print('INVALID FINDING PROOF: BATCH_EVIDENCE_TARGET_INVALID', file=sys.stderr)
+            return 2
     current = finding.get("status")
     if target not in _FINDING_TRANSITIONS.get(current, set()):
         print(f"INVALID FINDING TRANSITION: {current} -> {target}", file=sys.stderr)
         return 1
+
+    if batch:
+        if target != 'VERIFIED' or finding.get('category') != 'adversarial':
+            print('INVALID FINDING PROOF: BATCH_EVIDENCE_TARGET_INVALID', file=sys.stderr)
+            return 2
+        from .finding_closure import publish_batch_closure
+        try:
+            publish_batch_closure(Path('.harness'), path, finding, references,
+                                  critical_related_approved=critical_related_approved)
+        except (OSError, ValueError, evidence_validator.EvidenceValidationError):
+            print('INVALID FINDING PROOF: BATCH_CLOSURE_INVALID', file=sys.stderr)
+            return 2
+        print(f'OK: {fid} {current} -> VERIFIED')
+        return 0
 
     def proof(reference, succeeds, test_id=None):
         if not reference:
@@ -3126,6 +3156,10 @@ def cmd_task_new(task_id: str, title: str = "") -> int:
         return 2
     try:
         architecture_mode = trusted_architecture_mode(harness_dir, old)
+        from .task_replacement import publish_bound_replacement
+        if publish_bound_replacement(harness_dir, old, task_id, title, 'NEW', head, architecture_mode):
+            print(f"OK: archived {old['task']['id']}, created {task_id}")
+            return 0
         staged = replacement_workspace(harness_dir, new_task=True)
         archive = (
             staged
@@ -3216,6 +3250,10 @@ def cmd_task_recover(task_id: str, title: str, reason: str) -> int:
         return 2
     try:
         architecture_mode = trusted_architecture_mode(harness_dir, old)
+        from .task_replacement import publish_bound_replacement
+        if publish_bound_replacement(harness_dir, old, task_id, title, 'RECOVER', head, architecture_mode, reason):
+            print(f"OK: recovered {old_id}, created {task_id}")
+            return 0
         staged = replacement_workspace(harness_dir)
         timestamp = datetime.datetime.now(datetime.timezone.utc).strftime(
             "%Y%m%dT%H%M%S%fZ"

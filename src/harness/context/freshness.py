@@ -16,7 +16,7 @@ from .model import ContextBuildError
 from .source import ARTIFACT_PATTERNS
 from .telemetry import instrument
 
-PROJECTION_VERSION = 5
+PROJECTION_VERSION = 6
 ROOT_FILES = (
     "current-task.yaml",
     "requirements.yaml",
@@ -29,6 +29,7 @@ ROOT_FILES = (
     "risk-boundaries.yaml",
     "observability.yaml",
     "config.yaml",
+    "storage-binding.yaml",
     "context/expansions.yaml",
     "decisions/index.yaml",
 )
@@ -246,6 +247,10 @@ def bootstrap_scope(harness_dir: Path):
         harness_dir / name
         for name in (*ROOT_FILES, "alignment.yaml", "alignment-freeze.yaml")
     ]
+    from harness.storage.layout import observation_paths
+
+    allowed.extend(observation_paths(harness_dir))
+    allowed.extend((root, harness_dir))
     allowed.extend(harness_dir / directory for directory in ARTIFACT_DIRS)
     rules = [
         (harness_dir / directory, "*.yaml") for directory in ("decisions", "findings")
@@ -261,6 +266,7 @@ def version_scope(
     protected: set[str],
     plan_sources: tuple[str, ...],
     architecture_sources: tuple[str, ...],
+    archive_references: dict | None = None,
 ):
     """Freeze known control members before bytes/version collection."""
     root = harness_dir.absolute().parent
@@ -274,6 +280,10 @@ def version_scope(
             "alignment-freeze.yaml",
         )
     ]
+    from harness.storage.layout import observation_paths
+
+    allowed.extend(observation_paths(harness_dir))
+    allowed.extend((root, harness_dir))
     for directory, pattern in ARTIFACT_PATTERNS.items():
         path = harness_dir / directory
         allowed.append(path)
@@ -284,13 +294,29 @@ def version_scope(
             allowed.append(contained_path(root, name))
     # FAST protected paths are literal filenames, including `*`/`::`.
     allowed.extend(contained_path(root, name) for name in protected)
+    from harness.storage.archive import dependency_paths
+
+    allowed.extend(dependency_paths(root, archive_references or {}))
     with source_scope(root, allowed=allowed) as observed:
         yield observed
 
 
 @instrument('capture')
 def capture(harness_dir: Path, *, workspace=None) -> dict:
-    """No derived outputs, staging, history or telemetry enter control hash.
+    from harness.storage.layout import StorageSession, require_layout_admission
+    from harness.telemetry_lock import telemetry_lock
+
+    # Capture is an internal reader, also used by the ordinary publisher's
+    # owner-held validation callback while its own v2 journal remains active.
+    # Entry points perform ordinary admission; never relax store coordination.
+    with telemetry_lock(harness_dir):
+        root = harness_dir.absolute()
+        session = StorageSession(root.parent, root, require_layout_admission(root))
+        return _capture_admitted(harness_dir, session, workspace=workspace)
+
+
+def _capture_admitted(harness_dir, session, *, workspace=None):
+    """No derived outputs, staging, unselected history or telemetry enter control hash.
 
     This registry covers current Gate's canonical file reads. Changes to Gate's
     input surface must extend ROOT_FILES/ARTIFACT_DIRS and its regression tests.
@@ -304,6 +330,15 @@ def capture(harness_dir: Path, *, workspace=None) -> dict:
         protected = _protected_paths(harness_dir)
         plan_sources = _plan_source_names(harness_dir)
         architecture_sources = _architecture_source_names(harness_dir)
+        from harness.storage.archive import impact_archive_declarations
+
+        impact_path = harness_dir / "impact.yaml"
+        impact_document = yaml.safe_load(source_access.read_text(impact_path)) if source_access.exists(impact_path) else {}
+        declarations = impact_archive_declarations(
+            (impact_document or {}).get("impact", {}), bound=session.layout.mode == "bound")
+    from harness.storage.archive import project_dependencies
+
+    archive_references = project_dependencies(session, declarations)
     try:
         with version_scope(
             harness_dir,
@@ -311,6 +346,7 @@ def capture(harness_dir: Path, *, workspace=None) -> dict:
             protected,
             plan_sources,
             architecture_sources,
+            archive_references,
         ):
             if _architecture_source_names(harness_dir) != architecture_sources:
                 raise ContextBuildError(
@@ -323,6 +359,7 @@ def capture(harness_dir: Path, *, workspace=None) -> dict:
                 protected,
                 plan_sources,
                 architecture_sources,
+                archive_references=archive_references,
                 workspace=workspace,
             )
     except (OSError, ValueError, yaml.YAMLError, WorkspaceError) as exc:
@@ -340,6 +377,7 @@ def _capture_versions(
     protected: set[str],
     plan_sources: tuple[str, ...],
     architecture_sources: tuple[str, ...],
+    archive_references: dict,
     workspace=None,
 ) -> dict:
     files = {}
@@ -399,6 +437,7 @@ def _capture_versions(
         "schema_resources": resource_versions,
         "files": files,
         "declared_files": declared,
+        "archive_references": archive_references,
         "workspace_hash": current.fingerprint,
         "head": current.head,
         "control_plane_hash": digest(files),

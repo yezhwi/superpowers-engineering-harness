@@ -95,6 +95,10 @@ def _verify(scope: _Scope) -> None:
                     current = _hash(path.read_bytes())
                 except FileNotFoundError:
                     current = None
+            elif kind == "storage_alias":
+                current = read_history_selection_beneath(path, scope.root, selector=pattern)[1]
+            elif kind == "node_identity":
+                current = node_identity_beneath(path, scope.root, node_kind=previous["kind"])
             elif kind == "exists":
                 current = path.exists()
             elif kind == "is_file":
@@ -375,6 +379,13 @@ class RegularFileTooLargeError(ValueError):
 
 def read_regular_snapshot_beneath(path: Path, root: Path, *, max_bytes: int) -> RegularFileSnapshot:
     """Bounded no-follow read; no new fdopen exemption or source authority."""
+    snapshot = _regular_snapshot_beneath(path, root, max_bytes=max_bytes)
+    _observe(path, 'bytes', _hash(snapshot.content))
+    return snapshot
+
+
+def _regular_snapshot_beneath(path: Path, root: Path, *, max_bytes: int) -> RegularFileSnapshot:
+    """Secure byte collection; caller must declare its exact observation semantics."""
     if not isinstance(max_bytes, int) or max_bytes < 0:
         raise ValueError('invalid regular-file byte limit')
     path, root = Path(path), Path(root)
@@ -403,8 +414,55 @@ def read_regular_snapshot_beneath(path: Path, root: Path, *, max_bytes: int) -> 
             _stale()
     finally:
         os.close(descriptor)
-    _observe(path, 'bytes', _hash(content))
     return RegularFileSnapshot(content, before.st_dev, before.st_ino)
+
+
+def read_history_selection_beneath(path: Path, root: Path, *, selector: str):
+    """Read actual index each time; observe one origin-qualified alias semantic.
+
+    Never grants new path authority. Only fixed canonical history index supports
+    this specialized projection; arbitrary callers cannot suppress byte tracking
+    for product sources or other control files.
+    """
+    from harness.storage.archive import _selected_projection
+
+    path, root = Path(path).absolute(), Path(root).absolute()
+    if path != root / '.harness-store/history/index.yaml':
+        raise ValueError('invalid history index path')
+    snapshot = _regular_snapshot_beneath(path, root, max_bytes=16 * 1024 * 1024)
+    projection = _selected_projection(snapshot.content, selector)
+    _observe(path, 'storage_alias', projection, selector)
+    return snapshot, projection
+
+
+def node_identity_beneath(path: Path, root: Path, *, node_kind: str):
+    """Observe identity without following ancestors or special streams."""
+    path, root = Path(path).absolute(), Path(root).absolute()
+    _check(path, explicit=True)
+    if node_kind not in {'file', 'directory'}:
+        raise ValueError('invalid source node kind')
+    if path == root:
+        descriptor = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    else:
+        descriptor = _open_beneath(path, root)
+    try:
+        info = os.fstat(descriptor)
+        check = stat.S_ISDIR if node_kind == 'directory' else stat.S_ISREG
+        if not check(info.st_mode):
+            raise OSError('source node kind changed')
+        value = {'identity': [info.st_dev, info.st_ino], 'kind': node_kind}
+    finally:
+        os.close(descriptor)
+    _observe(path, 'node_identity', value)
+    return value
+
+
+def read_archive_handle(handle) -> bytes:
+    """Typed history capability read; retain handle's complete freshness check."""
+    from .storage.archive import ArchiveHandle
+    if type(handle) is not ArchiveHandle:
+        raise OSError('invalid archive handle')
+    return handle.read_bytes()
 
 
 def read_regular_bytes_beneath(path: Path, root: Path) -> bytes:

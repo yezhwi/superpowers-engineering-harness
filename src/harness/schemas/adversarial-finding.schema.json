@@ -101,6 +101,16 @@
       "type": "string",
       "description": "commit or summary of the minimal fix; set at FIXING/FIXED"
     },
+    "closure_evidence": {
+      "type": "object", "additionalProperties": false, "required": ["version", "receipts"],
+      "properties": {
+        "version": {"const": 1},
+        "receipts": {"type": "array", "minItems": 2, "maxItems": 64,
+          "items": {"type": "object", "additionalProperties": false, "required": ["ref", "sha256"],
+            "properties": {"ref": {"type": "string", "minLength": 1},
+              "sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}}}}
+      }
+    },
     "evidence": {
       "type": "string",
       "description": "full-regression evidence reference; set at VERIFIED"
@@ -322,10 +332,10 @@
         ]
       },
       "then": {
-        "required": [
-          "regression_test",
-          "evidence",
-          "verified_at"
+        "required": ["regression_test", "verified_at"],
+        "oneOf": [
+          {"required": ["evidence"], "not": {"required": ["closure_evidence"]}},
+          {"required": ["closure_evidence"], "not": {"required": ["evidence"]}}
         ],
         "properties": {
           "regression_test": {
@@ -363,10 +373,10 @@
         ]
       },
       "then": {
-        "required": [
-          "regression_test",
-          "evidence",
-          "verified_at"
+        "required": ["regression_test", "verified_at"],
+        "oneOf": [
+          {"required": ["evidence"], "not": {"required": ["closure_evidence"]}},
+          {"required": ["closure_evidence"], "not": {"required": ["evidence"]}}
         ],
         "properties": {
           "regression_test": {

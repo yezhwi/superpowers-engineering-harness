@@ -15,6 +15,10 @@ def _validate(args: tuple[str, ...]) -> None:
         not isinstance(arg, str) or not arg or "\0" in arg for arg in args
     ):
         raise GitQueryError("GIT_QUERY_INVALID")
+    # Only this finite additional namespace policy is supported; ownership is
+    # checked by the shared workspace caller, not inferred by Git syntax.
+    if args[-2:] == (":(exclude).harness-store", ":(exclude).harness-store/**"):
+        args = args[:-2]
     architecture_pathspec = (
         "--",
         ".",

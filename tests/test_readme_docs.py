@@ -502,8 +502,8 @@ def test_publication_operator_docs_declare_macos_only_support(name):
 
 
 @pytest.mark.parametrize('name, qualifications', [
-    ('README.md', ('not content CAS', 'relocated', 'no pruning command', 'standalone')),
-    ('README.zh-CN.md', ('不是 content CAS', '迁移', '不提供 pruning 命令', '独立')),
+    ('README.md', ('not content CAS', 'relocated', 'retained/runtime', 'standalone')),
+    ('README.zh-CN.md', ('不是 content CAS', '迁移', 'retained/runtime', '独立')),
     ('docs/test-scope-migration.md', ('not content CAS', 'relocated', 'no pruning command', 'standalone')),
 ])
 def test_publication_operator_docs_explain_retention_cost_and_limits(name, qualifications):

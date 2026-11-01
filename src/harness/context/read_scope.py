@@ -10,10 +10,17 @@ from harness.source_access import source_scope
 def context_read_scope(harness_dir: Path, versions: dict):
     # Load implementation before freezing canonical data authority. Self-hosted
     # Python imports must not become undeclared control-source reads.
-    from harness import _scope_replay  # noqa: F401
+    from harness import _scope_replay, finding_closure  # noqa: F401
+
+    from harness.storage.layout import observation_paths
 
     root = harness_dir.absolute().parent
     allowed = {harness_dir / name for name in versions["files"]}
+    allowed.update(observation_paths(harness_dir))
+    allowed.update((root, harness_dir))
+    from harness.storage.archive import dependency_paths
+
+    allowed.update(dependency_paths(root, versions.get("archive_references", {})))
     allowed.update(
         {harness_dir / name for name in ("alignment.yaml", "alignment-freeze.yaml")}
     )

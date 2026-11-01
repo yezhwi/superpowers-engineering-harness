@@ -8,6 +8,7 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "storage_layout": {"type": "object", "required": ["version", "required_capabilities"], "additionalProperties": false, "properties": {"version": {"const": 1}, "required_capabilities": {"const": ["harness-storage-layout/v1"]}}},
         "test_scope": {"type": "object", "required": ["minimum_reader"], "additionalProperties": false, "properties": {"minimum_reader": {"const": "0.3.2"}}},
         "requirements": {"$ref": "#/definitions/requirementPolicy"},
         "architecture": {

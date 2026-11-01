@@ -80,6 +80,76 @@ def test_sync_plan_fingerprint_refuses_execution_history(tmp_path):
         sync_plan_fingerprint(harness_dir)
 
 
+def replanned_prefix(harness_dir):
+    from harness.plan_execution import append_plan_transition
+    from test_alignment import complete_alignment
+    from test_plan_execution import proof_receipt
+    document, execution = write_v2(harness_dir)
+    execution = append_plan_transition(document, execution, {
+        'item': 'P-001', 'from': 'PENDING', 'to': 'IN_PROGRESS', 'action': 'BEGIN'})
+    receipt = proof_receipt(evidence_refs=('unit-test.json',))
+    receipt['surface_refs'] = ['src/first.py']
+    execution = append_plan_transition(document, execution, {
+        'item': 'P-001', 'from': 'IN_PROGRESS', 'to': 'COMPLETE', 'action': 'RECONCILE',
+        'evidence_refs': ['unit-test.json'], 'surface_refs': ['src/first.py'], 'proof_receipt': receipt})
+    (harness_dir / 'plan-execution.yaml').write_text(yaml.safe_dump(execution, sort_keys=False))
+    alignment = complete_alignment()
+    alignment['task_id'] = 'TASK-062'
+    alignment['freeze'] = {'frozen': True, 'frozen_at': '2026-10-31T00:00:00Z',
+                           'contract_hash': 'sha256:' + 'c' * 64}
+    alignment['revisions'] = [{'reason': 'approved scope extension', 'timestamp': '2026-10-31T00:00:00Z',
+                               'previous_contract_hash': 'sha256:' + 'b' * 64}]
+    from harness.alignment import contract_hash
+    alignment['freeze']['contract_hash'] = contract_hash(alignment)
+    (harness_dir / 'alignment.yaml').write_text(yaml.safe_dump(alignment, sort_keys=False))
+    return document, execution, alignment
+
+
+def test_q3_replanned_entry_preserves_terminal_prefix_and_starts_pending_suffix(tmp_path):
+    from harness.plan_reconciliation import validate_plan_initialization
+    root = tmp_path / '.harness'
+    replanned_prefix(root)
+    before = tree_bytes(root)
+    issues = validate_plan_initialization(root, task(state='PLANNED'))
+    assert issues == [], issues
+    assert tree_bytes(root) == before
+
+
+@pytest.mark.parametrize('damage', ['missing-revision', 'unfrozen', 'wrong-task', 'active', 'all-complete', 'pending-before-terminal', 'bad-journal'])
+def test_q3_replanned_entry_refuses_unsafe_history_without_rewriting(tmp_path, damage):
+    from harness.plan_reconciliation import PlanArtifactError, validate_plan_initialization, plan_fingerprint
+    root = tmp_path / '.harness'
+    document, execution, alignment = replanned_prefix(root)
+    if damage == 'missing-revision':
+        alignment.pop('revisions')
+    elif damage == 'unfrozen':
+        alignment['freeze']['frozen'] = False
+    elif damage == 'wrong-task':
+        alignment['task_id'] = 'TASK-999'
+    elif damage == 'active':
+        execution['transitions'] = execution['transitions'][:1]
+        execution['sequence'] = 1
+        execution['items'] = {'P-001': {'status': 'IN_PROGRESS'}}
+    elif damage == 'all-complete':
+        document['items'] = document['items'][:1]
+        execution['plan']['fingerprint'] = plan_fingerprint(document)
+    elif damage == 'pending-before-terminal':
+        document['items'].reverse()
+        execution['plan']['fingerprint'] = plan_fingerprint(document)
+    else:
+        execution['transitions'][0]['from'] = 'COMPLETE'
+    (root / 'alignment.yaml').write_text(yaml.safe_dump(alignment))
+    (root / 'plan.yaml').write_text(yaml.safe_dump(document))
+    (root / 'plan-execution.yaml').write_text(yaml.safe_dump(execution))
+    before = tree_bytes(root)
+    if damage == 'bad-journal':
+        with pytest.raises(PlanArtifactError):
+            validate_plan_initialization(root, task(state='PLANNED'))
+    else:
+        assert validate_plan_initialization(root, task(state='PLANNED'))
+    assert tree_bytes(root) == before
+
+
 def tree_bytes(root: Path) -> dict[str, bytes]:
     return {
         path.relative_to(root).as_posix(): path.read_bytes()

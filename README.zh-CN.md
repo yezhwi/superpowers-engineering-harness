@@ -4,7 +4,7 @@
 
 Engineering Harness 是 [Superpowers](https://github.com/obra/superpowers) 开发工作流外层的确定性控制平面。它不替代 Agent 或 worker Skill；它持久化任务状态、要求可验证证据，并阻止 Agent 未经 Gate 批准就宣称任务完成。
 
-[架构全景图](docs/architecture.md)
+[架构全景图](docs/architecture.md) · [可选稳定存储](docs/stable-storage.md)
 
 ## v0.3.2 兼容性与测量状态
 
@@ -34,14 +34,26 @@ Linux、Windows 及其他系统的发布后端在打开发布目录或创建 cap
 - `.harness/.transactions/`：活动恢复描述符；未解决或未知条目使受准入保护的 Gate/transition
   在读取 canonical 事实前拒绝，不自动修复。
 - `.harness/.publication-retained/`：被移走对象、capability probe、journal frame 和终态恢复数据。
-  仅有终态保留数据不代表 pending。task new/recover 将真实的旧 Harness 目录保留在其中的
+  仅有终态保留数据不代表 pending。未绑定的旧布局下，task new/recover 将真实旧 Harness 目录保留在其中的
   `task-replacement-*/previous`，保留原 inode 与已打开 FD 的后续写入，不在准备新任务时复制旧保留树。
   任务替换报错后，先核对当前任务再决定重试：旧目录可能位于同级 `..harness.backup` 或保留 slot。
   不自动重试或删除；此处仅保证对象寿命，不认证任务目录原子性或硬件断电行为。
 - 存储包含实际元数据字节，不是证据缓存或执行授权。新私有目录请求 `0700`、新文件 `0600`；
   被移走对象保留原 inode/mode，不自动加固已有存储。应按敏感数据管理。
-  数据无限期增长，可能导致 `ENOSPC`；不提供 pruning 命令或按年龄清理。
+  数据无限期增长，可能导致 `ENOSPC`；不提供 retained/runtime 的破坏性 GC 或按年龄清理。
   清理需单独设计并明确授权，删除恢复数据不是受支持的修复方式。
+
+## 可选稳定存储（开发候选）
+
+单独授权激活后，`.harness` 通过 `harness-storage-layout/v1` capability 绑定本工作区的
+`.harness-store`。绑定后的任务周转不复制 history，旧根扁平保留，保持原 inode。
+检查与规划只读；apply 需要精确选定的用户 Decision，以及明确的兼容 writer 维护声明。
+不能隔离任意旧工具或编辑器；带 origin 的逻辑引用不保证裸旧 shell 路径可用。
+目录协调 pending 必须显式恢复，不能用 init 修复。
+
+`harness storage prune --dry-run --json` 仅报告分类；绑定后的 `task prune --apply` 拒绝。
+未实现 archive/runtime/retained GC apply。开发工作未授权或执行本项目真实存储激活。
+见[命令、布局、限制与生产操作单独授权](docs/stable-storage.md)。
 
 ## 为什么用 Harness
 
@@ -271,6 +283,27 @@ harness explain CONTRACT_CHANGED
 ```bash
 harness check admission
 ```
+
+### Finding 的相关批次闭环
+
+adversarial Finding 可用多份真实 related 回执进入 VERIFIED：
+
+```bash
+harness finding transition FND-nnn VERIFIED --evidence batch-a.json --evidence batch-b.json
+harness finding transition FND-nnn CLOSED
+```
+
+每份均需通过当前 HEAD/workspace、成功状态和实际测试执行校验，并集覆盖当前非空
+`impact.required_tests`。任一份失效或错误则整批拒绝；不合成 test_execution、不改历史回执。
+新格式保存引用及原始字节摘要，Gate 在 VERIFIED/CLOSED 重读并按当前覆盖要求检查。
+限制为 2–64 份、每份不超过 4 MiB、合计不超过 16 MiB。混合单份/批次字段拒绝；旧 schema
+拒绝纯批次格式。CLOSED 不需重交回执并保留原证明；其他生命周期或 diagnosability 不支持多份参数。
+
+只有 critical 新批次要求 Finding 级批准：现有 `--critical-related-approved` 先写候选记录再校验；
+major 不读取、不要求该批准。批准时间仅需非空，不新增时效或摘要集合绑定。旧单回执的读取与
+验证行为不变，包括旧 related critical 批准未强制检查的已知缺口；不因此授权 Agent 跳过用户同意。
+批次回归不能替代独立 RED/GREEN、审查、原生生命周期或最终 Gate。Q3 重新封存后仅允许可重放的
+终结前缀与未启动后缀续跑，不清历史，也不开放任意非空 Plan 指纹同步。
 
 **Gate 与 Finding 契约：** 只有 `harness gate` 可以评估或持久化产品 Gate 结果；直接运行 `python scripts/quality_gate.py` 已禁用。持久化 Finding 必须显式声明 category（`adversarial`、`diagnosability`、`complexity` 或 `interface`）；无 category 的旧记录以 `MIGRATION_REQUIRED` 失败。`finding.schema.json` 已删除，改用分类 Schema。
 

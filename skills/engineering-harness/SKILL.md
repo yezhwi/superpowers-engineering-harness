@@ -124,6 +124,12 @@ For a large or known-slow related scope, preplan bounded batches before launchin
 
 Record a planned batch manifest with exact commands and repository-root `--covered-test` selectors. Each batch must preserve the original selectors, select only missing fresh related coverage, and together form the complete required-test union so no required test is skipped. Run serial unless databases, ports, workspaces, and other resources are demonstrably disjoint. This is guidance only: it adds no automated scheduler and makes no claim of Agent obedience or measured performance; existing budget accounting, authority, collector, freshness, and Gate behavior remain unchanged.
 
+## Opt-in stable storage
+
+Storage implementation approval is not permission for real activation, migration or cleanup. `harness storage inspect --json`, migration preview (default/`--dry-run`) and `harness storage prune --dry-run --json` are diagnostics, not apply authority. Do not create `.harness-store`, invent origin/maintenance data, or accept a storage Decision on the user's behalf. Explicit apply requires the exact selected accepted user grant and declared compatible/stopped participants. Arbitrary old writers are not isolated.
+
+Current directory coordination blocks ordinary fact access even while `.harness` is missing. Inspect and use only explicitly requested `harness storage recover <original-operation-id>`; never auto-init/recover or substitute a new plan after partial side effects. A COMMITTED report/teardown error is not rollback. Preserve original receipts and failure inputs. Bound `task prune --apply` refuses, and store archive/runtime/retained GC apply does not exist. Runtime review rows, DONE, hashes, mtime and empty `lsof` never authorize deletion. Logical origin-qualified references do not promise raw old shell paths or replayability.
+
 ## Inputs
 
 Validated Context is a derived view, not a new authoritative source. Its Control Core retains global constraints; Layer 2 references allow reading a specific source file on demand. Open a file under `docs/` only when the task names that file. Do not search or open `.harness/history/`, `.harness/.publication-retained/`, `.harness/context-reuse-benchmark*`, `.harness/context-original-replay*`, `.harness/release-assets-v032/`, or `.superpowers/sdd/`, including with `--no-ignore`. Do not delete those trees. The following are canonical sources, not an eager startup reading checklist:

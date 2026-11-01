@@ -1,0 +1,36 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Owned Stable Harness Storage Layout v1",
+  "definitions": {
+    "id": {"type": "string", "pattern": "^[0-9a-f]{32}$"},
+    "identity": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "integer", "minimum": 0}},
+    "capabilities": {"type": "array", "items": {"const": "harness-storage-layout/v1"}, "minItems": 1, "maxItems": 1}
+  },
+  "oneOf": [
+    {
+      "type": "object", "additionalProperties": false,
+      "required": ["version", "kind", "store_id", "workspace_id", "workspace_root", "workspace_identity", "store_identity", "capabilities"],
+      "properties": {
+        "version": {"const": 1}, "kind": {"const": "store"},
+        "store_id": {"$ref": "#/definitions/id"}, "workspace_id": {"$ref": "#/definitions/id"},
+        "activation_operation_id": {"$ref": "#/definitions/id"},
+        "workspace_root": {"type": "string", "pattern": "^/", "minLength": 1},
+        "workspace_identity": {"$ref": "#/definitions/identity"},
+        "store_identity": {"$ref": "#/definitions/identity"},
+        "capabilities": {"$ref": "#/definitions/capabilities"}
+      }
+    },
+    {
+      "type": "object", "additionalProperties": false,
+      "required": ["version", "kind", "store_id", "workspace_id", "generation_id", "root_identity", "store_identity", "capabilities"],
+      "properties": {
+        "version": {"const": 1}, "kind": {"const": "binding"},
+        "store_id": {"$ref": "#/definitions/id"}, "workspace_id": {"$ref": "#/definitions/id"},
+        "generation_id": {"$ref": "#/definitions/id"},
+        "operation_id": {"$ref": "#/definitions/id"}, "task_id": {"type": "string", "pattern": "^TASK-[0-9]+$"},
+        "root_identity": {"$ref": "#/definitions/identity"}, "store_identity": {"$ref": "#/definitions/identity"},
+        "capabilities": {"$ref": "#/definitions/capabilities"}
+      }
+    }
+  ]
+}

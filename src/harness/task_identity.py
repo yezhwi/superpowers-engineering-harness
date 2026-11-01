@@ -60,6 +60,12 @@ def require_available(harness_dir: Path, task_id: str, task: dict, *, migration=
             and not TASK_ID.fullmatch(current)
         ):
             used.add(_key(current))
+        from .storage.layout import require_layout_admission
+
+        if require_layout_admission(root).mode == "bound":
+            from .storage.archive import reserved_task_ids
+
+            used.update(_key(value) for value in reserved_task_ids(root))
         for archive in _members(root / "history"):
             named = ARCHIVE_ID.match(archive.name)
             if named:

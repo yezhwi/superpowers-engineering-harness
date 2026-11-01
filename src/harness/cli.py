@@ -21,6 +21,97 @@ from harness.init import InitResult, init_current_repository
 from harness.repository import RepositoryNotFoundError, find_git_root
 
 
+def _storage_input(path):
+    """Bounded no-follow JSON input; never echo source contents or locations."""
+    from harness import source_access
+    from .storage import StorageError
+
+    def unique(items):
+        result = {}
+        for key, value in items:
+            if key in result:
+                raise ValueError('duplicate input key')
+            result[key] = value
+        return result
+
+    def invalid_constant(_value):
+        raise ValueError('nonfinite input')
+
+    try:
+        path = Path(path).absolute()
+        raw = source_access.read_regular_snapshot_beneath(path, Path(path.anchor), max_bytes=16 * 1024 * 1024)
+        value = json.loads(raw.content, object_pairs_hook=unique, parse_constant=invalid_constant)
+        if not isinstance(value, dict):
+            raise ValueError('input must be object')
+        return value
+    except (OSError, ValueError, TypeError, UnicodeError, RecursionError) as error:
+        raise StorageError('STORE_PLAN_STALE') from error
+
+
+def _storage_output(value):
+    """Reporting failure cannot erase or roll back an acknowledged commit."""
+    try:
+        print(json.dumps(value, sort_keys=True))
+        return 0
+    except (OSError, UnicodeError):
+        status = value.get('status')
+        safe = {'error': 'STORE_CLEANUP_PARTIAL',
+                'status': status if status in {'COMMITTED', 'ABORTED'} else 'RESULT_EMISSION_FAILED'}
+        operation_id = value.get('operation_id')
+        if isinstance(operation_id, str) and re.fullmatch('[0-9a-f]{32}', operation_id):
+            safe['operation_id'] = operation_id
+            if status in {'COMMITTED', 'ABORTED'}:
+                safe['next_action'] = 'inspect original receipt; do not substitute a new plan'
+        try:
+            print(json.dumps(safe, sort_keys=True), file=sys.stderr)
+        except (OSError, UnicodeError):
+            pass
+        return 2
+
+
+def _storage_partial_report(plan, error):
+    """Report only a matching durable descriptor; never recover or guess ownership."""
+    from .storage.journal import DirectoryOperation, _resources
+    from .storage.migration import _require_plan
+    try:
+        _require_plan(plan)
+        with _resources() as resources:
+            _, path, _, document, _, state, frames = DirectoryOperation(Path.cwd(), plan['operation_id'])._load(resources)
+            if document['plan'] != plan:
+                return
+            value = {'error': error.code, 'operation_id': plan['operation_id'], 'phase': state.phase,
+                     'acknowledged_actions': len(state.acknowledged), 'coordinator': path.as_posix(),
+                     'retained': frames.as_posix(), 'next_action': 'explicit storage recover with original operation_id'}
+    except (OSError, ValueError, TypeError, KeyError, RecursionError):
+        return
+    try:
+        print(json.dumps(value, sort_keys=True), file=sys.stderr)
+    except (OSError, UnicodeError):
+        pass
+
+
+def _storage_migrate(args):
+    from .storage import StorageError, StorageRequest, admit_storage, apply_operation, plan_operation
+
+    with admit_storage(Path.cwd() / '.harness'):
+        if args.storage_apply:
+            plan = _storage_input(args.storage_file)
+            maintenance = _storage_input(args.maintenance_file)
+            try:
+                return apply_operation(Path.cwd(), plan, args.storage_decision, maintenance)
+            except StorageError as error:
+                _storage_partial_report(plan, error)
+                raise
+        request = _storage_input(args.storage_file) if args.storage_file else {}
+        if set(request) - {'sources', 'max_nodes', 'max_bytes'}:
+            raise StorageError('STORE_UNSAFE_NODE')
+        if 'sources' in request:
+            if not isinstance(request['sources'], list) or (args.kind != 'M2' and request['sources']):
+                raise StorageError('STORE_UNSAFE_NODE')
+            request['sources'] = tuple(request['sources'])
+        return plan_operation(Path.cwd(), StorageRequest(kind=args.kind, **request))
+
+
 class _HarnessArgumentParser(argparse.ArgumentParser):
     """Suggest near matches without changing parsing or command execution."""
 
@@ -83,7 +174,12 @@ def _task_prune(argv: list[str]) -> int:
         os.chdir(find_git_root(Path.cwd()))
     except (RepositoryNotFoundError, OSError):
         return controlplane.render_task_prune_refusal("REPOSITORY_NOT_FOUND")
-    return controlplane.cmd_task_prune(args.apply, args.plan_id)
+    from .storage.layout import require_layout_admission
+    from .telemetry_lock import telemetry_lock
+
+    with telemetry_lock(Path(".harness")):
+        require_layout_admission(Path(".harness"))
+        return controlplane.cmd_task_prune(args.apply, args.plan_id)
 
 
 def _render(result: InitResult) -> str:
@@ -153,6 +249,24 @@ def _main(argv=None) -> int:
     )
     sub = parser.add_subparsers(dest="subcommand")
     sub.add_parser("init", help="initialize .harness/ at the git repo root")
+    storage = sub.add_parser("storage", help="inspect, explicitly migrate, or preview storage; no deletion")
+    storage_sub = storage.add_subparsers(dest="storage_command", required=True)
+    storage_inspect = storage_sub.add_parser("inspect")
+    storage_inspect.add_argument("--json", action="store_true")
+    storage_migrate = storage_sub.add_parser("migrate")
+    storage_migrate.add_argument("--kind", choices=("ACTIVATE", "M1", "M2"))
+    migration_mode = storage_migrate.add_mutually_exclusive_group()
+    migration_mode.add_argument("--dry-run", action="store_true")
+    migration_mode.add_argument("--apply", dest="storage_apply", action="store_true")
+    storage_migrate.add_argument("--file", dest="storage_file", help="JSON request for preview, exact JSON plan for apply")
+    storage_migrate.add_argument("--decision", dest="storage_decision")
+    storage_migrate.add_argument("--maintenance-file", help="explicit participant declaration JSON; apply only")
+    storage_migrate.add_argument("--json", action="store_true")
+    storage_prune = storage_sub.add_parser("prune", help="read-only experiment classification; no deletion")
+    storage_prune.add_argument("--dry-run", action="store_true")
+    storage_prune.add_argument("--json", action="store_true")
+    storage_recover = storage_sub.add_parser("recover", help="recover one recorded directory operation")
+    storage_recover.add_argument("operation_id")
     p_explain = sub.add_parser("explain", help="explain a diagnostic code and safe next step")
     p_explain.add_argument("code")
     p_status = sub.add_parser("status", help="render unified persisted-state view")
@@ -481,7 +595,7 @@ def _main(argv=None) -> int:
     p_ft = f_sub.add_parser("transition")
     p_ft.add_argument("id")
     p_ft.add_argument("target")
-    p_ft.add_argument("--evidence")
+    p_ft.add_argument("--evidence", action="append")
     p_ft.add_argument("--test")
     p_ft.add_argument("--attempt")
     p_ft.add_argument("--reason")
@@ -570,7 +684,18 @@ def _main(argv=None) -> int:
                 "--superseded requires --reason, --decision, and --replacement only"
             )
 
+    if args.subcommand == 'storage' and args.storage_command == 'migrate':
+        if args.storage_apply:
+            if args.kind or not all((args.storage_file, args.storage_decision, args.maintenance_file)):
+                parser.error('--apply requires --file --decision --maintenance-file, without --kind')
+        elif not args.kind or args.storage_decision or args.maintenance_file:
+            parser.error('migration preview requires --kind; authority options require --apply')
     invocation_dir = Path.cwd()
+    if args.subcommand == 'storage' and args.storage_command == 'migrate':
+        for attribute in ('storage_file', 'maintenance_file'):
+            value = getattr(args, attribute)
+            if value is not None:
+                setattr(args, attribute, str((invocation_dir / value).absolute()))
     for attribute in ("source_file", "fixtures", "baseline", "adaptive", "corpus"):
         value = getattr(args, attribute, None)
         if value is not None:
@@ -582,6 +707,23 @@ def _main(argv=None) -> int:
             print(f"ERROR: {exc}", file=sys.stderr)
             return 1
 
+    if args.subcommand == "storage":
+        from dataclasses import asdict
+        from .storage import inspect_layout, recover_operation
+
+        if args.storage_command == 'prune':
+            from .storage.experiments import preview_experiments
+            return _storage_output(preview_experiments(Path.cwd()))
+        if args.storage_command == "recover":
+            return _storage_output(recover_operation(Path.cwd(), args.operation_id))
+        if args.storage_command == "inspect":
+            result = inspect_layout(Path.cwd())
+            output_code = _storage_output(asdict(result))
+            if result.mode == "blocked":
+                print(result.code, file=sys.stderr)
+                return 2
+            return output_code
+        return _storage_output(_storage_migrate(args))
     if args.subcommand == "explain":
         return controlplane.cmd_explain(args.code)
     if args.subcommand == "init":
@@ -842,6 +984,11 @@ def main(argv=None) -> int:
     original_dir = Path.cwd()
     try:
         return _main(argv)
+    except OSError as exc:
+        if str(exc).startswith("STORE_"):
+            print(str(exc), file=sys.stderr)
+            return 2
+        raise
     finally:
         os.chdir(original_dir)
 

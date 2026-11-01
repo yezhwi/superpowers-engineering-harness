@@ -123,6 +123,30 @@ Gate / Finding closure
 
 Failed checks require linked, in-scope DIAG Findings. Contract mismatch, unsupported `not_applicable`, stale review identity, and invalid Finding linkage fail closed. A review with failed checks routes to DEFECT; it cannot make Gate pass.
 
+## Opt-in stable storage boundary
+
+[Stable storage guide](stable-storage.md) describes the development candidate,
+not permission to activate existing data. Valid `harness-storage-layout/v1`
+ownership binds canonical `.harness` and a worktree-local `.harness-store`.
+Ordinary regular-file publication and cross-root directory coordination remain
+separate protocols sharing one workspace owner. Unknown/pending coordination
+blocks ordinary facts even when the current root is absent.
+
+The directory journal owns typed actions, inode acknowledgements, commit/abort
+and explicit recovery. Archive resolution owns explicit source origins,
+selected-entry freshness, exact members and persistent ID reservations.
+Migration compiles ACTIVATE/M1/M2 plans and checks the exact selected user grant
+and maintenance declaration. Bound task replacement compiles a fresh candidate,
+a single qualified archive and flat old-root retention; it never copies history
+or prior retention into the next task. Experiment classification has no write or
+GC authority. A terminal receipt is a storage fact, not task completion.
+
+Compatible/stopped writer maintenance remains an operator assumption; advisory
+locks do not sandbox arbitrary old tools or held file descriptors. Unknown old
+fixtures stay opaque, raw historical command paths are not rewritten, and
+read-only previews do not imply global dependency closure or physical savings.
+Store-backed destructive prune/GC requires a later separate design and grant.
+
 ## Release boundary
 
 ```text

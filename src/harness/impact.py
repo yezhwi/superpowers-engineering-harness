@@ -5,7 +5,7 @@ class ImpactContractError(ValueError):
     """Stable malformed impact-contract signal."""
 
 
-def typed_contracts(impact: dict) -> list[dict[str, str]]:
+def typed_contracts(impact: dict) -> list[dict]:
     """Normalize legacy strings to generic; never infer kind from text."""
     values = impact.get("contracts", [])
     if not isinstance(values, list):
@@ -24,7 +24,19 @@ def typed_contracts(impact: dict) -> list[dict[str, str]]:
             or item.get("kind") not in {"generic", "permission", "persistence"}
         ):
             raise ImpactContractError("IMPACT_CONTRACT_KIND_INVALID")
-        result.append({"ref": item["ref"], "kind": item["kind"]})
+        normalized = {"ref": item["ref"], "kind": item["kind"]}
+        if "storage_origin" in item:
+            from .storage.archive import _logical, validate_origin
+
+            if item["kind"] != "generic":
+                raise ImpactContractError("IMPACT_CONTRACT_KIND_INVALID")
+            try:
+                origin = validate_origin(item["storage_origin"])
+                _logical(item["ref"], origin)
+            except (OSError, TypeError, ValueError) as error:
+                raise ImpactContractError("IMPACT_CONTRACT_KIND_INVALID") from error
+            normalized["storage_origin"] = dict(item["storage_origin"])
+        result.append(normalized)
     return result
 
 
@@ -50,4 +62,5 @@ def current_boundary_refs(document: dict, impact: dict) -> dict[str, list[str]]:
 
 def contract_paths(impact: dict) -> list[str]:
     """Return only legacy-compatible generic refs for filesystem consumers."""
-    return [item["ref"] for item in typed_contracts(impact) if item["kind"] == "generic"]
+    return [item["ref"] for item in typed_contracts(impact)
+            if item["kind"] == "generic" and "storage_origin" not in item]

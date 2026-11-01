@@ -13,6 +13,44 @@ def test_current_trusted_closure_is_complete_and_direct_io_clean():
     assert_trusted_closure(ROOT / "src/harness")
 
 
+def test_batch_helper_is_checked_and_only_named_storage_boundaries_are_adapters():
+    from harness.context.dependency_closure import ADAPTERS, ALLOWED
+
+    assert "finding_closure" in ALLOWED
+    assert "finding_closure" not in ADAPTERS
+    assert {name for name in ADAPTERS if name.startswith("storage.")} == {
+        "storage.layout", "storage.archive",
+    }
+    assert "identity/admission" in ADAPTERS["storage.layout"]
+    assert "selected dependencies" in ADAPTERS["storage.archive"]
+
+
+@pytest.mark.parametrize("entry", ["quality_gate", "finding_closure"])
+def test_new_storage_helper_still_requires_explicit_review(tmp_path, entry):
+    from harness.context.dependency_closure import assert_trusted_closure
+
+    root = tmp_path / "harness"
+    (root / "storage").mkdir(parents=True)
+    (root / "storage" / "unreviewed.py").write_text("def read(): return True\n")
+    (root / (entry + ".py")).write_text("from .storage.unreviewed import read\n")
+    with pytest.raises(AssertionError, match="DEPENDENCY_CLOSURE_UNDECLARED"):
+        assert_trusted_closure(root, entries={entry})
+
+
+@pytest.mark.parametrize("operation", ["read_text", "exists"])
+def test_checked_batch_helper_cannot_use_direct_io(tmp_path, operation):
+    from harness.context.dependency_closure import assert_trusted_closure
+
+    root = tmp_path / "harness"
+    root.mkdir()
+    (root / "finding_closure.py").write_text(
+        "from pathlib import Path\n"
+        f"def read(): return Path('unregistered.json').{operation}()\n"
+    )
+    with pytest.raises(AssertionError, match="DIRECT_IO: finding_closure"):
+        assert_trusted_closure(root, entries={"finding_closure"})
+
+
 def test_plan_reconciliation_is_reviewed_code_not_adapter():
     from harness.context.dependency_closure import ADAPTERS, ALLOWED
 

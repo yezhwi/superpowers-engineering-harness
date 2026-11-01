@@ -9,6 +9,40 @@ from threading import Barrier
 import pytest
 
 
+def test_archive_handle_adapter_keeps_member_inode_revalidation(tmp_path):
+    from harness import source_access
+    from harness.storage import ReferenceOrigin, StorageError, admit_storage, resolve_archive
+    from storage_factory import repository, fixture_store
+    from storage_archive_factory import install_archive
+
+    repo = repository(tmp_path)
+    fixture_store(repo)
+    origin, member, _ = install_archive(repo)
+    with admit_storage(repo / '.harness') as session:
+        handle = resolve_archive(session, 'history/TASK-7-snapshot/requirements.yaml', ReferenceOrigin(**origin))
+        assert source_access.read_archive_handle(handle) == member.read_bytes()
+        other = member.with_suffix('.replacement')
+        other.write_bytes(member.read_bytes())
+        other.replace(member)
+        with pytest.raises(StorageError, match='STORE_IDENTITY_CHANGED'):
+            source_access.read_archive_handle(handle)
+
+
+def test_archive_handle_adapter_rejects_path_and_untrusted_duck_type(tmp_path):
+    from harness import source_access
+    reader = getattr(source_access, 'read_archive_handle', None)
+    assert callable(reader), 'archive capability read must cross source_access seam'
+    path = tmp_path / 'untrusted.txt'
+    path.write_bytes(b'must not read arbitrary path')
+    class Duck:
+        def read_bytes(self):
+            raise AssertionError('untrusted read method invoked')
+    for untrusted in (path, Duck(), None):
+        with pytest.raises(OSError, match='invalid archive handle'):
+            reader(untrusted)
+
+
+
 def test_declared_member_pattern_allows_missing_file_not_other_names(tmp_path):
     from harness.context.model import ContextBuildError
     from harness.source_access import exists, source_scope

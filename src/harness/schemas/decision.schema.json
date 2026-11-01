@@ -11,7 +11,7 @@
     "topic": {"type": "string", "minLength": 1},
     "question": {"type": "string", "minLength": 1},
     "context": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
-    "options": {"type": "array", "minItems": 1, "items": {"type": "object", "required": ["id", "description"], "properties": {"id": {"type": "string", "minLength": 1}, "description": {"type": "string", "minLength": 1}, "test_scope_authorization": {"$ref": "#/definitions/testScopeAuthorization"}}, "additionalProperties": false}},
+    "options": {"type": "array", "minItems": 1, "items": {"type": "object", "required": ["id", "description"], "properties": {"id": {"type": "string", "minLength": 1}, "description": {"type": "string", "minLength": 1}, "test_scope_authorization": {"$ref": "#/definitions/testScopeAuthorization"}, "storage_authorization": {"$ref": "#/definitions/storageAuthorization"}}, "additionalProperties": false}},
     "recommendation": {"type": "object", "required": ["option", "reasons", "tradeoffs"], "properties": {"option": {"type": "string", "minLength": 1}, "reasons": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}, "tradeoffs": {"type": "array", "items": {"type": "string", "minLength": 1}}}, "additionalProperties": false},
     "selected": {"type": ["null", "object"], "properties": {"option": {"type": "string", "minLength": 1}, "source": {"enum": ["accepted_recommendation", "user_override"]}, "decided_by": {"const": "user"}}, "required": ["option", "source", "decided_by"], "additionalProperties": false},
     "decision_reason": {"type": "array", "items": {"type": "string", "minLength": 1}},
@@ -27,6 +27,17 @@
   "additionalProperties": false,
   "definitions": {
     "hash": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "storageAuthorization": {
+      "type": "object", "additionalProperties": false,
+      "required": ["version", "task_id", "workspace_id", "store_id", "operation", "plan_digest", "scope_digest"],
+      "properties": {
+        "version": {"const": 1}, "task_id": {"type": "string", "pattern": "^TASK-[0-9]+$"},
+        "workspace_id": {"type": "string", "pattern": "^[0-9a-f]{32}$"},
+        "store_id": {"type": ["null", "string"], "pattern": "^[0-9a-f]{32}$"},
+        "operation": {"enum": ["ACTIVATE", "M1", "M2"]},
+        "plan_digest": {"$ref": "#/definitions/hash"}, "scope_digest": {"$ref": "#/definitions/hash"}
+      }
+    },
     "testScopeAuthorization": {
       "type": "object", "additionalProperties": false,
       "required": ["version", "task_id", "operation", "expected_impact_hash", "contract_hash", "original_source", "retirements", "bindings", "plan_refs"],

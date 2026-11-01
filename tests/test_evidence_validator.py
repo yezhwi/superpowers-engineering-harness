@@ -63,6 +63,54 @@ def generic_record(**changes):
     return evidence
 
 
+def test_batch_major_requires_each_real_execution_before_coverage_union():
+    from harness.evidence_validator import validate_finding_closure_batch
+    records = [generic_record(covered_tests=['tests/a.py']), generic_record(covered_tests=['tests/b.py'])]
+    validate_finding_closure_batch({'severity': 'major'}, records,
+        {'impact': {'required_tests': ['tests/a.py', 'tests/b.py']}}, current_head=HEAD, current_workspace=FP)
+
+
+@pytest.mark.parametrize('damage', ['missing-scope', 'full-scope', 'custom', 'failed', 'missing-execution', 'stale', 'uncovered', 'empty-required'])
+def test_batch_rejects_any_bad_member_or_missing_current_required_set(damage):
+    from harness.evidence_validator import validate_finding_closure_batch
+    records = [generic_record(covered_tests=['tests/a.py']), generic_record(covered_tests=['tests/b.py'])]
+    required = ['tests/a.py', 'tests/b.py']
+    if damage == 'missing-scope':
+        records[1].pop('scope')
+    elif damage == 'full-scope':
+        records[1]['scope'] = 'full'
+    elif damage == 'custom':
+        records[1]['type'] = 'custom'
+    elif damage == 'failed':
+        records[1]['exit_code'] = 1
+    elif damage == 'missing-execution':
+        records[1].pop('test_execution')
+    elif damage == 'stale':
+        records[1]['workspace_fingerprint'] = 'sha256:' + '0' * 64
+    elif damage == 'uncovered':
+        required.append('tests/c.py')
+    else:
+        required = []
+    with pytest.raises(EvidenceValidationError):
+        validate_finding_closure_batch({'severity': 'major'}, records, {'impact': {'required_tests': required}},
+                                      current_head=HEAD, current_workspace=FP)
+
+
+@pytest.mark.parametrize('approved', [False, True])
+def test_batch_critical_requires_finding_approval_only(approved):
+    from harness.evidence_validator import validate_finding_closure_batch
+    finding = {'severity': 'critical'}
+    if approved:
+        finding['closure'] = {'mode': 'related', 'source': 'user', 'approved_at': '2000-01-01', 'critical_related_approved': True}
+    records = [generic_record(covered_tests=['tests/a.py']), generic_record(covered_tests=['tests/b.py'])]
+    kwargs = {'current_head': HEAD, 'current_workspace': FP}
+    if approved:
+        validate_finding_closure_batch(finding, records, {'impact': {'required_tests': ['tests/a.py', 'tests/b.py']}}, **kwargs)
+    else:
+        with pytest.raises(EvidenceValidationError, match='CRITICAL_RELATED_APPROVAL_REQUIRED'):
+            validate_finding_closure_batch(finding, records, {'impact': {'required_tests': ['tests/a.py', 'tests/b.py']}}, **kwargs)
+
+
 def reuse_request():
     return ReuseRequest(
         "unit_test", f"pytest {TEST}", "related", (TEST,), None, None, None

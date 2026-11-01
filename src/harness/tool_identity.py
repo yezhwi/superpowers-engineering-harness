@@ -177,7 +177,26 @@ def begin_tool_identity(skills_package: Path | None) -> ToolIdentitySnapshot:
     snapshot.schemas = schema.get('versions')
     snapshot.report['schema_identity'] = schema
     snapshot.report['skills_identity'] = _skills(snapshot, skills_package)
+    snapshot.report['storage_identity'] = _storage_reader(snapshot)
     return snapshot
+
+
+def _storage_reader(snapshot):
+    """Local source facts only: never infer writer isolation from package semver."""
+    try:
+        from .storage.migration import reader_identity
+
+        reader = reader_identity()
+        for value in reader['modules'].values():
+            path = Path(value['path'])
+            raw = _read(snapshot, path, 'storage_identity')
+            observed = snapshot.files[path][1]
+            if ([observed.device, observed.inode] != value['identity']
+                    or hashlib.sha256(raw).hexdigest() != value['sha256']):
+                return {'status': 'CHANGED', 'reader': None}
+        return {'status': 'DECLARED', 'reader': reader}
+    except (OSError, ValueError, TypeError, KeyError, RecursionError):
+        return {'status': 'INVALID', 'reader': None}
 
 
 def finish_tool_identity(snapshot: ToolIdentitySnapshot) -> dict:
@@ -206,9 +225,9 @@ def finish_tool_identity(snapshot: ToolIdentitySnapshot) -> dict:
             changed = True
         if changed:
             report['schema_identity'].update(status='CHANGED', versions=None, sha256=None)
-    for component in ('cli_identity', 'schema_identity', 'skills_identity'):
+    for component in ('cli_identity', 'schema_identity', 'skills_identity', 'storage_identity'):
         status = report[component]['status']
-        if status not in {'VERIFIED', 'MATCH', 'NOT_PROVIDED'}:
+        if status not in {'VERIFIED', 'MATCH', 'NOT_PROVIDED', 'DECLARED'}:
             report['diagnostics'].append({'code': 'TOOL_' + status, 'component': component,
                                          'source_ref': None, 'message': 'Tool input could not be certified.'})
     return report

@@ -101,9 +101,29 @@ def observability_inspected_paths(harness_dir: Path) -> tuple[str, ...]:
 
 
 _PRODUCT_EXCLUDE = (":(exclude).harness", ":(exclude).harness/**")
+_STORE_EXCLUDE = (":(exclude).harness-store", ":(exclude).harness-store/**")
+
+
+def _product_layout(repo_root):
+    from .storage import inspect_layout
+
+    layout = inspect_layout(repo_root)
+    if layout.mode == "blocked":
+        raise WorkspaceError(layout.code)
+    return layout
+
+
+def _product_excludes(repo_root):
+    layout = _product_layout(repo_root)
+    return _PRODUCT_EXCLUDE + (_STORE_EXCLUDE if layout.mode == "bound" else ())
+
+
+def _architecture_pathspec(repo_root):
+    return ("--", ".", *_product_excludes(repo_root))
 
 
 def _untracked_paths(repo_root: Path) -> set[str]:
+    bound = _STORE_EXCLUDE[0] in _product_excludes(repo_root)
     paths = set()
     for name in (
         _run(repo_root, "ls-files", "--others", "--exclude-standard", "-z")
@@ -118,6 +138,7 @@ def _untracked_paths(repo_root: Path) -> set[str]:
             and not candidate.is_absolute()
             and ".." not in candidate.parts
             and not (name == ".harness" or name.startswith(".harness/"))
+            and not (bound and (name == ".harness-store" or name.startswith(".harness-store/")))
         ):
             paths.add(name)
     return paths
@@ -126,8 +147,8 @@ def _untracked_paths(repo_root: Path) -> set[str]:
 def _working_paths(repo_root: Path) -> set[str]:
     paths = set()
     for args in (
-        ("diff", "--name-only", "-z", "HEAD", "--", ".", *_PRODUCT_EXCLUDE),
-        ("diff", "--cached", "--name-only", "-z", "HEAD", "--", ".", *_PRODUCT_EXCLUDE),
+        ("diff", "--name-only", "-z", "HEAD", "--", ".", *_product_excludes(repo_root)),
+        ("diff", "--cached", "--name-only", "-z", "HEAD", "--", ".", *_product_excludes(repo_root)),
     ):
         paths.update(
             name for name in _run(repo_root, *args).decode().split("\0") if name
@@ -173,7 +194,7 @@ def _fingerprint(repo_root: Path, *, head: str | None = None) -> str:
     reference = head or "HEAD"
     parts = [
         (head + "\n").encode() if head is not None else _run(repo_root, "rev-parse", "HEAD"),
-        _run(repo_root, "diff", "--binary", reference, "--", ".", *_PRODUCT_EXCLUDE),
+        _run(repo_root, "diff", "--binary", reference, "--", ".", *_product_excludes(repo_root)),
         _run(
             repo_root,
             "diff",
@@ -182,7 +203,7 @@ def _fingerprint(repo_root: Path, *, head: str | None = None) -> str:
             reference,
             "--",
             ".",
-            *_PRODUCT_EXCLUDE,
+            *_product_excludes(repo_root),
         ),
     ]
     for name in sorted(_untracked_paths(repo_root)):
@@ -248,7 +269,14 @@ def changed_paths_since(
     ``working_paths`` is the unstaged set from a snapshot the caller already
     took. Omitting it walks the product tree again.
     """
+    from .telemetry_lock import telemetry_lock
+
     root = _root(repo_root)
+    with telemetry_lock(root / ".harness"):
+        return _changed_paths_since_owned(base_commit, root, working_paths)
+
+
+def _changed_paths_since_owned(base_commit, root, working_paths):
     committed = _run(
         root,
         "diff",
@@ -257,7 +285,7 @@ def changed_paths_since(
         f"{base_commit}..HEAD",
         "--",
         ".",
-        *_PRODUCT_EXCLUDE,
+        *_product_excludes(root),
     )
     paths = {name for name in committed.decode().split("\0") if name}
     paths.update(snapshot(root).changed_paths if working_paths is None else working_paths)
@@ -327,7 +355,7 @@ def _architecture_untracked_paths(repo_root: Path) -> set[str]:
             "--others",
             "--exclude-standard",
             "-z",
-            *_ARCHITECTURE_PATHSPEC,
+            *_architecture_pathspec(repo_root),
         )
     )
 
@@ -335,8 +363,15 @@ def _architecture_untracked_paths(repo_root: Path) -> set[str]:
 def architecture_changes(
     base_commit: str, repo_root: Path | None = None
 ) -> tuple[ArchitectureChangeRecord, ...]:
-    """Return typed committed, staged, worktree, and untracked Git facts."""
+    """Hold canonical owner from namespace ownership through all Git facts."""
+    from .telemetry_lock import telemetry_lock
+
     root = _root(repo_root)
+    with telemetry_lock(root / ".harness"):
+        return _architecture_changes_owned(base_commit, root)
+
+
+def _architecture_changes_owned(base_commit, root):
     resolved_base = verify_git_ref(base_commit, root)
     records: set[ArchitectureChangeRecord] = set()
     for prefix, reference in (
@@ -356,7 +391,7 @@ def architecture_changes(
                     "--no-renames",
                     "-z",
                     reference,
-                    *_ARCHITECTURE_PATHSPEC,
+                    *_architecture_pathspec(root),
                 )
             )
         )
@@ -368,13 +403,20 @@ def architecture_changes(
 
 
 def architecture_path_index(repo_root: Path | None = None) -> tuple[str, ...]:
-    """Return request-local current paths from Git index and untracked facts."""
+    """Return owned request-local Git path facts, not arbitrary store members."""
+    from .telemetry_lock import telemetry_lock
+
     root = _root(repo_root)
+    with telemetry_lock(root / ".harness"):
+        return _architecture_path_index_owned(root)
+
+
+def _architecture_path_index_owned(root):
     tracked = _architecture_path_set(
-        _run(root, "ls-files", "-z", *_ARCHITECTURE_PATHSPEC)
+        _run(root, "ls-files", "-z", *_architecture_pathspec(root))
     )
     deleted = _architecture_path_set(
-        _run(root, "ls-files", "--deleted", "-z", *_ARCHITECTURE_PATHSPEC)
+        _run(root, "ls-files", "--deleted", "-z", *_architecture_pathspec(root))
     )
     return tuple(sorted(tracked - deleted | _architecture_untracked_paths(root)))
 
@@ -442,16 +484,67 @@ def protected_user_changes_fingerprint(
 
 def snapshot(repo_root: Path | None = None) -> WorkspaceSnapshot:
     """Return HEAD plus all current business changes under one ignore policy."""
+    from .telemetry_lock import telemetry_lock
+
     root = _root(repo_root)
-    head = git_head(root)
-    result = WorkspaceSnapshot(
-        head=head,
-        fingerprint=_fingerprint(root, head=head),
-        changed_paths=tuple(sorted(_working_paths(root))),
-    )
-    if git_head(root) != head:
-        raise WorkspaceError("WORKSPACE_HEAD_CHANGED")
-    return result
+    with telemetry_lock(root / ".harness"):
+        head = git_head(root)
+        layout = _product_layout(root)
+        result = WorkspaceSnapshot(
+            head=head,
+            fingerprint=_fingerprint(root, head=head),
+            changed_paths=tuple(sorted(_working_paths(root))),
+        )
+        if git_head(root) != head:
+            raise WorkspaceError("WORKSPACE_HEAD_CHANGED")
+        if _product_layout(root) != layout:
+            raise WorkspaceError("STORE_IDENTITY_CHANGED")
+        return result
+
+
+def _storage_operation_snapshot(operation) -> WorkspaceSnapshot:
+    """Private writer's closing facts, not a general pending/exclusion bypass.
+
+    Normal snapshot still refuses coordination. This adapter proves the exact
+    active descriptor, complete ACK set and held store inode before excluding
+    that owned namespace during final precommit product comparison.
+    """
+    from .storage.journal import DirectoryOperation, _parent, _resources
+
+    if not isinstance(operation, DirectoryOperation):
+        raise WorkspaceError('STORE_IDENTITY_CHANGED')
+    root = operation.repo_root
+    with _resources() as resources:
+        repo_fd, _, _, document, _, state, _ = operation._load(resources)
+        if (document['plan']['operation'] not in {'ACTIVATE', 'M1', 'M2', 'TURNOVER'} or state.phase != 'APPLYING'
+                or state.intent is not None or len(state.acknowledged) != len(document['plan']['actions'])):
+            raise WorkspaceError('STORE_RECOVERY_REQUIRED')
+        store_fd = _parent(repo_fd, Path('.harness-store'), state.directories)
+        resources.callback(os.close, store_fd)
+        operation._check_objects(repo_fd, state)
+        head = git_head(root)
+        exclusions = (*_PRODUCT_EXCLUDE, *_STORE_EXCLUDE)
+        parts = [(head + '\n').encode(),
+                 _run(root, 'diff', '--binary', head, '--', '.', *exclusions),
+                 _run(root, 'diff', '--cached', '--binary', head, '--', '.', *exclusions)]
+        names = _run(root, 'ls-files', '--others', '--exclude-standard', '-z').decode().split('\0')
+        changed = set()
+        for name in sorted(filter(None, names)):
+            candidate = Path(name)
+            if candidate.is_absolute() or '..' in candidate.parts:
+                raise WorkspaceError('STORE_IDENTITY_CHANGED')
+            if candidate.parts[0] in {'.harness', '.harness-store'}:
+                continue
+            parts.extend([name.encode(), _untracked_digest(root / name, root)])
+            changed.add(name)
+        for flags in ((), ('--cached',)):
+            changed.update(filter(None, _run(root, 'diff', *flags, '--name-only', '-z', head,
+                                             '--', '.', *exclusions).decode().split('\0')))
+        info = root.lstat()
+        if [info.st_dev, info.st_ino] != document['repo_identity'] or git_head(root) != head:
+            raise WorkspaceError('STORE_IDENTITY_CHANGED')
+        return WorkspaceSnapshot(head, 'sha256:' + hashlib.sha256(b'\0'.join(parts)).hexdigest(),
+                                 tuple(sorted(changed)))
 
 
 def product_workspace_fingerprint(repo_root: Path | None = None) -> str:
@@ -610,7 +703,7 @@ def review_scope(base_ref: str, repo_root: Path | None = None) -> ReviewScope:
             f"{base_commit}..{current.head}",
             "--",
             ".",
-            *_PRODUCT_EXCLUDE,
+            *_product_excludes(root),
         )
         .decode()
         .split("\0")

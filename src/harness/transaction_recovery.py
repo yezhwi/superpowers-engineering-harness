@@ -20,8 +20,8 @@ class PublicationAdmissionError(OSError):
 
 
 def _locked(root: Path):
-    from .telemetry_lock import _HELD
-    if str(root.resolve()) not in getattr(_HELD, 'paths', set()):
+    from .telemetry_lock import _HELD, _owner_key
+    if _owner_key(root) not in getattr(_HELD, 'paths', set()):
         raise OSError(f'{ERROR}: publication lock required')
 
 
@@ -114,6 +114,12 @@ def _journal(root: Path, path: Path) -> dict:
 
 def begin(root: Path, members: list[tuple[Path, bytes | None, bytes | None]]) -> Path:
     _locked(root)
+    from .storage.layout import require_layout_admission, require_custom_root_admission
+
+    require_custom_root_admission(root)
+    if _pending_paths(root):
+        raise OSError(f'{ERROR}: unfinished or unknown operation')
+    require_layout_admission(root)
     directory = root / '.transactions'
     if directory.is_symlink():
         raise OSError(f'{ERROR}: symlink journal directory')
@@ -197,8 +203,12 @@ def _pending_paths(root: Path) -> list[Path]:
 
 def require_no_pending_publications(root: Path) -> None:
     """Read-only admission; never recover or probe filesystem capabilities."""
+    from .storage.layout import require_layout_admission, require_custom_root_admission
+
+    require_custom_root_admission(root)
     if _pending_paths(root):
         raise OSError('TRANSACTION_RECOVERY_REQUIRED: pending publication')
+    require_layout_admission(root)
 
 
 @contextmanager
@@ -213,7 +223,7 @@ def publication_admission(root: Path):
             require_no_pending_publications(root)
         except OSError as exc:
             message = str(exc)
-            if not message.startswith('TRANSACTION_RECOVERY_'):
+            if not message.startswith(('TRANSACTION_RECOVERY_', 'STORE_')):
                 message = f'{ERROR}: cannot inspect recovery state'
             raise PublicationAdmissionError(message) from exc
         yield
@@ -248,6 +258,11 @@ def publication_recovery(root: Path):
     contexts = ExitStack()
     try:
         contexts.enter_context(telemetry_lock(root))
+        from .storage.layout import require_layout_admission, require_custom_root_admission
+
+        require_custom_root_admission(root)
+        refuse_storage_bootstrap(root)
+        require_layout_admission(root)
         recover_pending_publications(root)
         yield
     except BaseException:
@@ -266,7 +281,26 @@ def publication_recovery(root: Path):
         contexts.close()
 
 
+def refuse_storage_bootstrap(root: Path):
+    """Activation owns recovery even before a valid store header exists."""
+    from .storage.layout import StorageError
+
+    for path in _pending_paths(root):
+        try:
+            document = json.loads(_bytes(root, path.relative_to(root).as_posix()))
+        except (ValueError, TypeError):
+            continue  # Existing ordinary recovery retains malformed journals.
+        if (isinstance(document, dict) and document.get('version') == 3
+                and document.get('kind') == 'storage_activation'):
+            raise StorageError('STORE_RECOVERY_REQUIRED')
+
+
 def recover_pending_publications(root: Path):
+    from .storage.layout import require_layout_admission, require_custom_root_admission
+
+    require_custom_root_admission(root)
+    refuse_storage_bootstrap(root)
+    require_layout_admission(root)
     for path in _pending_paths(root):
         try:
             document = json.loads(_bytes(root, path.relative_to(root).as_posix()))
@@ -275,6 +309,10 @@ def recover_pending_publications(root: Path):
             raise OSError(f'{ERROR}: invalid journal') from exc
         if type(version) is not int:
             raise OSError(f'{ERROR}: unknown journal version')
+        if version == 3 and document.get('kind') == 'storage_activation':
+            from .storage.layout import StorageError
+
+            raise StorageError('STORE_RECOVERY_REQUIRED')
         if version == 1:
             recover_operation(root, path)
         elif version == 2:

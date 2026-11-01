@@ -118,6 +118,9 @@ def resolve_reference(repo_root: Path, reference: dict) -> None:
         raise ContextBuildError(
             "CONTEXT_REFERENCE_BROKEN", "reference must be a string"
         )
+    if "storage" in reference:
+        _resolve_storage_reference(repo_root, reference)
+        return
     filename, separator, fragment = ref.partition("#")
     path = contained_path(repo_root, filename)
     try:
@@ -153,6 +156,38 @@ def resolve_reference(repo_root: Path, reference: dict) -> None:
         raise ContextBuildError(
             "CONTEXT_REFERENCE_BROKEN", f"cannot resolve {filename}"
         ) from exc
+
+
+def _resolve_storage_reference(repo_root: Path, reference: dict) -> None:
+    from harness.storage import ReferenceOrigin, StorageError, admit_storage, resolve_archive
+
+    try:
+        token = reference["storage"]
+        origin = ReferenceOrigin(**token["origin"])
+        with admit_storage(repo_root / ".harness") as session:
+            handle = resolve_archive(session, reference["ref"], origin)
+            if handle.token != token or reference["sha256"] != "sha256:" + handle.token["member_content_digest"]:
+                raise ContextBuildError("CONTEXT_STALE", "archive reference changed")
+            fragment = reference["ref"].partition("#")[2]
+            if fragment and not fragment.startswith("sha256:"):
+                value = yaml.safe_load(source_access.read_archive_handle(handle))
+                matches = []
+
+                def walk(item):
+                    if isinstance(item, dict):
+                        if item.get("id") == fragment:
+                            matches.append(item)
+                        for child in item.values():
+                            walk(child)
+                    elif isinstance(item, list):
+                        for child in item:
+                            walk(child)
+
+                walk(value)
+                if len(matches) != 1:
+                    raise ContextBuildError("CONTEXT_REFERENCE_BROKEN", "archive fragment not unique")
+    except (StorageError, OSError, ValueError, TypeError, KeyError, yaml.YAMLError) as error:
+        raise ContextBuildError("CONTEXT_REFERENCE_BROKEN", "cannot resolve archive reference") from error
 
 
 def _references(root: Path, value) -> None:

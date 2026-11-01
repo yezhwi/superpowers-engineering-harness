@@ -163,6 +163,7 @@ def run_preflight(harness_dir: Path, request: PreflightRequest) -> dict:
     tool_blocked = (tools['cli_identity']['status'] != 'VERIFIED'
                     or tools['schema_identity']['status'] != 'VERIFIED'
                     or tools['skills_identity']['status'] not in {'NOT_PROVIDED', 'MATCH'}
+                    or tools.get('storage_identity', {}).get('status') == 'CHANGED'
                     or probe['status'] not in {'NOT_REQUESTED', 'SUCCEEDED'})
     optional_missing = tools['skills_identity']['status'] == 'NOT_PROVIDED' or probe['status'] == 'NOT_REQUESTED'
     tooling['status'] = ('ERROR' if tool_error else 'BLOCKED' if tool_blocked

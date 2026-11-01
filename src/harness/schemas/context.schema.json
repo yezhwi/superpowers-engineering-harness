@@ -38,9 +38,9 @@
       "properties": {"requirements": {"$ref": "#/definitions/records"}, "decisions": {"$ref": "#/definitions/records"}, "findings": {"$ref": "#/definitions/records"}, "files": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}, "tests": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}, "goal": {"type": "object", "required": ["title", "description"], "additionalProperties": false, "properties": {"title": {"type": ["string", "null"]}, "description": {"type": ["string", "null"]}}}, "next_action": {"type": "string", "minLength": 1}}
     },
     "references": {"type": "object", "additionalProperties": {"anyOf": [{"type": "null"}, {"$ref": "#/definitions/reference"}]}},
-    "omitted": {"type": "array", "items": {"type": "object", "required": ["id", "reason", "ref", "sha256"], "additionalProperties": false, "properties": {"id": {"type": "string", "minLength": 1}, "reason": {"type": "string", "pattern": "\\S"}, "ref": {"type": "string", "minLength": 1}, "sha256": {"$ref": "#/definitions/hash"}}}},
+    "omitted": {"type": "array", "items": {"type": "object", "required": ["id", "reason", "ref", "sha256"], "additionalProperties": false, "properties": {"id": {"type": "string", "minLength": 1}, "reason": {"type": "string", "pattern": "\\S"}, "ref": {"type": "string", "minLength": 1}, "sha256": {"$ref": "#/definitions/hash"}, "storage": {"$ref": "#/definitions/storage_token"}}}},
     "manifest": {"type": "object", "required": ["candidate_boundary", "sources"], "additionalProperties": false, "properties": {"candidate_boundary": {"const": "declared-control-artifacts"}, "sources": {"type": "object"}}},
-    "generated_from": {"type": "object", "required": ["projection_version", "schema_resources", "files", "declared_files", "workspace_hash", "head", "control_plane_hash", "plan_hash", "plan_execution_hash", "task_hash", "requirements_hash", "invariants_hash", "findings_hash", "decisions_hash", "evidence_hash", "impact_hash"], "additionalProperties": false, "properties": {"projection_version": {"const": 5}, "schema_resources": {"$ref": "#/definitions/versions"}, "files": {"$ref": "#/definitions/versions"}, "declared_files": {"$ref": "#/definitions/versions"}, "workspace_hash": {"$ref": "#/definitions/hash"}, "head": {"type": "string", "pattern": "^[a-f0-9]{40,64}$"}, "control_plane_hash": {"$ref": "#/definitions/hash"}, "plan_hash": {"anyOf": [{"type": "null"}, {"$ref": "#/definitions/hash"}]}, "plan_execution_hash": {"anyOf": [{"type": "null"}, {"$ref": "#/definitions/hash"}]}, "task_hash": {"$ref": "#/definitions/hash"}, "requirements_hash": {"$ref": "#/definitions/hash"}, "invariants_hash": {"$ref": "#/definitions/hash"}, "findings_hash": {"$ref": "#/definitions/hash"}, "decisions_hash": {"$ref": "#/definitions/hash"}, "evidence_hash": {"$ref": "#/definitions/hash"}, "impact_hash": {"$ref": "#/definitions/hash"}}},
+    "generated_from": {"type": "object", "required": ["projection_version", "schema_resources", "files", "declared_files", "archive_references", "workspace_hash", "head", "control_plane_hash", "plan_hash", "plan_execution_hash", "task_hash", "requirements_hash", "invariants_hash", "findings_hash", "decisions_hash", "evidence_hash", "impact_hash"], "additionalProperties": false, "properties": {"projection_version": {"const": 6}, "archive_references": {"type": "object", "additionalProperties": {"$ref": "#/definitions/reference"}}, "schema_resources": {"$ref": "#/definitions/versions"}, "files": {"$ref": "#/definitions/versions"}, "declared_files": {"$ref": "#/definitions/versions"}, "workspace_hash": {"$ref": "#/definitions/hash"}, "head": {"type": "string", "pattern": "^[a-f0-9]{40,64}$"}, "control_plane_hash": {"$ref": "#/definitions/hash"}, "plan_hash": {"anyOf": [{"type": "null"}, {"$ref": "#/definitions/hash"}]}, "plan_execution_hash": {"anyOf": [{"type": "null"}, {"$ref": "#/definitions/hash"}]}, "task_hash": {"$ref": "#/definitions/hash"}, "requirements_hash": {"$ref": "#/definitions/hash"}, "invariants_hash": {"$ref": "#/definitions/hash"}, "findings_hash": {"$ref": "#/definitions/hash"}, "decisions_hash": {"$ref": "#/definitions/hash"}, "evidence_hash": {"$ref": "#/definitions/hash"}, "impact_hash": {"$ref": "#/definitions/hash"}}},
     "context_hash": {"$ref": "#/definitions/hash"}
   },
   "definitions": {
@@ -77,6 +77,21 @@
     "module_ids": {"type": "array", "uniqueItems": true, "maxItems": 64, "items": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"}},
     "dependency_ids": {"type": "array", "uniqueItems": true, "maxItems": 32, "items": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"}},
     "modules": {"type": "array", "uniqueItems": true, "maxItems": 256, "items": {"type": "object", "required": ["id", "name", "responsibility", "depends_on"], "additionalProperties": false, "properties": {"id": {"type": "string"}, "name": {"type": "string"}, "responsibility": {"type": "string"}, "depends_on": {"$ref": "#/definitions/dependency_ids"}}}},
-    "reference": {"type": "object", "required": ["ref", "sha256"], "additionalProperties": false, "properties": {"ref": {"type": "string", "minLength": 1}, "sha256": {"$ref": "#/definitions/hash"}}}
+    "storage_token": {
+      "type": "object", "additionalProperties": false,
+      "required": ["version", "origin", "logical_archive_alias", "selected_alias_record_digest", "archive_id", "archive_descriptor_digest", "member_path", "member_identity", "member_content_digest"],
+      "properties": {
+        "version": {"const": 1},
+        "origin": {"type": "object", "additionalProperties": false, "required": ["workspace_id", "generation_id", "original_workspace_root"], "properties": {"workspace_id": {"type": "string", "pattern": "^[0-9a-f]{32}$"}, "generation_id": {"type": "string", "pattern": "^[0-9a-f]{32}$"}, "original_workspace_root": {"type": "string", "pattern": "^/"}}},
+        "logical_archive_alias": {"type": "string", "minLength": 1},
+        "selected_alias_record_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "archive_id": {"type": "string", "pattern": "^[0-9a-f]{32}$"},
+        "archive_descriptor_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "member_path": {"type": "string", "minLength": 1},
+        "member_identity": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "integer", "minimum": 0}},
+        "member_content_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "reference": {"type": "object", "required": ["ref", "sha256"], "additionalProperties": false, "properties": {"ref": {"type": "string", "minLength": 1}, "sha256": {"$ref": "#/definitions/hash"}, "storage": {"$ref": "#/definitions/storage_token"}}}
   }
 }

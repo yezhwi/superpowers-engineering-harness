@@ -10,6 +10,22 @@ from pathlib import Path
 _HELD = threading.local()
 
 
+def _owner_key(harness_dir: Path) -> str:
+    """One workspace owner, including legacy custom roots before activation.
+
+    Non-Git isolated regular-file roots retain their existing path owner. Git
+    worktrees use their own physical root, never the common-dir of a checkout.
+    """
+    from .repository import RepositoryNotFoundError, find_git_root
+
+    root = Path(harness_dir).resolve()
+    try:
+        repo = find_git_root(root.parent)
+    except RepositoryNotFoundError:
+        return str(root)
+    return str((repo / '.harness').resolve())
+
+
 @contextmanager
 def telemetry_lock(harness_dir: Path):
     """Keep lock identity stable across atomic Harness directory replacement.
@@ -17,7 +33,7 @@ def telemetry_lock(harness_dir: Path):
     Lock files live outside the workspace so they cannot stale product evidence.
     Never unlink them: queued processes may still hold the old inode.
     """
-    key = str(harness_dir.resolve())
+    key = _owner_key(harness_dir)
     held = getattr(_HELD, "paths", None)
     if held is None:
         held = _HELD.paths = set()

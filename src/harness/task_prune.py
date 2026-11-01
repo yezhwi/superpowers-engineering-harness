@@ -385,8 +385,84 @@ def _plan(harness_dir: Path) -> dict[str, Any]:
                                  if history_info else None)}
 
 
+def _bound_preview(harness_dir: Path) -> dict[str, Any]:
+    """Canonical object report only. No store deletion policy exists in v1."""
+    from .storage.archive import _archive_descriptor, _read_member, load_history
+    from .storage.layout import StorageError
+    from jsonschema import ValidationError
+
+    repo = harness_dir.absolute().parent
+    index = load_history(harness_dir)
+    from .storage.archive import ReferenceOrigin, impact_archive_declarations, resolve_archive
+    from .storage.layout import StorageSession, require_layout_admission
+    session = StorageSession(repo, harness_dir.absolute(), require_layout_admission(harness_dir))
+    references, reference_errors = {}, []
+    try:
+        impact = yaml.safe_load(_read_document(harness_dir / 'impact.yaml'))
+        declarations = impact_archive_declarations(impact['impact'], bound=True)
+        for declaration in declarations:
+            try:
+                handle = resolve_archive(session, declaration['ref'], ReferenceOrigin(**declaration['storage_origin']))
+                handle.read_bytes()
+                references.setdefault(handle.token['archive_id'], []).append(declaration['ref'])
+            except (OSError, ValueError, TypeError, KeyError) as error:
+                reference_errors.append({'ref': declaration['ref'], 'reason': error.code if isinstance(error, StorageError)
+                                         else 'STORE_UNSAFE_NODE'})
+    except (OSError, ValueError, TypeError, KeyError, RecursionError, yaml.YAMLError):
+        reference_errors.append({'reason': 'STORE_REFERENCE_AMBIGUOUS'})
+    counts, archives, blocked = empty_counts(), [], []
+    unknown = []
+    from . import source_access
+    directory = source_access._open_beneath(repo / '.harness-store/history/archives', repo)
+    try:
+        with os.scandir(directory) as children:
+            for number, child in enumerate(children):
+                if number >= 100000:
+                    unknown.append({'reason': 'STORE_PLAN_STALE', 'name': '<scan-limit>'})
+                    break
+                if child.name not in index['archives']:
+                    unknown.append({'name': child.name, 'reason': 'STORE_UNOWNED', 'logical_bytes': None})
+    finally:
+        os.close(directory)
+    counts['skipped_groups'] = len(unknown)
+    counts['distinct_ids'] = len(index['reserved_task_ids'])
+    for archive_id, record in index['archives'].items():
+        aliases = [entry for entry in index['aliases'] if entry['archive_id'] == archive_id]
+        item = {'archive_id': archive_id, 'origin': record['origin'], 'task_id': record['task_id'],
+                'aliases': [entry['logical_archive_alias'] for entry in aliases],
+                'status': 'protected', 'reason': 'STORE_AUTHORITY_REQUIRED',
+                'references': references.get(archive_id, []), 'deletion_authorized': False}
+        try:
+            _, descriptor = _archive_descriptor(repo, record)
+            logical_bytes = 0
+            alias = aliases[0] if aliases else {'logical_archive_alias': archive_id}
+            for name in descriptor['members']:
+                payload, _ = _read_member(repo, record, alias, name, '')
+                logical_bytes += len(payload)
+            item['logical_bytes'] = logical_bytes
+            counts['trusted_groups'] += 1
+            counts['logical_bytes'] += logical_bytes
+        except (OSError, ValueError, TypeError, KeyError, RecursionError, yaml.YAMLError, ValidationError) as error:
+            item.update(status='unknown', reason=error.code if isinstance(error, StorageError) else 'STORE_UNSAFE_NODE')
+            counts['skipped_groups'] += 1
+        archives.append(item)
+        blocked.append({'name': archive_id, 'reason': item['reason']})
+    digest = hashlib.sha256(json.dumps({'index': index, 'archives': archives, 'unknown': unknown,
+                                       'reference_errors': reference_errors}, sort_keys=True).encode()).hexdigest()
+    task = yaml.safe_load(_read_document(harness_dir / 'current-task.yaml'))
+    value = result(task['task']['id'] or 'UNKNOWN', 'store-prune-preview/v1:' + digest,
+                   'STORE_UNSAFE_NODE' if counts['skipped_groups'] or reference_errors else 'READY', counts, 'preview', False, [], blocked)
+    value.update(layout='bound', archives=archives, deletion_authorized=False,
+                 reference_scope='current_task_declared_contracts_only', reference_errors=reference_errors,
+                 unknown_objects=unknown)
+    return value
+
+
 def preview(harness_dir: Path) -> dict[str, Any]:
     with publication_admission(harness_dir):
+        from .storage.layout import require_layout_admission
+        if require_layout_admission(harness_dir).mode == 'bound':
+            return _bound_preview(harness_dir)
         plan = _plan(harness_dir)
     reason = "NOOP" if plan["reason"] == "READY" and not plan["candidates"] else plan["reason"]
     return result(plan["task_id"], plan["plan_id"], reason, plan["counts"], "preview", False,
@@ -469,6 +545,10 @@ def apply(harness_dir: Path, supplied_plan_id: str) -> dict[str, Any]:
     counts, task_id, plan_id = empty_counts(), "UNKNOWN", ""
     try:
         with publication_admission(harness_dir):
+            from .storage.layout import require_layout_admission
+
+            if require_layout_admission(harness_dir).mode == 'bound':
+                return result(task_id, plan_id, 'STORE_AUTHORITY_REQUIRED', counts, 'refused', False)
             plan = _plan(harness_dir)
             task_id, plan_id = plan["task_id"], plan["plan_id"]
             counts.update(plan["counts"])

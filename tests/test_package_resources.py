@@ -21,6 +21,10 @@ def test_package_contains_runtime_resources_and_state_machine():
         "test-scope-migration.schema.json",
         "impact-reconcile.schema.json",
         "decision.schema.json",
+        "storage-layout.schema.json",
+        "storage-operation.schema.json",
+        "storage-history.schema.json",
+        "storage-experiment.schema.json",
     ):
         assert root.joinpath("schemas", name).is_file()
     for name in ("current-task.yaml", "gate.yaml", "observability.yaml"):

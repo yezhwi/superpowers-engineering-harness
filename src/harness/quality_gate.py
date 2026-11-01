@@ -413,20 +413,18 @@ def _validate_finding_proofs(harness_dir, findings, impact, head, current_worksp
             )
         if state in {"VERIFIED", "CLOSED"}:
             try:
-                record = json.loads(
-                    source_access.read_text(
-                        evidence_path(harness_dir, finding["evidence"])
+                from .finding_closure import closure_proof_kind, validate_persisted_batch_closure
+                if closure_proof_kind(finding) == 'batch':
+                    validate_persisted_batch_closure(harness_dir, finding, impact,
+                                                     current_head=head, current_workspace=current_workspace)
+                else:
+                    record = json.loads(
+                        source_access.read_text(evidence_path(harness_dir, finding['evidence']))
                     )
-                )
-                from .evidence_validator import validate_finding_closure_evidence
-
-                validate_finding_closure_evidence(
-                    finding,
-                    record,
-                    impact,
-                    current_head=head,
-                    current_workspace=current_workspace,
-                )
+                    from .evidence_validator import validate_finding_closure_evidence
+                    validate_finding_closure_evidence(
+                        finding, record, impact, current_head=head, current_workspace=current_workspace,
+                    )
             except (
                 OSError,
                 json.JSONDecodeError,

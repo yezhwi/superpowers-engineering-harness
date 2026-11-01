@@ -259,3 +259,25 @@ def validate_finding_closure_evidence(
     covered = set(record.get("covered_tests", []))
     if not required or not required <= covered:
         _fail("RELATED_TEST_COVERAGE_MISSING")
+
+
+def validate_finding_closure_batch(finding, records, impact, *, current_head, current_workspace):
+    """Every related member proves actual execution; only then union coverage."""
+    if not isinstance(records, (list, tuple)) or not 2 <= len(records) <= 64:
+        _fail('BATCH_EVIDENCE_INVALID')
+    for record in records:
+        if (not isinstance(record, dict) or record.get('scope') != 'related'
+                or record.get('type') not in {'unit_test', 'integration_test', 'contract_test'}):
+            _fail('BATCH_EVIDENCE_SCOPE_INVALID')
+        validate_evidence(record, current_head=current_head, current_workspace=current_workspace,
+                          expected_success=True, require_test_execution=True)
+    required = set((impact or {}).get('impact', {}).get('required_tests', []))
+    covered = {test for record in records for test in record.get('covered_tests', [])}
+    if not required or not required <= covered:
+        _fail('RELATED_TEST_COVERAGE_MISSING')
+    if finding.get('severity') == 'critical':
+        approval = finding.get('closure')
+        if (not isinstance(approval, dict) or approval.get('mode') != 'related'
+                or approval.get('critical_related_approved') is not True or approval.get('source') != 'user'
+                or not isinstance(approval.get('approved_at'), str) or not approval['approved_at'].strip()):
+            _fail('CRITICAL_RELATED_APPROVAL_REQUIRED')

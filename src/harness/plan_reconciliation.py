@@ -162,6 +162,37 @@ def _plan_initialization_issues(
     return []
 
 
+def _replanned_implementation_entry(harness_dir, task, plan, replay):
+    """A fresh sealed realignment may continue a replayed terminal prefix.
+
+    The transition caller still validates the full seal/boundaries. This does
+    not repair fingerprints, synthesize history, or waive final-proof freshness.
+    """
+    if (task is None or task.get('state') != 'PLANNED' or replay.active_item is not None
+            or replay.next_item is None):
+        return False
+    terminal, pending = False, False
+    for item in plan['items']:
+        state = replay.items.get(item['id'], {}).get('status', 'PENDING')
+        if state in {'COMPLETE', 'SKIPPED', 'SUPERSEDED'}:
+            if pending:
+                return False
+            terminal = True
+        elif state == 'PENDING':
+            pending = True
+        else:
+            return False
+    if not terminal or not pending:
+        return False
+    from . import alignment
+    try:
+        document = alignment.load_alignment(harness_dir)
+        alignment.validate_freeze(document)
+        return (document['task_id'] == task['task']['id'] and bool(document.get('revisions')))
+    except (alignment.AlignmentError, OSError, ValueError, TypeError, KeyError):
+        return False
+
+
 def validate_plan_initialization(
     harness_dir: Path, task: dict | None = None
 ) -> list[PlanIssue]:
@@ -195,7 +226,8 @@ def validate_plan_initialization(
                     f"plan execution journal cannot replay: {replay.issues[0].code}",
                 )
             ]
-        if execution["sequence"] != 0 or execution["transitions"] or execution["items"]:
+        nonempty = execution['sequence'] != 0 or execution['transitions'] or execution['items']
+        if nonempty and not _replanned_implementation_entry(harness_dir, task, plan, replay):
             return [
                 PlanIssue(
                     "PLAN_SEQUENCE_INVALID",

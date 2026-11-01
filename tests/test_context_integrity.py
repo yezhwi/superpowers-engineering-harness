@@ -445,13 +445,14 @@ def test_explicitly_referenced_ignored_file_changes_stale_context(harness, decla
         validate(harness, document)
 
 
-def test_required_architecture_context_uses_projection_v4_and_rejects_v3(harness):
+@pytest.mark.parametrize("old_projection", [3, 5])
+def test_required_architecture_context_uses_projection_v6_and_rejects_older_versions(harness, old_projection):
     test_context_builder.enable_required_architecture(harness)
     document = build(harness)
 
-    assert document["generated_from"]["projection_version"] == 5
+    assert document["generated_from"]["projection_version"] == 6
     old = copy.deepcopy(document)
-    old["generated_from"]["projection_version"] = 3
+    old["generated_from"]["projection_version"] = old_projection
     old["context_hash"] = "sha256:" + "0" * 64
 
     with pytest.raises(ContextBuildError, match="CONTEXT_SCHEMA_INVALID"):
@@ -490,8 +491,8 @@ def test_architecture_change_during_context_load_is_rejected(harness, monkeypatc
 
     original = integrity.FileContextSource.load
 
-    def change_after_load(source):
-        loaded = original(source)
+    def change_after_load(source, product=None):
+        loaded = original(source, product=product)
         path = harness / "architecture.yaml"
         path.write_text(path.read_text() + "\n")
         return loaded
@@ -508,8 +509,8 @@ def test_architecture_delete_during_context_load_is_rejected(harness, monkeypatc
 
     original = integrity.FileContextSource.load
 
-    def delete_after_load(source):
-        loaded = original(source)
+    def delete_after_load(source, product=None):
+        loaded = original(source, product=product)
         (harness / "architecture.yaml").unlink()
         return loaded
 

@@ -145,6 +145,16 @@ Any regression failure later → back to `FIXING`; iterate.
 
 ### 5. Closure Proof + VERIFIED
 
+Adversarial related closure supports native batches:
+
+```bash
+harness finding transition FND-nnn VERIFIED --evidence batch-a.json --evidence batch-b.json
+```
+
+All 2–64 receipts must independently prove successful actual execution at the current HEAD/workspace; union covers all nonempty impact required_tests. Each file <=4 MiB, total <=16 MiB. One stale/invalid/unsupported member refuses the whole request. The Finding stores closure_evidence references and original-byte digests, not a synthesized test_execution. Gate reopens every member for VERIFIED/CLOSED; no manual aggregate receipt, old-proof editing or coverage-only claim.
+
+Critical batches require existing Finding-level closure approval from the user; `--critical-related-approved` writes the candidate approval before validation. Major batches do not read/require closure. Nonempty approved_at has no extra recency requirement; approval is not bound to the digest set. Old single-proof paths are unchanged, including the legacy enforcement gap; skill policy still requires actual user approval, never infer it from that gap. Batch proof does not replace separate RED/GREEN. Other lifecycle targets/diagnosability reject repeated evidence. VERIFIED -> CLOSED with no evidence arguments retains the same batch; do not resubmit or synthesize proof.
+
 Choose proof from persisted policy: full-suite impact is advisory. Major findings may use related evidence only when structured `covered_tests` contains every nonempty impact `required_tests` entry. Critical related closure additionally requires explicit per-finding user approval. All required proof green → write to the finding file:
 
 ```yaml

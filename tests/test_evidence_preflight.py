@@ -32,6 +32,22 @@ def api(monkeypatch):
     return module
 
 
+def test_changed_storage_reader_blocks_tooling_without_execution(harness, monkeypatch):
+    module = api(monkeypatch)
+    monkeypatch.setattr(module, 'finish_tool_identity', lambda snapshot: {
+        'cli_identity': {'status': 'VERIFIED', 'verified_version': '0.3.2'},
+        'schema_identity': {'status': 'VERIFIED'},
+        'skills_identity': {'status': 'NOT_PROVIDED'},
+        'storage_identity': {'status': 'CHANGED', 'reader': None},
+        'diagnostics': [], 'errors': [],
+    })
+    report = module.run_preflight(harness, request(module, harness))
+    assert report['tooling']['status'] == 'BLOCKED'
+    assert report['product']['execution_plan'] is None
+    assert report['execution_counts']['tests'] == 0
+    assert report['execution_authority'] is False
+
+
 def request(module, root, **kwargs):
     return module.PreflightRequest(probe_cwd=root.parent, **kwargs)
 

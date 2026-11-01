@@ -64,6 +64,7 @@ ALLOWED = ENTRIES | {
     "transaction_recovery",
     "_scope_replay",
     "evidence_validator",
+    "finding_closure",
     "decision",
     "interface_contract",
     "diagnosability",
@@ -78,6 +79,8 @@ ALLOWED = ENTRIES | {
 }
 ADAPTERS = {
     "source_access": "audited source access",
+    "storage.layout": "fixed storage identity/admission boundary; no-follow reads and explicitly checked/observed directory membership",
+    "storage.archive": "origin-qualified archive boundary; projection reads bind declared selected dependencies, publication uses native owner guards",
     "workspace": "fixed Git query adapter",
     "git_query": "fixed Git subprocess adapter",
     "schema_resources": "registered package resources",

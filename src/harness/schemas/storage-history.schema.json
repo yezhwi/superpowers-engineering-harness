@@ -1,0 +1,55 @@
+{
+  "$schema":"http://json-schema.org/draft-07/schema#",
+  "definitions": {
+    "id":{"type":"string","pattern":"^[0-9a-f]{32}$"},
+    "task":{"type":"string","pattern":"^TASK-[0-9]+$"},
+    "digest":{"type":"string","pattern":"^[0-9a-f]{64}$"},
+    "identity":{"type":"array","minItems":2,"maxItems":2,"items":{"type":"integer","minimum":0}},
+    "origin":{
+      "type":"object","additionalProperties":false,"required":["workspace_id","generation_id","original_workspace_root"],
+      "properties":{"workspace_id":{"$ref":"#/definitions/id"},"generation_id":{"$ref":"#/definitions/id"},"original_workspace_root":{"type":"string","pattern":"^/"}}
+    },
+    "alias":{
+      "type":"object","additionalProperties":false,"required":["origin","logical_archive_alias","archive_id"],
+      "properties":{"origin":{"$ref":"#/definitions/origin"},"logical_archive_alias":{"type":"string","minLength":1,"pattern":"^[^/\\\\]+$"},"archive_id":{"$ref":"#/definitions/id"}}
+    },
+    "record":{
+      "type":"object","additionalProperties":false,
+      "required":["archive_id","task_id","origin","object_identity","descriptor_identity","descriptor_sha256","receipt_id"],
+      "properties":{"archive_id":{"$ref":"#/definitions/id"},"task_id":{"$ref":"#/definitions/task"},"origin":{"$ref":"#/definitions/origin"},"object_identity":{"$ref":"#/definitions/identity"},"descriptor_identity":{"$ref":"#/definitions/identity"},"descriptor_sha256":{"$ref":"#/definitions/digest"},"receipt_id":{"$ref":"#/definitions/id"}}
+    },
+    "member":{
+      "type":"object","additionalProperties":false,"required":["identity","sha256","size"],
+      "properties":{"identity":{"$ref":"#/definitions/identity"},"sha256":{"$ref":"#/definitions/digest"},"size":{"type":"integer","minimum":0}}
+    },
+    "archive":{
+      "type":"object","additionalProperties":false,
+      "required":["version","kind","archive_id","task_id","origin","object_identity","source_snapshot","parents","members"],
+      "properties": {
+        "version":{"const":1},"kind":{"const":"storage_archive"},"archive_id":{"$ref":"#/definitions/id"},"task_id":{"$ref":"#/definitions/task"},"origin":{"$ref":"#/definitions/origin"},"object_identity":{"$ref":"#/definitions/identity"},
+        "source_snapshot":{
+          "type":"object","additionalProperties":false,"required":["operation_id","source_identity","manifest_digest"],
+          "properties":{"operation_id":{"$ref":"#/definitions/id"},"source_identity":{"$ref":"#/definitions/identity"},"manifest_digest":{"$ref":"#/definitions/digest"}}
+        },
+        "parents":{"type":"object","minProperties":1,"maxProperties":8192,"additionalProperties":{"$ref":"#/definitions/identity"}},
+        "members":{"type":"object","maxProperties":8192,"additionalProperties":{"$ref":"#/definitions/member"}}
+      }
+    },
+    "reservation":{
+      "type":"object","additionalProperties":false,
+      "required":["version","kind","operation_id","workspace_id","store_id","task_ids"],
+      "properties":{"version":{"const":1},"kind":{"const":"storage_reservation"},"operation_id":{"$ref":"#/definitions/id"},"workspace_id":{"$ref":"#/definitions/id"},"store_id":{"$ref":"#/definitions/id"},"task_ids":{"type":"array","minItems":1,"maxItems":1024,"uniqueItems":true,"items":{"$ref":"#/definitions/task"}}}
+    },
+    "index":{
+      "type":"object","additionalProperties":false,
+      "required":["version","kind","store_id","workspace_id","archives","aliases","reserved_task_ids"],
+      "properties":{
+        "version":{"const":1},"kind":{"const":"storage_history"},"store_id":{"$ref":"#/definitions/id"},"workspace_id":{"$ref":"#/definitions/id"},
+        "archives":{"type":"object","maxProperties":100000,"propertyNames":{"$ref":"#/definitions/id"},"additionalProperties":{"$ref":"#/definitions/record"}},
+        "aliases":{"type":"array","maxItems":100000,"items":{"$ref":"#/definitions/alias"}},
+        "reserved_task_ids":{"type":"array","maxItems":100000,"uniqueItems":true,"items":{"$ref":"#/definitions/task"}}
+      }
+    }
+  },
+  "oneOf":[{"$ref":"#/definitions/index"},{"$ref":"#/definitions/archive"},{"$ref":"#/definitions/reservation"}]
+}

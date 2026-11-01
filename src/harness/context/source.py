@@ -315,6 +315,13 @@ class FileContextSource:
                 impact_domain.typed_contracts(value)
             except impact_domain.ImpactContractError as exc:
                 raise ContextBuildError("CONTEXT_SCHEMA_INVALID", str(exc)) from exc
+        from harness.storage import admit_storage
+        from harness.storage.archive import impact_archive_declarations, project_dependencies
+
+        with admit_storage(self.harness_dir) as session:
+            declarations = impact_archive_declarations(
+                value if isinstance(value, dict) else {}, bound=session.layout.mode == "bound")
+            self.references.update(project_dependencies(session, declarations))
         contract_refs = {
             _decision_ref_id(ref) or ref
             for interface in interfaces

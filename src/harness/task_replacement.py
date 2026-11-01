@@ -123,12 +123,27 @@ def _reject_unsupported(path: Path, root: Path) -> None:
         _reject_unsupported(Path(child.path), root)
 
 
+def publish_bound_replacement(harness_dir, old, task_id, title, kind, head, architecture_mode, reason='') -> bool:
+    """Dispatch owned layout only. Bound errors never fall back to legacy copying."""
+    from .storage import inspect_layout
+    root = Path(harness_dir).absolute()
+    if inspect_layout(root.parent).mode != 'bound':
+        return False
+    from .storage.turnover import replace_bound_task
+    replace_bound_task(root, old, task_id, title, kind, head, architecture_mode, reason)
+    return True
+
+
 def replacement_workspace(harness_dir: Path, *, new_task: bool = False) -> Path:
     """Stage the allowlisted tree. Task new leaves behavior fixtures behind.
 
     Fifo, socket, and device nodes inside the allowlist fail before publication.
     Excluded probe directories are not opened.
     """
+    from .storage.layout import StorageError, require_layout_admission
+
+    if require_layout_admission(harness_dir).mode == 'bound':
+        raise StorageError('STORE_READER_UNSUPPORTED')
     parent = harness_dir.parent
     staged = Path(
         tempfile.mkdtemp(prefix=f".{harness_dir.name}.replacement-", dir=parent)

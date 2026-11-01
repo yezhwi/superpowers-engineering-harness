@@ -477,6 +477,13 @@ class Operation:
 def prepare(root: Path, members: tuple[Member, ...]) -> Operation:
     root = root.absolute()
     _locked(root)
+    from .storage.layout import require_layout_admission, require_custom_root_admission
+    from .transaction_recovery import _pending_paths
+
+    require_custom_root_admission(root)
+    if _pending_paths(root):
+        raise _blocked()
+    require_layout_admission(root)
     if not members or any(not isinstance(member, Member) for member in members):
         raise _blocked()
     paths = [_name(member.path) for member in members]

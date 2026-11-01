@@ -40,6 +40,64 @@ def test_cold_q2_off_context_import_stays_inside_source_scope(harness):
     assert result.returncode == 0, result.stderr
 
 
+def test_self_hosted_cold_batch_consumer_keeps_cache_and_data_outside_scope(tmp_path):
+    import py_compile
+    import shutil
+
+    from test_finding_closure import batch_repo
+    from test_finding_transition import cli
+
+    (tmp_path / ".gitignore").write_text("__pycache__/\n*.pyc\n")
+    package = tmp_path / "src" / "harness"
+    shutil.copytree(ROOT / "src" / "harness", package,
+                    ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+    root, _, refs, _ = batch_repo.__wrapped__(tmp_path)
+    verified = cli(tmp_path, "finding", "transition", "FND-001", "VERIFIED",
+                   "--evidence", refs["a"], "--evidence", refs["b"])
+    assert verified.returncode == 0, verified.stdout + verified.stderr
+    closed = cli(tmp_path, "finding", "transition", "FND-001", "CLOSED")
+    assert closed.returncode == 0, closed.stdout + closed.stderr
+    cache = py_compile.compile(str(package / "finding_closure.py"), doraise=True)
+    assert Path(cache).is_file()
+    (root / "private-input.txt").write_text("undeclared fixture data")
+    program = """
+import sys
+from pathlib import Path
+import yaml
+from harness.context.read_scope import context_read_scope
+from harness.context.model import ContextBuildError
+from harness.quality_gate import _validate_finding_proofs
+from harness.workspace import snapshot
+from harness.schema_resources import schema_versions
+
+root = Path('.harness').absolute()
+finding = yaml.safe_load((root / 'findings/FND-001.yaml').read_bytes())
+impact = yaml.safe_load((root / 'impact.yaml').read_bytes())
+current = snapshot(root.parent)
+versions = {'files': {}, 'declared_files': {},
+            'schema_resources': {'evidence.schema.json': schema_versions()['evidence.schema.json']}}
+assert 'harness.finding_closure' not in sys.modules, 'consumer must start cold'
+with context_read_scope(root, versions):
+    _validate_finding_proofs(root, [finding], impact, current.head, current.fingerprint)
+for forbidden in (root / 'private-input.txt', Path(sys.argv[1])):
+    try:
+        with context_read_scope(root, versions):
+            forbidden.read_bytes()
+    except ContextBuildError as error:
+        assert 'CONTEXT_REFERENCE_BROKEN' in str(error)
+    else:
+        raise AssertionError('scope widened to unregistered data/cache')
+print('COLD_BATCH_CONSUMER_AND_NEGATIVE_SCOPE_OK')
+"""
+    result = subprocess.run(
+        [sys.executable, "-B", "-c", program, cache], cwd=tmp_path,
+        env={**os.environ, "PYTHONPATH": str(tmp_path / "src")},
+        capture_output=True, text=True, timeout=60,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "COLD_BATCH_CONSUMER_AND_NEGATIVE_SCOPE_OK" in result.stdout
+
+
 def test_context_scope_rejects_same_name_dir_fd_read_from_harness(harness):
     from harness.context.read_scope import context_read_scope
 

@@ -38,6 +38,21 @@ def installed(tmp_path, monkeypatch):
     return site, meta, manifest, distribution
 
 
+def test_storage_source_identity_is_declared_not_guessed_from_package_version(installed):
+    _, meta, manifest, _ = installed
+    report = tools().finish_tool_identity(tools().begin_tool_identity(manifest))
+    storage = report.get('storage_identity')
+    assert storage is not None, 'storage reader identity omitted from tool diagnostics'
+    assert storage['status'] == 'DECLARED'
+    assert storage['reader']['capability'] == 'harness-storage-layout/v1'
+    assert 'storage/migration.py' in storage['reader']['modules']
+    before = storage['reader']
+    (meta / 'METADATA').write_text('Metadata-Version: 2.1\nName: superpowers-engineering-harness\nVersion: 99.99\n')
+    changed_version = tools().finish_tool_identity(tools().begin_tool_identity(manifest))
+    assert changed_version['storage_identity']['reader'] == before
+    assert changed_version['storage_identity']['status'] == 'DECLARED'
+
+
 def test_installed_identity_exact_version_and_schema_hash(installed):
     from harness.schema_resources import schema_versions
     _, _, manifest, _ = installed
