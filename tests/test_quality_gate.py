@@ -37,6 +37,42 @@ HEAD = subprocess.run(
 ).stdout.strip()
 
 
+@pytest.mark.parametrize("state", ["VERIFIED", "CLOSED"])
+@pytest.mark.parametrize("approved", [False, True])
+def test_gate_single_critical_related_rechecks_persisted_approval(tmp_path, state, approved):
+    import shlex
+    from test_finding_transition import setup, cli
+    from harness.quality_gate import InvalidHarnessState, _validate_finding_proofs
+    from harness.workspace import snapshot
+
+    h = setup(tmp_path)
+    node = "tests/test_x.py::test_x"
+    before = set((h / "evidence").glob("*.json"))
+    command = shlex.join([sys.executable, "-B", "-m", "pytest", "-q", "-p", "no:cacheprovider", node])
+    result = cli(tmp_path, "evidence", "run", "--type", "unit_test",
+                 "--covered-test", node, "--command", command)
+    assert result.returncode == 0, result.stdout + result.stderr
+    created = set((h / "evidence").glob("*.json")) - before
+    assert len(created) == 1
+    receipt = created.pop()
+    raw = receipt.read_bytes()
+    finding = yaml.safe_load((h / "findings/fnd-001.yaml").read_bytes())
+    finding.update(status=state, test=node, confirmed_at="2026-01-01T00:00:00Z",
+                   regression_test={"path": node, "red_evidence": "red.json", "green_evidence": "green.json"},
+                   evidence=receipt.name)
+    if approved:
+        finding["closure"] = {"mode": "related", "source": "user",
+                              "critical_related_approved": True, "approved_at": "2000-01-01"}
+    current = snapshot(tmp_path)
+    impact = yaml.safe_load((h / "impact.yaml").read_bytes())
+    if approved:
+        _validate_finding_proofs(h, [finding], impact, current.head, current.fingerprint)
+    else:
+        with pytest.raises(InvalidHarnessState, match="CRITICAL_RELATED_APPROVAL_REQUIRED"):
+            _validate_finding_proofs(h, [finding], impact, current.head, current.fingerprint)
+    assert receipt.read_bytes() == raw
+
+
 def _gate(harness_dir: Path):
     from harness.quality_gate import InvalidHarnessState, assess_gate
 

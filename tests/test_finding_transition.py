@@ -117,6 +117,7 @@ def test_cli_enforces_full_proof_chain(tmp_path):
             "VERIFIED",
             "--evidence",
             "full.json",
+            "--critical-related-approved",
         ).returncode
         == 0
     )
@@ -354,7 +355,7 @@ def test_fixed_rejects_green_evidence_for_different_test(tmp_path):
     assert status(h) == "FIXING"
 
 
-def test_critical_finding_accepts_related_closure_evidence(tmp_path):
+def test_critical_finding_rejects_unapproved_related_closure_without_write(tmp_path):
     h = setup(tmp_path)
     full = json.loads((h / "evidence" / "full.json").read_text())
     full["scope"] = "related"
@@ -408,6 +409,8 @@ def test_critical_finding_accepts_related_closure_evidence(tmp_path):
         ).returncode
         == 0
     )
+    finding_path = h / "findings" / "fnd-001.yaml"
+    before = finding_path.read_bytes()
     result = cli(
         tmp_path,
         "finding",
@@ -417,7 +420,10 @@ def test_critical_finding_accepts_related_closure_evidence(tmp_path):
         "--evidence",
         "full.json",
     )
-    assert result.returncode == 0
+    assert result.returncode == 2
+    assert "CRITICAL_RELATED_APPROVAL_REQUIRED" in result.stderr
+    assert finding_path.read_bytes() == before
+    assert status(h) == "FIXED"
 
 
 def test_critical_finding_accepts_approved_related_closure(tmp_path):

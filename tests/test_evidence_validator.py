@@ -275,6 +275,49 @@ def test_accepts_fresh_matching_failed_regression_evidence():
     )
 
 
+@pytest.mark.parametrize("approval", [
+    None, {}, "approved", [],
+    {"mode": "full", "critical_related_approved": True, "source": "user", "approved_at": "now"},
+    {"mode": "related", "critical_related_approved": False, "source": "user", "approved_at": "now"},
+    {"mode": "related", "critical_related_approved": 1, "source": "user", "approved_at": "now"},
+    {"mode": "related", "critical_related_approved": "true", "source": "user", "approved_at": "now"},
+    {"mode": "related", "critical_related_approved": True, "source": "agent", "approved_at": "now"},
+    {"mode": "related", "critical_related_approved": True, "source": "user", "approved_at": ""},
+    {"mode": "related", "critical_related_approved": True, "source": "user", "approved_at": "  "},
+    {"mode": "related", "critical_related_approved": True, "source": "user", "approved_at": 123},
+])
+def test_single_critical_related_requires_explicit_approval(approval):
+    evidence = record(exit_code=0, scope="related", covered_tests=[TEST])
+    finding = {"id": "FND-001", "severity": "critical", "closure": approval}
+    with pytest.raises(EvidenceValidationError, match="^CRITICAL_RELATED_APPROVAL_REQUIRED$"):
+        validate_finding_closure_evidence(
+            finding, evidence, {"impact": {"required_tests": [TEST]}},
+            current_head=HEAD, current_workspace=FP,
+        )
+
+
+@pytest.mark.parametrize("severity,scope,approval", [
+    ("critical", "related", {"mode": "related", "critical_related_approved": True,
+                               "source": "user", "approved_at": "2000-01-01"}),
+    ("major", "related", "not an approval"),
+])
+def test_single_closure_preserves_approved_and_noncritical_paths(severity, scope, approval):
+    validate_finding_closure_evidence(
+        {"id": "FND-001", "severity": severity, "closure": approval},
+        record(exit_code=0, scope=scope, covered_tests=[TEST]),
+        {"impact": {"required_tests": [TEST]}}, current_head=HEAD, current_workspace=FP,
+    )
+
+
+def test_single_closure_keeps_existing_full_scope_schema_rejection():
+    # Current receipt schema permits only related; do not expand it for this fix.
+    with pytest.raises(EvidenceValidationError, match="EVIDENCE_SCHEMA_INVALID"):
+        validate_finding_closure_evidence(
+            {"severity": "critical"}, record(exit_code=0, scope="full"),
+            {"impact": {"required_tests": [TEST]}}, current_head=HEAD, current_workspace=FP,
+        )
+
+
 def test_major_closure_accepts_related_evidence_covering_impact_tests():
     evidence = record(
         exit_code=0,

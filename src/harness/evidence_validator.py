@@ -259,6 +259,14 @@ def validate_finding_closure_evidence(
     covered = set(record.get("covered_tests", []))
     if not required or not required <= covered:
         _fail("RELATED_TEST_COVERAGE_MISSING")
+    if finding.get("severity") == "critical":
+        approval = finding.get("closure")
+        if (not isinstance(approval, dict) or approval.get("mode") != "related"
+                or approval.get("critical_related_approved") is not True
+                or approval.get("source") != "user"
+                or not isinstance(approval.get("approved_at"), str)
+                or not approval["approved_at"].strip()):
+            _fail("CRITICAL_RELATED_APPROVAL_REQUIRED")
 
 
 def validate_finding_closure_batch(finding, records, impact, *, current_head, current_workspace):
